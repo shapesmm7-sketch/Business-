@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
+import { saveJsPdf } from './fileSaver';
 
 export class QRHostingService {
   /**
@@ -285,7 +286,8 @@ export class QRHostingService {
 
     const tabSuffix = targetTab && targetTab !== 'all' ? `_${targetTab}` : '';
     const safeTitle = (page.title || 'Table_Stand').replace(/[^a-zA-Z0-9]/g, '_');
-    doc.save(`${safeTitle}${tabSuffix}_QR_Table_Stand.pdf`);
+    const pdfFilename = `${safeTitle}${tabSuffix}_QR_Table_Stand.pdf`;
+    await saveJsPdf(doc, pdfFilename, 'QR Table Stand');
   }
 
   /**
@@ -481,7 +483,8 @@ export class QRHostingService {
     doc.text('Powered by QuickReceipt QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
-    doc.save(`${safeItemName}_Item_QR_Stand.pdf`);
+    const pdfFilename = `${safeItemName}_Item_QR_Stand.pdf`;
+    await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`);
   }
 
   /**
@@ -597,6 +600,7 @@ export class QRHostingService {
     doc.text('Powered by QuickReceipt QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
-    doc.save(`${safePhotoName}_Photo_QR_Stand.pdf`);
+    const pdfFilename = `${safePhotoName}_Photo_QR_Stand.pdf`;
+    await saveJsPdf(doc, pdfFilename, 'Photo QR Stand');
   }
 }

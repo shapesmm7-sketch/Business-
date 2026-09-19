@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { saveJsPdf } from '../services/fileSaver';
 import {
   X,
   Calendar,
@@ -1160,7 +1161,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
   };
 
   // --- EXPORT PDF PERFORMANCE & MANAGEMENT REPORT ---
-  const handleExportStaffPDF = () => {
+  const handleExportStaffPDF = async () => {
     try {
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -1338,7 +1339,8 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
 
       // Save PDF
       const sanitizedName = worker.name.replace(/[^a-zA-Z0-9]/g, '_');
-      doc.save(`Staff_Report_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`);
+      const pdfFilename = `Staff_Report_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      await saveJsPdf(doc, pdfFilename, `Staff Report - ${worker.name}`);
       showToast('Staff report PDF exported!');
     } catch (err) {
       console.error('PDF export error:', err);

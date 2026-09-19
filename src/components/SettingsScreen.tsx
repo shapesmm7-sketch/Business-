@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { saveFile } from '../services/fileSaver';
 import {
   Moon,
   Sun,
@@ -51,21 +52,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   // Export JSON backup file
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     try {
       const backup = StorageService.exportBackup();
       const jsonStr = JSON.stringify(backup, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const dateStr = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `QuickReceipt_Backup_${dateStr}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Backup file downloaded successfully!');
+      const filename = `QuickReceipt_Backup_${dateStr}.json`;
+      
+      const res = await saveFile({
+        data: jsonStr,
+        filename,
+        mimeType: 'application/json',
+        title: 'QuickReceipt Data Backup',
+      });
+
+      if (res.success) {
+        showToast('Backup file saved successfully!');
+      } else {
+        showToast('Failed to export backup data');
+      }
     } catch (err) {
       console.error('Export backup error:', err);
       showToast('Failed to export backup data');

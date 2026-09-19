@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { saveFile } from '../services/fileSaver';
 import {
   QrCode,
   ArrowLeft,
@@ -360,22 +361,28 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  const handleDownloadPng = () => {
+  const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
     const scopeLabel = qrScope === 'all' ? 'All_Pages' : qrScope === 'menu' ? 'Items' : qrScope === 'about' ? 'Info' : 'Photos';
-    const link = document.createElement('a');
-    link.href = qrDataUrl;
-    link.download = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
-    link.click();
+    const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
+    await saveFile({
+      data: qrDataUrl,
+      filename,
+      mimeType: 'image/png',
+      title: `${activePage.title} QR Code`,
+    });
   };
 
-  const handleDownloadQuickQrPng = () => {
+  const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
     const scopeLabel = quickQrScope === 'all' ? 'All_Pages' : quickQrScope === 'menu' ? 'Items' : quickQrScope === 'about' ? 'Info' : 'Photos';
-    const link = document.createElement('a');
-    link.href = quickQrDataUrl;
-    link.download = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
-    link.click();
+    const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
+    await saveFile({
+      data: quickQrDataUrl,
+      filename,
+      mimeType: 'image/png',
+      title: `${activePage.title} Quick QR Code`,
+    });
   };
 
   const handleDownloadTableStandPdf = async () => {
@@ -461,13 +468,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  const handleDownloadItemPng = () => {
+  const handleDownloadItemPng = async () => {
     if (!itemQrDataUrl || !itemQrModalItem) return;
-    const link = document.createElement('a');
-    link.href = itemQrDataUrl;
     const safeName = itemQrModalItem.name.replace(/[^a-zA-Z0-9]/g, '_');
-    link.download = `${safeName}_Item_QRCode.png`;
-    link.click();
+    const filename = `${safeName}_Item_QRCode.png`;
+    await saveFile({
+      data: itemQrDataUrl,
+      filename,
+      mimeType: 'image/png',
+      title: `${itemQrModalItem.name} QR Code`,
+    });
   };
 
   const handleDownloadItemPdf = async () => {
@@ -514,13 +524,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  const handleDownloadPhotoPng = () => {
+  const handleDownloadPhotoPng = async () => {
     if (!photoQrDataUrl || !photoQrModalPhoto) return;
-    const link = document.createElement('a');
-    link.href = photoQrDataUrl;
     const safeName = (photoQrModalPhoto.caption || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
-    link.download = `${safeName}_Photo_QRCode.png`;
-    link.click();
+    const filename = `${safeName}_Photo_QRCode.png`;
+    await saveFile({
+      data: photoQrDataUrl,
+      filename,
+      mimeType: 'image/png',
+      title: `${photoQrModalPhoto.caption || 'Photo'} QR Code`,
+    });
   };
 
   const handleDownloadPhotoPdf = async () => {

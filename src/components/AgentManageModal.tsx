@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { saveJsPdf } from '../services/fileSaver';
 import {
   X,
   Check,
@@ -329,7 +330,7 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
   }, [products, stockSearchQuery, selectedCategoryId]);
 
   // Export PDF Report for Agent
-  const handleExportAgentPDF = () => {
+  const handleExportAgentPDF = async () => {
     try {
       const doc = new jsPDF({ unit: 'pt', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -462,7 +463,8 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
       }
 
       const sanitizedName = agent.agentName.replace(/[^a-zA-Z0-9]/g, '_');
-      doc.save(`Agent_Ledger_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`);
+      const pdfFilename = `Agent_Ledger_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      await saveJsPdf(doc, pdfFilename, `Agent Ledger - ${agent.agentName}`);
       showToast('Agent report PDF exported!');
     } catch (err) {
       console.error('Export error:', err);

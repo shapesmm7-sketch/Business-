@@ -5,6 +5,7 @@ import { getTemplateConfig } from '../utils/templates';
 import { resolveEffectiveTheme } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
+import { saveJsPdf } from './fileSaver';
 
 /**
  * High quality vector PDF generator for QuickReceipt
@@ -1529,7 +1530,7 @@ export const PdfGenerator = {
   },
 
   /**
-   * Triggers client-side PDF file download
+   * Triggers client-side or native Android PDF file download
    */
   async downloadPdf(receipt: Receipt): Promise<string> {
     const doc = await this.createPdfDoc(receipt);
@@ -1537,7 +1538,7 @@ export const PdfGenerator = {
     const prefix = isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.pdf`;
-    doc.save(filename);
+    await saveJsPdf(doc, filename, `${prefix} ${receipt.receiptNumber}`);
     return filename;
   },
 
