@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { saveFile, shareContent } from '../services/fileSaver';
+import { t } from '../utils/i18n';
 import {
   QrCode,
   ArrowLeft,
@@ -687,7 +688,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     callback: (dataUrl: string) => void,
-    options: { maxDimension?: number; quality?: number } = { maxDimension: 500, quality: 0.72 }
+    options: { maxDimension?: number; quality?: number; maxBytes?: number } = { maxDimension: 500, quality: 0.72 }
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -710,7 +711,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
+  const MAX_PHOTOS = 20;
+
+  const handlePhotoUploadClick = () => {
+    if (activePage && activePage.photos.length >= MAX_PHOTOS) {
+      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed per gallery. Please delete a photo to upload a new one.`);
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
+    photoInputRef.current?.click();
+  };
+
   const handlePhotoFileUploaded = (url: string) => {
+    if (!editingPhoto && activePage && activePage.photos.length >= MAX_PHOTOS) {
+      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed. Please delete an existing photo.`);
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
     setPhotoUrl(url);
     if (!showPhotoModal) {
       setEditingPhoto(null);
@@ -734,6 +751,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleSavePhotoModal = () => {
     if (!activePage || !photoUrl.trim()) return;
+
+    if (!editingPhoto && activePage.photos.length >= MAX_PHOTOS) {
+      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed per gallery. Please remove a photo.`);
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
 
     const finalCategory = photoCategory.trim();
     const finalBadge = photoBadge.trim() || undefined;
@@ -1023,7 +1046,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 800, quality: 0.75 })}
+        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 800, quality: 0.75, maxBytes: 500 * 1024 })}
       />
       <input
         ref={itemPhotoInputRef}
@@ -1217,7 +1240,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-          <span>Photos ({activePage.photos.length})</span>
+          <span>Photos ({activePage.photos.length}/20)</span>
         </button>
       </div>
 
@@ -1969,9 +1992,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photo Gallery</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Upload storefront, interior, dishes, hotel rooms or team photos
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photo Gallery</h2>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {activePage.photos.length}/20 Max
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Upload up to 20 photos (auto-compressed under 500KB per photo)
               </p>
             </div>
 
@@ -1986,11 +2014,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
 
               <button
-                onClick={() => photoInputRef.current?.click()}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition"
+                onClick={handlePhotoUploadClick}
+                disabled={activePage.photos.length >= 20}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition ${
+                  activePage.photos.length >= 20
+                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
               >
                 <Camera className="w-4 h-4" />
-                <span>Upload Photo</span>
+                <span>{activePage.photos.length >= 20 ? 'Limit Reached (20/20)' : 'Upload Photo'}</span>
               </button>
             </div>
           </div>
@@ -2000,11 +2033,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No photos uploaded yet</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Customers love seeing real photos of your venue, products, and services.
+                Customers love seeing real photos of your venue, products, and services (Max 20 photos, compressed automatically).
               </p>
               <button
-                onClick={() => photoInputRef.current?.click()}
-                className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
+                onClick={handlePhotoUploadClick}
+                className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
               >
                 + Upload Business Photos
               </button>

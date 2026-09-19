@@ -95,6 +95,7 @@ export interface BusinessProfile {
   taxNumber?: string;
   website?: string;
   currency: string;
+  language?: string;
   customFooter?: string;
   accentColor?: string; // Custom primary brand HEX/gradient color for PDFs and receipts
   headerBgColor?: string; // Custom header banner background fill

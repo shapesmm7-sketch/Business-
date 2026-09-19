@@ -18,9 +18,14 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // System health & connection checks
+    match /system/{docId} {
+      allow get, list, write: if true;
+    }
+
     // Push notification device tokens
     match /notification_tokens/{tokenId} {
-      allow read: if isValidId(tokenId);
+      allow get, list: if true;
       allow create, update: if isValidId(tokenId)
         && incoming().id is string && incoming().id.size() <= 128
         && incoming().token is string && incoming().token.size() <= 2048
@@ -31,7 +36,7 @@ service cloud.firestore {
 
     // App activity & push notification feed
     match /app_notifications/{notificationId} {
-      allow read: if isValidId(notificationId);
+      allow get, list: if true;
       allow create: if isValidId(notificationId)
         && incoming().id is string && incoming().id.size() <= 128
         && incoming().title is string && incoming().title.size() <= 256

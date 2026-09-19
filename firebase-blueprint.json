@@ -84,6 +84,10 @@
     "/app_notifications/{notificationId}": {
       "schema": "AppNotification",
       "description": "Stream of business activity and notification alerts"
+    },
+    "/system/{docId}": {
+      "schema": "NotificationToken",
+      "description": "System health and connection check documents"
     }
   }
 }

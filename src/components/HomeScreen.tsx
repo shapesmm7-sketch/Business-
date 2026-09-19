@@ -11,6 +11,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, Receipt, InventoryTab } from '../types';
+import { t } from '../utils/i18n';
 
 interface HomeScreenProps {
   business: BusinessProfile;
@@ -32,20 +33,23 @@ interface HomeScreenProps {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
+  business,
   stats,
   onNavigate,
   onNavigateToInventory,
 }) => {
+  const lang = business?.language;
+
   return (
     <div className="space-y-6 pt-2 pb-24 animate-fadeIn max-w-2xl mx-auto">
       {/* SECTION: CHOOSE ACTION (RECEIPTS & INVOICES, INVENTORY, OR QR HOSTING) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Quick Actions
+            {t('quick_actions', lang)}
           </h2>
           <span className="text-[11px] font-medium text-slate-400">
-            Select an option below
+            {t('select_option', lang)}
           </span>
         </div>
 
@@ -67,17 +71,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition">
-                <span>Billing</span>
+                <span>{t('billing', lang)}</span>
                 <ArrowUpRight className="w-3 h-3 text-white" />
               </div>
             </div>
 
             <div>
               <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight flex items-center gap-1.5">
-                <span>Receipts & Invoices</span>
+                <span>{t('receipts_and_invoices', lang)}</span>
               </div>
               <p className="text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug">
-                Issue receipts & create invoices
+                {t('issue_receipts_invoices', lang)}
               </p>
             </div>
           </button>
@@ -94,17 +98,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Boxes className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
               </div>
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition">
-                <span>Stock</span>
+                <span>{t('stock', lang)}</span>
                 <ArrowUpRight className="w-3 h-3 text-white" />
               </div>
             </div>
 
             <div>
               <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight">
-                Inventory
+                {t('inventory', lang)}
               </div>
               <p className="text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug">
-                Track stock & products
+                {t('track_stock_products', lang)}
               </p>
             </div>
           </button>
@@ -121,17 +125,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <QrCode className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
               </div>
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition">
-                <span>Items</span>
+                <span>{t('items', lang)}</span>
                 <ArrowUpRight className="w-3 h-3 text-white" />
               </div>
             </div>
 
             <div>
               <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight">
-                Host QR code & Business info
+                {t('host_qr_business_info', lang)}
               </div>
               <p className="text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug">
-                Host photos, menu & business links
+                {t('host_photos_menu_links', lang)}
               </p>
             </div>
           </button>

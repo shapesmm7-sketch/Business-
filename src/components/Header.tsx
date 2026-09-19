@@ -9,10 +9,19 @@ import {
   Home,
   ChevronRight,
   Bell,
+  Star,
+  Share2,
+  Check,
+  Globe,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NotificationModal } from './NotificationModal';
+import { RateUsModal } from './RateUsModal';
+import { LanguageSelectorModal } from './LanguageSelectorModal';
+import { getLanguageByCode } from '../data/languages';
+import { t } from '../utils/i18n';
+import { StorageService } from '../services/storage';
 import { PushNotificationService } from '../services/pushNotificationService';
 
 interface HeaderProps {
@@ -25,6 +34,7 @@ interface HeaderProps {
   onToggleDarkMode: () => void;
   onNavigateHome: () => void;
   onNavigate: (screen: ActiveScreen) => void;
+  onUpdateBusiness?: (business: BusinessProfile) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,18 +47,65 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDarkMode,
   onNavigateHome,
   onNavigate,
+  onUpdateBusiness,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isRateUsOpen, setIsRateUsOpen] = useState(false);
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const currentLang = getLanguageByCode(business.language || 'en');
   const [unreadCount, setUnreadCount] = useState(() => {
     return PushNotificationService.getLocalAlerts().filter((a) => !a.isRead).length;
   });
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Keep unread count fresh
+  const handleShareApp = async () => {
+    setIsMenuOpen(false);
+    const shareData = {
+      title: 'Brivu - Digital Receipt & Business Manager',
+      text: 'Try Brivu - fast digital receipts, invoices, stock tracking, and QR menu hosting for your business!',
+      url: window.location.origin,
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share(shareData);
+        setToastMsg('App shared successfully!');
+        setTimeout(() => setToastMsg(null), 3000);
+      } catch {
+        // User cancelled share
+      }
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(shareData.url);
+        setToastMsg('App link copied to clipboard!');
+        setTimeout(() => setToastMsg(null), 3000);
+      } catch {
+        setToastMsg(`App link: ${shareData.url}`);
+        setTimeout(() => setToastMsg(null), 4000);
+      }
+    } else {
+      setToastMsg(`App link: ${shareData.url}`);
+      setTimeout(() => setToastMsg(null), 4000);
+    }
+  };
+
+  // Keep unread count fresh & subscribe to live updates
   useEffect(() => {
-    const alerts = PushNotificationService.getLocalAlerts();
-    setUnreadCount(alerts.filter((a) => !a.isRead).length);
+    const updateCount = () => {
+      const alerts = PushNotificationService.getLocalAlerts();
+      setUnreadCount(alerts.filter((a) => !a.isRead).length);
+    };
+
+    updateCount();
+
+    const unsub = PushNotificationService.subscribeToNotifications((updatedAlerts) => {
+      setUnreadCount(updatedAlerts.filter((a) => !a.isRead).length);
+    });
+
+    return () => unsub();
   }, [isNotificationOpen]);
 
   // Close menu on Escape key
@@ -82,30 +139,32 @@ export const Header: React.FC<HeaderProps> = ({
     onNavigate(screen);
   };
 
+  const lang = business.language;
+
   const menuSections = [
     {
       id: 'profile' as ActiveScreen,
-      title: 'Business Profile',
-      shortTitle: 'Profile',
-      subtitle: 'Store name, logo, description, phone & address',
+      title: t('business_profile', lang),
+      shortTitle: t('business_profile', lang),
+      subtitle: t('business_profile_sub', lang),
       icon: Store,
       iconBg: 'bg-emerald-600 text-white shadow-emerald-500/20',
       activeBorder: 'border-emerald-500/40 dark:border-emerald-500/40',
     },
     {
       id: 'templates' as ActiveScreen,
-      title: 'Designs & Templates',
-      shortTitle: 'Designs',
-      subtitle: '5 styles: Modern Slate, Classic, Minimal, Tax & Thermal',
+      title: t('receipt_templates', lang),
+      shortTitle: t('receipt_templates', lang),
+      subtitle: t('receipt_templates_sub', lang),
       icon: LayoutTemplate,
       iconBg: 'bg-purple-600 text-white shadow-purple-500/20',
       activeBorder: 'border-purple-500/40 dark:border-purple-500/40',
     },
     {
       id: 'settings' as ActiveScreen,
-      title: 'Settings',
-      shortTitle: 'Settings',
-      subtitle: 'Appearance, dark mode & JSON backup/restore',
+      title: t('settings', lang),
+      shortTitle: t('settings', lang),
+      subtitle: t('sections_and_management', lang),
       icon: SettingsIcon,
       iconBg: 'bg-amber-600 text-white shadow-amber-500/20',
       activeBorder: 'border-amber-500/40 dark:border-amber-500/40',
@@ -151,16 +210,18 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <PWAInstallButton />
 
-            {/* Notifications Button */}
+            {/* Notifications Button with numeric badge */}
             <button
               id="btn-header-notifications"
               onClick={() => setIsNotificationOpen(true)}
-              className="w-8.5 h-8.5 rounded-xl flex items-center justify-center transition-all shadow-xs border active:scale-95 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 relative"
-              aria-label="Notifications"
+              className="px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 relative"
+              aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
             >
               <Bell className="w-4 h-4 stroke-[2.5]" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-900 animate-pulse" />
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white leading-none shadow-xs">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
               )}
             </button>
 
@@ -194,36 +255,21 @@ export const Header: React.FC<HeaderProps> = ({
             className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-2xl rounded-b-3xl overflow-hidden max-h-[85vh] flex flex-col animate-slideDown"
           >
             {/* Menu Header */}
-            <div className="px-5 pt-4 pb-3.5 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
-                  B
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                    Application Menu
-                  </div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-white">
-                    Brivu Hub
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="btn-menu-close"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-                  aria-label="Close menu"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+            <div className="px-5 py-3 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-end">
+              <button
+                id="btn-menu-close"
+                onClick={() => setIsMenuOpen(false)}
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                aria-label="Close menu"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             {/* Menu Sections List */}
             <div className="p-4 space-y-2.5 overflow-y-auto">
               <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1">
-                Sections & Management
+                {t('sections_and_management', lang)}
               </div>
 
               {menuSections.map((sec) => {
@@ -256,6 +302,84 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 );
               })}
+
+              {/* Community & App Feedback & Language Options */}
+              <div className="pt-2">
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1 mb-2">
+                  Language & Support
+                </div>
+
+                {/* Language Selector Card */}
+                <button
+                  id="btn-menu-language"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsLanguageModalOpen(true);
+                  }}
+                  className="w-full mb-2.5 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all flex items-center justify-between group text-left active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                      <Globe className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
+                        <span>Language</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300">
+                          {currentLang.flag} {currentLang.name}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-medium truncate">
+                        Select local language (177+ Countries & Languages)
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+                </button>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Rate Us Button */}
+                  <button
+                    id="btn-menu-rate-us"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsRateUsOpen(true);
+                    }}
+                    className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-700/60 transition-all flex items-center gap-3 group text-left active:scale-[0.98]"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">
+                      <Star className="w-4.5 h-4.5 fill-white/20" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                        Rate Us
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-medium truncate">
+                        5-Star Feedback
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Share App Button */}
+                  <button
+                    id="btn-menu-share-app"
+                    onClick={handleShareApp}
+                    className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-sky-50 dark:hover:bg-sky-950/30 hover:border-sky-300 dark:hover:border-sky-700/60 transition-all flex items-center gap-3 group text-left active:scale-[0.98]"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">
+                      <Share2 className="w-4.5 h-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
+                        Share App
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-medium truncate">
+                        Send to friends
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Menu Footer */}
@@ -279,6 +403,39 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => setIsNotificationOpen(false)}
         onAlertCountChange={(cnt) => setUnreadCount(cnt)}
       />
+
+      {/* Rate Us Modal */}
+      <RateUsModal
+        isOpen={isRateUsOpen}
+        onClose={() => setIsRateUsOpen(false)}
+      />
+
+      {/* Language Selector Modal */}
+      <LanguageSelectorModal
+        isOpen={isLanguageModalOpen}
+        currentLanguageCode={business.language || 'en'}
+        onSelectLanguage={(lang) => {
+          const updatedProfile: BusinessProfile = {
+            ...business,
+            language: lang.name,
+          };
+          StorageService.saveProfile(updatedProfile);
+          if (onUpdateBusiness) {
+            onUpdateBusiness(updatedProfile);
+          }
+          setToastMsg(`Language set to ${lang.name} (${lang.flag})`);
+          setTimeout(() => setToastMsg(null), 3000);
+        }}
+        onClose={() => setIsLanguageModalOpen(false)}
+      />
+
+      {/* Toast Notification Banner */}
+      {toastMsg && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[999999] px-4 py-2.5 rounded-2xl bg-slate-900/95 dark:bg-slate-100/95 text-white dark:text-slate-900 text-xs font-bold shadow-2xl flex items-center gap-2 border border-slate-700/50 dark:border-slate-300/50 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
     </header>
   );
 };

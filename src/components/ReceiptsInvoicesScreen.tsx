@@ -6,6 +6,7 @@ import {
   Receipt as ReceiptIcon,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, Receipt } from '../types';
+import { t } from '../utils/i18n';
 
 interface ReceiptsInvoicesScreenProps {
   business: BusinessProfile;
@@ -23,10 +24,13 @@ interface ReceiptsInvoicesScreenProps {
 }
 
 export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
+  business,
   stats,
   onNavigate,
   onNavigateHome,
 }) => {
+  const lang = business?.language;
+
   return (
     <div className="space-y-6 pt-2 pb-24 animate-fadeIn max-w-2xl mx-auto">
       {/* Top Header Row with Back Button */}
@@ -43,10 +47,10 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
           </button>
           <div>
             <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Receipts & Invoices
+              {t('receipts_and_invoices', lang)}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Select an option to create or manage billing documents
+              {t('issue_receipts_invoices', lang)}
             </p>
           </div>
         </div>
@@ -56,10 +60,10 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Create Document
+            {t('quick_actions', lang)}
           </h2>
           <span className="text-[11px] font-medium text-slate-400">
-            Choose document type
+            {t('select_option', lang)}
           </span>
         </div>
 
@@ -76,17 +80,17 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
                 <ReceiptIcon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5] text-white" />
               </div>
               <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/15 text-[11px] sm:text-xs font-semibold text-emerald-100 group-hover:bg-white/25 transition">
-                <span>Sale</span>
+                <span>{t('billing', lang)}</span>
                 <ArrowUpRight className="w-3.5 h-3.5 text-white" />
               </div>
             </div>
 
             <div>
               <div className="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
-                Create Receipt
+                {t('create_receipt', lang)}
               </div>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-normal mt-0.5 leading-snug">
-                Issue proof of payment
+                {t('issue_receipts_invoices', lang)}
               </p>
             </div>
           </button>
@@ -103,17 +107,17 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
                 <FileText className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5] text-white" />
               </div>
               <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/15 text-[11px] sm:text-xs font-semibold text-indigo-100 group-hover:bg-white/25 transition">
-                <span>Bill</span>
+                <span>{t('billing', lang)}</span>
                 <ArrowUpRight className="w-3.5 h-3.5 text-white" />
               </div>
             </div>
 
             <div>
               <div className="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
-                Create Invoice
+                {t('create_invoice', lang)}
               </div>
               <p className="text-xs sm:text-sm text-indigo-100/90 font-normal mt-0.5 leading-snug">
-                Bill clients with due dates
+                {t('create_invoice', lang)}
               </p>
             </div>
           </button>

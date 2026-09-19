@@ -188,12 +188,14 @@ export function App() {
 
   // Business profile updated
   const handleUpdateBusiness = (updated: BusinessProfile) => {
+    StorageService.saveProfile(updated);
     setBusiness(updated);
     refreshData();
   };
 
   // Settings updated
   const handleUpdateSettings = (updated: AppSettings) => {
+    StorageService.saveSettings(updated);
     setSettings(updated);
     refreshData();
   };
@@ -226,6 +228,7 @@ export function App() {
           onToggleDarkMode={handleToggleDarkMode}
           onNavigateHome={() => handleNavigate('home')}
           onNavigate={handleNavigate}
+          onUpdateBusiness={handleUpdateBusiness}
         />
       )}
 

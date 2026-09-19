@@ -682,8 +682,27 @@ export const StorageService = {
     return products;
   },
 
+  isItemIdTaken(itemId: string, excludeProductId?: string): boolean {
+    if (!itemId || !itemId.trim()) return false;
+    const cleanId = itemId.trim().toLowerCase();
+    const products = this.getInventoryProducts();
+    return products.some(
+      (p) => p.id !== excludeProductId && p.itemId.trim().toLowerCase() === cleanId
+    );
+  },
+
   saveInventoryProduct(product: InventoryProduct): boolean {
     const products = this.getInventoryProducts();
+
+    // Prevent saving duplicate Item ID
+    const duplicate = products.find(
+      (p) => p.id !== product.id && p.itemId.trim().toLowerCase() === product.itemId.trim().toLowerCase()
+    );
+    if (duplicate) {
+      console.warn(`Product with ID "${product.itemId}" already exists ("${duplicate.name}")`);
+      return false;
+    }
+
     const existingIndex = products.findIndex((p) => p.id === product.id);
     if (existingIndex >= 0) {
       products[existingIndex] = { ...product, updatedAt: new Date().toISOString() };

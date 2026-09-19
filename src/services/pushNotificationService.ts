@@ -247,26 +247,42 @@ export class PushNotificationService {
   }
 
   /**
-   * Trigger local browser / system notification popup
+   * Trigger local browser / Android OS system notification popup outside the app
    */
   static triggerSystemNotification(title: string, options?: NotificationOptions) {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;
 
+    const notifOptions = {
+      body: options?.body || '',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      vibrate: [200, 100, 200],
+      requireInteraction: true,
+      renotify: true,
+      tag: options?.tag || 'quickreceipt-' + Date.now(),
+      data: options?.data || { url: '/' },
+      ...options,
+    };
+
     try {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      if ('serviceWorker' in navigator) {
         navigator.serviceWorker.ready.then((registration) => {
-          registration.showNotification(title, {
-            icon: '/icon.svg',
-            badge: '/icon.svg',
-            ...options,
+          registration.showNotification(title, notifOptions as any);
+        }).catch(() => {
+          new Notification(title, notifOptions);
+        });
+
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title,
+            body: options?.body,
+            options: notifOptions,
           });
-        });
+        }
       } else {
-        new Notification(title, {
-          icon: '/icon.svg',
-          ...options,
-        });
+        new Notification(title, notifOptions);
       }
     } catch (err) {
       console.warn('Failed to show system notification:', err);

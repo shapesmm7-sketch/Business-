@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { saveJsPdf } from '../services/fileSaver';
+import { t } from '../utils/i18n';
 import {
   PlusCircle,
   Tag,
@@ -692,13 +693,25 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       return;
     }
 
+    const targetItemId = itemId.trim() || StorageService.getNextInventoryItemId();
+
+    // Prevent duplicate product Item ID
+    const duplicateProduct = products.find(
+      (p) => p.itemId.trim().toLowerCase() === targetItemId.toLowerCase() && p.id !== editingProductId
+    );
+
+    if (duplicateProduct) {
+      showToast(`Cannot add product: Item ID "${targetItemId}" is already used by "${duplicateProduct.name}".`);
+      return;
+    }
+
     const cost = parseFloat(costPrice) || 0;
     const selling = parseFloat(sellingPrice) || 0;
     const tax = parseFloat(taxPercent) || 0;
 
     const product: InventoryProduct = {
       id: editingProductId || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      itemId: itemId.trim() || StorageService.getNextInventoryItemId(),
+      itemId: targetItemId,
       name: name.trim(),
       image,
       sizes: selectedSizes.length > 0 ? selectedSizes : undefined,
@@ -717,7 +730,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     if (saved) {
       showToast(editingProductId ? 'Product updated successfully!' : 'Product saved to inventory!');
     } else {
-      showToast('Product saved with storage optimization.');
+      showToast(`Could not save: Product with ID "${targetItemId}" already exists.`);
+      return;
     }
 
     // Reset form
@@ -3320,39 +3334,59 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             )}
           </div>
 
-          {/* ITEM ID (With AUTO button) */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              ITEM ID
-            </label>
-            <div className="relative flex items-center">
-              <input
-                id="input-product-item-id"
-                type="text"
-                value={itemId}
-                onChange={(e) => setItemId(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none pr-24"
-                placeholder="e.g. 1"
-              />
-              <div className="absolute right-1.5 flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setIsAddProductBarcodeScannerOpen(true)}
-                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-slate-700 dark:hover:text-sky-400 rounded-lg transition"
-                  title="Scan Barcode"
-                >
-                  <Scan className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={autoGenerateItemId}
-                  className="px-2.5 py-1.5 text-xs font-extrabold text-sky-600 dark:text-sky-400 uppercase hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition"
-                >
-                  AUTO
-                </button>
+          {/* ITEM ID (With AUTO button & Duplicate Warning) */}
+          {(() => {
+            const trimmedInputId = itemId.trim();
+            const duplicateProduct = trimmedInputId
+              ? products.find(
+                  (p) => p.itemId.trim().toLowerCase() === trimmedInputId.toLowerCase() && p.id !== editingProductId
+                )
+              : null;
+
+            return (
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  ITEM ID
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    id="input-product-item-id"
+                    type="text"
+                    value={itemId}
+                    onChange={(e) => setItemId(e.target.value)}
+                    className={`w-full px-4 py-3 rounded-xl border bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:outline-none pr-24 ${
+                      duplicateProduct
+                        ? 'border-rose-500 focus:ring-rose-500 text-rose-600 dark:text-rose-400'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-sky-500'
+                    }`}
+                    placeholder="e.g. 1"
+                  />
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddProductBarcodeScannerOpen(true)}
+                      className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-slate-700 dark:hover:text-sky-400 rounded-lg transition"
+                      title="Scan Barcode"
+                    >
+                      <Scan className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={autoGenerateItemId}
+                      className="px-2.5 py-1.5 text-xs font-extrabold text-sky-600 dark:text-sky-400 uppercase hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition"
+                    >
+                      AUTO
+                    </button>
+                  </div>
+                </div>
+                {duplicateProduct && (
+                  <p className="text-[11px] font-semibold text-rose-500 flex items-center gap-1 mt-1">
+                    <span>⚠️ ID #{trimmedInputId} is already used by "{duplicateProduct.name}". Please choose another ID or tap AUTO.</span>
+                  </p>
+                )}
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* ITEM NAME */}
           <div className="space-y-1">
@@ -3781,7 +3815,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               }`}
             >
               <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">STOCK</span>
+              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('stock', business.language)}</span>
               {activeTab === 'stock' && (
                 <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
               )}
@@ -3797,7 +3831,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               }`}
             >
               <Tag className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">SALES</span>
+              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('sales_record', business.language)}</span>
               {activeTab === 'sales' && (
                 <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
               )}
@@ -3813,7 +3847,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               }`}
             >
               <ReceiptIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">EXPENSE</span>
+              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('expenses', business.language)}</span>
               {activeTab === 'expense' && (
                 <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
               )}
@@ -3831,7 +3865,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               <div className="relative">
                 <Users className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">DEBTS</span>
+              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('debtors', business.language)}</span>
               {activeTab === 'debts' && (
                 <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
               )}

@@ -25,6 +25,9 @@ import {
 import { BusinessProfile } from '../types';
 import { SUPPORTED_CURRENCIES } from '../utils/currencies';
 import { StorageService } from '../services/storage';
+import { LanguageSelectorModal } from './LanguageSelectorModal';
+import { getLanguageByCode } from '../data/languages';
+import { t } from '../utils/i18n';
 import {
   BRAND_COLOR_PRESETS,
   COLOR_AND_GRADIENT_PRESETS,
@@ -66,7 +69,11 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
   const [currencySearchQuery, setCurrencySearchQuery] = useState('');
 
+  // Language modal state
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+
   const selectedCurrencyObj = SUPPORTED_CURRENCIES.find((c) => c.code === (profile.currency || 'UGX')) || SUPPORTED_CURRENCIES[0];
+  const selectedLanguageObj = getLanguageByCode(profile.language || 'en');
 
   const filteredCurrencies = SUPPORTED_CURRENCIES.filter((c) => {
     const q = currencySearchQuery.trim().toLowerCase();
@@ -1092,6 +1099,32 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
             All prices and totals on receipts and PDFs will be formatted in this currency.
           </p>
         </div>
+
+        {/* App & Business Language */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60">
+          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+            <Globe className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Business & App Language (177+ World Languages)</span>
+          </label>
+          <button
+            id="btn-open-language-modal"
+            type="button"
+            onClick={() => setIsLanguageModalOpen(true)}
+            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-indigo-500 transition flex items-center justify-between gap-2 cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-xl leading-none shrink-0">{selectedLanguageObj.flag}</span>
+              <div className="flex items-center gap-1.5 min-w-0 truncate">
+                <span className="font-extrabold text-slate-900 dark:text-white">{selectedLanguageObj.name}</span>
+                <span className="text-[11px] font-semibold text-slate-400 truncate">({selectedLanguageObj.nativeName})</span>
+              </div>
+            </div>
+            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+          </button>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Select your preferred local or international language for receipts, business details and menus.
+          </p>
+        </div>
       </div>
 
       {/* Save Button */}
@@ -1102,7 +1135,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2"
       >
         <Check className="w-4 h-4" />
-        <span>Save Business Profile</span>
+        <span>{t('save_business_profile', profile.language)}</span>
       </button>
 
       {/* Compact Currency Picker Modal */}
@@ -1198,6 +1231,20 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Language Selector Modal */}
+      <LanguageSelectorModal
+        isOpen={isLanguageModalOpen}
+        currentLanguageCode={profile.language || 'en'}
+        onSelectLanguage={(lang) => {
+          const updated = { ...profile, language: lang.name };
+          setProfile(updated);
+          StorageService.saveProfile(updated);
+          onSave(updated);
+          setIsLanguageModalOpen(false);
+        }}
+        onClose={() => setIsLanguageModalOpen(false)}
+      />
     </div>
   );
 };
