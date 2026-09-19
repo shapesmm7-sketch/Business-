@@ -60,23 +60,76 @@ export class QRHostingService {
   }
 
   /**
-   * Generates high-res QR Code Data URL (PNG)
+   * Generates high-res QR Code Data URL (PNG) with support for custom 3 corner finder eye colors
    */
   static async generateQrCodeDataUrl(
     url: string,
     options?: {
-      color?: { dark: string; light: string };
+      color?: { dark?: string; light?: string; eyeColor?: string };
       width?: number;
       margin?: number;
     }
   ): Promise<string> {
     try {
+      const darkColor = options?.color?.dark || '#000000';
+      const lightColor = options?.color?.light || '#ffffff';
+      const eyeColor = options?.color?.eyeColor || darkColor;
+      const targetWidth = options?.width || 512;
+      const margin = options?.margin ?? 2;
+
+      // In browser runtime, render onto canvas to support independent corner finder box colors
+      if (typeof document !== 'undefined') {
+        const qr = QRCode.create(url, {
+          errorCorrectionLevel: 'H',
+        });
+        const moduleCount = qr.modules.size;
+        const totalModules = moduleCount + margin * 2;
+        const cellSize = targetWidth / totalModules;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetWidth;
+        const ctx = canvas.getContext('2d');
+
+        if (ctx) {
+          // Fill background
+          ctx.fillStyle = lightColor;
+          ctx.fillRect(0, 0, targetWidth, targetWidth);
+
+          // Draw modules
+          for (let r = 0; r < moduleCount; r++) {
+            for (let c = 0; c < moduleCount; c++) {
+              if (qr.modules.get(r, c)) {
+                // Check if this module is in the 3 standard corner finder patterns (7x7 squares)
+                // 1. Top-Left: row 0..6, col 0..6
+                // 2. Top-Right: row 0..6, col (moduleCount-7)..moduleCount-1
+                // 3. Bottom-Left: row (moduleCount-7)..moduleCount-1, col 0..6
+                const isTopLeftEye = r < 7 && c < 7;
+                const isTopRightEye = r < 7 && c >= moduleCount - 7;
+                const isBottomLeftEye = r >= moduleCount - 7 && c < 7;
+                const isEye = isTopLeftEye || isTopRightEye || isBottomLeftEye;
+
+                ctx.fillStyle = isEye ? eyeColor : darkColor;
+                ctx.fillRect(
+                  (c + margin) * cellSize,
+                  (r + margin) * cellSize,
+                  cellSize + 0.15,
+                  cellSize + 0.15
+                );
+              }
+            }
+          }
+
+          return canvas.toDataURL('image/png');
+        }
+      }
+
       return await QRCode.toDataURL(url, {
-        width: options?.width || 512,
-        margin: options?.margin ?? 2,
+        width: targetWidth,
+        margin: margin,
         color: {
-          dark: options?.color?.dark || '#0f172a',
-          light: options?.color?.light || '#ffffff',
+          dark: darkColor,
+          light: lightColor,
         },
         errorCorrectionLevel: 'H',
       });
@@ -153,7 +206,7 @@ export class QRHostingService {
     } else if (targetTab === 'about') {
       subText = 'Scan to view our business location, contact details & operating hours';
     } else if (targetTab === 'photos') {
-      subText = 'Scan to view our photo gallery and ambiance showcase';
+      subText = 'Scan to view our photo gallery and showcase';
     }
     doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
 
@@ -206,20 +259,48 @@ export class QRHostingService {
 
     currentY += 14;
 
-    // QR Code generation for specific target URL
+    // QR Code generation for specific target URL with custom colors
     const customerUrl = this.getCustomerPageUrl(page.id, targetTab);
+    const darkColor = page.qrDarkColor || '#000000';
+    const lightColor = page.qrLightColor || '#ffffff';
+    const eyeColor = page.qrEyeColor || darkColor;
     const qrDataUrl = await this.generateQrCodeDataUrl(customerUrl, {
       width: 600,
       margin: 1,
-      color: { dark: '#0f172a', light: '#ffffff' },
+      color: { dark: darkColor, light: lightColor, eyeColor },
     });
 
     // QR Code Frame
     const qrSize = 80;
     const qrX = (pageWidth - qrSize) / 2;
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(qrX - 4, currentY - 4, qrSize + 8, qrSize + 8, 4, 4, 'FD');
+
+    // Box background and border color resolution
+    const boxBg = page.qrBoxBgColor && page.qrBoxBgColor.startsWith('#') ? page.qrBoxBgColor : '#ffffff';
+    const boxBorder = page.qrBoxBorderColor && page.qrBoxBorderColor.startsWith('#') ? page.qrBoxBorderColor : '#e2e8f0';
+
+    const parseHex = (hex: string) => {
+      const clean = hex.replace('#', '');
+      if (clean.length === 3) {
+        return [
+          parseInt(clean[0] + clean[0], 16),
+          parseInt(clean[1] + clean[1], 16),
+          parseInt(clean[2] + clean[2], 16),
+        ];
+      }
+      return [
+        parseInt(clean.slice(0, 2), 16) || 255,
+        parseInt(clean.slice(2, 4), 16) || 255,
+        parseInt(clean.slice(4, 6), 16) || 255,
+      ];
+    };
+
+    const [bgR, bgG, bgB] = parseHex(boxBg);
+    const [brR, brG, brB] = parseHex(boxBorder);
+
+    doc.setFillColor(bgR, bgG, bgB);
+    doc.setDrawColor(brR, brG, brB);
+    doc.setLineWidth(1.2);
+    doc.roundedRect(qrX - 5, currentY - 5, qrSize + 10, qrSize + 10, 4, 4, 'FD');
     doc.addImage(qrDataUrl, 'PNG', qrX, currentY, qrSize, qrSize);
 
     currentY += qrSize + 12;
@@ -531,7 +612,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(240, 253, 244);
-    doc.text('Scan below to explore our venue ambiance and gallery showcase', pageWidth / 2, 38, { align: 'center' });
+    doc.text('Scan below to explore our photo gallery and showcase', pageWidth / 2, 38, { align: 'center' });
 
     let currentY = 60;
 

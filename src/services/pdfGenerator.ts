@@ -5,7 +5,7 @@ import { getTemplateConfig } from '../utils/templates';
 import { resolveEffectiveTheme } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
-import { saveJsPdf } from './fileSaver';
+import { saveJsPdf, shareContent } from './fileSaver';
 
 /**
  * High quality vector PDF generator for QuickReceipt
@@ -1543,7 +1543,7 @@ export const PdfGenerator = {
   },
 
   /**
-   * Shares PDF via Android Web Share API (Files), with WhatsApp / generic fallback
+   * Shares PDF via Android Native Share Sheet (or Web Share API on browsers)
    */
   async shareReceiptPdf(
     receipt: Receipt
@@ -1558,46 +1558,18 @@ export const PdfGenerator = {
     let shareText = '';
     if (isInvoice) {
       const dueInfo = receipt.dueDate ? ` Due: ${receipt.dueDate}.` : '';
-      shareText = `Invoice ${receipt.receiptNumber} from ${receipt.businessSnapshot.name} for ${formatCurrency(receipt.total, currency)}.${dueInfo} Please find the PDF attached.`;
+      shareText = `Invoice ${receipt.receiptNumber} from ${receipt.businessSnapshot.name} for ${formatCurrency(receipt.total, currency)}.${dueInfo}`;
     } else {
       shareText = `Receipt ${receipt.receiptNumber} from ${receipt.businessSnapshot.name} for ${formatCurrency(receipt.total, currency)}. Thank you for your business!`;
     }
 
-    // Attempt native Android file sharing
-    try {
-      if (typeof navigator !== 'undefined' && 'share' in navigator) {
-        const file = new File([blob], filename, { type: 'application/pdf' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: `${docTypeLabel} ${receipt.receiptNumber}`,
-            text: shareText,
-            files: [file],
-          });
-          return { shared: true, method: 'native_file_share', message: 'Shared via Android Share Sheet' };
-        } else {
-          await navigator.share({
-            title: `${docTypeLabel} ${receipt.receiptNumber}`,
-            text: shareText,
-          });
-          this.downloadPdf(receipt);
-          return { shared: true, method: 'native_text_share', message: 'Shared details & downloaded PDF' };
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        return { shared: false, method: 'cancelled', message: 'Share sheet dismissed' };
-      }
-      console.warn('Native share failed, falling back:', err);
-    }
-
-    await this.downloadPdf(receipt);
-    const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
-    window.open(waUrl, '_blank');
-
-    return {
-      shared: true,
-      method: 'whatsapp_and_download',
-      message: 'PDF downloaded and WhatsApp opened',
-    };
+    return await shareContent({
+      filename,
+      data: blob,
+      mimeType: 'application/pdf',
+      title: `${docTypeLabel} ${receipt.receiptNumber}`,
+      text: shareText,
+      dialogTitle: `Share ${docTypeLabel}`,
+    });
   },
 };

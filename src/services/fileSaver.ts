@@ -1,7 +1,55 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { jsPDF } from 'jspdf';
+
+interface MediaStorePluginInterface {
+  saveToMediaStore(options: {
+    filename: string;
+    data: string;
+    mimeType?: string;
+    destination?: 'documents' | 'photos';
+  }): Promise<{ success: boolean; uri: string; savedLocation: string; message: string }>;
+  checkStoragePermission?(): Promise<{ granted: boolean }>;
+  requestStoragePermission?(): Promise<{ granted: boolean }>;
+  share(options: {
+    filename?: string;
+    data?: string;
+    mimeType?: string;
+    text?: string;
+    title?: string;
+    url?: string;
+  }): Promise<{ success: boolean; message: string }>;
+}
+
+const MediaStore = registerPlugin<MediaStorePluginInterface>('MediaStore');
+
+/**
+ * Ensures storage permission is granted on Android devices (especially older Android versions
+ * where direct file writing requires WRITE_EXTERNAL_STORAGE).
+ */
+export async function ensureStoragePermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+  try {
+    if (MediaStore.checkStoragePermission) {
+      const status = await MediaStore.checkStoragePermission();
+      if (status && status.granted) return true;
+      if (MediaStore.requestStoragePermission) {
+        const req = await MediaStore.requestStoragePermission();
+        return !!req?.granted;
+      }
+    }
+    const permResult = await Filesystem.checkPermissions();
+    if (permResult.publicStorage !== 'granted') {
+      const req = await Filesystem.requestPermissions();
+      return req.publicStorage === 'granted';
+    }
+    return true;
+  } catch (err) {
+    console.warn('Storage permission check note:', err);
+    return true;
+  }
+}
 
 export interface SaveFileOptions {
   /** Blob, ArrayBuffer, text string (JSON/CSV), or base64 Data URI */
@@ -9,32 +57,35 @@ export interface SaveFileOptions {
   filename: string;
   mimeType?: string;
   title?: string;
-  /** Whether to open the Android native share sheet after saving to Downloads (default: true on native) */
+  /**
+   * Whether to open the Android native share sheet after saving.
+   * Default is false to ensure files save directly into phone storage without opening share.
+   */
   openShareSheet?: boolean;
+  /** Destination folder type in phone storage ('documents' -> Download/QuickReceipt, 'photos' -> Pictures/QuickReceipt) */
+  destination?: 'documents' | 'photos';
 }
 
 /**
- * Saves and exports files securely on both Web and Native Android (via MediaStore / Public Downloads).
+ * Saves and exports files directly into device phone storage via Android MediaStore API
+ * (Pictures/QuickReceipt for photos, Download/QuickReceipt for documents/PDFs/data).
+ * Does NOT pop open the Android share sheet unless explicitly requested.
  */
 export async function saveFile(options: SaveFileOptions): Promise<{ success: boolean; uri?: string; message: string }> {
-  const { filename, mimeType = 'application/octet-stream', title = filename, openShareSheet = true } = options;
+  const {
+    filename,
+    mimeType = 'application/octet-stream',
+    title = filename,
+    openShareSheet = false,
+    destination,
+  } = options;
   const { data } = options;
 
   const isNative = Capacitor.isNativePlatform();
 
   if (isNative) {
     try {
-      // 1. Check and request storage permissions if required
-      try {
-        const permResult = await Filesystem.checkPermissions();
-        if (permResult.publicStorage !== 'granted') {
-          await Filesystem.requestPermissions();
-        }
-      } catch (permErr) {
-        console.warn('Filesystem permission check/request note:', permErr);
-      }
-
-      // 2. Convert input data to clean base64 string
+      // 1. Convert input data to clean base64 string
       let base64Data = '';
       if (typeof data === 'string') {
         if (data.startsWith('data:')) {
@@ -49,7 +100,58 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
         base64Data = arrayBufferToBase64(data);
       }
 
-      // 3. Save file using Capacitor Filesystem to Directory.Documents (Android Public Documents / Storage)
+      const isPhoto =
+        destination === 'photos' ||
+        mimeType.startsWith('image/') ||
+        /\.(png|jpg|jpeg|webp|svg)$/i.test(filename);
+      const destType: 'documents' | 'photos' = isPhoto ? 'photos' : 'documents';
+
+      // 2. Primary native storage route: Save directly to Android phone storage via MediaStore API
+      try {
+        const mediaStoreResult = await MediaStore.saveToMediaStore({
+          filename,
+          data: base64Data,
+          mimeType,
+          destination: destType,
+        });
+
+        if (mediaStoreResult && mediaStoreResult.success) {
+          const fileUri = mediaStoreResult.uri;
+          const locationNote = mediaStoreResult.savedLocation || (isPhoto ? 'Pictures/QuickReceipt' : 'Download/QuickReceipt');
+
+          // Only open share sheet if explicitly requested
+          if (openShareSheet && fileUri) {
+            try {
+              await Share.share({
+                title: title || filename,
+                text: `${title || filename} saved successfully.`,
+                url: fileUri,
+              });
+            } catch (shareErr) {
+              console.log('Share sheet dismissed:', shareErr);
+            }
+          }
+
+          return {
+            success: true,
+            uri: fileUri,
+            message: `Saved directly to ${locationNote}`,
+          };
+        }
+      } catch (mediaStoreErr) {
+        console.warn('Native MediaStore plugin call note, falling back to Filesystem:', mediaStoreErr);
+      }
+
+      // 3. Fallback: Save using Capacitor Filesystem to Public Documents / Downloads
+      try {
+        const permResult = await Filesystem.checkPermissions();
+        if (permResult.publicStorage !== 'granted') {
+          await Filesystem.requestPermissions();
+        }
+      } catch (permErr) {
+        console.warn('Filesystem permission note:', permErr);
+      }
+
       let savedFile;
       try {
         savedFile = await Filesystem.writeFile({
@@ -70,7 +172,7 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
 
       const fileUri = savedFile.uri;
 
-      // 4. Optionally trigger native Android share sheet for instant opening or sharing
+      // Only open share sheet if explicitly requested
       if (openShareSheet) {
         try {
           await Share.share({
@@ -79,7 +181,6 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
             url: fileUri,
           });
         } catch (shareErr) {
-          // Share sheet dismissed by user or unavailable
           console.log('Native share sheet dismissed:', shareErr);
         }
       }
@@ -87,7 +188,7 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
       return {
         success: true,
         uri: fileUri,
-        message: `Saved to Downloads: ${filename}`,
+        message: `Saved to phone storage: ${filename}`,
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -95,15 +196,20 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
       return fallbackWebDownload(data, filename, mimeType);
     }
   } else {
-    // Web Browser fallback
+    // Web Browser fallback (direct file download without opening any share sheet)
     return fallbackWebDownload(data, filename, mimeType);
   }
 }
 
 /**
- * Convenience helper to export a jsPDF document to native Downloads or web file download.
+ * Convenience helper to export a jsPDF document directly to native phone storage (MediaStore) or web download.
  */
-export async function saveJsPdf(doc: jsPDF, filename: string, title?: string): Promise<{ success: boolean; uri?: string; message: string }> {
+export async function saveJsPdf(
+  doc: jsPDF,
+  filename: string,
+  title?: string,
+  options?: { openShareSheet?: boolean }
+): Promise<{ success: boolean; uri?: string; message: string }> {
   if (Capacitor.isNativePlatform()) {
     const arrayBuffer = doc.output('arraybuffer');
     return saveFile({
@@ -111,11 +217,161 @@ export async function saveJsPdf(doc: jsPDF, filename: string, title?: string): P
       filename,
       mimeType: 'application/pdf',
       title: title || filename,
+      openShareSheet: options?.openShareSheet || false,
+      destination: 'documents',
     });
   } else {
     doc.save(filename);
     return { success: true, message: `Downloaded ${filename}` };
   }
+}
+
+export interface ShareContentOptions {
+  filename?: string;
+  data?: Blob | ArrayBuffer | string;
+  mimeType?: string;
+  title?: string;
+  text?: string;
+  url?: string;
+  dialogTitle?: string;
+}
+
+/**
+ * Explicitly triggers the native Android Share Sheet (via MediaStorePlugin or @capacitor/share),
+ * or Web Share API on modern browsers.
+ * ONLY triggered when the user explicitly taps a dedicated "Share" button.
+ */
+export async function shareContent(
+  options: ShareContentOptions
+): Promise<{ shared: boolean; method: string; message: string }> {
+  const {
+    filename,
+    data,
+    mimeType = 'application/octet-stream',
+    title = 'Share',
+    text = '',
+    url = '',
+    dialogTitle = 'Share via',
+  } = options;
+
+  const isNative = Capacitor.isNativePlatform();
+
+  if (isNative) {
+    // 1. Process base64 file data if attached
+    let base64Data = '';
+    if (data) {
+      if (typeof data === 'string') {
+        if (data.startsWith('data:')) {
+          base64Data = data.split(',')[1] || '';
+        } else {
+          base64Data = btoa(unescape(encodeURIComponent(data)));
+        }
+      } else if (data instanceof Blob) {
+        base64Data = await blobToBase64(data);
+      } else if (data instanceof ArrayBuffer) {
+        base64Data = arrayBufferToBase64(data);
+      }
+    }
+
+    // Direct Intent.ACTION_SEND chooser with FileProvider via native MediaStorePlugin
+    try {
+      const res = await MediaStore.share({
+        filename: filename || (data ? 'document.pdf' : undefined),
+        data: base64Data || undefined,
+        mimeType,
+        text,
+        title,
+        url,
+      });
+      if (res && res.success) {
+        return { shared: true, method: 'android_native_share_sheet', message: 'Shared via Android Share Sheet' };
+      }
+    } catch (pluginErr) {
+      console.warn('MediaStore native share note, trying @capacitor/share fallback:', pluginErr);
+    }
+
+    // Secondary fallback: @capacitor/share
+    try {
+      if (base64Data && filename) {
+        const savedCache = await Filesystem.writeFile({
+          path: filename,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        await Share.share({
+          title,
+          text: text || undefined,
+          files: [savedCache.uri],
+          dialogTitle: dialogTitle || title,
+        });
+      } else {
+        await Share.share({
+          title,
+          text: text || undefined,
+          url: url || undefined,
+          dialogTitle: dialogTitle || title,
+        });
+      }
+      return { shared: true, method: 'capacitor_share_sheet', message: 'Shared via Android Share Sheet' };
+    } catch (shareErr: unknown) {
+      const errMsg = shareErr instanceof Error ? shareErr.message : String(shareErr);
+      if (errMsg.toLowerCase().includes('cancel')) {
+        return { shared: false, method: 'cancelled', message: 'Share sheet dismissed' };
+      }
+      console.warn('Capacitor Share fallback note:', errMsg);
+    }
+  }
+
+  // Web Browser flow
+  if (typeof navigator !== 'undefined' && 'share' in navigator) {
+    try {
+      if (data && filename) {
+        let blob: Blob;
+        if (data instanceof Blob) {
+          blob = data;
+        } else if (data instanceof ArrayBuffer) {
+          blob = new Blob([data], { type: mimeType });
+        } else {
+          blob = new Blob([data], { type: mimeType });
+        }
+        const file = new File([blob], filename, { type: mimeType });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title,
+            text,
+            files: [file],
+          });
+          return { shared: true, method: 'web_share_file', message: 'Shared via Share Sheet' };
+        }
+      }
+
+      await navigator.share({
+        title,
+        text,
+        url: url || undefined,
+      });
+      return { shared: true, method: 'web_share_text', message: 'Shared via Share Sheet' };
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return { shared: false, method: 'cancelled', message: 'Share sheet dismissed' };
+      }
+      console.warn('Web navigator.share note:', err);
+    }
+  }
+
+  // Web fallback if navigator.share is unavailable
+  if (url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      return { shared: true, method: 'clipboard_copy', message: 'Link copied to clipboard!' };
+    } catch (copyErr) {
+      console.warn('Clipboard write note:', copyErr);
+    }
+  }
+
+  return { shared: false, method: 'fallback', message: 'Sharing not supported on this browser' };
 }
 
 /**

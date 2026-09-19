@@ -448,6 +448,12 @@ export interface QRCodeHostedPage {
   currency: string;
   announcement?: string;
   allowWhatsAppOrdering?: boolean;
+  // QR Code and Box Color Customization
+  qrDarkColor?: string;
+  qrLightColor?: string;
+  qrEyeColor?: string; // Color for the 3 corner square boxes (top-left, top-right, bottom-left)
+  qrBoxBgColor?: string;
+  qrBoxBorderColor?: string;
   createdAt: string;
   updatedAt: string;
 }

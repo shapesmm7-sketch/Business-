@@ -128,7 +128,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
             <div>
               <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight">
-                Host QR code & info
+                Host QR code & Business info
               </div>
               <p className="text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug">
                 Host photos, menu & business links

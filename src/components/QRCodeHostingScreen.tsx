@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { saveFile } from '../services/fileSaver';
+import { saveFile, shareContent } from '../services/fileSaver';
 import {
   QrCode,
   ArrowLeft,
@@ -32,11 +32,15 @@ import {
   Calendar,
   BadgePercent,
   Upload,
+  FolderPlus,
+  Palette,
+  RotateCcw,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
 import { QRHostingService } from '../services/qrHostingService';
 import { compressImageFile } from '../utils/imageCompressor';
+import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
@@ -93,11 +97,55 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     id: 'photos',
     label: 'Photo Gallery',
     badge: 'Photos Only',
-    desc: 'Customer opens directly to the business photo showcase and venue ambiance.',
+    desc: 'Customer opens directly to the business photo showcase and photo gallery.',
     icon: Camera,
     accentColor: 'rose',
     targetTabName: 'photos',
   },
+];
+
+const QR_COLOR_PRESETS = [
+  { name: 'Slate / Black', value: '#0f172a' },
+  { name: 'Emerald', value: '#059669' },
+  { name: 'Teal', value: '#0d9488' },
+  { name: 'Royal Blue', value: '#2563eb' },
+  { name: 'Indigo', value: '#4338ca' },
+  { name: 'Purple', value: '#7c3aed' },
+  { name: 'Crimson', value: '#b91c1c' },
+  { name: 'Amber Gold', value: '#d97706' },
+  { name: 'White', value: '#ffffff' },
+];
+
+const QR_LIGHT_PRESETS = [
+  { name: 'Pure White', value: '#ffffff' },
+  { name: 'Slate Light', value: '#f8fafc' },
+  { name: 'Warm Ivory', value: '#fffbeb' },
+  { name: 'Mint Tint', value: '#f0fdf4' },
+  { name: 'Ice Cyan', value: '#f0fdfa' },
+  { name: 'Dark Onyx', value: '#0f172a' },
+];
+
+const BOX_BG_PRESETS = [
+  { name: 'Pure White', value: '#ffffff' },
+  { name: 'Soft Slate', value: '#f8fafc' },
+  { name: 'Warm Cream', value: '#fffbeb' },
+  { name: 'Mint Wash', value: '#f0fdf4' },
+  { name: 'Soft Indigo', value: '#eef2ff' },
+  { name: 'Soft Rose', value: '#fff1f2' },
+  { name: 'Dark Slate', value: '#0f172a' },
+  { name: 'Midnight', value: '#1e1b4b' },
+];
+
+const BOX_BORDER_PRESETS = [
+  { name: 'Subtle Slate', value: '#e2e8f0' },
+  { name: 'Medium Gray', value: '#cbd5e1' },
+  { name: 'Emerald', value: '#10b981' },
+  { name: 'Teal', value: '#14b8a6' },
+  { name: 'Indigo', value: '#6366f1' },
+  { name: 'Luxury Gold', value: '#f59e0b' },
+  { name: 'Rose Red', value: '#f43f5e' },
+  { name: 'Dark Slate', value: '#334155' },
+  { name: 'Borderless', value: 'transparent' },
 ];
 
 export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
@@ -142,13 +190,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [itemPromoDescription, setItemPromoDescription] = useState<string>('');
   const [itemPromoStartDate, setItemPromoStartDate] = useState<string>('');
   const [itemPromoEndDate, setItemPromoEndDate] = useState<string>('');
-  const [newCategoryInput, setNewCategoryInput] = useState<string>('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
+  const [categoryFeedback, setCategoryFeedback] = useState<string>('');
+  const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
+  const [categoryModalInput, setCategoryModalInput] = useState<string>('');
+  const [categoryModalError, setCategoryModalError] = useState<string>('');
 
   // Business photo modal state (titles, categories, badges, captions)
   const [showPhotoModal, setShowPhotoModal] = useState<boolean>(false);
   const [editingPhoto, setEditingPhoto] = useState<QRBusinessPhoto | null>(null);
   const [photoTitle, setPhotoTitle] = useState<string>('');
-  const [photoCategory, setPhotoCategory] = useState<string>('Ambiance');
+  const [photoCategory, setPhotoCategory] = useState<string>('');
   const [photoBadge, setPhotoBadge] = useState<string>('');
   const [photoDescription, setPhotoDescription] = useState<string>('');
   const [photoUrl, setPhotoUrl] = useState<string>('');
@@ -170,6 +222,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   // QR Page deletion state (for custom in-app confirmation modal)
   const [pageToDelete, setPageToDelete] = useState<QRCodeHostedPage | null>(null);
 
+  // Dedicated QR Code Colors Editor screen state
+  const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
+
   // Photo upload ref
   const photoInputRef = useRef<HTMLInputElement>(null);
   const itemPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -177,6 +232,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const activePage = pages.find((p) => p.id === activePageId) || pages[0];
+
+  const activeDarkColor = activePage?.qrDarkColor || '#000000';
+  const activeEyeColor = activePage?.qrEyeColor || activePage?.qrDarkColor || '#000000';
+  const activeLightColor = activePage?.qrLightColor || '#ffffff';
+  const activeBoxBgColor = activePage?.qrBoxBgColor || '#ffffff';
+  const activeBoxBorderColor = activePage?.qrBoxBorderColor || '#e2e8f0';
 
   // Scoped URLs
   const customerPageUrl = useMemo(() => {
@@ -206,10 +267,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
+      color: {
+        dark: activePage.qrDarkColor || '#000000',
+        light: activePage.qrLightColor || '#ffffff',
+        eyeColor: activePage.qrEyeColor || activePage.qrDarkColor || '#000000',
+      },
     })
       .then((data) => setQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage, qrScope]);
+  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, qrScope]);
 
   // Refresh Quick QR Modal QR Code
   useEffect(() => {
@@ -218,10 +284,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
+      color: {
+        dark: activePage.qrDarkColor || '#000000',
+        light: activePage.qrLightColor || '#ffffff',
+        eyeColor: activePage.qrEyeColor || activePage.qrDarkColor || '#000000',
+      },
     })
       .then((data) => setQuickQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage, quickQrScope, showQuickQrModal]);
+  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, quickQrScope, showQuickQrModal]);
 
   // Refresh Item QR Code when item modal is open
   useEffect(() => {
@@ -267,9 +338,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const newId = `qr-${Date.now().toString(36)}`;
     const newPage: QRCodeHostedPage = {
       id: newId,
-      title: `${business.name || 'My Venue'} Items & Info`,
-      tagline: 'Welcome to our venue • Scan to view items and specials',
-      description: 'Explore our digital catalog and items. Call us or order directly on WhatsApp.',
+      title: business.name || '',
+      tagline: business.description || '',
+      description: '',
       pageType: 'menu',
       accentColor: '#059669',
       theme: 'emerald',
@@ -277,12 +348,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       whatsapp: business.whatsapp || business.phone || '',
       email: business.email || '',
       address: business.address || '',
-      openingHours: 'Mon - Sun: 8:00 AM - 10:00 PM',
+      openingHours: '',
       currency: business.currency || 'UGX',
       allowWhatsAppOrdering: true,
       photos: [],
       menuCategories: ['All'],
       menuItems: [],
+      qrDarkColor: '#000000',
+      qrEyeColor: '#000000',
+      qrLightColor: '#ffffff',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#e2e8f0',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -425,18 +501,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage) return;
     const url = QRHostingService.getCustomerPageUrl(activePage.id, scope);
     const scopeObj = SCOPE_OPTIONS.find((s) => s.id === scope);
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${activePage.title} - ${scopeObj?.label || 'QR Menu'}`,
-          text: `Scan or visit ${activePage.title} digital page:`,
-          url: url,
-        });
-      } catch {
-        // User cancelled share
-      }
-    } else {
-      await QRHostingService.copyCustomerUrl(activePage.id, scope);
+    const title = `${activePage.title} - ${scopeObj?.label || 'QR Menu'}`;
+    const text = `Scan or visit ${activePage.title} digital page:`;
+
+    const res = await shareContent({
+      title,
+      text,
+      url,
+      dialogTitle: 'Share QR Menu Link',
+    });
+
+    if (res.method === 'clipboard_copy') {
       if (scope === quickQrScope) {
         setQuickQrCopied(true);
         setTimeout(() => setQuickQrCopied(false), 2000);
@@ -500,17 +575,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleShareItemLink = async () => {
     if (!activePage || !itemQrModalItem) return;
     const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id);
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${itemQrModalItem.name} - ${activePage.title}`,
-          text: `Check out ${itemQrModalItem.name} (${activePage.currency} ${itemQrModalItem.price}) at ${activePage.title}:`,
-          url: url,
-        });
-      } catch {
-        // User cancelled share
-      }
-    } else {
+    const title = `${itemQrModalItem.name} - ${activePage.title}`;
+    const text = `Check out ${itemQrModalItem.name} (${activePage.currency} ${itemQrModalItem.price}) at ${activePage.title}:`;
+
+    const res = await shareContent({
+      title,
+      text,
+      url,
+      dialogTitle: 'Share Item Link',
+    });
+
+    if (res.method === 'clipboard_copy') {
       await handleCopyItemLink();
     }
   };
@@ -556,17 +631,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleSharePhotoLink = async () => {
     if (!activePage || !photoQrModalPhoto) return;
     const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${photoQrModalPhoto.caption || 'Photo Showcase'} - ${activePage.title}`,
-          text: `Check out this photo from ${activePage.title}:`,
-          url: url,
-        });
-      } catch {
-        // User cancelled share
-      }
-    } else {
+    const title = `${photoQrModalPhoto.caption || 'Photo Showcase'} - ${activePage.title}`;
+    const text = `Check out this photo from ${activePage.title}:`;
+
+    const res = await shareContent({
+      title,
+      text,
+      url,
+      dialogTitle: 'Share Photo Link',
+    });
+
+    if (res.method === 'clipboard_copy') {
       await handleCopyPhotoLink();
     }
   };
@@ -623,9 +698,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleSavePhotoModal = () => {
     if (!activePage || !photoUrl.trim()) return;
 
-    const finalCategory = photoCategory.trim() || 'Ambiance';
+    const finalCategory = photoCategory.trim();
     const finalBadge = photoBadge.trim() || undefined;
-    const finalTitle = photoTitle.trim() || 'Business Photo';
+    const finalTitle = photoTitle.trim();
     const finalDesc = photoDescription.trim() || undefined;
 
     if (editingPhoto) {
@@ -736,7 +811,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     } else {
       setEditingItem(null);
       setItemName('');
-      setItemCategory('');
+      setItemCategory(selectedCategoryFilter !== 'All' ? selectedCategoryFilter : '');
       setItemPrice('');
       setItemDescription('');
       setItemPhotoUrl('');
@@ -754,7 +829,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleSaveMenuItem = () => {
     if (!itemName.trim() || !activePage) return;
     const priceNum = parseFloat(itemPrice) || 0;
-    const finalCategory = itemCategory.trim() || 'General';
+    const finalCategory = itemCategory.trim();
     const finalTags = itemTagsInput
       .split(',')
       .map((t) => t.trim())
@@ -786,17 +861,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
     // Keep categories dynamically updated with user's chosen categories
     const cats = new Set<string>(['All']);
+    (activePage.menuCategories || []).forEach((c) => {
+      if (c && c !== 'All') cats.add(c.trim());
+    });
     updatedList.forEach((i) => {
       if (i.category && i.category.trim()) cats.add(i.category.trim());
-    });
-    // Retain any custom categories explicitly added by user that aren't unused legacy defaults
-    activePage.menuCategories.forEach((c) => {
-      if (c && c !== 'All') {
-        const legacyDefaults = ['Breakfast', 'Main Dishes', 'Grills & Steaks', 'Drinks', 'Desserts', 'Chef Specials', 'Beverages', 'Starters'];
-        if (!legacyDefaults.includes(c) || updatedList.some((i) => i.category === c)) {
-          cats.add(c);
-        }
-      }
     });
 
     handleUpdateActivePage({
@@ -821,36 +890,92 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     });
   };
 
-  const handleAddCategory = () => {
-    if (!newCategoryInput.trim() || !activePage) return;
-    const cats = new Set<string>(activePage.menuCategories);
-    cats.add(newCategoryInput.trim());
+  const handleOpenCategoryModal = () => {
+    setCategoryModalInput('');
+    setCategoryModalError('');
+    setShowCategoryModal(true);
+  };
+
+  const handleSaveCategoryModal = () => {
+    const trimmed = categoryModalInput.trim();
+    if (!trimmed) {
+      setCategoryModalError('Please enter a category name');
+      return;
+    }
+    if (!activePage) return;
+
+    const existingCats = activePage.menuCategories || [];
+    const exists = existingCats.some((c) => c.toLowerCase() === trimmed.toLowerCase());
+
+    if (!exists) {
+      const updatedCats = [...existingCats.filter((c) => c !== 'All'), trimmed];
+      handleUpdateActivePage({
+        menuCategories: updatedCats,
+      });
+      setCategoryFeedback(`Category "${trimmed}" added!`);
+    } else {
+      setCategoryFeedback(`Category "${trimmed}" selected.`);
+    }
+
+    setSelectedCategoryFilter(trimmed);
+    if (showAddItemModal) {
+      setItemCategory(trimmed);
+    }
+    setShowCategoryModal(false);
+    setTimeout(() => setCategoryFeedback(''), 3500);
+  };
+
+  const handleDeleteCategory = (categoryToDelete: string) => {
+    if (!activePage) return;
+    const updatedCats = (activePage.menuCategories || []).filter((c) => c !== categoryToDelete);
     handleUpdateActivePage({
-      menuCategories: Array.from(cats),
+      menuCategories: updatedCats,
     });
-    setNewCategoryInput('');
+    if (selectedCategoryFilter.toLowerCase() === categoryToDelete.toLowerCase()) {
+      setSelectedCategoryFilter('All');
+    }
+    setCategoryFeedback(`Category "${categoryToDelete}" removed.`);
+    setTimeout(() => setCategoryFeedback(''), 3500);
   };
 
   // Categories dynamically derived from active items & user created categories
   const userCategories = useMemo(() => {
     if (!activePage) return [];
     const set = new Set<string>();
-    activePage.menuItems.forEach((i) => {
-      if (i.category && i.category.trim()) set.add(i.category.trim());
+    (activePage.menuCategories || []).forEach((c) => {
+      if (c && c.trim() && c.trim() !== 'All') {
+        set.add(c.trim());
+      }
     });
-    activePage.menuCategories.forEach((c) => {
-      if (c && c !== 'All') {
-        const legacyDefaults = ['Breakfast', 'Main Dishes', 'Grills & Steaks', 'Drinks', 'Desserts', 'Chef Specials', 'Beverages', 'Starters'];
-        if (!legacyDefaults.includes(c) || activePage.menuItems.some((i) => i.category === c)) {
-          set.add(c);
-        }
+    (activePage.menuItems || []).forEach((i) => {
+      if (i.category && i.category.trim()) {
+        set.add(i.category.trim());
       }
     });
     return Array.from(set);
   }, [activePage]);
 
+  // Items filtered by category selection
+  const filteredMenuItems = useMemo(() => {
+    if (!activePage) return [];
+    if (selectedCategoryFilter === 'All') return activePage.menuItems;
+    return activePage.menuItems.filter(
+      (i) => (i.category || 'General').toLowerCase() === selectedCategoryFilter.toLowerCase()
+    );
+  }, [activePage, selectedCategoryFilter]);
+
   if (!activePage) {
     return null;
+  }
+
+  if (isEditingQrColors) {
+    return (
+      <QRCodeColorEditorScreen
+        page={activePage}
+        onSave={(updates) => handleUpdateActivePage(updates)}
+        onBack={() => setIsEditingQrColors(false)}
+      />
+    );
   }
 
   return (
@@ -1054,86 +1179,56 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       {/* TAB 1: QR CODE & PRINTABLE TABLE STAND */}
       {activeTab === 'qr' && (
         <div className="space-y-4">
-          {/* Target Page / Scope Selector */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Target QR Page Destination
-                </span>
-                <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold mt-0.5">
-                  Select which specific page customers should open when scanning this QR code:
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {SCOPE_OPTIONS.map((scope) => {
-                const IconComponent = scope.icon;
-                const isSelected = qrScope === scope.id;
-                return (
-                  <button
-                    key={scope.id}
-                    type="button"
-                    onClick={() => setQrScope(scope.id)}
-                    className={`p-3 rounded-2xl border text-left transition relative flex flex-col justify-between ${
-                      isSelected
-                        ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 shadow-xs'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between w-full mb-1.5">
-                      <div
-                        className={`w-7 h-7 rounded-xl flex items-center justify-center ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        <IconComponent className="w-3.5 h-3.5" />
-                      </div>
-                      {isSelected && (
-                        <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-400"></span>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold leading-tight">{scope.label}</div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug line-clamp-1">
-                        {scope.badge}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-              <span className="font-bold text-emerald-600 dark:text-emerald-400 shrink-0">Current Scope:</span>
-              <span>{SCOPE_OPTIONS.find((s) => s.id === qrScope)?.desc}</span>
-            </div>
-          </div>
-
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs text-center">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold mb-2">
               <QrCode className="w-3.5 h-3.5" />
-              <span>{SCOPE_OPTIONS.find((s) => s.id === qrScope)?.badge} QR Code</span>
+              <span>All-in-One Experience QR Code</span>
             </div>
             <h2 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
               Scannable Customer QR Code
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Point phone camera here to test direct navigation to {SCOPE_OPTIONS.find((s) => s.id === qrScope)?.label}
+              Point phone camera here to test direct navigation to All Pages (Full Hub)
             </p>
 
-            {/* QR Code Container */}
-            <div className="mt-5 inline-block p-4 bg-white rounded-3xl shadow-xl border-4 border-slate-100">
+            {/* QR Code Container with Custom Box & Border Colors */}
+            <div
+              className="mt-5 inline-block p-4 sm:p-5 rounded-3xl shadow-xl transition-all duration-300 relative"
+              style={{
+                backgroundColor: activeBoxBgColor,
+                borderColor: activeBoxBorderColor === 'transparent' ? 'transparent' : activeBoxBorderColor,
+                borderWidth: activeBoxBorderColor === 'transparent' ? '0px' : '4px',
+                borderStyle: 'solid',
+              }}
+            >
               {qrDataUrl ? (
-                <img src={qrDataUrl} alt="Hosted QR Code" className="w-48 h-48 sm:w-56 sm:h-56 mx-auto object-contain" />
+                <img
+                  src={qrDataUrl}
+                  alt="Hosted QR Code"
+                  className="w-48 h-48 sm:w-56 sm:h-56 mx-auto object-contain transition-transform"
+                  style={{
+                    backgroundColor: activeLightColor,
+                    borderRadius: '16px',
+                    padding: '8px',
+                  }}
+                />
               ) : (
                 <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400 text-xs">
                   Generating QR Code...
                 </div>
               )}
+            </div>
+
+            {/* Dedicated QR Code & Box Editor Button Near QR Code */}
+            <div className="mt-3.5 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setIsEditingQrColors(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-xs"
+              >
+                <Palette className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>QR Code & Box Editor</span>
+              </button>
             </div>
 
             {/* Direct URL Box */}
@@ -1186,10 +1281,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                  Print Table Tent / Wall Poster (PDF) - {SCOPE_OPTIONS.find((s) => s.id === qrScope)?.label}
+                  Print Table Tent / Wall Poster (PDF)
                 </h3>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                  Download a high-resolution A4 poster targeting {SCOPE_OPTIONS.find((s) => s.id === qrScope)?.label} with your business name & QR code.
+                  Download a high-resolution A4 poster with your business name & QR code.
                 </p>
               </div>
             </div>
@@ -1215,7 +1310,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : `Download ${SCOPE_OPTIONS.find((s) => s.id === qrScope)?.badge} Stand (PDF)`}</span>
+                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table Stand (PDF)'}</span>
                 </button>
               </div>
             </div>
@@ -1570,7 +1665,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => handleOpenQuickQr('menu')}
@@ -1581,6 +1676,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={() => handleOpenItemModal()}
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-95 transition"
               >
@@ -1590,22 +1686,103 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
           </div>
 
-          {/* Quick Add Category Bar */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Add new category (e.g. VIP Suites, Cocktails, Electronics)..."
-              value={newCategoryInput}
-              onChange={(e) => setNewCategoryInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-              className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-            />
-            <button
-              onClick={handleAddCategory}
-              className="px-3 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-300 transition"
-            >
-              Add Category
-            </button>
+          {/* Category Bar & Filter Chips */}
+          <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2.5 shadow-2xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Categories</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold">
+                  {userCategories.length}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenCategoryModal}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+                <span>+ Add Category</span>
+              </button>
+            </div>
+
+            {categoryFeedback && (
+              <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 animate-fadeIn flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>{categoryFeedback}</span>
+              </p>
+            )}
+
+            {/* Category Badges & Filter Bar */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedCategoryFilter('All')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  selectedCategoryFilter === 'All'
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>All Items</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                    selectedCategoryFilter === 'All'
+                      ? 'bg-white/20 text-white dark:bg-slate-900/20 dark:text-slate-900'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {activePage.menuItems.length}
+                </span>
+              </button>
+
+              {userCategories.map((cat) => {
+                const itemCount = activePage.menuItems.filter((i) => (i.category || 'General').toLowerCase() === cat.toLowerCase()).length;
+                const isSelected = selectedCategoryFilter.toLowerCase() === cat.toLowerCase();
+                return (
+                  <div
+                    key={cat}
+                    className={`inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategoryFilter(cat)}
+                      className="flex items-center gap-1.5"
+                    >
+                      <span>{cat}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {itemCount}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCategory(cat);
+                      }}
+                      className={`p-1 rounded-lg hover:bg-rose-500 hover:text-white transition ${
+                        isSelected ? 'text-white/80 hover:bg-white/20' : 'text-slate-400 hover:text-rose-500'
+                      }`}
+                      title={`Remove category "${cat}"`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Items List */}
@@ -1623,9 +1800,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 + Add First Item
               </button>
             </div>
+          ) : filteredMenuItems.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center border border-slate-200 dark:border-slate-800">
+              <Utensils className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No items in "{selectedCategoryFilter}"</h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                Add your first item under the "{selectedCategoryFilter}" category.
+              </p>
+              <button
+                onClick={() => handleOpenItemModal()}
+                className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
+              >
+                + Add Item in {selectedCategoryFilter}
+              </button>
+            </div>
           ) : (
             <div className="space-y-2.5">
-              {activePage.menuItems.map((item) => (
+              {filteredMenuItems.map((item) => (
                 <div
                   key={item.id}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shadow-2xs"
@@ -1764,7 +1955,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No photos uploaded yet</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Customers love seeing the venue ambiance and real food photos before ordering.
+                Customers love seeing real photos of your venue, products, and services.
               </p>
               <button
                 onClick={() => photoInputRef.current?.click()}
@@ -1891,7 +2082,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-slate-600 dark:text-slate-400">Category *</label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-600 dark:text-slate-400">Category *</label>
+                    <button
+                      type="button"
+                      onClick={handleOpenCategoryModal}
+                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>New</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     placeholder="e.g. Room Service, Dining, Drinks, Spa"
@@ -1899,9 +2100,25 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                     onChange={(e) => setItemCategory(e.target.value)}
                     className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-900 dark:text-slate-100 text-xs sm:text-sm"
                   />
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                    Ex: Room Service, Dining, Breakfast, Drinks, Spa, Amenities
-                  </p>
+                  {userCategories.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-slate-400 font-medium mr-1">Quick Select:</span>
+                      {userCategories.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setItemCategory(cat)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                            itemCategory.toLowerCase() === cat.toLowerCase()
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -2163,6 +2380,114 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </div>
       )}
 
+      {/* MODAL: ADD / MANAGE CATEGORY */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <FolderPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                    Add Category
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Create a new category for your digital items & services
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3.5 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300">
+                  Category Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. VIP Suites, Cocktails, Breakfast, Spa Services..."
+                  value={categoryModalInput}
+                  onChange={(e) => {
+                    setCategoryModalInput(e.target.value);
+                    if (categoryModalError) setCategoryModalError('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveCategoryModal();
+                    }
+                  }}
+                  className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-900 dark:text-slate-100 text-sm"
+                  autoFocus
+                />
+                {categoryModalError && (
+                  <p className="text-rose-500 font-semibold text-[11px] mt-1.5 flex items-center gap-1">
+                    <span>{categoryModalError}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Existing Categories */}
+              {userCategories.length > 0 && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Existing Categories ({userCategories.length}):
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-1.5 max-h-28 overflow-y-auto">
+                    {userCategories.map((cat) => (
+                      <span
+                        key={cat}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700"
+                      >
+                        {cat}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat)}
+                          className="text-slate-400 hover:text-rose-500 p-0.5 transition"
+                          title={`Delete "${cat}"`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 font-bold text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCategoryModal}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Save Category</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ADD / EDIT BUSINESS PHOTO (TITLE, CATEGORY, BADGE, DETAILS) */}
       {showPhotoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -2247,11 +2572,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Photo Title */}
               <div>
                 <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Photo Title / Headline Text *
+                  Photo Title / Headline Text (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Dining Hall & Lounge, Rooftop Bar, Executive Suite"
+                  placeholder="Enter title or leave blank..."
                   value={photoTitle}
                   onChange={(e) => setPhotoTitle(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -2265,11 +2590,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Category */}
               <div>
                 <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                  Category
+                  Category (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Ambiance, Dining Hall & Lounge, Dishes, Rooms..."
+                  placeholder="e.g. Products, Interior, Outdoor, Dishes..."
                   value={photoCategory}
                   onChange={(e) => setPhotoCategory(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none text-xs text-slate-900 dark:text-slate-100"
@@ -2283,7 +2608,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Ambiance, Popular, VIP Lounge, Chef Pick..."
+                  placeholder="e.g. Featured, Special, Popular..."
                   value={photoBadge}
                   onChange={(e) => setPhotoBadge(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none text-xs text-slate-900 dark:text-slate-100"
@@ -2406,12 +2731,25 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <span>{SCOPE_OPTIONS.find((s) => s.id === quickQrScope)?.badge}</span>
                 </div>
 
-                <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100">
+                <div
+                  className="inline-block p-3 rounded-2xl shadow-md transition-all"
+                  style={{
+                    backgroundColor: activeBoxBgColor,
+                    borderColor: activeBoxBorderColor === 'transparent' ? 'transparent' : activeBoxBorderColor,
+                    borderWidth: activeBoxBorderColor === 'transparent' ? '0px' : '3px',
+                    borderStyle: 'solid',
+                  }}
+                >
                   {quickQrDataUrl ? (
                     <img
                       src={quickQrDataUrl}
                       alt="Specific Page QR Code"
                       className="w-44 h-44 mx-auto object-contain"
+                      style={{
+                        backgroundColor: activeLightColor,
+                        borderRadius: '12px',
+                        padding: '6px',
+                      }}
                     />
                   ) : (
                     <div className="w-44 h-44 flex items-center justify-center text-slate-400 text-xs">

@@ -27,6 +27,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
+import { shareContent } from '../services/fileSaver';
 
 interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
@@ -218,18 +219,14 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
   const handleShareMenu = async () => {
     const url = window.location.href;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: page.title,
-          text: page.tagline || `Check out ${page.title} digital items & showcase!`,
-          url,
-        });
-      } catch {
-        // Fallback
-      }
-    } else {
-      await navigator.clipboard.writeText(url);
+    const res = await shareContent({
+      title: page.title,
+      text: page.tagline || `Check out ${page.title} digital items & showcase!`,
+      url,
+      dialogTitle: 'Share Menu',
+    });
+
+    if (res.method === 'clipboard_copy') {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     }
@@ -268,13 +265,14 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const categories = useMemo(() => {
     const set = new Set<string>();
     set.add('All');
-    page.menuItems.forEach((i) => {
-      if (i.category && i.category.trim()) set.add(i.category.trim());
+    (page.menuCategories || []).forEach((c) => {
+      if (c && c.trim() && c.trim() !== 'All') {
+        set.add(c.trim());
+      }
     });
-    const legacyDefaults = new Set(['Breakfast', 'Main Dishes', 'Grills & Steaks', 'Drinks', 'Desserts', 'Chef Specials', 'Beverages', 'Starters']);
-    page.menuCategories.forEach((c) => {
-      if (c && c !== 'All' && (!legacyDefaults.has(c) || page.menuItems.some((i) => i.category === c))) {
-        set.add(c);
+    (page.menuItems || []).forEach((i) => {
+      if (i.category && i.category.trim()) {
+        set.add(i.category.trim());
       }
     });
     return Array.from(set);
@@ -690,7 +688,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
           </div>
         )}
 
-        {/* TAB 2: PHOTOS & AMBIANCE */}
+        {/* TAB 2: PHOTOS & GALLERY */}
         {activeTab === 'photos' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">

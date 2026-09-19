@@ -1288,11 +1288,11 @@ export const StorageService = {
       const data = localStorage.getItem(STORAGE_KEYS.QR_HOSTED_PAGES);
       const profile = this.getProfile();
       if (!data) {
-        // Initialize clean default menu / showcase without mock items
+        // Initialize clean default page without mock or sample data
         const initial: QRCodeHostedPage = {
           id: `qr-${Date.now().toString(36)}`,
-          title: profile.name || 'My Business Showcase',
-          tagline: profile.description || 'Welcome • Scan to view items and specials',
+          title: profile.name || '',
+          tagline: profile.description || '',
           description: '',
           pageType: 'menu',
           accentColor: '#059669',
@@ -1316,6 +1316,11 @@ export const StorageService = {
           photos: [],
           menuCategories: ['All'],
           menuItems: [],
+          qrDarkColor: '#000000',
+          qrEyeColor: '#000000',
+          qrLightColor: '#ffffff',
+          qrBoxBgColor: '#ffffff',
+          qrBoxBorderColor: '#e2e8f0',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -1326,7 +1331,7 @@ export const StorageService = {
       }
 
       const parsed = JSON.parse(data) as QRCodeHostedPage[];
-      // Filter out any legacy sample items or sample photos from existing storage
+      // Filter out any legacy sample items or sample photos and strip any auto-assigned 'Ambiance' categories
       const cleaned = parsed.map((page) => {
         const cleanItems = (page.menuItems || []).filter(
           (item) =>
@@ -1337,14 +1342,18 @@ export const StorageService = {
             !item.name.includes('Crispy Pan-Fried Lake') &&
             !item.name.includes('Craft Passion & Mint')
         );
-        const cleanPhotos = (page.photos || []).filter(
-          (photo) => !photo.id.startsWith('photo-') && !photo.url.includes('unsplash.com')
-        );
+        const cleanPhotos = (page.photos || [])
+          .filter((photo) => !photo.id.startsWith('photo-') && !photo.url.includes('unsplash.com'))
+          .map((photo) => ({
+            ...photo,
+            category: photo.category === 'Ambiance' ? '' : (photo.category || ''),
+            title: photo.title === 'Business Photo' ? '' : (photo.title || ''),
+          }));
         return {
           ...page,
           menuItems: cleanItems,
           photos: cleanPhotos,
-          title: page.title === 'The Pearl Bistro & Hotel Lounge' ? (profile.name || 'My Business Showcase') : page.title,
+          title: page.title === 'The Pearl Bistro & Hotel Lounge' ? (profile.name || '') : page.title,
           tagline: page.tagline === 'Fine Dining, Artisan Coffee & Comfort • Open 7 Days' ? (profile.description || '') : page.tagline,
           description:
             page.description ===
