@@ -8,12 +8,12 @@ import {
   Settings as SettingsIcon,
   Home,
   ChevronRight,
-  CheckCircle2,
   Bell,
-  QrCode,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { NotificationModal } from './NotificationModal';
+import { PushNotificationService } from '../services/pushNotificationService';
 
 interface HeaderProps {
   business: BusinessProfile;
@@ -39,7 +39,17 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(() => {
+    return PushNotificationService.getLocalAlerts().filter((a) => !a.isRead).length;
+  });
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Keep unread count fresh
+  useEffect(() => {
+    const alerts = PushNotificationService.getLocalAlerts();
+    setUnreadCount(alerts.filter((a) => !a.isRead).length);
+  }, [isNotificationOpen]);
 
   // Close menu on Escape key
   useEffect(() => {
@@ -81,15 +91,6 @@ export const Header: React.FC<HeaderProps> = ({
       icon: Store,
       iconBg: 'bg-emerald-600 text-white shadow-emerald-500/20',
       activeBorder: 'border-emerald-500/40 dark:border-emerald-500/40',
-    },
-    {
-      id: 'qr-hosting' as ActiveScreen,
-      title: 'Host QR code & business info',
-      shortTitle: 'Host QR & Info',
-      subtitle: 'Host photos, menu, business information & get the QR code or link',
-      icon: QrCode,
-      iconBg: 'bg-teal-600 text-white shadow-teal-500/20',
-      activeBorder: 'border-teal-500/40 dark:border-teal-500/40',
     },
     {
       id: 'templates' as ActiveScreen,
@@ -138,10 +139,10 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Typography with clean visual hierarchy */}
             <div className="flex flex-col min-w-0">
               <span className="text-base font-bold text-slate-900 dark:text-white tracking-tight leading-none">
-                QuickReceipt
+                Brivu
               </span>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                <span>Receipt Maker</span>
+                <span>Business Manager</span>
               </div>
             </div>
           </button>
@@ -152,12 +153,15 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Notifications Button */}
             <button
-              onClick={() => {}}
+              id="btn-header-notifications"
+              onClick={() => setIsNotificationOpen(true)}
               className="w-8.5 h-8.5 rounded-xl flex items-center justify-center transition-all shadow-xs border active:scale-95 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 relative"
               aria-label="Notifications"
             >
               <Bell className="w-4 h-4 stroke-[2.5]" />
-              <span className="absolute top-1.5 right-2 w-2 h-2 rounded-full bg-red-500 border border-white dark:border-slate-900" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-900 animate-pulse" />
+              )}
             </button>
 
             {/* 3-line Hamburger Menu Button */}
@@ -193,14 +197,14 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="px-5 pt-4 pb-3.5 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
-                  QR
+                  B
                 </div>
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                     Application Menu
                   </div>
                   <div className="text-sm font-bold text-slate-900 dark:text-white">
-                    QuickReceipt Hub
+                    Brivu Hub
                   </div>
                 </div>
               </div>
@@ -268,6 +272,13 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       )}
+
+      {/* Notification Center & Push Setup Modal */}
+      <NotificationModal
+        isOpen={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        onAlertCountChange={(cnt) => setUnreadCount(cnt)}
+      />
     </header>
   );
 };

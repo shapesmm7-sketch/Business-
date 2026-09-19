@@ -172,13 +172,13 @@ public class MediaStorePlugin extends Plugin {
         String savedLocation;
 
         if (isPhoto) {
-            contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/QuickReceipt");
+            contentValues.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Brivu");
             targetUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues);
-            savedLocation = "Pictures/QuickReceipt/" + filename;
+            savedLocation = "Pictures/Brivu/" + filename;
         } else {
-            contentValues.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/QuickReceipt");
+            contentValues.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Brivu");
             targetUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues);
-            savedLocation = "Download/QuickReceipt/" + filename;
+            savedLocation = "Download/Brivu/" + filename;
         }
 
         if (targetUri == null) {
@@ -217,11 +217,11 @@ public class MediaStorePlugin extends Plugin {
             File targetDir;
             String savedLocation;
             if (isPhoto) {
-                targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "QuickReceipt");
-                savedLocation = "Pictures/QuickReceipt/" + filename;
+                targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Brivu");
+                savedLocation = "Pictures/Brivu/" + filename;
             } else {
-                targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QuickReceipt");
-                savedLocation = "Download/QuickReceipt/" + filename;
+                targetDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Brivu");
+                savedLocation = "Download/Brivu/" + filename;
             }
 
             if (!targetDir.exists()) {

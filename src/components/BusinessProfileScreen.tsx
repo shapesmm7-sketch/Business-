@@ -815,7 +815,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                       <div className="flex items-start gap-2">
                         <span className="text-sm shrink-0">💡</span>
                         <div className="text-[11px] leading-relaxed">
-                          <span className="font-bold">This section is completely optional.</span> If ignored, QuickReceipt automatically renders your receipts using standard layout template themes or custom receipt editor styles.
+                          <span className="font-bold">This section is completely optional.</span> If ignored, Brivu automatically renders your receipts using standard layout template themes or custom receipt editor styles.
                         </div>
                       </div>
 

@@ -1,5 +1,5 @@
 /**
- * Color utilities and brand accent palettes for QuickReceipt PDF & UI rendering
+ * Color utilities and brand accent palettes for Brivu PDF & UI rendering
  */
 import { CSSProperties } from 'react';
 import { TemplateThemeDef, getTemplateConfig } from './templates';

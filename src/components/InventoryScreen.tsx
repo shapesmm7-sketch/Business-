@@ -2287,8 +2287,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Staff_Directory_${dateStr}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Staff Directory');
-        showToast('Staff Directory PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2370,8 +2374,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Agents_Directory_${dateStr}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Agents Directory');
-        showToast('Agents Directory PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2453,8 +2461,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Client_Directory_${dateStr}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Client Directory');
-        showToast('Client Directory PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Client Directory');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2556,8 +2568,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Shopping_List_${new Date().toISOString().split('T')[0]}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Shopping List');
-        showToast('Shopping List PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Shopping List');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2657,8 +2673,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Sales_Report_${saleDateFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Sales Report');
-        showToast('Sales Report PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Sales Report');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2764,8 +2784,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Stock Report');
-        showToast('Stock Report PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Stock Report');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2861,8 +2885,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Expenses_Report_${expenseFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Expenses Report');
-        showToast('Expenses Report PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -2960,8 +2988,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Debts_Report_${debtTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        await saveJsPdf(doc, pdfFilename, 'Debts Report');
-        showToast('Debts Report PDF exported successfully!');
+        const res = await saveJsPdf(doc, pdfFilename, 'Debts Report');
+        if (res.success) {
+          showToast(res.message);
+        } else {
+          showToast('Failed to export PDF');
+        }
         return;
       }
 
@@ -3207,8 +3239,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
 
       const pdfFilename = `Business_Report_${reportTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-      await saveJsPdf(doc, pdfFilename, 'Business Report');
-      showToast('Business Report PDF exported successfully!');
+      const res = await saveJsPdf(doc, pdfFilename, 'Business Report');
+      if (res.success) {
+        showToast(res.message);
+      } else {
+        showToast('Failed to export PDF');
+      }
     } catch (err) {
       console.error('Error generating PDF:', err);
       showToast('Failed to export PDF');

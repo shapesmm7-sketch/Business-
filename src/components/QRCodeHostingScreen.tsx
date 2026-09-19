@@ -164,6 +164,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((current) => (current === msg ? null : current));
+    }, 3800);
+  };
+
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
@@ -441,24 +450,32 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!qrDataUrl || !activePage) return;
     const scopeLabel = qrScope === 'all' ? 'All_Pages' : qrScope === 'menu' ? 'Items' : qrScope === 'about' ? 'Info' : 'Photos';
     const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
-    await saveFile({
+    const res = await saveFile({
       data: qrDataUrl,
       filename,
       mimeType: 'image/png',
       title: `${activePage.title} QR Code`,
+      destination: 'photos',
     });
+    if (res.success) {
+      showToast(res.message);
+    }
   };
 
   const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
     const scopeLabel = quickQrScope === 'all' ? 'All_Pages' : quickQrScope === 'menu' ? 'Items' : quickQrScope === 'about' ? 'Info' : 'Photos';
     const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
-    await saveFile({
+    const res = await saveFile({
       data: quickQrDataUrl,
       filename,
       mimeType: 'image/png',
       title: `${activePage.title} Quick QR Code`,
+      destination: 'photos',
     });
+    if (res.success) {
+      showToast(res.message);
+    }
   };
 
   const handleDownloadTableStandPdf = async () => {
@@ -466,14 +483,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setIsGeneratingPdf(true);
     try {
       const currentScopeObj = SCOPE_OPTIONS.find((s) => s.id === qrScope);
-      await QRHostingService.downloadPrintableTableStand(activePage, {
+      const res = await QRHostingService.downloadPrintableTableStand(activePage, {
         tableNumber: tableNumberForPrint || undefined,
         targetTab: qrScope,
         tabLabel: currentScopeObj?.badge,
       });
+      if (res.success) {
+        showToast(res.message);
+      }
     } catch (err) {
       console.error('Failed to generate PDF table stand:', err);
-      alert('Failed to generate PDF. Please try again.');
+      showToast('Failed to generate PDF. Please try again.');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -484,14 +504,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setQuickQrPdfLoading(true);
     try {
       const currentScopeObj = SCOPE_OPTIONS.find((s) => s.id === quickQrScope);
-      await QRHostingService.downloadPrintableTableStand(activePage, {
+      const res = await QRHostingService.downloadPrintableTableStand(activePage, {
         tableNumber: quickQrTableNumber || undefined,
         targetTab: quickQrScope,
         tabLabel: currentScopeObj?.badge,
       });
+      if (res.success) {
+        showToast(res.message);
+      }
     } catch (err) {
       console.error('Failed to generate PDF stand:', err);
-      alert('Failed to generate PDF. Please try again.');
+      showToast('Failed to generate PDF. Please try again.');
     } finally {
       setQuickQrPdfLoading(false);
     }
@@ -547,26 +570,33 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!itemQrDataUrl || !itemQrModalItem) return;
     const safeName = itemQrModalItem.name.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Item_QRCode.png`;
-    await saveFile({
+    const res = await saveFile({
       data: itemQrDataUrl,
       filename,
       mimeType: 'image/png',
       title: `${itemQrModalItem.name} QR Code`,
+      destination: 'photos',
     });
+    if (res.success) {
+      showToast(res.message);
+    }
   };
 
   const handleDownloadItemPdf = async () => {
     if (!activePage || !itemQrModalItem) return;
     setItemQrPdfLoading(true);
     try {
-      await QRHostingService.downloadPrintableItemStand(
+      const res = await QRHostingService.downloadPrintableItemStand(
         activePage,
         itemQrModalItem,
         itemQrTableNumber || undefined
       );
+      if (res.success) {
+        showToast(res.message);
+      }
     } catch (err) {
       console.error('Failed to generate item PDF:', err);
-      alert('Failed to generate PDF. Please try again.');
+      showToast('Failed to generate PDF. Please try again.');
     } finally {
       setItemQrPdfLoading(false);
     }
@@ -601,28 +631,35 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadPhotoPng = async () => {
     if (!photoQrDataUrl || !photoQrModalPhoto) return;
-    const safeName = (photoQrModalPhoto.caption || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeName = (photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Photo_QRCode.png`;
-    await saveFile({
+    const res = await saveFile({
       data: photoQrDataUrl,
       filename,
       mimeType: 'image/png',
-      title: `${photoQrModalPhoto.caption || 'Photo'} QR Code`,
+      title: `${photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo'} QR Code`,
+      destination: 'photos',
     });
+    if (res.success) {
+      showToast(res.message);
+    }
   };
 
   const handleDownloadPhotoPdf = async () => {
     if (!activePage || !photoQrModalPhoto) return;
     setPhotoQrPdfLoading(true);
     try {
-      await QRHostingService.downloadPrintablePhotoStand(
+      const res = await QRHostingService.downloadPrintablePhotoStand(
         activePage,
         photoQrModalPhoto,
         photoQrTableNumber || undefined
       );
+      if (res.success) {
+        showToast(res.message);
+      }
     } catch (err) {
       console.error('Failed to generate photo PDF:', err);
-      alert('Failed to generate PDF. Please try again.');
+      showToast('Failed to generate PDF. Please try again.');
     } finally {
       setPhotoQrPdfLoading(false);
     }
@@ -1009,6 +1046,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         className="hidden"
         onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 240, quality: 0.75 })}
       />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2 border border-slate-700 animate-bounce max-w-[90vw]">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Top Header Bar */}
       <div className="flex items-center justify-between">

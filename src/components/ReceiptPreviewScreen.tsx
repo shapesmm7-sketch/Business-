@@ -69,8 +69,8 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   const handleDownload = async () => {
     try {
       setIsGenerating(true);
-      const filename = await PdfGenerator.downloadPdf(receipt);
-      showToast(`Downloaded ${filename}`);
+      const res = await PdfGenerator.downloadPdf(receipt);
+      showToast(res.message);
     } catch (err) {
       console.error('PDF download error:', err);
       showToast('Error generating PDF file');

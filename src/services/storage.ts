@@ -21,6 +21,7 @@ import {
   StaffIncidentRecord,
   QRCodeHostedPage,
 } from '../types';
+import { PushNotificationService } from './pushNotificationService';
 
 const STORAGE_KEYS = {
   PROFILE: 'quickreceipt_business_profile_v1',
@@ -356,13 +357,38 @@ export const StorageService = {
     const receipts = this.getReceipts();
     const existingIndex = receipts.findIndex((r) => r.id === receipt.id);
     let updated: Receipt[];
+    const isNew = existingIndex < 0;
+
     if (existingIndex >= 0) {
       updated = [...receipts];
       updated[existingIndex] = receipt;
     } else {
       updated = [receipt, ...receipts];
     }
-    return writeToStorage(STORAGE_KEYS.RECEIPTS, updated);
+    const success = writeToStorage(STORAGE_KEYS.RECEIPTS, updated);
+
+    if (success && isNew) {
+      const currencySymbol = receipt.businessSnapshot.currency || 'UGX';
+      const isInvoiceDoc = receipt.documentType === 'invoice';
+
+      // Trigger new sale / receipt notification
+      PushNotificationService.triggerBusinessAlert({
+        title: isInvoiceDoc ? `🧾 New Invoice: ${receipt.receiptNumber}` : `🧾 New Receipt: ${receipt.receiptNumber}`,
+        body: `Issued ${receipt.items.length} item(s) for ${currencySymbol} ${receipt.total.toLocaleString()} to ${receipt.customerName || 'Customer'}`,
+        type: 'sale',
+      }).catch(() => {});
+
+      // If it's an unpaid invoice, trigger debt reminder
+      if (isInvoiceDoc && receipt.paymentStatus !== 'paid') {
+        PushNotificationService.triggerBusinessAlert({
+          title: `⏳ Invoice Due Reminder: ${receipt.receiptNumber}`,
+          body: `Due on ${receipt.dueDate || 'due date'}. Total: ${currencySymbol} ${receipt.total.toLocaleString()} for ${receipt.customerName || 'Customer'}`,
+          type: 'debt_reminder',
+        }).catch(() => {});
+      }
+    }
+
+    return success;
   },
 
   deleteReceipt(id: string): boolean {
@@ -664,7 +690,19 @@ export const StorageService = {
     } else {
       products.unshift({ ...product, updatedAt: new Date().toISOString() });
     }
-    return writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+    const success = writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+
+    // Check if low stock
+    const threshold = 5;
+    if (success && product.quantity <= threshold) {
+      PushNotificationService.triggerBusinessAlert({
+        title: `⚠️ Low Stock Warning: ${product.name}`,
+        body: `Only ${product.quantity} items left in stock!`,
+        type: 'low_stock',
+      }).catch(() => {});
+    }
+
+    return success;
   },
 
   deleteInventoryProduct(id: string): void {
@@ -691,6 +729,15 @@ export const StorageService = {
       product.quantity = Math.max(0, newQuantity);
       product.updatedAt = new Date().toISOString();
       writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+
+      const threshold = 5;
+      if (product.quantity <= threshold) {
+        PushNotificationService.triggerBusinessAlert({
+          title: `⚠️ Low Stock Warning: ${product.name}`,
+          body: `Only ${product.quantity} items left in stock!`,
+          type: 'low_stock',
+        }).catch(() => {});
+      }
     }
   },
 
@@ -701,6 +748,15 @@ export const StorageService = {
       product.quantity = Math.max(0, product.quantity + delta);
       product.updatedAt = new Date().toISOString();
       writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+
+      const threshold = 5;
+      if (product.quantity <= threshold) {
+        PushNotificationService.triggerBusinessAlert({
+          title: `⚠️ Low Stock Warning: ${product.name}`,
+          body: `Only ${product.quantity} items left in stock!`,
+          type: 'low_stock',
+        }).catch(() => {});
+      }
     }
   },
 
@@ -777,6 +833,16 @@ export const StorageService = {
     };
     debts.unshift(newDebt);
     writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
+
+    // Trigger Debt Reminder Notification
+    if (newDebt.amount > (newDebt.paidAmount || 0)) {
+      PushNotificationService.triggerBusinessAlert({
+        title: `💳 Customer Debt Recorded: ${newDebt.customerName}`,
+        body: `Amount: ${newDebt.amount.toLocaleString()} due on ${newDebt.dueDate || 'due date'}. Status: ${newDebt.status.toUpperCase()}`,
+        type: 'debt_reminder',
+      }).catch(() => {});
+    }
+
     return newDebt;
   },
 
@@ -1147,6 +1213,15 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
+
+    // Trigger notification
+    const workerName = this.getWorkers().find((w) => w.id === record.workerId)?.name || 'Staff Member';
+    PushNotificationService.triggerBusinessAlert({
+      title: `👤 Staff Check-in: ${workerName}`,
+      body: `Status: ${record.status.toUpperCase()} (${record.date})`,
+      type: 'staff',
+    }).catch(() => {});
+
     return newRecord;
   },
 
@@ -1264,6 +1339,15 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
+
+    // Trigger Staff Incident Notification
+    const workerName = this.getWorkers().find((w) => w.id === record.workerId)?.name || 'Staff Member';
+    PushNotificationService.triggerBusinessAlert({
+      title: `🚨 Staff Incident: ${record.title || record.type}`,
+      body: `Staff: ${workerName} | Type: ${record.type} | ${record.notes || 'Logged in manager system.'}`,
+      type: 'staff',
+    }).catch(() => {});
+
     return newRecord;
   },
 

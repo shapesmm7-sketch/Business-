@@ -27,6 +27,7 @@ import {
   Download,
   Loader2,
   Palette,
+  CheckCircle2,
 } from 'lucide-react';
 import { BusinessProfile, Receipt } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
@@ -179,6 +180,14 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null);
   const [deletingReceipt, setDeletingReceipt] = useState<Receipt | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((current) => (current === msg ? null : current));
+    }, 3800);
+  };
 
   const currency = business.currency || 'UGX';
 
@@ -188,10 +197,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       if (onDownloadReceipt) {
         await onDownloadReceipt(receipt);
       } else {
-        await PdfGenerator.downloadPdf(receipt);
+        const res = await PdfGenerator.downloadPdf(receipt);
+        showToast(res.message);
       }
     } catch (err) {
       console.error('Download error:', err);
+      showToast('Error generating PDF download');
     } finally {
       setDownloadingId(null);
     }
@@ -334,6 +345,14 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
 
   return (
     <div className="space-y-4 pb-28 animate-fadeIn max-w-2xl mx-auto">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2 border border-slate-700 animate-bounce max-w-[90vw]">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Dashboard Card */}
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl p-5 shadow-lg border border-slate-800 relative overflow-hidden">
         {/* Subtle decorative glow */}

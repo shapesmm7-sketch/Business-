@@ -1,5 +1,5 @@
 /**
- * Core type definitions for QuickReceipt
+ * Core type definitions for Brivu
  */
 
 export type CurrencyCode =

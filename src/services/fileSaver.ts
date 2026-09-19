@@ -62,16 +62,24 @@ export interface SaveFileOptions {
    * Default is false to ensure files save directly into phone storage without opening share.
    */
   openShareSheet?: boolean;
-  /** Destination folder type in phone storage ('documents' -> Download/QuickReceipt, 'photos' -> Pictures/QuickReceipt) */
+  /** Destination folder type in phone storage ('documents' -> Download/Brivu, 'photos' -> Pictures/Brivu) */
   destination?: 'documents' | 'photos';
+}
+
+export interface SaveFileResult {
+  success: boolean;
+  uri?: string;
+  filename: string;
+  folder: string;
+  message: string;
 }
 
 /**
  * Saves and exports files directly into device phone storage via Android MediaStore API
- * (Pictures/QuickReceipt for photos, Download/QuickReceipt for documents/PDFs/data).
+ * (Pictures/Brivu for photos, Download/Brivu for documents/PDFs/data).
  * Does NOT pop open the Android share sheet unless explicitly requested.
  */
-export async function saveFile(options: SaveFileOptions): Promise<{ success: boolean; uri?: string; message: string }> {
+export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult> {
   const {
     filename,
     mimeType = 'application/octet-stream',
@@ -117,7 +125,7 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
 
         if (mediaStoreResult && mediaStoreResult.success) {
           const fileUri = mediaStoreResult.uri;
-          const locationNote = mediaStoreResult.savedLocation || (isPhoto ? 'Pictures/QuickReceipt' : 'Download/QuickReceipt');
+          const locationNote = mediaStoreResult.savedLocation || (isPhoto ? 'Pictures/Brivu' : 'Download/Brivu');
 
           // Only open share sheet if explicitly requested
           if (openShareSheet && fileUri) {
@@ -135,7 +143,9 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
           return {
             success: true,
             uri: fileUri,
-            message: `Saved directly to ${locationNote}`,
+            filename,
+            folder: locationNote,
+            message: `Successfully saved "${filename}" to ${locationNote} folder.`,
           };
         }
       } catch (mediaStoreErr) {
@@ -153,11 +163,12 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
       }
 
       let savedFile;
+      const targetDirectory = isPhoto ? Directory.Documents : Directory.Documents;
       try {
         savedFile = await Filesystem.writeFile({
           path: filename,
           data: base64Data,
-          directory: Directory.Documents,
+          directory: targetDirectory,
           recursive: true,
         });
       } catch (writeErr) {
@@ -171,6 +182,7 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
       }
 
       const fileUri = savedFile.uri;
+      const targetFolder = 'Documents/Brivu';
 
       // Only open share sheet if explicitly requested
       if (openShareSheet) {
@@ -188,7 +200,9 @@ export async function saveFile(options: SaveFileOptions): Promise<{ success: boo
       return {
         success: true,
         uri: fileUri,
-        message: `Saved to phone storage: ${filename}`,
+        filename,
+        folder: targetFolder,
+        message: `Successfully saved "${filename}" to ${targetFolder} folder.`,
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -209,7 +223,7 @@ export async function saveJsPdf(
   filename: string,
   title?: string,
   options?: { openShareSheet?: boolean }
-): Promise<{ success: boolean; uri?: string; message: string }> {
+): Promise<SaveFileResult> {
   if (Capacitor.isNativePlatform()) {
     const arrayBuffer = doc.output('arraybuffer');
     return saveFile({
@@ -222,7 +236,12 @@ export async function saveJsPdf(
     });
   } else {
     doc.save(filename);
-    return { success: true, message: `Downloaded ${filename}` };
+    return {
+      success: true,
+      filename,
+      folder: 'Downloads',
+      message: `Successfully saved "${filename}" to your Downloads folder.`,
+    };
   }
 }
 
@@ -377,7 +396,7 @@ export async function shareContent(
 /**
  * Web anchor tag fallback download.
  */
-function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string, mimeType: string) {
+function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string, mimeType: string): SaveFileResult {
   try {
     let blob: Blob;
     if (data instanceof Blob) {
@@ -413,11 +432,21 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
       URL.revokeObjectURL(url);
     }, 200);
 
-    return { success: true, message: `Downloaded ${filename}` };
+    return {
+      success: true,
+      filename,
+      folder: 'Downloads',
+      message: `Successfully saved "${filename}" to your Downloads folder.`,
+    };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error('Web download failed:', errMsg);
-    return { success: false, message: `Download failed: ${errMsg}` };
+    return {
+      success: false,
+      filename,
+      folder: 'Downloads',
+      message: `Download failed: ${errMsg}`,
+    };
   }
 }
 

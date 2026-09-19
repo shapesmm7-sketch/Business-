@@ -27,7 +27,7 @@ export interface ReceiptDataForQr {
 export function normalizeReceiptData(input: ReceiptDataForQr | Receipt): Receipt {
   const inputObj = input as ReceiptDataForQr & Receipt;
   const businessSnapshot: BusinessProfile = inputObj.businessSnapshot || {
-    name: inputObj.businessName || inputObj.storeName || 'QuickReceipt Store',
+    name: inputObj.businessName || inputObj.storeName || 'Brivu Store',
     currency: inputObj.currency || 'UGX',
     phone: '',
     address: '',

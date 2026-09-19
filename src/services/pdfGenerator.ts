@@ -5,10 +5,10 @@ import { getTemplateConfig } from '../utils/templates';
 import { resolveEffectiveTheme } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
-import { saveJsPdf, shareContent } from './fileSaver';
+import { saveJsPdf, shareContent, SaveFileResult } from './fileSaver';
 
 /**
- * High quality vector PDF generator for QuickReceipt
+ * High quality vector PDF generator for Brivu
  * Supports 15 professional templates with selectable text, business logos, and offline QR verification
  */
 export const PdfGenerator = {
@@ -1532,14 +1532,13 @@ export const PdfGenerator = {
   /**
    * Triggers client-side or native Android PDF file download
    */
-  async downloadPdf(receipt: Receipt): Promise<string> {
+  async downloadPdf(receipt: Receipt): Promise<SaveFileResult> {
     const doc = await this.createPdfDoc(receipt);
     const isInvoice = receipt.documentType === 'invoice';
     const prefix = isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.pdf`;
-    await saveJsPdf(doc, filename, `${prefix} ${receipt.receiptNumber}`);
-    return filename;
+    return await saveJsPdf(doc, filename, `${prefix} ${receipt.receiptNumber}`);
   },
 
   /**

@@ -57,17 +57,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       const backup = StorageService.exportBackup();
       const jsonStr = JSON.stringify(backup, null, 2);
       const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `QuickReceipt_Backup_${dateStr}.json`;
+      const filename = `Brivu_Backup_${dateStr}.json`;
       
       const res = await saveFile({
         data: jsonStr,
         filename,
         mimeType: 'application/json',
-        title: 'QuickReceipt Data Backup',
+        title: 'Brivu Data Backup',
       });
 
       if (res.success) {
-        showToast('Backup file saved successfully!');
+        showToast(res.message);
       } else {
         showToast('Failed to export backup data');
       }
@@ -212,7 +212,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         >
           <div className="flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200">
             <Info className="w-4 h-4 text-slate-400" />
-            <span>About QuickReceipt</span>
+            <span>About Brivu</span>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
@@ -238,10 +238,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <FileText className="w-6 h-6" />
             </div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              QuickReceipt v1.0
+              Brivu v1.0
             </h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              QuickReceipt is a fast digital receipt maker designed for small businesses, shops, salons, restaurants, and freelancers.
+              Brivu is a fast digital receipt maker designed for small businesses, shops, salons, restaurants, and freelancers.
             </p>
             <ul className="mt-3 text-xs text-slate-500 dark:text-slate-400 space-y-1">
               <li>• Real vector PDF generation with selectable text</li>
@@ -271,7 +271,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               100% Offline & Private
             </h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              QuickReceipt operates completely on your device.
+              Brivu operates completely on your device.
             </p>
             <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400">
               <p>• <strong>No Accounts:</strong> You do not need to register or sign in.</p>

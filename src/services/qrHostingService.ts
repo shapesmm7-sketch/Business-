@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
-import { saveJsPdf } from './fileSaver';
+import { saveJsPdf, SaveFileResult } from './fileSaver';
 
 export class QRHostingService {
   /**
@@ -10,7 +10,7 @@ export class QRHostingService {
   static getCustomerPageUrl(pageId: string, targetTab?: string): string {
     if (typeof window === 'undefined') {
       const tabParam = targetTab && targetTab !== 'all' ? `&tab=${encodeURIComponent(targetTab)}` : '';
-      return `https://quickreceipt.app/?qr=${pageId}${tabParam}`;
+      return `https://brivu.app/?qr=${pageId}${tabParam}`;
     }
     const base = `${window.location.origin}${window.location.pathname}`;
     // Strip trailing slash if present for clean query
@@ -24,7 +24,7 @@ export class QRHostingService {
    */
   static getCustomerItemUrl(pageId: string, itemId: string): string {
     if (typeof window === 'undefined') {
-      return `https://quickreceipt.app/?qr=${pageId}&tab=menu&itemId=${encodeURIComponent(itemId)}`;
+      return `https://brivu.app/?qr=${pageId}&tab=menu&itemId=${encodeURIComponent(itemId)}`;
     }
     const base = `${window.location.origin}${window.location.pathname}`;
     const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -36,7 +36,7 @@ export class QRHostingService {
    */
   static getCustomerPhotoUrl(pageId: string, photoId: string): string {
     if (typeof window === 'undefined') {
-      return `https://quickreceipt.app/?qr=${pageId}&tab=photos&photoId=${encodeURIComponent(photoId)}`;
+      return `https://brivu.app/?qr=${pageId}&tab=photos&photoId=${encodeURIComponent(photoId)}`;
     }
     const base = `${window.location.origin}${window.location.pathname}`;
     const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -149,7 +149,7 @@ export class QRHostingService {
       targetTab?: 'all' | 'menu' | 'about' | 'photos' | string;
       tabLabel?: string;
     }
-  ): Promise<void> {
+  ): Promise<SaveFileResult> {
     const tableNumber = typeof options === 'string' ? options : options?.tableNumber;
     const targetTab = typeof options === 'object' ? options?.targetTab : undefined;
     const tabLabel = typeof options === 'object' ? options?.tabLabel : undefined;
@@ -250,14 +250,7 @@ export class QRHostingService {
       : 'SCAN WITH YOUR PHONE CAMERA';
     doc.text(scanCallout, pageWidth / 2, currentY, { align: 'center' });
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139);
-    doc.text('No app required • Instant touchless digital mobile experience', pageWidth / 2, currentY + 6, {
-      align: 'center',
-    });
-
-    currentY += 14;
+    currentY += 9;
 
     // QR Code generation for specific target URL with custom colors
     const customerUrl = this.getCustomerPageUrl(page.id, targetTab);
@@ -363,12 +356,12 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by QuickReceipt QR Hosting', pageWidth / 2, pageHeight - 22, { align: 'center' });
+    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 22, { align: 'center' });
 
     const tabSuffix = targetTab && targetTab !== 'all' ? `_${targetTab}` : '';
     const safeTitle = (page.title || 'Table_Stand').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeTitle}${tabSuffix}_QR_Table_Stand.pdf`;
-    await saveJsPdf(doc, pdfFilename, 'QR Table Stand');
+    return await saveJsPdf(doc, pdfFilename, 'QR Table Stand');
   }
 
   /**
@@ -410,7 +403,7 @@ export class QRHostingService {
     page: QRCodeHostedPage,
     item: QRMenuItem,
     tableNumber?: string
-  ): Promise<void> {
+  ): Promise<SaveFileResult> {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -561,11 +554,11 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by QuickReceipt QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeItemName}_Item_QR_Stand.pdf`;
-    await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`);
+    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`);
   }
 
   /**
@@ -575,7 +568,7 @@ export class QRHostingService {
     page: QRCodeHostedPage,
     photo: QRBusinessPhoto,
     tableNumber?: string
-  ): Promise<void> {
+  ): Promise<SaveFileResult> {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -678,10 +671,10 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by QuickReceipt QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safePhotoName}_Photo_QR_Stand.pdf`;
-    await saveJsPdf(doc, pdfFilename, 'Photo QR Stand');
+    return await saveJsPdf(doc, pdfFilename, 'Photo QR Stand');
   }
 }
