@@ -25,7 +25,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           id="nav-btn-home"
           onClick={() => onNavigate('home')}
           className={`flex flex-col items-center justify-center py-1.5 px-2 sm:px-3 rounded-xl transition ${
-            currentScreen === 'home'
+            currentScreen === 'home' || currentScreen === 'receipts-invoices'
               ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
           }`}

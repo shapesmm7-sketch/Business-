@@ -46,31 +46,31 @@ const STORAGE_KEYS = {
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
-  name: 'Kampala Quick Mart & General Supplies',
-  description: 'Dealers in all types of clothes, accessories, groceries & electronics',
-  phone: '+256 700 123 456',
-  whatsapp: '+256 700 123 456',
-  email: 'sales@quickmart.ug',
-  address: 'Plot 22 Kampala Road, Kampala, Uganda',
-  taxNumber: 'TIN-104928371',
-  website: 'www.quickmart.ug',
+  name: '',
+  description: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  address: '',
+  taxNumber: '',
+  website: '',
   currency: 'UGX',
   customFooter: '',
-  bankName: 'Stanbic Bank Uganda',
-  bankAccountNumber: '9030012345678',
-  bankAccountName: 'Kampala Quick Mart Ltd',
-  bankBranchSwift: 'SBICUGKX',
-  mobileMoneyMerchant: '*165*3*123456#',
-  mobileMoneyName: 'Quick Mart UG',
-  defaultPaymentInstructions: 'Please quote invoice number when paying via Bank or Mobile Money.',
+  bankName: '',
+  bankAccountNumber: '',
+  bankAccountName: '',
+  bankBranchSwift: '',
+  mobileMoneyMerchant: '',
+  mobileMoneyName: '',
+  defaultPaymentInstructions: '',
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   currency: 'UGX',
   receiptPrefix: 'REC-',
-  nextReceiptNumber: 3,
+  nextReceiptNumber: 1,
   invoicePrefix: 'INV-',
-  nextInvoiceNumber: 2,
+  nextInvoiceNumber: 1,
   numberPadding: 6,
   defaultPaymentMethod: 'Cash',
   defaultTemplate: 'modern',
@@ -82,59 +82,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hapticsEnabled: true,
 };
 
-// Seed sample receipts so first-time users can immediately test sharing, previewing, and PDF generation
-export const INITIAL_SAMPLE_RECEIPTS: Receipt[] = [
-  {
-    id: 'sample-receipt-1',
-    documentType: 'receipt',
-    receiptNumber: 'REC-000001',
-    createdAt: new Date(Date.now() - 3600000 * 3).toISOString(), // 3 hours ago
-    customerName: 'Sarah Namubiru',
-    customerPhone: '+256 772 889 900',
-    customerEmail: 'sarah.n@example.com',
-    items: [
-      { id: 'item-1', name: 'Super Basmati Rice (5kg)', quantity: 2, unitPrice: 45000, subtotal: 90000 },
-      { id: 'item-2', name: 'Pure Vegetable Cooking Oil (3L)', quantity: 1, unitPrice: 32000, subtotal: 32000 },
-      { id: 'item-3', name: 'White Sugar (2kg)', quantity: 3, unitPrice: 9500, subtotal: 28500 },
-    ],
-    subtotal: 150500,
-    discount: 5000,
-    discountType: 'fixed',
-    discountAmount: 5000,
-    total: 145500,
-    amountPaid: 150000,
-    balance: 4500, // 4500 change returned
-    paymentStatus: 'paid',
-    paymentMethod: 'Mobile Money',
-    notes: 'Paid via MTN Mobile Money. Transaction Ref: MM983210',
-    template: 'modern',
-    businessSnapshot: DEFAULT_BUSINESS_PROFILE,
-  },
-  {
-    id: 'sample-receipt-2',
-    documentType: 'receipt',
-    receiptNumber: 'REC-000002',
-    createdAt: new Date(Date.now() - 3600000 * 26).toISOString(), // yesterday
-    customerName: 'David Omondi',
-    customerPhone: '+256 750 334 112',
-    items: [
-      { id: 'item-4', name: 'A4 Printing Paper (Carton)', quantity: 1, unitPrice: 125000, subtotal: 125000 },
-      { id: 'item-5', name: 'Ballpoint Pens (Box of 50)', quantity: 2, unitPrice: 20000, subtotal: 40000 },
-    ],
-    subtotal: 165000,
-    discount: 0,
-    discountType: 'fixed',
-    discountAmount: 0,
-    total: 165000,
-    amountPaid: 165000,
-    balance: 0,
-    paymentStatus: 'paid',
-    paymentMethod: 'Cash',
-    notes: 'Thank you for shopping with us!',
-    template: 'classic',
-    businessSnapshot: DEFAULT_BUSINESS_PROFILE,
-  },
-];
+// No sample receipts by default
+export const INITIAL_SAMPLE_RECEIPTS: Receipt[] = [];
 
 // Helper to safely read from localStorage
 function readFromStorage<T>(key: string, defaultValue: T): T {
@@ -392,7 +341,7 @@ export const StorageService = {
     }
     try {
       const parsed = JSON.parse(data) as Receipt[];
-      return parsed.filter((r) => r.id !== 'sample-invoice-1');
+      return parsed.filter((r) => !r.id.startsWith('sample-'));
     } catch {
       return [];
     }
@@ -1337,107 +1286,36 @@ export const StorageService = {
   getHostedQRPages(): QRCodeHostedPage[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.QR_HOSTED_PAGES);
+      const profile = this.getProfile();
       if (!data) {
-        // Seed default sample menu / showcase
-        const profile = this.getProfile();
+        // Initialize clean default menu / showcase without mock items
         const initial: QRCodeHostedPage = {
-          id: 'sample-business-showcase',
-          title: profile.name || 'The Pearl Bistro & Hotel Lounge',
-          tagline: profile.description || 'Fine Dining, Artisan Coffee & Comfort • Open 7 Days',
-          description: 'Welcome! Explore our chef-curated food menu, beverage selection, and business gallery. You can place an order via WhatsApp or call our team directly.',
+          id: `qr-${Date.now().toString(36)}`,
+          title: profile.name || 'My Business Showcase',
+          tagline: profile.description || 'Welcome • Scan to view items and specials',
+          description: '',
           pageType: 'menu',
           accentColor: '#059669',
           theme: 'emerald',
-          phone: profile.phone || '+256 700 123 456',
-          whatsapp: profile.whatsapp || profile.phone || '+256 700 123 456',
-          email: profile.email || 'info@quickmart.ug',
-          address: profile.address || 'Plot 22 Kampala Road, Kampala, Uganda',
-          googleMapsUrl: 'https://maps.google.com',
-          wifiName: 'Guest_HighSpeed_WiFi',
-          wifiPassword: 'WelcomeGuest2026',
-          openingHours: 'Mon - Sun: 7:00 AM - 11:30 PM',
+          phone: profile.phone || '',
+          whatsapp: profile.whatsapp || profile.phone || '',
+          email: profile.email || '',
+          address: profile.address || '',
+          googleMapsUrl: '',
+          wifiName: '',
+          wifiPassword: '',
+          openingHours: '',
           currency: profile.currency || 'UGX',
-          announcement: '✨ Welcome Offer: Ask your server about our daily chef specials & complimentary treats!',
+          announcement: '',
           allowWhatsAppOrdering: true,
           socialLinks: {
-            instagram: 'https://instagram.com',
-            facebook: 'https://facebook.com',
+            instagram: '',
+            facebook: '',
             website: profile.website || '',
           },
-          photos: [
-            {
-              id: 'photo-1',
-              url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
-              title: 'Dining Hall & Lounge',
-              category: 'Ambiance',
-            },
-            {
-              id: 'photo-2',
-              url: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80',
-              title: 'Grilled Beef Steak & Greens',
-              category: 'Dishes',
-            },
-            {
-              id: 'photo-3',
-              url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80',
-              title: 'Terrace & Bar Seating',
-              category: 'Ambiance',
-            },
-          ],
-          menuCategories: ['All', 'Breakfast', 'Main Dishes', 'Grills & Steaks', 'Drinks', 'Desserts'],
-          menuItems: [
-            {
-              id: 'item-1',
-              name: 'Signature Full Breakfast Platter',
-              category: 'Breakfast',
-              description: 'Two farm eggs, grilled beef sausages, bacon strips, sauteed mushrooms, baked beans & toasted sourdough.',
-              price: 35000,
-              photoUrl: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&fit=crop&w=600&q=80',
-              isAvailable: true,
-              tags: ['Popular', 'Chef Special'],
-            },
-            {
-              id: 'item-2',
-              name: 'Fresh Avocado Toast with Poached Eggs',
-              category: 'Breakfast',
-              description: 'Crushed Hass avocado on toasted whole wheat bread, poached eggs, feta cheese & chili flakes.',
-              price: 25000,
-              photoUrl: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=600&q=80',
-              isAvailable: true,
-              tags: ['Vegetarian'],
-            },
-            {
-              id: 'item-3',
-              name: 'Char-Grilled Beef Tenderloin Steak',
-              category: 'Grills & Steaks',
-              description: '300g tenderloin steak with peppercorn sauce, butter mashed potatoes, and seasonal vegetables.',
-              price: 48000,
-              photoUrl: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80',
-              isAvailable: true,
-              isSpecial: true,
-              tags: ['Chef Special', 'Popular'],
-            },
-            {
-              id: 'item-4',
-              name: 'Crispy Pan-Fried Lake Tilapia',
-              category: 'Main Dishes',
-              description: 'Whole fresh tilapia with garlic-lemon herb crust, served with sukuma wiki greens and potato wedges.',
-              price: 40000,
-              photoUrl: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
-              isAvailable: true,
-              tags: ['Popular'],
-            },
-            {
-              id: 'item-5',
-              name: 'Craft Passion & Mint Mocktail',
-              category: 'Drinks',
-              description: 'Fresh local passion fruit pulp, crushed mint leaves, lime juice & sparkling soda over ice.',
-              price: 18000,
-              photoUrl: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=600&q=80',
-              isAvailable: true,
-              tags: ['Popular'],
-            },
-          ],
+          photos: [],
+          menuCategories: ['All'],
+          menuItems: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -1446,7 +1324,47 @@ export const StorageService = {
         } catch {}
         return [initial];
       }
-      return JSON.parse(data) as QRCodeHostedPage[];
+
+      const parsed = JSON.parse(data) as QRCodeHostedPage[];
+      // Filter out any legacy sample items or sample photos from existing storage
+      const cleaned = parsed.map((page) => {
+        const cleanItems = (page.menuItems || []).filter(
+          (item) =>
+            !item.id.startsWith('item-') &&
+            !item.name.includes('Signature Full Breakfast') &&
+            !item.name.includes('Fresh Avocado Toast') &&
+            !item.name.includes('Char-Grilled Beef') &&
+            !item.name.includes('Crispy Pan-Fried Lake') &&
+            !item.name.includes('Craft Passion & Mint')
+        );
+        const cleanPhotos = (page.photos || []).filter(
+          (photo) => !photo.id.startsWith('photo-') && !photo.url.includes('unsplash.com')
+        );
+        return {
+          ...page,
+          menuItems: cleanItems,
+          photos: cleanPhotos,
+          title: page.title === 'The Pearl Bistro & Hotel Lounge' ? (profile.name || 'My Business Showcase') : page.title,
+          tagline: page.tagline === 'Fine Dining, Artisan Coffee & Comfort • Open 7 Days' ? (profile.description || '') : page.tagline,
+          description:
+            page.description ===
+            'Welcome! Explore our chef-curated food menu, beverage selection, and business gallery. You can place an order via WhatsApp or call our team directly.'
+              ? ''
+              : page.description,
+          announcement:
+            page.announcement === '✨ Welcome Offer: Ask your server about our daily chef specials & complimentary treats!'
+              ? ''
+              : page.announcement,
+          wifiName: page.wifiName === 'Guest_HighSpeed_WiFi' ? '' : page.wifiName,
+          wifiPassword: page.wifiPassword === 'WelcomeGuest2026' ? '' : page.wifiPassword,
+          phone: page.phone === '+256 700 123 456' ? (profile.phone || '') : page.phone,
+          whatsapp: page.whatsapp === '+256 700 123 456' ? (profile.whatsapp || '') : page.whatsapp,
+          email: page.email === 'info@quickmart.ug' ? (profile.email || '') : page.email,
+          address: page.address === 'Plot 22 Kampala Road, Kampala, Uganda' ? (profile.address || '') : page.address,
+        };
+      });
+
+      return cleaned;
     } catch {
       return [];
     }

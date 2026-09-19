@@ -12,6 +12,7 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { QRCodeHostingScreen } from './components/QRCodeHostingScreen';
 import { QRCustomerViewScreen } from './components/QRCustomerViewScreen';
+import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
 import { StorageService } from './services/storage';
 import { PdfGenerator } from './services/pdfGenerator';
 import {
@@ -244,6 +245,15 @@ export function App() {
               setIsCustomerViewMode(false);
               setActiveScreen('qr-customer-view');
             }}
+          />
+        )}
+
+        {activeScreen === 'receipts-invoices' && (
+          <ReceiptsInvoicesScreen
+            business={business}
+            stats={stats}
+            onNavigate={handleNavigate}
+            onNavigateHome={() => handleNavigate('home')}
           />
         )}
 

@@ -107,7 +107,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
   const [activePageId, setActivePageId] = useState<string>(() => {
     const list = StorageService.getHostedQRPages();
-    return list[0]?.id || 'sample-business-showcase';
+    return list[0]?.id || '';
   });
 
   const [activeTab, setActiveTab] = useState<'qr' | 'info' | 'menu' | 'photos'>('qr');

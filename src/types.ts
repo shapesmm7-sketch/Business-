@@ -454,6 +454,7 @@ export interface QRCodeHostedPage {
 
 export type ActiveScreen =
   | 'home'
+  | 'receipts-invoices'
   | 'create-receipt'
   | 'create-invoice'
   | 'receipts'
