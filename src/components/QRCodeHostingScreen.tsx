@@ -1046,28 +1046,28 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 800, quality: 0.75, maxBytes: 500 * 1024 })}
+        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024 })}
       />
       <input
         ref={itemPhotoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 400, quality: 0.70 })}
+        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1600, quality: 0.95 })}
       />
       <input
         ref={coverInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 600, quality: 0.70 })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1920, quality: 0.95 })}
       />
       <input
         ref={logoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 240, quality: 0.75 })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1024, quality: 0.95 })}
       />
 
       {/* Toast Notification */}

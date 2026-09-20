@@ -25,6 +25,7 @@ import {
   Tag,
   BadgePercent,
   Calendar,
+  Heart,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
@@ -147,6 +148,35 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const [trayItems, setTrayItems] = useState<Record<string, TrayItem>>({});
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedWifi, setCopiedWifi] = useState<boolean>(false);
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string; description?: string } | null>(null);
+  const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(`quickreceipt_favorites_${page.id}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleFavorite = (itemId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavorites((prev) => {
+      const updated = { ...prev, [itemId]: !prev[itemId] };
+      try {
+        localStorage.setItem(`quickreceipt_favorites_${page.id}`, JSON.stringify(updated));
+      } catch (err) {
+        console.warn(err);
+      }
+      return updated;
+    });
+  };
+
+  const getItemUnit = (item: QRMenuItem): string | null => {
+    if (!item.tags || item.tags.length === 0) return null;
+    const standardTags = ['spicy', 'vegetarian', 'chef special'];
+    const customTag = item.tags.find((tag) => !standardTags.includes(tag.toLowerCase()));
+    return customTag || null;
+  };
 
   // Check if promo is currently active based on date range
   const isItemPromoActive = (item: QRMenuItem): boolean => {
@@ -558,127 +588,133 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 <p className="text-xs text-slate-400 mt-0.5">Try searching for a different item or category</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 {filteredItems.map((item) => {
                   const inTray = trayItems[item.id]?.quantity || 0;
+                  const isFavorited = !!favorites[item.id];
+                  const unitText = getItemUnit(item);
+
                   return (
                     <div
                       key={item.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200/90 dark:border-slate-800 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition flex gap-3.5"
+                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition duration-300 flex flex-col overflow-hidden group cursor-pointer"
+                      onClick={() => setSelectedItemModal(item)}
                     >
-                      {/* Optional Item Photo */}
-                      {item.photoUrl ? (
-                        <div
-                          className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 cursor-pointer"
-                          onClick={() => setSelectedItemModal(item)}
-                          title="View full details and photo"
-                        >
+                      {/* Product Image Container */}
+                      <div className="relative aspect-[3/4] sm:aspect-square bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
+                        {item.photoUrl ? (
                           <img
                             src={item.photoUrl}
                             alt={item.name}
-                            className="w-full h-full object-cover hover:scale-105 transition-transform"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             referrerPolicy="no-referrer"
+                            title="Click to view details and photo"
                           />
-                        </div>
-                      ) : null}
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-4">
+                            <Utensils className="w-8 h-8 opacity-40 mb-1" />
+                            <span className="text-[10px] font-medium opacity-60">No Photo</span>
+                          </div>
+                        )}
 
-                      {/* Details */}
-                      <div className="flex-1 min-w-0 flex flex-col justify-between">
+                        {/* Special Tag or Promo Tag overlay */}
+                        {isItemPromoActive(item) && (
+                          <div className="absolute top-2.5 left-2.5 z-10">
+                            <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold shadow-sm uppercase tracking-wider flex items-center gap-0.5">
+                              <BadgePercent className="w-2.5 h-2.5" />
+                              <span>Promo</span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Details Area */}
+                      <div className="p-3 flex flex-col justify-between flex-1 min-w-0">
                         <div>
-                          <div className="flex items-start justify-between gap-2">
-                            <h3
-                              className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 leading-snug cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 transition"
-                              onClick={() => setSelectedItemModal(item)}
-                              title="View full details"
-                            >
-                              {item.name}
-                            </h3>
-                            <div className="flex flex-col items-end shrink-0">
-                              {isItemPromoActive(item) && item.promoPrice !== undefined && item.promoPrice > 0 ? (
-                                <>
-                                  <span className="text-sm sm:text-base font-extrabold text-amber-600 dark:text-amber-400 leading-tight">
-                                    {page.currency} {item.promoPrice.toLocaleString()}
-                                  </span>
-                                  <span className="text-[10px] sm:text-[11px] line-through text-slate-400 font-medium">
-                                    {page.currency} {item.price.toLocaleString()}
-                                  </span>
-                                </>
-                              ) : (
-                                <span className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400">
-                                  {page.currency} {item.price.toLocaleString()}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                          {/* Title */}
+                          <h3
+                            className="text-sm font-extrabold text-slate-900 dark:text-slate-100 leading-snug line-clamp-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition"
+                            title="View full details"
+                          >
+                            {item.name}
+                          </h3>
 
-                          {/* Tags & Promo Badge */}
-                          <div className="flex flex-wrap items-center gap-1 mt-1">
-                            {isItemPromoActive(item) && (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-500 text-white shadow-xs">
-                                <BadgePercent className="w-2.5 h-2.5" />
-                                <span>Promo{item.promoEndDate ? ` to ${item.promoEndDate}` : ''}</span>
-                              </span>
-                            )}
-                            {item.tags &&
-                              item.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
-                                >
-                                  {tag === 'Spicy' && <Flame className="w-2.5 h-2.5 text-rose-500" />}
-                                  {tag === 'Vegetarian' && <Leaf className="w-2.5 h-2.5 text-emerald-500" />}
-                                  {tag === 'Chef Special' && <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />}
-                                  {tag}
-                                </span>
-                              ))}
-                          </div>
-
-                          {isItemPromoActive(item) && item.promoDescription && (
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold mt-1 line-clamp-1 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                              <span>{item.promoDescription}</span>
-                            </p>
-                          )}
-
+                          {/* Description */}
                           {item.description && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal line-clamp-2 mt-1 leading-normal">
                               {item.description}
                             </p>
                           )}
                         </div>
 
-                        {/* Order Tray / Add Counter */}
-                        {page.allowWhatsAppOrdering && (
-                          <div className="mt-3 flex items-center justify-end">
-                            {inTray > 0 ? (
-                              <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg p-0.5">
-                                <button
-                                  onClick={() => handleRemoveFromCart(item.id)}
-                                  className="w-6 h-6 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold shadow-2xs hover:bg-slate-100"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 px-1 font-mono">
-                                  {inTray}
+                        {/* Bottom Row: Price/Unit & Cart Button */}
+                        <div className="flex items-end justify-between mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50">
+                          <div className="flex flex-col min-w-0 pr-1">
+                            {isItemPromoActive(item) && item.promoPrice !== undefined && item.promoPrice > 0 ? (
+                              <>
+                                <span className="text-[10px] line-through text-slate-400 dark:text-slate-500 font-medium leading-none mb-0.5">
+                                  {page.currency} {item.price.toLocaleString()}
                                 </span>
-                                <button
-                                  onClick={() => handleAddToCart(item)}
-                                  className="w-6 h-6 rounded bg-emerald-600 text-white flex items-center justify-center font-bold shadow-2xs hover:bg-emerald-500"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                                <span className="text-xs sm:text-sm font-black text-amber-500 dark:text-amber-400 leading-tight truncate">
+                                  {page.currency} {item.promoPrice.toLocaleString()}
+                                </span>
+                              </>
                             ) : (
-                              <button
-                                onClick={() => handleAddToCart(item)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition flex items-center gap-1 active:scale-95"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Add to Order</span>
-                              </button>
+                              <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 leading-tight truncate">
+                                {page.currency} {item.price.toLocaleString()}
+                              </span>
+                            )}
+
+                            {/* Custom Unit/Weight Text */}
+                            {unitText && (
+                              <span className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase mt-0.5 tracking-wider truncate">
+                                {unitText}
+                              </span>
                             )}
                           </div>
-                        )}
+
+                          {/* Cart Add Button / Quantity Counter */}
+                          {page.allowWhatsAppOrdering && (
+                            <div className="flex-shrink-0">
+                              {inTray > 0 ? (
+                                <div className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-full p-0.5">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveFromCart(item.id);
+                                    }}
+                                    className="w-5 h-5 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold shadow-xs hover:bg-slate-100"
+                                  >
+                                    <Minus className="w-2.5 h-2.5" />
+                                  </button>
+                                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 px-1 font-mono">
+                                    {inTray}
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleAddToCart(item);
+                                    }}
+                                    className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-emerald-500"
+                                  >
+                                    <Plus className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddToCart(item);
+                                  }}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center shadow-xs active:scale-90 transition shrink-0"
+                                  title="Add to tray"
+                                >
+                                  <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -982,26 +1018,35 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             className="relative w-full max-w-lg bg-slate-900 text-white rounded-3xl border border-white/10 shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Top Close Button */}
-            <button
-              onClick={() => setSelectedItemModal(null)}
-              className="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition active:scale-95 shadow-md"
-              title="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
+
 
             {/* Scrollable Container */}
             <div className="overflow-y-auto flex-1">
               {/* Photo Display */}
               {selectedItemModal.photoUrl ? (
-                <div className="w-full bg-black/80 flex items-center justify-center min-h-[220px] max-h-[46vh] overflow-hidden">
+                <div
+                  className="w-full bg-slate-950 flex items-center justify-center p-3 sm:p-4 cursor-zoom-in group relative"
+                  onClick={() => {
+                    setLightboxImage({
+                      url: selectedItemModal.photoUrl!,
+                      title: selectedItemModal.name,
+                      description: selectedItemModal.description,
+                    });
+                  }}
+                  title="Click to view full screen"
+                >
                   <img
                     src={selectedItemModal.photoUrl}
                     alt={selectedItemModal.name}
-                    className="w-full max-h-[46vh] object-contain"
+                    className="w-full h-auto rounded-2xl shadow-xl border border-white/10 group-hover:scale-[1.01] transition-transform duration-300"
                     referrerPolicy="no-referrer"
                   />
+                  <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-2xl m-3 sm:m-4">
+                    <span className="px-3 py-1.5 rounded-full bg-black/75 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" />
+                      View Full Screen
+                    </span>
+                  </div>
                 </div>
               ) : null}
 
@@ -1215,6 +1260,39 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FULL-RESOLUTION ORIGINAL IMAGE LIGHTBOX */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="max-w-3xl w-full text-center relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center border border-white/10 transition shadow-lg active:scale-90"
+              title="Close"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <div className="w-full max-h-[80vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/5 shadow-2xl">
+              <img
+                src={lightboxImage.url}
+                alt={lightboxImage.title}
+                className="max-h-[80vh] w-auto max-w-full object-contain cursor-zoom-out select-none"
+                referrerPolicy="no-referrer"
+                onClick={() => setLightboxImage(null)}
+              />
+            </div>
+            <div className="mt-4 px-4 text-center">
+              <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md">{lightboxImage.title}</h4>
+              {lightboxImage.description && (
+                <p className="text-slate-300 text-xs sm:text-sm mt-1.5 max-w-lg mx-auto leading-relaxed">{lightboxImage.description}</p>
+              )}
+            </div>
           </div>
         </div>
       )}

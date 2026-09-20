@@ -116,24 +116,24 @@ function isQuotaError(err: unknown): boolean {
 function sanitizeHostedPagesImages(pages: QRCodeHostedPage[], stripAllBase64 = false): QRCodeHostedPage[] {
   return pages.map((page) => ({
     ...page,
-    coverImage: stripAllBase64 || (page.coverImage && page.coverImage.startsWith('data:') && page.coverImage.length > 40000)
+    coverImage: stripAllBase64 || (page.coverImage && page.coverImage.startsWith('data:') && page.coverImage.length > 400000)
       ? (stripAllBase64 && page.coverImage?.startsWith('data:') ? undefined : (page.coverImage?.startsWith('data:') ? undefined : page.coverImage))
       : page.coverImage,
-    logo: stripAllBase64 || (page.logo && page.logo.startsWith('data:') && page.logo.length > 40000)
+    logo: stripAllBase64 || (page.logo && page.logo.startsWith('data:') && page.logo.length > 400000)
       ? (stripAllBase64 && page.logo?.startsWith('data:') ? undefined : (page.logo?.startsWith('data:') ? undefined : page.logo))
       : page.logo,
     photos: (page.photos || [])
-      .slice(0, stripAllBase64 ? 6 : 10)
+      .slice(0, stripAllBase64 ? 6 : 30)
       .map((photo) => ({
         ...photo,
-        url: (stripAllBase64 && photo.url.startsWith('data:')) || (photo.url && photo.url.startsWith('data:') && photo.url.length > 40000)
+        url: (stripAllBase64 && photo.url.startsWith('data:')) || (photo.url && photo.url.startsWith('data:') && photo.url.length > 400000)
           ? ''
           : photo.url,
       }))
       .filter((photo) => Boolean(photo.url)),
     menuItems: (page.menuItems || []).map((item) => ({
       ...item,
-      photoUrl: (stripAllBase64 && item.photoUrl?.startsWith('data:')) || (item.photoUrl && item.photoUrl.startsWith('data:') && item.photoUrl.length > 40000)
+      photoUrl: (stripAllBase64 && item.photoUrl?.startsWith('data:')) || (item.photoUrl && item.photoUrl.startsWith('data:') && item.photoUrl.length > 400000)
         ? undefined
         : item.photoUrl,
     })),
@@ -190,7 +190,7 @@ function writeToStorage<T>(key: string, value: T): boolean {
       if (key !== STORAGE_KEYS.QR_HOSTED_PAGES) {
         try {
           const rawQRPages = localStorage.getItem(STORAGE_KEYS.QR_HOSTED_PAGES);
-          if (rawQRPages && rawQRPages.length > 200000) {
+          if (rawQRPages && rawQRPages.length > 1500000) {
             const parsed = JSON.parse(rawQRPages) as QRCodeHostedPage[];
             const cleaned = sanitizeHostedPagesImages(parsed, true);
             localStorage.setItem(STORAGE_KEYS.QR_HOSTED_PAGES, JSON.stringify(cleaned));
@@ -207,7 +207,7 @@ function writeToStorage<T>(key: string, value: T): boolean {
       // 5. Targeted recovery: QR_HOSTED_PAGES
       if (key === STORAGE_KEYS.QR_HOSTED_PAGES && Array.isArray(value)) {
         try {
-          // Attempt 1: sanitize oversized (>40KB) base64 images
+          // Attempt 1: sanitize oversized (>400KB) base64 images
           const sanitized = sanitizeHostedPagesImages(value as QRCodeHostedPage[], false);
           localStorage.setItem(key, JSON.stringify(sanitized));
           console.info('Successfully saved QR hosted pages after sanitizing oversized images.');
@@ -1434,11 +1434,11 @@ export const StorageService = {
       }
 
       const parsed = JSON.parse(data) as QRCodeHostedPage[];
-      // Filter out any legacy sample items or sample photos and strip any auto-assigned 'Ambiance' categories
+      // Filter out legacy sample data without affecting user-created custom items and photos
       const cleaned = parsed.map((page) => {
         const cleanItems = (page.menuItems || []).filter(
           (item) =>
-            !item.id.startsWith('item-') &&
+            !item.id.startsWith('sample-item-') &&
             !item.name.includes('Signature Full Breakfast') &&
             !item.name.includes('Fresh Avocado Toast') &&
             !item.name.includes('Char-Grilled Beef') &&
@@ -1446,7 +1446,7 @@ export const StorageService = {
             !item.name.includes('Craft Passion & Mint')
         );
         const cleanPhotos = (page.photos || [])
-          .filter((photo) => !photo.id.startsWith('photo-') && !photo.url.includes('unsplash.com'))
+          .filter((photo) => !photo.id.startsWith('sample-photo-') && !photo.url.includes('unsplash.com'))
           .map((photo) => ({
             ...photo,
             category: photo.category === 'Ambiance' ? '' : (photo.category || ''),
