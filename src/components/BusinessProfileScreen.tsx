@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { BusinessProfile } from '../types';
-import { SUPPORTED_CURRENCIES } from '../utils/currencies';
+import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { getLanguageByCode } from '../data/languages';
@@ -78,7 +78,12 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   const filteredCurrencies = SUPPORTED_CURRENCIES.filter((c) => {
     const q = currencySearchQuery.trim().toLowerCase();
     if (!q) return true;
-    return c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q);
+    return (
+      c.code.toLowerCase().includes(q) ||
+      c.name.toLowerCase().includes(q) ||
+      c.symbol.toLowerCase().includes(q) ||
+      (c.flag && c.flag.includes(q))
+    );
   });
 
   const handleChange = (field: keyof BusinessProfile, value: string) => {
@@ -1085,7 +1090,10 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
             onClick={() => setIsCurrencyModalOpen(true)}
             className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-emerald-500 transition flex items-center justify-between gap-2 cursor-pointer"
           >
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-xl leading-none shrink-0" aria-hidden="true">
+                {selectedCurrencyObj.flag || getCurrencyFlag(selectedCurrencyObj.code)}
+              </span>
               <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-extrabold text-[11px] shrink-0">
                 {selectedCurrencyObj.code}
               </span>
@@ -1203,7 +1211,10 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                         : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 font-medium'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-xl leading-none shrink-0" aria-hidden="true">
+                        {c.flag || getCurrencyFlag(c.code)}
+                      </span>
                       <span className="px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 font-mono font-bold text-[10px] text-slate-700 dark:text-slate-300 shrink-0">
                         {c.code}
                       </span>

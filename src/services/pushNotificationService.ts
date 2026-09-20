@@ -3,7 +3,7 @@
  * Handles Web Push, Firebase Cloud Messaging (FCM), System Alerts, and Token Registration
  */
 import { getToken, onMessage, MessagePayload } from 'firebase/messaging';
-import { collection, doc, setDoc, getDocs, updateDoc, deleteDoc, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, getFirebaseMessaging, firebaseConfig } from './firebase';
 
 export interface NotificationTokenRecord {
@@ -319,6 +319,17 @@ export class PushNotificationService {
     return alert;
   }
 
+  private static notifyListeners() {
+    if (typeof window !== 'undefined') {
+      try {
+        const alerts = this.getLocalAlerts();
+        window.dispatchEvent(new CustomEvent('brivu_alerts_updated', { detail: alerts }));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   /**
    * Add alert to local list and sync to Firestore
    */
@@ -335,15 +346,9 @@ export class PushNotificationService {
     const updated = [alert, ...current].slice(0, 100); // keep last 100
     try {
       localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(updated));
+      this.notifyListeners();
     } catch {
       // quota
-    }
-
-    // Sync to Firestore
-    try {
-      await setDoc(doc(db, 'app_notifications', alert.id), alert);
-    } catch (err) {
-      // offline safe
     }
 
     return alert;
@@ -388,7 +393,7 @@ export class PushNotificationService {
     const alerts = this.getLocalAlerts().map((a) => (a.id === id ? { ...a, isRead: true } : a));
     try {
       localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(alerts));
-      updateDoc(doc(db, 'app_notifications', id), { isRead: true }).catch(() => {});
+      this.notifyListeners();
     } catch {
       // ignore
     }
@@ -401,6 +406,7 @@ export class PushNotificationService {
     const alerts = this.getLocalAlerts().map((a) => ({ ...a, isRead: true }));
     try {
       localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(alerts));
+      this.notifyListeners();
     } catch {
       // ignore
     }
@@ -412,36 +418,48 @@ export class PushNotificationService {
   static clearAll() {
     try {
       localStorage.removeItem(LOCAL_ALERTS_KEY);
+      this.notifyListeners();
     } catch {
       // ignore
     }
   }
 
   /**
-   * Subscribe to real-time notification stream from Firestore
+   * Subscribe to real-time notification stream
    */
   static subscribeToNotifications(onUpdate: (alerts: BusinessAlert[]) => void): () => void {
+    // 1. Deliver current local alerts immediately
     try {
-      const q = query(collection(db, 'app_notifications'), orderBy('createdAt', 'desc'), limit(50));
-      return onSnapshot(
-        q,
-        (snapshot) => {
-          const list: BusinessAlert[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push(docSnap.data() as BusinessAlert);
-          });
-          if (list.length > 0) {
-            onUpdate(list);
-          }
-        },
-        (err) => {
-          console.warn('Firestore notifications subscription offline:', err);
-        }
-      );
-    } catch (err) {
-      console.warn('Subscription error:', err);
-      return () => {};
+      onUpdate(this.getLocalAlerts());
+    } catch {
+      // ignore
     }
+
+    // 2. Listen to internal local events
+    const handleUpdate = (e: Event) => {
+      try {
+        const customEvent = e as CustomEvent<BusinessAlert[]>;
+        if (customEvent.detail) {
+          onUpdate(customEvent.detail);
+        } else {
+          onUpdate(this.getLocalAlerts());
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('brivu_alerts_updated', handleUpdate);
+      window.addEventListener('storage', handleUpdate);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('brivu_alerts_updated', handleUpdate);
+        window.removeEventListener('storage', handleUpdate);
+      }
+    };
   }
 
   /**

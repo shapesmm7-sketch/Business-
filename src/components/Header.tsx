@@ -13,8 +13,13 @@ import {
   Share2,
   Check,
   Globe,
+  Crown,
+  Sparkles,
+  Lock,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
-import { ActiveScreen, BusinessProfile } from '../types';
+import { ActiveScreen, BusinessProfile, AppLockConfig } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NotificationModal } from './NotificationModal';
 import { RateUsModal } from './RateUsModal';
@@ -35,6 +40,7 @@ interface HeaderProps {
   onNavigateHome: () => void;
   onNavigate: (screen: ActiveScreen) => void;
   onUpdateBusiness?: (business: BusinessProfile) => void;
+  onLockApp?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,11 +54,22 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateHome,
   onNavigate,
   onUpdateBusiness,
+  onLockApp,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isRateUsOpen, setIsRateUsOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
+    StorageService.getAppLockConfig()
+  );
+
+  useEffect(() => {
+    if (isMenuOpen) {
+      setLockConfig(StorageService.getAppLockConfig());
+    }
+  }, [isMenuOpen]);
+  const currentSubscription = StorageService.getSubscription();
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const currentLang = getLanguageByCode(business.language || 'en');
@@ -206,9 +223,27 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </button>
 
-          {/* Right Action Tools: PWA, Notifications, & 3-line Hamburger Menu Trigger */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right Action Tools: PWA, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton />
+
+            {/* Quick Upgrade Button in Header Bar */}
+            <button
+              id="btn-header-upgrade"
+              type="button"
+              onClick={() => onNavigate('upgrade')}
+              className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-black cursor-pointer ${
+                currentSubscription && currentSubscription.status === 'active'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-400/50 shadow-emerald-500/20'
+                  : 'bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-amber-400/40 shadow-amber-500/20'
+              }`}
+              aria-label="Upgrade to Pro"
+            >
+              <Crown className="w-3.5 h-3.5 fill-white text-white shrink-0" />
+              <span className="hidden xs:inline sm:inline">
+                {currentSubscription && currentSubscription.status === 'active' ? 'PRO' : 'Upgrade'}
+              </span>
+            </button>
 
             {/* Notifications Button with numeric badge */}
             <button
@@ -255,7 +290,17 @@ export const Header: React.FC<HeaderProps> = ({
             className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-2xl rounded-b-3xl overflow-hidden max-h-[85vh] flex flex-col animate-slideDown"
           >
             {/* Menu Header */}
-            <div className="px-5 py-3 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-end">
+            <div className="px-5 py-3 bg-slate-50/80 dark:bg-slate-800/60 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                  Apps Menu
+                </span>
+                {currentSubscription && currentSubscription.status === 'active' && (
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white leading-none shadow-xs">
+                    PRO ACTIVE
+                  </span>
+                )}
+              </div>
               <button
                 id="btn-menu-close"
                 onClick={() => setIsMenuOpen(false)}
@@ -267,8 +312,53 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Menu Sections List */}
-            <div className="p-4 space-y-2.5 overflow-y-auto">
-              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1">
+            <div className="p-4 space-y-3 overflow-y-auto">
+              {/* TOP OF APPS MENU: UPGRADE CARD */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 dark:from-black dark:via-indigo-950 dark:to-slate-950 border border-amber-500/30 text-white shadow-xl relative overflow-hidden">
+                {/* Visual Ambient Glows */}
+                <div className="absolute -right-4 -top-4 w-28 h-28 bg-amber-500/20 rounded-full blur-xl pointer-events-none" />
+                <div className="absolute -left-4 -bottom-4 w-24 h-24 bg-indigo-500/20 rounded-full blur-lg pointer-events-none" />
+
+                <div className="relative z-10 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30">
+                      <Crown className="w-5 h-5 fill-slate-950" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-black text-white tracking-tight">
+                          {currentSubscription && currentSubscription.status === 'active' ? 'Brivu Pro Member' : 'Upgrade to Pro'}
+                        </span>
+                        {(!currentSubscription || currentSubscription.status !== 'active') && (
+                          <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 leading-none">
+                            Save 28%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
+                        {currentSubscription && currentSubscription.status === 'active'
+                          ? `Active Tier: ${currentSubscription.planName}`
+                          : '1 Mo $4.6 • 6 Mos $23.9 • 1 Yr $39.9'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    id="btn-menu-upgrade"
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onNavigate('upgrade');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition active:scale-95 shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{currentSubscription && currentSubscription.status === 'active' ? 'Manage' : 'Upgrade'}</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1 pt-1">
                 {t('sections_and_management', lang)}
               </div>
 
@@ -302,6 +392,86 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 );
               })}
+
+              {/* APPS MENU: LOCK APP BUTTON */}
+              <div className="pt-1">
+                {lockConfig && lockConfig.isEnabled ? (
+                  <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 p-2.5 space-y-2">
+                    <button
+                      id="btn-menu-lock-app"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        StorageService.setAppLocked(true);
+                        if (onLockApp) {
+                          onLockApp();
+                        }
+                      }}
+                      className="w-full text-left p-2 rounded-xl hover:bg-emerald-50/80 dark:hover:bg-emerald-950/30 transition flex items-center gap-3 group cursor-pointer"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                        <Lock className="w-4.5 h-4.5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                            Lock App Now
+                          </span>
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300">
+                            PIN Active
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          Lock immediately to protect screen
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
+                    </button>
+
+                    <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between px-1">
+                      <button
+                        id="btn-menu-manage-lock"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          onNavigate('app-lock-setup');
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Manage / Change Passcode</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    id="btn-menu-lock-app"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      onNavigate('app-lock-setup');
+                    }}
+                    className="w-full text-left p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/30 hover:border-emerald-300 dark:hover:border-emerald-700/60 transition-all flex items-center gap-3.5 group active:scale-[0.99] cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                      <Lock className="w-5 h-5" />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                          Create App Lock
+                        </span>
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/80 text-amber-700 dark:text-amber-300">
+                          Setup
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        Set digit passcode & secret recovery word
+                      </p>
+                    </div>
+
+                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+                )}
+              </div>
 
               {/* Community & App Feedback & Language Options */}
               <div className="pt-2">

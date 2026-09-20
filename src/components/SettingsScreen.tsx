@@ -10,8 +10,12 @@ import {
   ChevronRight,
   Check,
   FileText,
+  Crown,
+  Sparkles,
+  Lock,
+  KeyRound,
 } from 'lucide-react';
-import { ActiveScreen, AppBackupData, AppSettings } from '../types';
+import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig } from '../types';
 import { StorageService } from '../services/storage';
 
 interface SettingsScreenProps {
@@ -19,21 +23,29 @@ interface SettingsScreenProps {
   onUpdateSettings: (newSettings: AppSettings) => void;
   onNavigate?: (screen: ActiveScreen) => void;
   onDataRestored: () => void;
+  onLockApp?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onUpdateSettings,
+  onNavigate,
   onDataRestored,
+  onLockApp,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
   useEffect(() => {
     setLocalSettings(settings);
+    setLockConfig(StorageService.getAppLockConfig());
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
+    StorageService.getAppLockConfig()
+  );
+  const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
@@ -123,8 +135,53 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           Settings & Preferences
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Appearance, data backup & restore, and application information
+          Appearance, membership, data backup & restore, and application information
         </p>
+      </div>
+
+      {/* Pro Membership Card */}
+      <div
+        onClick={() => onNavigate && onNavigate('upgrade')}
+        className="rounded-2xl p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 dark:from-black dark:via-indigo-950 dark:to-slate-950 text-white border border-amber-500/30 shadow-md relative overflow-hidden flex items-center justify-between gap-3 cursor-pointer hover:border-amber-400/50 transition-colors"
+      >
+        <div className="absolute -right-6 -top-6 w-24 h-24 bg-amber-500/20 rounded-full blur-xl pointer-events-none" />
+        <div className="flex items-center gap-3 min-w-0 relative z-10">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shrink-0 shadow-md">
+            <Crown className="w-5 h-5 fill-slate-950" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-black text-white">Brivu Pro Membership</span>
+              {subscription && subscription.status === 'active' ? (
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                  Active ({subscription.planName})
+                </span>
+              ) : (
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
+                  From $4.6/mo
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
+              {subscription && subscription.status === 'active'
+                ? `Expires on ${new Date(subscription.expiresAt).toLocaleDateString()}`
+                : '1 Month $4.6 • 6 Months $23.9 • 1 Year $39.9'}
+            </p>
+          </div>
+        </div>
+
+        <button
+          id="btn-settings-upgrade"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onNavigate) onNavigate('upgrade');
+          }}
+          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition active:scale-95 shrink-0 flex items-center gap-1 cursor-pointer relative z-10"
+        >
+          <span>{subscription && subscription.status === 'active' ? 'Manage' : 'Upgrade'}</span>
+          <Sparkles className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* 1. Appearance (Dark Mode) */}
@@ -155,9 +212,77 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </button>
       </div>
 
-      {/* 2. Data Backup & Restore */}
+      {/* 2. App Lock & Security Protection */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              App Lock & Intruder Security
+            </h2>
+          </div>
+          {lockConfig && lockConfig.isEnabled && (
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+              PIN Protected
+            </span>
+          )}
+        </div>
 
-      {/* 5. Data Backup & Restore */}
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          Lock your app with a digit passcode to keep receipts, inventory, and sales private from intruders. Reset easily with your secret recovery word or number.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          {lockConfig && lockConfig.isEnabled ? (
+            <>
+              <button
+                id="btn-settings-lock-now"
+                type="button"
+                onClick={() => {
+                  StorageService.setAppLocked(true);
+                  if (onLockApp) {
+                    onLockApp();
+                  }
+                }}
+                className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
+              >
+                <Lock className="w-4 h-4" />
+                <span>Lock App Now</span>
+              </button>
+
+              <button
+                id="btn-settings-manage-lock"
+                type="button"
+                onClick={() => {
+                  if (onNavigate) {
+                    onNavigate('app-lock-setup');
+                  }
+                }}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+              >
+                <KeyRound className="w-4 h-4 text-indigo-500" />
+                <span>Manage Passcode & Secret</span>
+              </button>
+            </>
+          ) : (
+            <button
+              id="btn-settings-setup-lock"
+              type="button"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('app-lock-setup');
+                }
+              }}
+              className="col-span-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
+            >
+              <Lock className="w-4 h-4" />
+              <span>Create Passcode & Enable App Lock</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Data Backup & Restore */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center gap-2">
           <Download className="w-4 h-4 text-emerald-500" />

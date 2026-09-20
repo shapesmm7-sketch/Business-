@@ -90,7 +90,7 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
                 {t('create_receipt', lang)}
               </div>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-normal mt-0.5 leading-snug">
-                {t('issue_receipts_invoices', lang)}
+                {t('receipt_maker', lang)}
               </p>
             </div>
           </button>
@@ -117,7 +117,7 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
                 {t('create_invoice', lang)}
               </div>
               <p className="text-xs sm:text-sm text-indigo-100/90 font-normal mt-0.5 leading-snug">
-                {t('create_invoice', lang)}
+                {t('invoice_maker', lang)}
               </p>
             </div>
           </button>

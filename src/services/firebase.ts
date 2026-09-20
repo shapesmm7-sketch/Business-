@@ -36,28 +36,16 @@ export async function getFirebaseMessaging(): Promise<Messaging | null> {
 // Connection check as required by Firebase skill
 export async function testFirebaseConnection(): Promise<boolean> {
   try {
+    // Only attempt if navigator is online
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return false;
+    }
     await getDocFromServer(doc(db, 'system', 'connection_test'));
     return true;
-  } catch (error: any) {
-    const errMsg = error?.message || String(error);
-    const errCode = error?.code;
-    if (
-      errCode === 'unavailable' ||
-      errMsg.includes('offline') ||
-      errMsg.includes('unavailable') ||
-      errMsg.includes('Could not reach Cloud Firestore')
-    ) {
-      console.log('Firestore operating in offline mode.');
-    } else {
-      console.warn('Firebase connection check:', errMsg);
-    }
+  } catch {
+    // Graceful offline fallback
     return false;
   }
-}
-
-// Test on initial boot
-if (typeof window !== 'undefined') {
-  testFirebaseConnection().catch(() => {});
 }
 
 export { firebaseConfig };

@@ -1999,7 +1999,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Upload up to 20 photos (auto-compressed under 500KB per photo)
+                Upload up to 20 photos
               </p>
             </div>
 
@@ -2033,7 +2033,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No photos uploaded yet</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Customers love seeing real photos of your venue, products, and services (Max 20 photos, compressed automatically).
+                Customers love seeing real photos of your venue, products, and services (Max 20 photos).
               </p>
               <button
                 onClick={handlePhotoUploadClick}

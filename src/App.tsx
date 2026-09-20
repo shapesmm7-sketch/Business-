@@ -13,6 +13,9 @@ import { InventoryScreen } from './components/InventoryScreen';
 import { QRCodeHostingScreen } from './components/QRCodeHostingScreen';
 import { QRCustomerViewScreen } from './components/QRCustomerViewScreen';
 import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
+import { UpgradeScreen } from './components/UpgradeScreen';
+import { AppLockScreen } from './components/AppLockScreen';
+import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { StorageService } from './services/storage';
 import { PdfGenerator } from './services/pdfGenerator';
 import {
@@ -23,17 +26,91 @@ import {
   ReceiptTemplateId,
   InventoryTab,
   QRCodeHostedPage,
+  AppLockConfig,
 } from './types';
 
 export function App() {
-  const [activeScreen, setActiveScreen] = useState<ActiveScreen>('home');
+  const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
+    StorageService.getAppLockConfig()
+  );
+  const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.get('qr') ||
+        params.get('photoId') ||
+        params.get('photo') ||
+        params.get('itemId') ||
+        params.get('item')
+      ) {
+        return false;
+      }
+    }
+    return StorageService.isAppLocked();
+  });
+
+  const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('qr') || params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
+        return 'qr-customer-view';
+      }
+    }
+    return 'home';
+  });
+  const [previousScreen, setPreviousScreen] = useState<ActiveScreen>('home');
   const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>('stock');
   const [inventoryShowAddInline, setInventoryShowAddInline] = useState<boolean>(false);
-  const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(null);
-  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about'>('menu');
-  const [customerInitialItemId, setCustomerInitialItemId] = useState<string | undefined>(undefined);
-  const [customerInitialPhotoId, setCustomerInitialPhotoId] = useState<string | undefined>(undefined);
-  const [isCustomerViewMode, setIsCustomerViewMode] = useState<boolean>(false);
+  const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const qrPageId = params.get('qr');
+      if (qrPageId) {
+        const found = StorageService.getHostedQRPage(qrPageId);
+        if (found) return found;
+      }
+      if (params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
+        const pages = StorageService.getHostedQRPages();
+        if (pages[0]) return pages[0];
+      }
+    }
+    return null;
+  });
+  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('photo') || params.get('photoId')) return 'photos';
+      if (params.get('item') || params.get('itemId')) return 'menu';
+      const tabParam = params.get('tab');
+      if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
+      if (tabParam === 'about' || tabParam === 'info') return 'about';
+      if (tabParam === 'menu' || tabParam === 'items') return 'menu';
+    }
+    return 'menu';
+  });
+  const [customerInitialItemId, setCustomerInitialItemId] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('item') || params.get('itemId') || undefined;
+    }
+    return undefined;
+  });
+  const [customerInitialPhotoId, setCustomerInitialPhotoId] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('photo') || params.get('photoId') || undefined;
+    }
+    return undefined;
+  });
+  const [isCustomerViewMode, setIsCustomerViewMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('qr') || params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
+        return true;
+      }
+    }
+    return false;
+  });
   const [business, setBusiness] = useState<BusinessProfile>(() => StorageService.getProfile());
   const [settings, setSettings] = useState<AppSettings>(() => StorageService.getSettings());
   const [receipts, setReceipts] = useState<Receipt[]>(() => StorageService.getReceipts());
@@ -47,24 +124,45 @@ export function App() {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
 
-  // Check URL params for QR Code scanning (e.g. ?qr=page-id)
+  // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=photos&photoId=...)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const qrPageId = params.get('qr');
-      if (qrPageId) {
-        const found = StorageService.getHostedQRPage(qrPageId);
+      const photoIdParam = params.get('photo') || params.get('photoId');
+      const itemIdParam = params.get('item') || params.get('itemId');
+      const tabParam = params.get('tab');
+
+      const hasCustomerParam = qrPageId || photoIdParam || itemIdParam || tabParam;
+
+      if (hasCustomerParam) {
+        if (photoIdParam) {
+          setCustomerInitialPhotoId(photoIdParam);
+          setCustomerInitialTab('photos');
+        } else if (itemIdParam) {
+          setCustomerInitialItemId(itemIdParam);
+          setCustomerInitialTab('menu');
+        } else if (tabParam === 'photos' || tabParam === 'gallery') {
+          setCustomerInitialTab('photos');
+        } else if (tabParam === 'about' || tabParam === 'info') {
+          setCustomerInitialTab('about');
+        } else if (tabParam === 'menu' || tabParam === 'items') {
+          setCustomerInitialTab('menu');
+        }
+
+        let found: QRCodeHostedPage | undefined;
+        if (qrPageId) {
+          found = StorageService.getHostedQRPage(qrPageId);
+        }
+        if (!found) {
+          const pages = StorageService.getHostedQRPages();
+          found = pages[0];
+        }
+
         if (found) {
           setActiveCustomerPage(found);
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
-        } else {
-          const pages = StorageService.getHostedQRPages();
-          if (pages[0]) {
-            setActiveCustomerPage(pages[0]);
-            setIsCustomerViewMode(true);
-            setActiveScreen('qr-customer-view');
-          }
         }
       }
     }
@@ -101,10 +199,14 @@ export function App() {
     setReceipts(all);
     setStats(StorageService.getStats());
     setInventoryCount(StorageService.getInventoryProducts().length);
+    setLockConfig(StorageService.getAppLockConfig());
   }, []);
 
   // Handler to navigate
   const handleNavigate = (screen: ActiveScreen) => {
+    if (activeScreen !== screen && activeScreen !== 'upgrade') {
+      setPreviousScreen(activeScreen);
+    }
     if (screen !== 'preview-receipt') {
       setSelectedReceipt(null);
       setDuplicateSeed(null);
@@ -229,6 +331,10 @@ export function App() {
           onNavigateHome={() => handleNavigate('home')}
           onNavigate={handleNavigate}
           onUpdateBusiness={handleUpdateBusiness}
+          onLockApp={() => {
+            setLockConfig(StorageService.getAppLockConfig());
+            setIsAppLocked(true);
+          }}
         />
       )}
 
@@ -447,6 +553,10 @@ export function App() {
             onUpdateSettings={handleUpdateSettings}
             onNavigate={handleNavigate}
             onDataRestored={refreshData}
+            onLockApp={() => {
+              setLockConfig(StorageService.getAppLockConfig());
+              setIsAppLocked(true);
+            }}
           />
         )}
 
@@ -485,16 +595,51 @@ export function App() {
             isMerchantPreview={!isCustomerViewMode}
           />
         )}
+
+        {activeScreen === 'upgrade' && (
+          <UpgradeScreen
+            onBack={() => handleNavigate(previousScreen !== 'upgrade' ? previousScreen : 'home')}
+          />
+        )}
+
+        {activeScreen === 'app-lock-setup' && (
+          <AppLockSetupScreen
+            onBack={() => handleNavigate(previousScreen !== 'app-lock-setup' ? previousScreen : 'home')}
+            onLockNow={() => {
+              setLockConfig(StorageService.getAppLockConfig());
+              setIsAppLocked(true);
+            }}
+            onConfigChange={(newCfg) => {
+              setLockConfig(newCfg);
+            }}
+          />
+        )}
       </main>
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view'].includes(activeScreen) && (
+      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}
           receiptsCount={receipts.filter((r) => (r.documentType || 'receipt') === 'receipt').length}
           invoicesCount={receipts.filter((r) => r.documentType === 'invoice').length}
           inventoryCount={inventoryCount}
+        />
+      )}
+
+      {/* FULL-SCREEN APP LOCK SCREEN */}
+      {isAppLocked && lockConfig && lockConfig.isEnabled && (
+        <AppLockScreen
+          business={business}
+          lockConfig={lockConfig}
+          onUnlock={() => {
+            setIsAppLocked(false);
+            StorageService.setAppLocked(false);
+          }}
+          onResetPinRequested={() => {
+            setIsAppLocked(false);
+            setActiveScreen('app-lock-setup');
+          }}
         />
       )}
     </div>

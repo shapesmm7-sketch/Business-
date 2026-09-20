@@ -1,6 +1,35 @@
 import { CurrencyConfig } from '../types';
 
-export const SUPPORTED_CURRENCIES: CurrencyConfig[] = [
+/**
+ * Maps ISO 4217 Currency Code to Country Flag Emoji
+ */
+const CURRENCY_COUNTRY_OVERRIDES: Record<string, string> = {
+  EUR: 'EU', // European Union 🇪🇺
+  ANG: 'CW', // Curaçao & Sint Maarten 🇨🇼
+  XOF: 'SN', // West African CFA Franc (BCEAO - Senegal/Ivory Coast/etc.) 🇸🇳
+  XAF: 'CM', // Central African CFA Franc (BEAC - Cameroon/Gabon/etc.) 🇨🇲
+  XCD: 'AG', // East Caribbean Dollar (OECS) 🇦🇬
+  BTC: '🌐',
+};
+
+export function getCurrencyFlag(code: string): string {
+  if (!code) return '🌐';
+  const cleanCode = code.trim().toUpperCase();
+  if (CURRENCY_COUNTRY_OVERRIDES[cleanCode]) {
+    const val = CURRENCY_COUNTRY_OVERRIDES[cleanCode];
+    if (val.length === 2) {
+      return val.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+    }
+    return val;
+  }
+  const cc = cleanCode.slice(0, 2);
+  if (/^[A-Z]{2}$/.test(cc)) {
+    return cc.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+  }
+  return '🌐';
+}
+
+const RAW_SUPPORTED_CURRENCIES: CurrencyConfig[] = [
   {
     "code": "AFN",
     "name": "Afghan Afghani",
@@ -969,6 +998,10 @@ export const SUPPORTED_CURRENCIES: CurrencyConfig[] = [
   }
 ];
 
+export const SUPPORTED_CURRENCIES: CurrencyConfig[] = RAW_SUPPORTED_CURRENCIES.map((c) => ({
+  ...c,
+  flag: getCurrencyFlag(c.code),
+}));
 
 export function getCurrencyConfig(code: string): CurrencyConfig {
   const found = SUPPORTED_CURRENCIES.find(
@@ -981,6 +1014,7 @@ export function getCurrencyConfig(code: string): CurrencyConfig {
     symbol: `${code} `,
     symbolPosition: 'prefix',
     decimalPlaces: 2,
+    flag: getCurrencyFlag(code || 'UGX'),
   };
 }
 

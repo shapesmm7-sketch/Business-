@@ -8,6 +8,8 @@ import {
   Search,
   Share2,
   ChevronLeft,
+  ChevronRight,
+  Maximize2,
   ShoppingBag,
   Sparkles,
   ExternalLink,
@@ -29,6 +31,7 @@ import {
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
+import { QRHostingService } from '../services/qrHostingService';
 
 interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
@@ -56,99 +59,176 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'about'>(() => {
     if (initialPhotoId) return 'photos';
-    if (initialItemId) return 'menu';
-    if (initialTab) return initialTab;
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('photo') || params.get('photoId')) return 'photos';
-      if (params.get('item') || params.get('itemId')) return 'menu';
+      const photoIdParam = params.get('photo') || params.get('photoId');
+      if (photoIdParam) return 'photos';
+      const itemIdParam = params.get('item') || params.get('itemId');
+      if (itemIdParam) return 'menu';
       const tabParam = params.get('tab');
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
       if (tabParam === 'menu' || tabParam === 'items') return 'menu';
     }
+    if (initialItemId) return 'menu';
+    if (initialTab) return initialTab;
     return 'menu';
   });
 
   const [selectedPhoto, setSelectedPhoto] = useState<QRBusinessPhoto | null>(() => {
-    if (initialPhotoId) {
-      return page.photos.find((p) => p.id === initialPhotoId) || null;
-    }
-    if (typeof window !== 'undefined') {
+    let targetPhotoId = initialPhotoId;
+    if (!targetPhotoId && typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const photoIdParam = params.get('photo') || params.get('photoId');
-      if (photoIdParam) {
-        return page.photos.find((p) => p.id === photoIdParam) || null;
-      }
+      targetPhotoId = params.get('photo') || params.get('photoId') || undefined;
+    }
+    if (targetPhotoId) {
+      return page.photos.find((p) => p.id === targetPhotoId) || null;
     }
     return null;
   });
 
   const [selectedItemModal, setSelectedItemModal] = useState<QRMenuItem | null>(() => {
-    if (initialItemId) {
-      return page.menuItems.find((i) => i.id === initialItemId) || null;
-    }
-    if (typeof window !== 'undefined') {
+    let targetItemId = initialItemId;
+    if (!targetItemId && typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const itemIdParam = params.get('item') || params.get('itemId');
-      if (itemIdParam) {
-        return page.menuItems.find((i) => i.id === itemIdParam) || null;
-      }
+      targetItemId = params.get('item') || params.get('itemId') || undefined;
+    }
+    if (targetItemId) {
+      return page.menuItems.find((i) => i.id === targetItemId) || null;
     }
     return null;
   });
 
   useEffect(() => {
-    if (initialItemId) {
-      const found = page.menuItems.find((i) => i.id === initialItemId);
+    let targetPhotoId = initialPhotoId;
+    let targetItemId = initialItemId;
+    let targetTab = initialTab;
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const photoIdParam = params.get('photo') || params.get('photoId');
+      const itemIdParam = params.get('item') || params.get('itemId');
+      const tabParam = params.get('tab');
+
+      if (photoIdParam) {
+        targetPhotoId = photoIdParam;
+        targetTab = 'photos';
+      }
+      if (itemIdParam) {
+        targetItemId = itemIdParam;
+        targetTab = 'menu';
+      }
+      if (!photoIdParam && !itemIdParam && tabParam) {
+        if (tabParam === 'photos' || tabParam === 'gallery') targetTab = 'photos';
+        else if (tabParam === 'about' || tabParam === 'info') targetTab = 'about';
+        else if (tabParam === 'menu' || tabParam === 'items') targetTab = 'menu';
+      }
+    }
+
+    if (targetPhotoId) {
+      const foundIdx = page.photos.findIndex((p) => p.id === targetPhotoId);
+      if (foundIdx !== -1) {
+        const found = page.photos[foundIdx];
+        setActiveTab('photos');
+        setSelectedPhoto(found);
+        setLightboxImage({
+          url: found.url,
+          title: found.title || page.title,
+          description: found.description,
+          category: found.category,
+          badge: found.badge,
+          photoIndex: foundIdx,
+        });
+        return;
+      }
+    }
+
+    if (targetItemId) {
+      const found = page.menuItems.find((i) => i.id === targetItemId);
       if (found) {
         setActiveTab('menu');
         setSelectedItemModal(found);
+        return;
       }
-    } else if (initialPhotoId) {
-      const found = page.photos.find((p) => p.id === initialPhotoId);
-      if (found) {
-        setActiveTab('photos');
-        setSelectedPhoto(found);
-      }
-    } else if (initialTab) {
-      setActiveTab(initialTab);
-    } else if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const itemIdParam = params.get('item') || params.get('itemId');
-      const photoIdParam = params.get('photo') || params.get('photoId');
-      if (itemIdParam) {
-        const found = page.menuItems.find((i) => i.id === itemIdParam);
-        if (found) {
-          setActiveTab('menu');
-          setSelectedItemModal(found);
-        }
-      } else if (photoIdParam) {
-        const found = page.photos.find((p) => p.id === photoIdParam);
-        if (found) {
-          setActiveTab('photos');
-          setSelectedPhoto(found);
-        }
-      } else {
-        const tabParam = params.get('tab');
-        if (tabParam === 'photos' || tabParam === 'gallery') {
-          setActiveTab('photos');
-        } else if (tabParam === 'about' || tabParam === 'info') {
-          setActiveTab('about');
-        } else if (tabParam === 'menu' || tabParam === 'items') {
-          setActiveTab('menu');
-        }
-      }
+    }
+
+    if (targetTab) {
+      setActiveTab(targetTab);
     }
   }, [initialTab, initialItemId, initialPhotoId, page.id, page.menuItems, page.photos]);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
   const [showOrderTrayModal, setShowOrderTrayModal] = useState<boolean>(false);
   const [tableNumber, setTableNumber] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [orderNotes, setOrderNotes] = useState<string>('');
   const [trayItems, setTrayItems] = useState<Record<string, TrayItem>>({});
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedWifi, setCopiedWifi] = useState<boolean>(false);
-  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string; description?: string } | null>(null);
+  const [photoCopiedLink, setPhotoCopiedLink] = useState<boolean>(false);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    title: string;
+    description?: string;
+    category?: string;
+    badge?: string;
+    photoIndex?: number;
+  } | null>(() => {
+    let targetPhotoId = initialPhotoId;
+    if (!targetPhotoId && typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      targetPhotoId = params.get('photo') || params.get('photoId') || undefined;
+    }
+    if (targetPhotoId) {
+      const foundIdx = page.photos.findIndex((p) => p.id === targetPhotoId);
+      if (foundIdx !== -1) {
+        const found = page.photos[foundIdx];
+        return {
+          url: found.url,
+          title: found.title || page.title,
+          description: found.description,
+          category: found.category,
+          badge: found.badge,
+          photoIndex: foundIdx,
+        };
+      }
+    }
+    return null;
+  });
+
+  // Keyboard navigation for fullscreen photo lightbox
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxImage(null);
+      } else if (e.key === 'ArrowRight' && lightboxImage.photoIndex !== undefined && page.photos.length > 1) {
+        const nextIdx = (lightboxImage.photoIndex + 1) % page.photos.length;
+        const p = page.photos[nextIdx];
+        setLightboxImage({
+          url: p.url,
+          title: p.title || 'Photo',
+          description: p.description,
+          category: p.category,
+          badge: p.badge,
+          photoIndex: nextIdx,
+        });
+      } else if (e.key === 'ArrowLeft' && lightboxImage.photoIndex !== undefined && page.photos.length > 1) {
+        const prevIdx = (lightboxImage.photoIndex - 1 + page.photos.length) % page.photos.length;
+        const p = page.photos[prevIdx];
+        setLightboxImage({
+          url: p.url,
+          title: p.title || 'Photo',
+          description: p.description,
+          category: p.category,
+          badge: p.badge,
+          photoIndex: prevIdx,
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxImage, page.photos]);
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(`quickreceipt_favorites_${page.id}`);
@@ -169,13 +249,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
       }
       return updated;
     });
-  };
-
-  const getItemUnit = (item: QRMenuItem): string | null => {
-    if (!item.tags || item.tags.length === 0) return null;
-    const standardTags = ['spicy', 'vegetarian', 'chef special'];
-    const customTag = item.tags.find((tag) => !standardTags.includes(tag.toLowerCase()));
-    return customTag || null;
   };
 
   // Check if promo is currently active based on date range
@@ -262,6 +335,23 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     }
   };
 
+  const handleSharePhoto = async (photo: QRBusinessPhoto) => {
+    const url = QRHostingService.getCustomerPhotoUrl(page.id, photo.id);
+    const title = `${photo.title || 'Photo'} - ${page.title}`;
+    const text = photo.description || `Check out this photo from ${page.title}`;
+    const res = await shareContent({
+      title,
+      text,
+      url,
+      dialogTitle: 'Share Photo',
+    });
+
+    if (res.method === 'clipboard_copy') {
+      setPhotoCopiedLink(true);
+      setTimeout(() => setPhotoCopiedLink(false), 2500);
+    }
+  };
+
   const handleSendWhatsAppOrder = () => {
     if (!page.whatsapp && !page.phone) {
       alert('No business WhatsApp number configured for this page.');
@@ -276,6 +366,12 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     }
     if (customerName.trim()) {
       orderMsg += `👤 *Customer:* ${customerName.trim()}\n`;
+    }
+    if (customerPhone.trim()) {
+      orderMsg += `📞 *Phone:* ${customerPhone.trim()}\n`;
+    }
+    if (orderNotes.trim()) {
+      orderMsg += `📝 *Order Description / Notes:* ${orderNotes.trim()}\n`;
     }
     orderMsg += `\n*Order Details:*\n`;
 
@@ -592,7 +688,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 {filteredItems.map((item) => {
                   const inTray = trayItems[item.id]?.quantity || 0;
                   const isFavorited = !!favorites[item.id];
-                  const unitText = getItemUnit(item);
 
                   return (
                     <div
@@ -617,15 +712,30 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                           </div>
                         )}
 
-                        {/* Special Tag or Promo Tag overlay */}
-                        {isItemPromoActive(item) && (
-                          <div className="absolute top-2.5 left-2.5 z-10">
-                            <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold shadow-sm uppercase tracking-wider flex items-center gap-0.5">
+                        {/* Top Badges Overlay inside Photo */}
+                        <div className="absolute top-2 left-2 right-2 z-10 flex flex-wrap items-center gap-1">
+                          {isItemPromoActive(item) && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[9.5px] font-bold shadow-xs uppercase tracking-wider flex items-center gap-0.5 backdrop-blur-xs">
                               <BadgePercent className="w-2.5 h-2.5" />
                               <span>Promo</span>
                             </span>
-                          </div>
-                        )}
+                          )}
+                          {item.tags && item.tags.length > 0 && item.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-md bg-emerald-600/90 text-white text-[9.5px] font-bold shadow-xs uppercase tracking-wider flex items-center gap-0.5 backdrop-blur-xs"
+                            >
+                              <Tag className="w-2.5 h-2.5" />
+                              <span>{tag}</span>
+                            </span>
+                          ))}
+                          {item.isSpecial && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-600/90 text-white text-[9.5px] font-bold shadow-xs uppercase tracking-wider flex items-center gap-0.5 backdrop-blur-xs">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>Special</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Details Area */}
@@ -647,7 +757,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                           )}
                         </div>
 
-                        {/* Bottom Row: Price/Unit & Cart Button */}
+                        {/* Bottom Row: Price & Cart Button */}
                         <div className="flex items-end justify-between mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50">
                           <div className="flex flex-col min-w-0 pr-1">
                             {isItemPromoActive(item) && item.promoPrice !== undefined && item.promoPrice > 0 ? (
@@ -662,13 +772,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                             ) : (
                               <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 leading-tight truncate">
                                 {page.currency} {item.price.toLocaleString()}
-                              </span>
-                            )}
-
-                            {/* Custom Unit/Weight Text */}
-                            {unitText && (
-                              <span className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase mt-0.5 tracking-wider truncate">
-                                {unitText}
                               </span>
                             )}
                           </div>
@@ -740,11 +843,21 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {page.photos.map((photo) => (
+                {page.photos.map((photo, idx) => (
                   <div
                     key={photo.id}
-                    onClick={() => setSelectedPhoto(photo)}
+                    onClick={() => {
+                      setLightboxImage({
+                        url: photo.url,
+                        title: photo.title || page.title,
+                        description: photo.description,
+                        category: photo.category,
+                        badge: photo.badge,
+                        photoIndex: idx,
+                      });
+                    }}
                     className="group relative aspect-4/3 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 cursor-pointer shadow-xs border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 transition"
+                    title="Click to view in full screen"
                   >
                     <img
                       src={photo.url}
@@ -760,6 +873,22 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         </span>
                       </div>
                     )}
+                    <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSharePhoto(photo);
+                        }}
+                        className="p-1 rounded-md bg-black/50 hover:bg-black/80 text-white flex items-center justify-center backdrop-blur-xs border border-white/10 transition shadow-xs active:scale-90"
+                        title="Share / Copy photo link"
+                      >
+                        <Share2 className="w-3 h-3" />
+                      </button>
+                      <span className="p-1 rounded-md bg-black/50 group-hover:bg-black/80 text-white flex items-center justify-center backdrop-blur-xs border border-white/10 transition shadow-xs">
+                        <Maximize2 className="w-3 h-3" />
+                      </span>
+                    </div>
                     {(photo.title || photo.category) && (
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent p-2 text-white">
                         <p className="text-xs font-semibold truncate drop-shadow-xs">{photo.title || 'Business Photo'}</p>
@@ -984,6 +1113,28 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   />
                 </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">Customer Phone Number (Optional)</label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. +256 700 000000"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">Order Description / Notes (Optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Less spicy, extra sauce, deliver to room terrace, bring cutlery..."
+                    value={orderNotes}
+                    onChange={(e) => setOrderNotes(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none resize-none"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1041,6 +1192,30 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     className="w-full h-auto rounded-2xl shadow-xl border border-white/10 group-hover:scale-[1.01] transition-transform duration-300"
                     referrerPolicy="no-referrer"
                   />
+                  {/* Top Badges Overlay inside Modal Photo */}
+                  <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-1.5 pointer-events-none">
+                    {isItemPromoActive(selectedItemModal) && (
+                      <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-md uppercase tracking-wider flex items-center gap-1 backdrop-blur-xs">
+                        <BadgePercent className="w-3.5 h-3.5" />
+                        <span>Promo</span>
+                      </span>
+                    )}
+                    {selectedItemModal.tags && selectedItemModal.tags.length > 0 && selectedItemModal.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600/90 text-white text-xs font-bold shadow-md uppercase tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20"
+                      >
+                        <Tag className="w-3.5 h-3.5" />
+                        <span>{tag}</span>
+                      </span>
+                    ))}
+                    {selectedItemModal.isSpecial && (
+                      <span className="px-2.5 py-1 rounded-lg bg-indigo-600/90 text-white text-xs font-bold shadow-md uppercase tracking-wider flex items-center gap-1 backdrop-blur-xs border border-white/20">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Special</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-2xl m-3 sm:m-4">
                     <span className="px-3 py-1.5 rounded-full bg-black/75 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5">
                       <Camera className="w-3.5 h-3.5" />
@@ -1218,79 +1393,169 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         </div>
       )}
 
-      {/* MODAL: PHOTO LIGHTBOX (FOR VENUE / GALLERY PHOTOS) */}
-      {selectedPhoto && (
+      {/* MODAL: PHOTO FULLSCREEN LIGHTBOX (FOR VENUE / GALLERY PHOTOS) */}
+      {selectedPhoto && !lightboxImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 cursor-zoom-out animate-fade-in select-none"
           onClick={() => setSelectedPhoto(null)}
         >
-          <div className="max-w-xl w-full text-center relative" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed top-3 right-3 sm:top-5 sm:right-6 z-[90]">
             <button
               onClick={() => setSelectedPhoto(null)}
-              className="absolute -top-10 right-0 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition"
+              className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-xl active:scale-90"
+              title="Close"
             >
               <X className="w-5 h-5" />
             </button>
-            <img
-              src={selectedPhoto.url}
-              alt={selectedPhoto.title || 'Photo'}
-              className="max-h-[72vh] w-auto mx-auto rounded-2xl shadow-2xl object-contain border border-white/10"
-              referrerPolicy="no-referrer"
-            />
-            <div className="mt-3 text-center">
+          </div>
+          <div className="max-w-5xl w-full text-center relative flex flex-col items-center justify-center my-auto px-2" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-h-[82vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/10 shadow-2xl">
+              <img
+                src={selectedPhoto.url}
+                alt={selectedPhoto.title || 'Photo'}
+                className="max-h-[82vh] w-auto max-w-full object-contain cursor-zoom-out select-none"
+                referrerPolicy="no-referrer"
+                onClick={() => setSelectedPhoto(null)}
+              />
+            </div>
+            <div className="mt-3 sm:mt-4 px-4 text-center max-w-xl mx-auto">
               {selectedPhoto.badge && (
-                <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40 mb-1.5">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40 mb-1.5">
                   <Tag className="w-3 h-3" />
                   <span>{selectedPhoto.badge}</span>
                 </span>
               )}
               {selectedPhoto.title && (
-                <p className="text-white font-bold text-base drop-shadow-sm">{selectedPhoto.title}</p>
+                <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md">{selectedPhoto.title}</h4>
               )}
               {selectedPhoto.category && (
                 <p className="text-emerald-400 text-xs font-semibold mt-0.5">{selectedPhoto.category}</p>
               )}
               {selectedPhoto.description && (
-                <p className="text-slate-300 text-xs mt-1.5 max-w-md mx-auto leading-relaxed">{selectedPhoto.description}</p>
+                <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed">{selectedPhoto.description}</p>
               )}
             </div>
-            <button
-              onClick={() => setSelectedPhoto(null)}
-              className="mt-4 px-5 py-2 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition"
-            >
-              Close
-            </button>
           </div>
         </div>
       )}
 
-      {/* MODAL: FULL-RESOLUTION ORIGINAL IMAGE LIGHTBOX */}
+      {/* MODAL: FULL-RESOLUTION ORIGINAL IMAGE LIGHTBOX (FOR ITEMS & GALLERY PHOTOS) */}
       {lightboxImage && (
         <div
-          className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out animate-fade-in"
+          className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 cursor-zoom-out animate-fade-in select-none"
           onClick={() => setLightboxImage(null)}
         >
-          <div className="max-w-3xl w-full text-center relative" onClick={(e) => e.stopPropagation()}>
+          {/* Top Control Bar */}
+          <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-6 sm:right-6 z-[90] flex items-center justify-between pointer-events-none">
+            {lightboxImage.photoIndex !== undefined && page.photos.length > 1 ? (
+              <span className="pointer-events-auto px-3 py-1.5 rounded-full bg-black/60 border border-white/20 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
+                <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{lightboxImage.photoIndex + 1} of {page.photos.length}</span>
+              </span>
+            ) : (
+              <span className="pointer-events-auto px-3 py-1.5 rounded-full bg-black/60 border border-white/20 text-white text-xs font-semibold backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
+                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Full Screen</span>
+              </span>
+            )}
+
+            <div className="pointer-events-auto flex items-center gap-2">
+              {lightboxImage.photoIndex !== undefined && page.photos[lightboxImage.photoIndex] && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSharePhoto(page.photos[lightboxImage.photoIndex!]);
+                  }}
+                  className="px-3 py-2 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center gap-1.5 border border-white/20 transition shadow-xl text-xs font-semibold active:scale-95"
+                  title="Share or copy link to this photo"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{photoCopiedLink ? 'Copied!' : 'Share'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-xl active:scale-90"
+                title="Close (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Previous Arrow for Gallery Navigation */}
+          {lightboxImage.photoIndex !== undefined && page.photos.length > 1 && (
             <button
-              onClick={() => setLightboxImage(null)}
-              className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center border border-white/10 transition shadow-lg active:scale-90"
-              title="Close"
+              onClick={(e) => {
+                e.stopPropagation();
+                const prevIdx = (lightboxImage.photoIndex! - 1 + page.photos.length) % page.photos.length;
+                const p = page.photos[prevIdx];
+                setLightboxImage({
+                  url: p.url,
+                  title: p.title || page.title,
+                  description: p.description,
+                  category: p.category,
+                  badge: p.badge,
+                  photoIndex: prevIdx,
+                });
+              }}
+              className="fixed left-2 sm:left-6 top-1/2 -translate-y-1/2 z-[90] w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-2xl active:scale-90"
+              title="Previous photo (←)"
             >
-              <X className="w-6 h-6" />
+              <ChevronLeft className="w-6 h-6" />
             </button>
-            <div className="w-full max-h-[80vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/5 shadow-2xl">
+          )}
+
+          {/* Next Arrow for Gallery Navigation */}
+          {lightboxImage.photoIndex !== undefined && page.photos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextIdx = (lightboxImage.photoIndex! + 1) % page.photos.length;
+                const p = page.photos[nextIdx];
+                setLightboxImage({
+                  url: p.url,
+                  title: p.title || page.title,
+                  description: p.description,
+                  category: p.category,
+                  badge: p.badge,
+                  photoIndex: nextIdx,
+                });
+              }}
+              className="fixed right-2 sm:right-6 top-1/2 -translate-y-1/2 z-[90] w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-2xl active:scale-90"
+              title="Next photo (→)"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Image & Captions */}
+          <div className="max-w-5xl w-full text-center relative flex flex-col items-center justify-center my-auto px-2" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-h-[82vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/10 shadow-2xl">
               <img
                 src={lightboxImage.url}
                 alt={lightboxImage.title}
-                className="max-h-[80vh] w-auto max-w-full object-contain cursor-zoom-out select-none"
+                className="max-h-[82vh] w-auto max-w-full object-contain cursor-zoom-out select-none"
                 referrerPolicy="no-referrer"
                 onClick={() => setLightboxImage(null)}
               />
             </div>
-            <div className="mt-4 px-4 text-center">
+            <div className="mt-3 sm:mt-4 px-4 text-center max-w-xl mx-auto">
+              {lightboxImage.badge && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40 mb-1.5">
+                  <Tag className="w-3 h-3" />
+                  <span>{lightboxImage.badge}</span>
+                </span>
+              )}
               <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md">{lightboxImage.title}</h4>
+              {lightboxImage.category && (
+                <p className="text-emerald-400 text-xs font-semibold mt-0.5">{lightboxImage.category}</p>
+              )}
               {lightboxImage.description && (
-                <p className="text-slate-300 text-xs sm:text-sm mt-1.5 max-w-lg mx-auto leading-relaxed">{lightboxImage.description}</p>
+                <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed">{lightboxImage.description}</p>
               )}
             </div>
           </div>

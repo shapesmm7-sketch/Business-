@@ -20,6 +20,8 @@ import {
   StaffSaleRecord,
   StaffIncidentRecord,
   QRCodeHostedPage,
+  UserSubscription,
+  AppLockConfig,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 
@@ -44,6 +46,9 @@ const STORAGE_KEYS = {
   STAFF_SALES: 'quickreceipt_staff_sales_v1',
   STAFF_INCIDENTS: 'quickreceipt_staff_incidents_v1',
   QR_HOSTED_PAGES: 'quickreceipt_qr_hosted_pages_v1',
+  SUBSCRIPTION: 'quickreceipt_subscription_v1',
+  APP_LOCK: 'quickreceipt_app_lock_config_v1',
+  APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -1506,5 +1511,53 @@ export const StorageService = {
     const pages = this.getHostedQRPages();
     const filtered = pages.filter((p) => p.id !== id);
     return writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, filtered);
+  },
+
+  getSubscription(): UserSubscription | null {
+    const sub = readFromStorage<UserSubscription | null>(STORAGE_KEYS.SUBSCRIPTION, null);
+    if (!sub) return null;
+    // Check if expired
+    if (sub.status === 'active' && sub.expiresAt) {
+      if (new Date(sub.expiresAt).getTime() < Date.now()) {
+        const expiredSub: UserSubscription = { ...sub, status: 'expired' };
+        writeToStorage(STORAGE_KEYS.SUBSCRIPTION, expiredSub);
+        return expiredSub;
+      }
+    }
+    return sub;
+  },
+
+  saveSubscription(subscription: UserSubscription): boolean {
+    return writeToStorage(STORAGE_KEYS.SUBSCRIPTION, subscription);
+  },
+
+  clearSubscription(): boolean {
+    return writeToStorage(STORAGE_KEYS.SUBSCRIPTION, null);
+  },
+
+  // --- APP LOCK & INTRUDER SECURITY ---
+  getAppLockConfig(): AppLockConfig | null {
+    return readFromStorage<AppLockConfig | null>(STORAGE_KEYS.APP_LOCK, null);
+  },
+
+  saveAppLockConfig(config: AppLockConfig | null): boolean {
+    return writeToStorage(STORAGE_KEYS.APP_LOCK, config);
+  },
+
+  isAppLocked(): boolean {
+    const config = this.getAppLockConfig();
+    if (!config || !config.isEnabled || !config.pin) {
+      return false;
+    }
+    // Check if session or stored state is currently locked
+    const lockedState = readFromStorage<boolean | null>(STORAGE_KEYS.APP_LOCKED_STATE, null);
+    if (lockedState === null) {
+      return config.autoLockOnExit === true;
+    }
+    return lockedState === true;
+  },
+
+  setAppLocked(locked: boolean): boolean {
+    return writeToStorage(STORAGE_KEYS.APP_LOCKED_STATE, locked);
   },
 };

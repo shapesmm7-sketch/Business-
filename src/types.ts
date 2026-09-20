@@ -24,6 +24,7 @@ export interface CurrencyConfig {
   symbol: string;
   symbolPosition: 'prefix' | 'suffix';
   decimalPlaces: number;
+  flag?: string;
 }
 
 export type PaymentMethod =
@@ -472,4 +473,29 @@ export type ActiveScreen =
   | 'templates'
   | 'settings'
   | 'qr-hosting'
-  | 'qr-customer-view';
+  | 'qr-customer-view'
+  | 'upgrade'
+  | 'app-lock-setup';
+
+export type SubscriptionPlanId = '1-month' | '6-months' | '1-year';
+
+export interface UserSubscription {
+  planId: SubscriptionPlanId;
+  planName: string;
+  status: 'active' | 'expired' | 'canceled';
+  price: number;
+  formattedPrice: string;
+  startDate: string;
+  expiresAt: string;
+  paymentMethod?: string;
+}
+
+export interface AppLockConfig {
+  isEnabled: boolean;
+  pin: string; // Digits password (e.g., 4 or 6 digits)
+  secretWord: string; // Secret word or number used for password reset/recovery
+  hint?: string; // Optional reminder hint
+  autoLockOnExit?: boolean; // Automatically lock on fresh tab/app start
+  lastLockedAt?: string;
+  updatedAt?: string;
+}
