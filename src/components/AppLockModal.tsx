@@ -107,18 +107,18 @@ export const AppLockModal: React.FC<AppLockModalProps> = ({
       isEnabled: true,
       pin: cleanedPin,
       secretWord: cleanedSecret,
-      autoLockOnExit: true,
+      autoLockOnExit: autoLockOnExit,
       updatedAt: new Date().toISOString(),
     };
 
     StorageService.saveAppLockConfig(newConfig);
-    StorageService.setAppLocked(true);
+    StorageService.setAppLocked(false);
     setCurrentConfig(newConfig);
     if (onConfigChange) {
       onConfigChange(newConfig);
     }
 
-    setSuccessMsg('App Lock configured successfully!');
+    setSuccessMsg('Passcode saved! App protection is active.');
     setTimeout(() => {
       setSuccessMsg(null);
       setMode('view');
@@ -126,18 +126,16 @@ export const AppLockModal: React.FC<AppLockModalProps> = ({
   };
 
   const handleDisableLock = () => {
-    if (confirm('Are you sure you want to remove the App Lock? Anyone with access to your device will be able to open the app.')) {
-      StorageService.saveAppLockConfig(null);
-      StorageService.setAppLocked(false);
-      setCurrentConfig(null);
-      if (onConfigChange) {
-        onConfigChange(null);
-      }
-      setSuccessMsg('App Lock has been turned off.');
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+    StorageService.saveAppLockConfig(null);
+    StorageService.setAppLocked(false);
+    setCurrentConfig(null);
+    if (onConfigChange) {
+      onConfigChange(null);
     }
+    setSuccessMsg('App Lock has been turned off.');
+    setTimeout(() => {
+      onClose();
+    }, 800);
   };
 
   const handleToggleAutoLock = (enabled: boolean) => {

@@ -37,11 +37,6 @@
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/colorPrimary" />
 
-        <!-- Remove default Capacitor service to prioritize BrivuFirebaseMessagingService -->
-        <service
-            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
-            tools:node="remove" />
-
         <!-- Brivu Custom Firebase Messaging Service (Extends Capacitor MessagingService) -->
         <service
             android:name=".BrivuFirebaseMessagingService"

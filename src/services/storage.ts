@@ -1549,10 +1549,14 @@ export const StorageService = {
     if (!config || !config.isEnabled || !config.pin) {
       return false;
     }
-    // Check if explicitly locked
+    // Check if explicitly locked by the user (e.g. tapping "Lock App Immediately")
     const lockedState = readFromStorage<boolean | null>(STORAGE_KEYS.APP_LOCKED_STATE, null);
     if (lockedState === true) {
       return true;
+    }
+    // If auto-lock on app open/reload is turned off, do not lock on open/reload
+    if (config.autoLockOnExit === false) {
+      return false;
     }
     // If the user already unlocked during this active browser session, keep unlocked
     if (typeof sessionStorage !== 'undefined') {
@@ -1561,7 +1565,7 @@ export const StorageService = {
         return false;
       }
     }
-    // When a user first opens or comes to the app, show login
+    // When autoLockOnExit is enabled and app is opened in a new session, require passcode
     return true;
   },
 

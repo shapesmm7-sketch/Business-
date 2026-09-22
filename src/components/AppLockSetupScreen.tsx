@@ -41,24 +41,26 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
     return existing && existing.isEnabled ? 'view' : 'form';
   });
 
-  // Form states - app lock disabled by default
+  // Form states - initialize autoLockOnExit directly from saved config (default true)
   const [pin, setPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [secretWord, setSecretWord] = useState<string>('');
-  const [autoLockOnExit, setAutoLockOnExit] = useState<boolean>(true);
+  const [autoLockOnExit, setAutoLockOnExit] = useState<boolean>(() => {
+    const existing = StorageService.getAppLockConfig();
+    return existing ? existing.autoLockOnExit !== false : true;
+  });
 
   const [showPin, setShowPin] = useState<boolean>(false);
   const [showSecret, setShowSecret] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [showDisableConfirmModal, setShowDisableConfirmModal] = useState<boolean>(false);
 
   useEffect(() => {
     const cfg = StorageService.getAppLockConfig();
     setCurrentConfig(cfg);
     if (cfg && cfg.isEnabled) {
       setAutoLockOnExit(cfg.autoLockOnExit !== false);
-    } else {
-      setAutoLockOnExit(true);
     }
   }, []);
 
@@ -89,56 +91,61 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
       isEnabled: true,
       pin: cleanedPin,
       secretWord: cleanedSecret,
-      autoLockOnExit: true,
+      autoLockOnExit: autoLockOnExit,
       updatedAt: new Date().toISOString(),
     };
 
     StorageService.saveAppLockConfig(newConfig);
-    StorageService.setAppLocked(true);
+    StorageService.setAppLocked(false);
     setCurrentConfig(newConfig);
     if (onConfigChange) {
       onConfigChange(newConfig);
     }
 
-    setSuccessMsg('Passcode saved! Locking app now...');
+    setSuccessMsg('Passcode created successfully! App protection is now active.');
     setTimeout(() => {
       setSuccessMsg(null);
-      onLockNow();
-    }, 500);
+      onBack();
+    }, 800);
   };
 
   const handleToggleAutoLock = (enabled: boolean) => {
     setAutoLockOnExit(enabled);
-    if (currentConfig) {
+    const existing = currentConfig || StorageService.getAppLockConfig();
+    if (existing) {
       const updated: AppLockConfig = {
-        ...currentConfig,
+        ...existing,
         autoLockOnExit: enabled,
+        updatedAt: new Date().toISOString(),
       };
       StorageService.saveAppLockConfig(updated);
       setCurrentConfig(updated);
       if (onConfigChange) {
         onConfigChange(updated);
       }
+      setSuccessMsg(enabled ? 'Auto-Lock on App Open turned ON' : 'Auto-Lock on App Open turned OFF');
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 2000);
     }
   };
 
   const handleDisableLock = () => {
-    if (
-      confirm(
-        'Are you sure you want to turn off App Lock? Anyone opening this device will have unrestricted access to all records.'
-      )
-    ) {
-      StorageService.saveAppLockConfig(null);
-      StorageService.setAppLocked(false);
-      setCurrentConfig(null);
-      if (onConfigChange) {
-        onConfigChange(null);
-      }
-      setSuccessMsg('App Lock disabled.');
-      setTimeout(() => {
-        onBack();
-      }, 800);
+    setShowDisableConfirmModal(true);
+  };
+
+  const confirmDisableLock = () => {
+    StorageService.saveAppLockConfig(null);
+    StorageService.setAppLocked(false);
+    setCurrentConfig(null);
+    setShowDisableConfirmModal(false);
+    if (onConfigChange) {
+      onConfigChange(null);
     }
+    setSuccessMsg('App Lock turned off successfully.');
+    setTimeout(() => {
+      onBack();
+    }, 600);
   };
 
   return (
@@ -239,30 +246,41 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
             </button>
 
             {/* Auto Lock On App Open Toggle */}
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold text-slate-900 dark:text-white">
                   Auto-Lock on App Open / Reload
                 </span>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Always ask for passcode when the app is launched
+                  {autoLockOnExit
+                    ? 'Always ask for passcode when the app is launched'
+                    : 'Stay unlocked across reloads (manual lock only)'}
                 </p>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoLockOnExit}
-                  onChange={(e) => handleToggleAutoLock(e.target.checked)}
-                  className="sr-only peer"
+              <button
+                id="btn-toggle-autolock-view"
+                type="button"
+                role="switch"
+                aria-checked={autoLockOnExit}
+                onClick={() => handleToggleAutoLock(!autoLockOnExit)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                  autoLockOnExit ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    autoLockOnExit ? 'translate-x-5' : 'translate-x-0'
+                  }`}
                 />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>
-              </label>
+              </button>
             </div>
           </div>
 
           {/* Manage Actions */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
+              id="btn-change-passcode"
               type="button"
               onClick={() => {
                 setPin('');
@@ -286,6 +304,7 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
             </button>
 
             <button
+              id="btn-turn-off-app-lock"
               type="button"
               onClick={handleDisableLock}
               className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-rose-200/80 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-left transition active:scale-[0.99] flex items-center gap-3 cursor-pointer shadow-xs"
@@ -435,24 +454,34 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
           </div>
 
           {/* Preferences */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center justify-between">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center justify-between gap-4">
             <div>
               <span className="text-xs font-bold text-slate-900 dark:text-white">
                 Auto-Lock on App Open / Reload
               </span>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Lock app immediately whenever you open or refresh
+                {autoLockOnExit
+                  ? 'Lock app immediately whenever you open or refresh'
+                  : 'Stay unlocked across reloads (manual lock only)'}
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoLockOnExit}
-                onChange={(e) => setAutoLockOnExit(e.target.checked)}
-                className="sr-only peer"
+            <button
+              id="btn-toggle-autolock-form"
+              type="button"
+              role="switch"
+              aria-checked={autoLockOnExit}
+              onClick={() => setAutoLockOnExit(!autoLockOnExit)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                autoLockOnExit ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  autoLockOnExit ? 'translate-x-5' : 'translate-x-0'
+                }`}
               />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600"></div>
-            </label>
+            </button>
           </div>
 
           {/* Save Action */}
@@ -481,6 +510,46 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
             )}
           </div>
         </form>
+      )}
+
+      {/* Turn Off App Lock Confirmation Modal (In-App Dialog, no window.confirm) */}
+      {showDisableConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 animate-scaleUp">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-inner">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-black text-slate-900 dark:text-white">
+                Turn Off App Lock?
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                This will remove passcode protection. Anyone who opens Brivu on this device will have unrestricted access to all receipts, invoices, and settings.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <button
+                id="btn-cancel-disable-lock"
+                type="button"
+                onClick={() => setShowDisableConfirmModal(false)}
+                className="py-3 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
+              >
+                Keep Lock On
+              </button>
+
+              <button
+                id="btn-confirm-disable-lock"
+                type="button"
+                onClick={confirmDisableLock}
+                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition cursor-pointer"
+              >
+                Yes, Turn Off
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
