@@ -22,17 +22,26 @@ workflows:
       - name: Build Vite web application
         script: |
           npm run build
+      - name: Configure google-services.json
+        script: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            echo "Successfully injected google-services.json from Codemagic environment"
+          elif [ -f "android/app/google-services.json" ]; then
+            echo "Using existing android/app/google-services.json"
+          else
+            echo "Notice: google-services.json not found in android/app"
+          fi
       - name: Sync web assets to Capacitor Android
         script: |
           npx cap sync android
       - name: Set permissions for Gradle Wrapper
         script: |
-          cd android
-          chmod +x gradlew
+          chmod +x android/gradlew
       - name: Build Android Debug APK
         script: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon
     artifacts:
       - android/app/build/outputs/apk/debug/*.apk
     publishing:

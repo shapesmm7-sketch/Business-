@@ -21,9 +21,10 @@ import androidx.core.app.NotificationManagerCompat;
 
 import com.capacitorjs.plugins.pushnotifications.MessagingService;
 import com.google.firebase.messaging.RemoteMessage;
+import com.quickreceipt.app.R;
 
 import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,12 +46,14 @@ public class BrivuFirebaseMessagingService extends MessagingService {
     private static final String KEY_LAST_TOKEN_SYNC = "token_synced_at";
 
     // Deduplication cache for recent message IDs (max 50)
-    private static final Set<String> processedMessageIds = Collections.synchronizedSet(new LinkedHashSet<String>() {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-            return size() > 50;
-        }
-    });
+    private static final Set<String> processedMessageIds = Collections.synchronizedSet(
+        Collections.newSetFromMap(new LinkedHashMap<String, Boolean>(64, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > 50;
+            }
+        })
+    );
 
     @Override
     public void onCreate() {
