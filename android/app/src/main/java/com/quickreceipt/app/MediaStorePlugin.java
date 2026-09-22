@@ -80,7 +80,7 @@ public class MediaStorePlugin extends Plugin {
     }
 
     @PermissionCallback
-    private void permissionStatusCallback(PluginCall call) {
+    public void permissionStatusCallback(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("granted", isStoragePermissionGranted());
         call.resolve(ret);
@@ -138,7 +138,7 @@ public class MediaStorePlugin extends Plugin {
     }
 
     @PermissionCallback
-    private void storageSavePermissionCallback(PluginCall call) {
+    public void storageSavePermissionCallback(PluginCall call) {
         if (call == null) {
             return;
         }

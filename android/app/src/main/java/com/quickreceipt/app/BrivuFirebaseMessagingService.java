@@ -279,12 +279,18 @@ public class BrivuFirebaseMessagingService extends MessagingService {
                 channel.setShowBadge(true);
                 channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
-                Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-                AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .build();
-                channel.setSound(soundUri, audioAttributes);
+                try {
+                    Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                    if (soundUri != null) {
+                        AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .build();
+                        channel.setSound(soundUri, audioAttributes);
+                    }
+                } catch (Throwable soundErr) {
+                    Log.w(TAG, "AudioAttributes setup deferred: " + soundErr.getMessage());
+                }
 
                 manager.createNotificationChannel(channel);
                 Log.d(TAG, "Created Android Notification Channel: " + CHANNEL_ID);

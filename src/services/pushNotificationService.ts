@@ -270,7 +270,11 @@ export class PushNotificationService {
       }
 
       // 4. Trigger FCM token generation with Google Play Services
-      await PushNotifications.register();
+      try {
+        await PushNotifications.register();
+      } catch (regErr) {
+        console.warn('[PushNotificationService] PushNotifications.register warning (e.g. device without Google Play Services):', regErr);
+      }
       this.saveSettings({ pushEnabled: true });
 
       return {
@@ -278,7 +282,7 @@ export class PushNotificationService {
         token: this.registeredToken || 'registered',
       };
     } catch (err: any) {
-      console.error('[PushNotificationService] Error in native push registration:', err);
+      console.warn('[PushNotificationService] Error in native push registration (deferred safely):', err);
       return { success: false, error: err?.message || 'Failed to register Android push notifications.' };
     }
   }
