@@ -1549,15 +1549,30 @@ export const StorageService = {
     if (!config || !config.isEnabled || !config.pin) {
       return false;
     }
-    // Check if session or stored state is currently locked
+    // Check if explicitly locked
     const lockedState = readFromStorage<boolean | null>(STORAGE_KEYS.APP_LOCKED_STATE, null);
-    if (lockedState === null) {
-      return config.autoLockOnExit === true;
+    if (lockedState === true) {
+      return true;
     }
-    return lockedState === true;
+    // If the user already unlocked during this active browser session, keep unlocked
+    if (typeof sessionStorage !== 'undefined') {
+      const sessionUnlocked = sessionStorage.getItem('brivu_session_unlocked');
+      if (sessionUnlocked === 'true') {
+        return false;
+      }
+    }
+    // When a user first opens or comes to the app, show login
+    return true;
   },
 
   setAppLocked(locked: boolean): boolean {
+    if (typeof sessionStorage !== 'undefined') {
+      if (locked) {
+        sessionStorage.removeItem('brivu_session_unlocked');
+      } else {
+        sessionStorage.setItem('brivu_session_unlocked', 'true');
+      }
+    }
     return writeToStorage(STORAGE_KEYS.APP_LOCKED_STATE, locked);
   },
 };

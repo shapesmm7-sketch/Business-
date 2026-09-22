@@ -107,11 +107,12 @@ export const AppLockModal: React.FC<AppLockModalProps> = ({
       isEnabled: true,
       pin: cleanedPin,
       secretWord: cleanedSecret,
-      autoLockOnExit,
+      autoLockOnExit: true,
       updatedAt: new Date().toISOString(),
     };
 
     StorageService.saveAppLockConfig(newConfig);
+    StorageService.setAppLocked(true);
     setCurrentConfig(newConfig);
     if (onConfigChange) {
       onConfigChange(newConfig);

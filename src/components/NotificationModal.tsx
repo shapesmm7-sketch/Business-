@@ -45,7 +45,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       const isEnabled = settings.pushEnabled !== false;
       setNotificationsEnabled(isEnabled);
 
-      if (isEnabled && perm !== 'granted' && typeof window !== 'undefined' && 'Notification' in window) {
+      if (isEnabled && perm !== 'granted' && (PushNotificationService.isNative() || (typeof window !== 'undefined' && 'Notification' in window))) {
         // Auto request/register push permission by default
         PushNotificationService.registerPushToken().then((res) => {
           const currentPerm = PushNotificationService.getPermissionStatus();

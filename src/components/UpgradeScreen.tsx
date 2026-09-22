@@ -10,11 +10,9 @@ import {
   CheckCircle2,
   Calendar,
   Layers,
-  Infinity as InfinityIcon,
   RefreshCw,
   ArrowLeft,
   Star,
-  Users,
   QrCode,
   Globe2,
   Clock,
@@ -151,45 +149,6 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     setSuccessToast('Subscription has been canceled.');
     setTimeout(() => setSuccessToast(null), 3500);
   };
-
-  const proFeatures = [
-    {
-      title: 'Cloud Sync & Automatic Cloud Backup',
-      desc: 'Unlock real-time cloud sync so your receipts, inventory, and sales data are permanently safe even if you uninstall the app or switch phones.',
-      icon: Cloud,
-      color: 'text-blue-500 bg-blue-100 dark:bg-blue-950/70',
-    },
-    {
-      title: 'Live QR Code & Business Link Cloud Hosting',
-      desc: 'Required for your online QR code and public business link to work. Customers anywhere can scan and view your live menu & catalog on their phones.',
-      icon: QrCode,
-      color: 'text-emerald-500 bg-emerald-100 dark:bg-emerald-950/70',
-    },
-    {
-      title: 'Unlimited Digital Receipts & Invoices',
-      desc: 'Create, edit, duplicate, and print unlimited PDF receipts and invoices with customizable serial numbers.',
-      icon: InfinityIcon,
-      color: 'text-teal-500 bg-teal-100 dark:bg-teal-950/70',
-    },
-    {
-      title: 'Custom Brand Identity & Digital Signatures',
-      desc: 'Showcase your company logo, authorized signatures, custom color palettes, and business contact badges.',
-      icon: Sparkles,
-      color: 'text-amber-500 bg-amber-100 dark:bg-amber-950/70',
-    },
-    {
-      title: 'Multi-Worker Management & Commission Ledgers',
-      desc: 'Track sales staff, monitor daily sales commissions, log salaries, and record incident loss deductions.',
-      icon: Users,
-      color: 'text-indigo-500 bg-indigo-100 dark:bg-indigo-950/70',
-    },
-    {
-      title: 'Barcode Scanner & Real-Time Inventory Control',
-      desc: 'Camera barcode scanning, automatic stock deductions on sale, low-stock warnings, and profit margin analysis.',
-      icon: Zap,
-      color: 'text-rose-500 bg-rose-100 dark:bg-rose-950/70',
-    },
-  ];
 
   return (
     <div className="space-y-5 pb-28 animate-fadeIn max-w-2xl mx-auto px-1 sm:px-0">
@@ -573,42 +532,6 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           </div>
         </div>
       )}
-
-      {/* Everything Included in Pro Feature Grid */}
-      <div className="rounded-3xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3.5">
-        <div>
-          <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-            Everything Included with Brivu Pro
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            No tiered restrictions — all subscription plans get 100% of pro features
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {proFeatures.map((feat, idx) => {
-            const Icon = feat.icon;
-            return (
-              <div
-                key={idx}
-                className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/80 flex items-start gap-3"
-              >
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${feat.color}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
-                    {feat.title}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                    {feat.desc}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 };

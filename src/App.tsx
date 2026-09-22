@@ -18,6 +18,7 @@ import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { StorageService } from './services/storage';
 import { PdfGenerator } from './services/pdfGenerator';
+import { PushNotificationService } from './services/pushNotificationService';
 import {
   ActiveScreen,
   AppSettings,
@@ -59,6 +60,7 @@ export function App() {
     return 'home';
   });
   const [previousScreen, setPreviousScreen] = useState<ActiveScreen>('home');
+  const [appLockInitialMode, setAppLockInitialMode] = useState<'view' | 'form'>('view');
   const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>('stock');
   const [inventoryShowAddInline, setInventoryShowAddInline] = useState<boolean>(false);
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
@@ -191,6 +193,45 @@ export function App() {
     };
   }, []);
 
+  // Initialize Push Notifications and handle notification click navigation
+  useEffect(() => {
+    const notifSettings = PushNotificationService.getSettings();
+    if (notifSettings.pushEnabled !== false) {
+      if (PushNotificationService.isNative()) {
+        PushNotificationService.registerPushToken().catch((err) => {
+          console.warn('[App] Native push initialization deferred:', err);
+        });
+      }
+    }
+
+    const handleAlertNavigate = (e: Event) => {
+      try {
+        const customEvent = e as CustomEvent<string>;
+        const url = customEvent.detail;
+        if (!url) return;
+
+        if (url.includes('inventory')) {
+          handleNavigate('inventory');
+        } else if (url.includes('receipt') || url.includes('invoice')) {
+          handleNavigate('receipts');
+        } else if (url.includes('upgrade') || url.includes('pro')) {
+          handleNavigate('upgrade');
+        } else if (url.includes('setting')) {
+          handleNavigate('settings');
+        } else if (url.includes('qr')) {
+          handleNavigate('qr-hosting');
+        }
+      } catch (err) {
+        console.warn('[App] Error navigating from notification event:', err);
+      }
+    };
+
+    window.addEventListener('brivu_navigate_alert', handleAlertNavigate);
+    return () => {
+      window.removeEventListener('brivu_navigate_alert', handleAlertNavigate);
+    };
+  }, []);
+
   // Reload data from storage
   const refreshData = useCallback(() => {
     setBusiness(StorageService.getProfile());
@@ -315,6 +356,36 @@ export function App() {
     setSettings(updated);
     StorageService.saveSettings(updated);
   };
+
+  const isPublicCustomerView = typeof window !== 'undefined' && (() => {
+    const params = new URLSearchParams(window.location.search);
+    return Boolean(
+      params.get('qr') ||
+      params.get('photoId') ||
+      params.get('photo') ||
+      params.get('itemId') ||
+      params.get('item')
+    );
+  })();
+
+  // If App PIN is active and app is locked, lock the WHOLE APP completely
+  if (!isPublicCustomerView && isAppLocked && lockConfig && lockConfig.isEnabled) {
+    return (
+      <AppLockScreen
+        business={business}
+        lockConfig={lockConfig}
+        onUnlock={() => {
+          setIsAppLocked(false);
+          StorageService.setAppLocked(false);
+        }}
+        onResetPinRequested={() => {
+          setIsAppLocked(false);
+          setAppLockInitialMode('form');
+          setActiveScreen('app-lock-setup');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
@@ -604,7 +675,11 @@ export function App() {
 
         {activeScreen === 'app-lock-setup' && (
           <AppLockSetupScreen
-            onBack={() => handleNavigate(previousScreen !== 'app-lock-setup' ? previousScreen : 'home')}
+            initialMode={appLockInitialMode}
+            onBack={() => {
+              setAppLockInitialMode('view');
+              handleNavigate(previousScreen !== 'app-lock-setup' ? previousScreen : 'home');
+            }}
             onLockNow={() => {
               setLockConfig(StorageService.getAppLockConfig());
               setIsAppLocked(true);
@@ -624,22 +699,6 @@ export function App() {
           receiptsCount={receipts.filter((r) => (r.documentType || 'receipt') === 'receipt').length}
           invoicesCount={receipts.filter((r) => r.documentType === 'invoice').length}
           inventoryCount={inventoryCount}
-        />
-      )}
-
-      {/* FULL-SCREEN APP LOCK SCREEN */}
-      {isAppLocked && lockConfig && lockConfig.isEnabled && (
-        <AppLockScreen
-          business={business}
-          lockConfig={lockConfig}
-          onUnlock={() => {
-            setIsAppLocked(false);
-            StorageService.setAppLocked(false);
-          }}
-          onResetPinRequested={() => {
-            setIsAppLocked(false);
-            setActiveScreen('app-lock-setup');
-          }}
         />
       )}
     </div>

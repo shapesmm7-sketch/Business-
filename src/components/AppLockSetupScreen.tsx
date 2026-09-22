@@ -22,18 +22,21 @@ interface AppLockSetupScreenProps {
   onBack: () => void;
   onLockNow: () => void;
   onConfigChange?: (config: AppLockConfig | null) => void;
+  initialMode?: 'view' | 'form';
 }
 
 export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
   onBack,
   onLockNow,
   onConfigChange,
+  initialMode,
 }) => {
   const [currentConfig, setCurrentConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
   );
 
   const [mode, setMode] = useState<'view' | 'form'>(() => {
+    if (initialMode) return initialMode;
     const existing = StorageService.getAppLockConfig();
     return existing && existing.isEnabled ? 'view' : 'form';
   });
@@ -42,7 +45,7 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
   const [pin, setPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [secretWord, setSecretWord] = useState<string>('');
-  const [autoLockOnExit, setAutoLockOnExit] = useState<boolean>(false);
+  const [autoLockOnExit, setAutoLockOnExit] = useState<boolean>(true);
 
   const [showPin, setShowPin] = useState<boolean>(false);
   const [showSecret, setShowSecret] = useState<boolean>(false);
@@ -53,9 +56,9 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
     const cfg = StorageService.getAppLockConfig();
     setCurrentConfig(cfg);
     if (cfg && cfg.isEnabled) {
-      setAutoLockOnExit(cfg.autoLockOnExit === true);
+      setAutoLockOnExit(cfg.autoLockOnExit !== false);
     } else {
-      setAutoLockOnExit(false);
+      setAutoLockOnExit(true);
     }
   }, []);
 
@@ -86,21 +89,22 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
       isEnabled: true,
       pin: cleanedPin,
       secretWord: cleanedSecret,
-      autoLockOnExit,
+      autoLockOnExit: true,
       updatedAt: new Date().toISOString(),
     };
 
     StorageService.saveAppLockConfig(newConfig);
+    StorageService.setAppLocked(true);
     setCurrentConfig(newConfig);
     if (onConfigChange) {
       onConfigChange(newConfig);
     }
 
-    setSuccessMsg('Passcode and App Lock saved successfully!');
+    setSuccessMsg('Passcode saved! Locking app now...');
     setTimeout(() => {
       setSuccessMsg(null);
-      setMode('view');
-    }, 1200);
+      onLockNow();
+    }, 500);
   };
 
   const handleToggleAutoLock = (enabled: boolean) => {

@@ -393,35 +393,33 @@ export const Header: React.FC<HeaderProps> = ({
                 );
               })}
 
-              {/* APPS MENU: LOCK APP BUTTON */}
+              {/* APPS MENU: PIN / APP LOCK SECTION */}
               <div className="pt-1">
                 {lockConfig && lockConfig.isEnabled ? (
                   <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 p-2.5 space-y-2">
                     <button
                       id="btn-menu-lock-app"
+                      type="button"
                       onClick={() => {
                         setIsMenuOpen(false);
-                        StorageService.setAppLocked(true);
-                        if (onLockApp) {
-                          onLockApp();
-                        }
+                        onNavigate('app-lock-setup');
                       }}
-                      className="w-full text-left p-2 rounded-xl hover:bg-emerald-50/80 dark:hover:bg-emerald-950/30 transition flex items-center gap-3 group cursor-pointer"
+                      className="w-full text-left p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/70 transition flex items-center gap-3 group cursor-pointer"
                     >
-                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
                         <Lock className="w-4.5 h-4.5" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                            Lock App Now
+                            App PIN Security
                           </span>
                           <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-700 dark:text-emerald-300">
                             PIN Active
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                          Lock immediately to protect screen
+                          Manage passcode, secret & settings
                         </p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors shrink-0" />
@@ -430,6 +428,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between px-1">
                       <button
                         id="btn-menu-manage-lock"
+                        type="button"
                         onClick={() => {
                           setIsMenuOpen(false);
                           onNavigate('app-lock-setup');
@@ -437,7 +436,23 @@ export const Header: React.FC<HeaderProps> = ({
                         className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         <KeyRound className="w-3.5 h-3.5" />
-                        <span>Manage / Change Passcode</span>
+                        <span>Manage PIN</span>
+                      </button>
+
+                      <button
+                        id="btn-menu-quick-lock-now"
+                        type="button"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          StorageService.setAppLocked(true);
+                          if (onLockApp) {
+                            onLockApp();
+                          }
+                        }}
+                        className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>Lock Now</span>
                       </button>
                     </div>
                   </div>

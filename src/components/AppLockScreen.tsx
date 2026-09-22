@@ -144,7 +144,7 @@ export const AppLockScreen: React.FC<AppLockScreenProps> = ({
         </h1>
         <p className="text-xs text-slate-400 mt-1 font-medium flex items-center justify-center gap-1.5">
           <Lock className="w-3.5 h-3.5 text-emerald-400" />
-          <span>App Locked for Security & Privacy</span>
+          <span>App Locked • Login to Access</span>
         </p>
       </div>
 
@@ -154,7 +154,7 @@ export const AppLockScreen: React.FC<AppLockScreenProps> = ({
           <div className="space-y-6">
             <div className="text-center space-y-2">
               <span className="text-xs uppercase tracking-widest font-black text-slate-400">
-                Enter {targetPinLength}-Digit Passcode
+                Enter {targetPinLength}-Digit Passcode to Login
               </span>
 
               {/* PIN Dot Indicators */}

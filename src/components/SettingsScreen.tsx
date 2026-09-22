@@ -236,6 +236,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {lockConfig && lockConfig.isEnabled ? (
             <>
               <button
+                id="btn-settings-manage-lock"
+                type="button"
+                onClick={() => {
+                  if (onNavigate) {
+                    onNavigate('app-lock-setup');
+                  }
+                }}
+                className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>Open PIN & Security Page</span>
+              </button>
+
+              <button
                 id="btn-settings-lock-now"
                 type="button"
                 onClick={() => {
@@ -244,24 +258,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     onLockApp();
                   }
                 }}
-                className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
-              >
-                <Lock className="w-4 h-4" />
-                <span>Lock App Now</span>
-              </button>
-
-              <button
-                id="btn-settings-manage-lock"
-                type="button"
-                onClick={() => {
-                  if (onNavigate) {
-                    onNavigate('app-lock-setup');
-                  }
-                }}
                 className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
               >
-                <KeyRound className="w-4 h-4 text-indigo-500" />
-                <span>Manage Passcode & Secret</span>
+                <Lock className="w-4 h-4 text-emerald-500" />
+                <span>Lock App Screen</span>
               </button>
             </>
           ) : (
