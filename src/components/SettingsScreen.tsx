@@ -23,11 +23,16 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Code,
+  AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig, CloudflareConfig } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { CloudflareFilesModal } from './CloudflareFilesModal';
+import { CLOUDFLARE_WORKER_JS_CODE } from '../services/cloudflareWorkerCode';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -67,10 +72,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     success: boolean;
     d1Bound: boolean;
     r2Bound: boolean;
+    isStarterTemplate?: boolean;
     message: string;
   } | null>(null);
   const [showCfFilesModal, setShowCfFilesModal] = useState(false);
   const [showCfGuide, setShowCfGuide] = useState(false);
+  const [copiedWorkerCode, setCopiedWorkerCode] = useState(false);
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -78,6 +85,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleCopyWorkerCode = async () => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(CLOUDFLARE_WORKER_JS_CODE);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = CLOUDFLARE_WORKER_JS_CODE;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedWorkerCode(true);
+      showToast('Brivu Worker code copied to clipboard!');
+      setTimeout(() => setCopiedWorkerCode(false), 3000);
+    } catch {
+      showToast('Could not auto-copy. You can find the code in cloudflare/worker.js');
+    }
   };
 
   const handleSaveCfConfig = () => {
@@ -470,40 +497,68 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {/* Test Result Message Box */}
           {cfTestResult && (
             <div
-              className={`p-3 rounded-xl text-xs flex items-start gap-2.5 border ${
+              className={`p-3.5 rounded-xl text-xs flex flex-col gap-2.5 border ${
                 cfTestResult.success
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300'
+                  : cfTestResult.isStarterTemplate
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/80 text-amber-900 dark:text-amber-200'
                   : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300'
               }`}
             >
-              {cfTestResult.success ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              )}
-              <div className="space-y-1">
-                <p className="font-semibold">{cfTestResult.message}</p>
-                {cfTestResult.success && (
-                  <div className="flex items-center gap-3 text-[11px] font-medium pt-1">
-                    <span className="flex items-center gap-1">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          cfTestResult.d1Bound ? 'bg-emerald-500' : 'bg-amber-400'
-                        }`}
-                      />
-                      D1 Database: {cfTestResult.d1Bound ? 'Active' : 'Not Bound'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          cfTestResult.r2Bound ? 'bg-emerald-500' : 'bg-amber-400'
-                        }`}
-                      />
-                      R2 Storage: {cfTestResult.r2Bound ? 'Active' : 'Not Bound'}
-                    </span>
-                  </div>
+              <div className="flex items-start gap-2.5">
+                {cfTestResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : cfTestResult.isStarterTemplate ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 )}
+                <div className="space-y-1 flex-1">
+                  <p className="font-semibold">{cfTestResult.message}</p>
+                  {cfTestResult.success && (
+                    <div className="flex items-center gap-3 text-[11px] font-medium pt-1">
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            cfTestResult.d1Bound ? 'bg-emerald-500' : 'bg-amber-400'
+                          }`}
+                        />
+                        D1 Database: {cfTestResult.d1Bound ? 'Active' : 'Not Bound'}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            cfTestResult.r2Bound ? 'bg-emerald-500' : 'bg-amber-400'
+                          }`}
+                        />
+                        R2 Storage: {cfTestResult.r2Bound ? 'Active' : 'Not Bound'}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Starter template action banner */}
+              {cfTestResult.isStarterTemplate && (
+                <div className="mt-1 pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyWorkerCode}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+                  >
+                    {copiedWorkerCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedWorkerCode ? 'Code Copied!' : 'Copy Brivu Worker Code'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCfGuide(true)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-100 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    <span>Quick Deploy Guide</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -619,34 +674,50 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           {showCfGuide && (
             <div className="mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 space-y-3 text-xs text-slate-600 dark:text-slate-300 animate-fadeIn">
-              <p className="font-semibold text-slate-900 dark:text-white">
-                Quick Setup Steps:
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  How to Activate Brivu on Your Worker:
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyWorkerCode}
+                  className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-[11px] flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-xs"
+                >
+                  {copiedWorkerCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedWorkerCode ? 'Copied!' : 'Copy Worker Code'}</span>
+                </button>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/40 text-[11px] text-orange-900 dark:text-orange-200 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <span>⚡ Quickest Method (Paste in Cloudflare Dashboard):</span>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 pl-1">
+                  <li>In Cloudflare Dashboard, open <strong>Workers & Pages &gt; brivu</strong>.</li>
+                  <li>Click <strong>Edit code</strong> (top-right button).</li>
+                  <li>Select all starter text (<em>"Hello from Brivu!"</em>) and delete it.</li>
+                  <li>Click the <strong>Copy Worker Code</strong> button above, paste it into the editor, and click <strong>Deploy</strong>!</li>
+                </ol>
+              </div>
+
               <ol className="space-y-2 list-decimal list-inside pl-1 text-[11px] leading-relaxed">
                 <li>
-                  <strong>Connect GitHub to Cloudflare:</strong> In Cloudflare Dashboard, go to <em>Workers & Pages</em> and connect your GitHub repo. The worker code is in <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/worker.ts</code>.
-                </li>
-                <li>
-                  <strong>Create D1 Database:</strong> In Cloudflare, go to <em>Storage & Databases &gt; D1</em>, create <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and execute the SQL from <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/schema.sql</code>.
+                  <strong>Create D1 Database:</strong> In Cloudflare, go to <em>Storage & Databases &gt; D1</em>, create database <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and execute the SQL from <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/schema.sql</code>.
                 </li>
                 <li>
                   <strong>Create R2 Bucket:</strong> Go to <em>Storage & Databases &gt; R2</em> and create a bucket named <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-files</code>.
                 </li>
                 <li>
-                  <strong>Bind D1 & R2 in Worker Settings:</strong> In your Worker settings &gt; Bindings, add D1 binding <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">DB</code> pointing to <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and R2 binding <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">R2_BUCKET</code> pointing to <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-files</code>.
+                  <strong>Bind D1 & R2 in Worker Settings:</strong> In your Worker <em>brivu &gt; Settings &gt; Bindings</em>, add:
+                  <ul className="list-disc list-inside pl-4 pt-1 space-y-0.5">
+                    <li>D1 Database binding: Variable name <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">DB</code> &rarr; Database <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">brivu-db</code></li>
+                    <li>R2 Bucket binding: Variable name <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">R2_BUCKET</code> &rarr; Bucket <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">brivu-files</code></li>
+                  </ul>
                 </li>
                 <li>
-                  <strong>Paste Worker URL Above:</strong> Copy your deployed Worker URL (e.g. <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">https://...workers.dev</code>) and click <em>Test Connection</em>!
+                  <strong>GitHub Auto-Deployment:</strong> If you prefer deploying via Git commits, <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">wrangler.toml</code> is now in the repository root and configured with <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">name = "brivu"</code>. Pushing your repository to GitHub triggers Cloudflare's build automatically!
                 </li>
               </ol>
-
-              <div className="p-2.5 rounded-lg bg-slate-900 text-slate-200 font-mono text-[10px] space-y-1">
-                <p className="text-slate-400"># Or run with Wrangler CLI in the cloudflare/ folder:</p>
-                <p>npx wrangler d1 create brivu-db</p>
-                <p>npx wrangler r2 bucket create brivu-files</p>
-                <p>npx wrangler d1 execute brivu-db --file=./schema.sql</p>
-                <p>npx wrangler deploy</p>
-              </div>
             </div>
           )}
         </div>

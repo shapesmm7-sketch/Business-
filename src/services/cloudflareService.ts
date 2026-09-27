@@ -2,7 +2,9 @@ import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncRe
 import { StorageService } from './storage';
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
-  workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || '',
+  workerUrl:
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) ||
+    'https://brivu.shapesmm7.workers.dev',
   apiKey: '',
   autoSaveFiles: true,
   autoSyncData: true,
@@ -22,6 +24,27 @@ function normalizeUrl(url: string): string {
     trimmed = `https://${trimmed}`;
   }
   return trimmed;
+}
+
+function parseWorkerResponse(rawText: string): { ok: boolean; data?: any; isStarter?: boolean; error?: string } {
+  if (!rawText) {
+    return { ok: false, error: 'Empty response from worker' };
+  }
+  try {
+    const data = JSON.parse(rawText);
+    return { ok: true, data };
+  } catch {
+    const isStarter =
+      rawText.toLowerCase().includes('hello from brivu') ||
+      rawText.toLowerCase().includes('hello world');
+    return {
+      ok: false,
+      isStarter,
+      error: isStarter
+        ? 'Worker is running the starter template ("Hello from Brivu!"). The Brivu backend code has not been deployed yet.'
+        : `Worker returned non-JSON text: ${rawText.slice(0, 120)}`,
+    };
+  }
 }
 
 export const CloudflareService = {
@@ -75,6 +98,7 @@ export const CloudflareService = {
     success: boolean;
     d1Bound: boolean;
     r2Bound: boolean;
+    isStarterTemplate?: boolean;
     message: string;
     statusDetails?: any;
   }> {
@@ -102,14 +126,33 @@ export const CloudflareService = {
       });
       clearTimeout(timeoutId);
 
+      const rawText = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+
+      if (parsed.isStarter) {
+        const starterMsg =
+          'Worker URL reached! It is currently running Cloudflare\'s starter template ("' +
+          rawText.trim() +
+          '"). The Brivu backend code has not been deployed to this worker yet.';
+        this.saveConfig({
+          lastStatus: 'error',
+          lastErrorMessage: starterMsg,
+        });
+        return {
+          success: false,
+          isStarterTemplate: true,
+          d1Bound: false,
+          r2Bound: false,
+          message: starterMsg,
+        };
+      }
+
       if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText);
         let errorMsg = `Worker responded with HTTP ${res.status}`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error) errorMsg = parsed.error;
-        } catch {
-          if (errorText) errorMsg = errorText;
+        if (parsed.ok && parsed.data?.error) {
+          errorMsg = parsed.data.error;
+        } else if (rawText) {
+          errorMsg = rawText;
         }
 
         this.saveConfig({
@@ -125,7 +168,21 @@ export const CloudflareService = {
         };
       }
 
-      const data = await res.json();
+      if (!parsed.ok) {
+        const errorMsg = parsed.error || `Worker returned non-JSON response: ${rawText.slice(0, 100)}`;
+        this.saveConfig({
+          lastStatus: 'error',
+          lastErrorMessage: errorMsg,
+        });
+        return {
+          success: false,
+          d1Bound: false,
+          r2Bound: false,
+          message: errorMsg,
+        };
+      }
+
+      const data = parsed.data;
       const d1Bound = Boolean(data.d1Bound || data.storage?.d1 === 'connected');
       const r2Bound = Boolean(data.r2Bound || data.storage?.r2 === 'connected');
 
@@ -251,14 +308,17 @@ export const CloudflareService = {
         };
       }
 
+      const rawText = await response.text().catch(() => response.statusText || '');
+      const parsed = parseWorkerResponse(rawText);
+
       if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
         let errorMsg = `HTTP ${response.status} upload failed`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error) errorMsg = parsed.error;
-        } catch {
-          if (errorText) errorMsg = errorText;
+        if (parsed.ok && parsed.data?.error) {
+          errorMsg = parsed.data.error;
+        } else if (parsed.error) {
+          errorMsg = parsed.error;
+        } else if (rawText) {
+          errorMsg = rawText;
         }
         return {
           success: false,
@@ -266,7 +326,14 @@ export const CloudflareService = {
         };
       }
 
-      const result = await response.json();
+      if (!parsed.ok) {
+        return {
+          success: false,
+          message: parsed.error || 'Invalid response from Cloudflare Worker',
+        };
+      }
+
+      const result = parsed.data || {};
       return {
         success: true,
         url: result.url,
@@ -311,14 +378,17 @@ export const CloudflareService = {
         body: JSON.stringify({ backupData }),
       });
 
+      const rawText = await response.text().catch(() => response.statusText || '');
+      const parsed = parseWorkerResponse(rawText);
+
       if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
         let errorMsg = `Sync failed with HTTP ${response.status}`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error) errorMsg = parsed.error;
-        } catch {
-          if (errorText) errorMsg = errorText;
+        if (parsed.ok && parsed.data?.error) {
+          errorMsg = parsed.data.error;
+        } else if (parsed.error) {
+          errorMsg = parsed.error;
+        } else if (rawText) {
+          errorMsg = rawText;
         }
         return {
           success: false,
@@ -327,7 +397,15 @@ export const CloudflareService = {
         };
       }
 
-      const result = await response.json();
+      if (!parsed.ok) {
+        return {
+          success: false,
+          message: parsed.error || 'Failed to parse sync response',
+          error: parsed.error,
+        };
+      }
+
+      const result = parsed.data || {};
       const now = new Date().toISOString();
 
       this.saveConfig({
@@ -379,14 +457,17 @@ export const CloudflareService = {
         headers,
       });
 
+      const rawText = await response.text().catch(() => response.statusText || '');
+      const parsed = parseWorkerResponse(rawText);
+
       if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
         let errorMsg = `Pull failed with HTTP ${response.status}`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error) errorMsg = parsed.error;
-        } catch {
-          if (errorText) errorMsg = errorText;
+        if (parsed.ok && parsed.data?.error) {
+          errorMsg = parsed.data.error;
+        } else if (parsed.error) {
+          errorMsg = parsed.error;
+        } else if (rawText) {
+          errorMsg = rawText;
         }
         return {
           success: false,
@@ -394,7 +475,14 @@ export const CloudflareService = {
         };
       }
 
-      const result = await response.json();
+      if (!parsed.ok) {
+        return {
+          success: false,
+          message: parsed.error || 'Failed to parse Cloudflare D1 data',
+        };
+      }
+
+      const result = parsed.data;
       if (!result.backupData) {
         return {
           success: false,
@@ -484,8 +572,10 @@ export const CloudflareService = {
       });
 
       if (!res.ok) return [];
-      const data = await res.json();
-      return data.files || [];
+      const rawText = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+      if (!parsed.ok) return [];
+      return parsed.data?.files || [];
     } catch (err) {
       console.warn('Failed to list files from Cloudflare:', err);
       return [];

@@ -1600,14 +1600,18 @@ export const StorageService = {
   // --- CLOUDFLARE WORKER SYNC & STORAGE ---
   getCloudflareConfig(): CloudflareConfig {
     const defaultVal: CloudflareConfig = {
-      workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || '',
+      workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || 'https://brivu.shapesmm7.workers.dev',
       apiKey: '',
       autoSaveFiles: true,
       autoSyncData: true,
       lastStatus: 'untested',
       filesFolder: 'receipts',
     };
-    return readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, defaultVal);
+    const loaded = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, defaultVal);
+    if (!loaded.workerUrl || loaded.workerUrl.trim() === '') {
+      loaded.workerUrl = defaultVal.workerUrl;
+    }
+    return loaded;
   },
 
   saveCloudflareConfig(config: CloudflareConfig): CloudflareConfig {
