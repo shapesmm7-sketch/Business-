@@ -15,24 +15,12 @@ import {
   Lock,
   KeyRound,
   Cloud,
-  Database,
-  RefreshCw,
   FolderOpen,
-  HelpCircle,
-  AlertCircle,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Code,
-  AlertTriangle,
-  ExternalLink,
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig, CloudflareConfig } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { CloudflareFilesModal } from './CloudflareFilesModal';
-import { CLOUDFLARE_WORKER_JS_CODE } from '../services/cloudflareWorkerCode';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -65,19 +53,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [cfConfig, setCfConfig] = useState<CloudflareConfig>(() =>
     CloudflareService.getConfig()
   );
-  const [isTestingCf, setIsTestingCf] = useState(false);
   const [isSyncingCf, setIsSyncingCf] = useState(false);
   const [isPullingCf, setIsPullingCf] = useState(false);
-  const [cfTestResult, setCfTestResult] = useState<{
-    success: boolean;
-    d1Bound: boolean;
-    r2Bound: boolean;
-    isStarterTemplate?: boolean;
-    message: string;
-  } | null>(null);
   const [showCfFilesModal, setShowCfFilesModal] = useState(false);
-  const [showCfGuide, setShowCfGuide] = useState(false);
-  const [copiedWorkerCode, setCopiedWorkerCode] = useState(false);
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -87,61 +65,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleCopyWorkerCode = async () => {
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(CLOUDFLARE_WORKER_JS_CODE);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = CLOUDFLARE_WORKER_JS_CODE;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-      setCopiedWorkerCode(true);
-      showToast('Brivu Worker code copied to clipboard!');
-      setTimeout(() => setCopiedWorkerCode(false), 3000);
-    } catch {
-      showToast('Could not auto-copy. You can find the code in cloudflare/worker.js');
-    }
-  };
-
-  const handleSaveCfConfig = () => {
-    const saved = CloudflareService.saveConfig(cfConfig);
-    setCfConfig(saved);
-    showToast('Cloudflare settings saved!');
-  };
-
-  const handleTestCf = async () => {
-    setIsTestingCf(true);
-    setCfTestResult(null);
-    try {
-      const res = await CloudflareService.testConnection(cfConfig.workerUrl, cfConfig.apiKey);
-      setCfTestResult(res);
-      const updated = CloudflareService.getConfig();
-      setCfConfig(updated);
-      showToast(res.message);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setCfTestResult({
-        success: false,
-        d1Bound: false,
-        r2Bound: false,
-        message: `Connection failed: ${msg}`,
-      });
-      showToast('Connection failed');
-    } finally {
-      setIsTestingCf(false);
-    }
-  };
-
   const handleSyncAllToCf = async () => {
     setIsSyncingCf(true);
     try {
       const res = await CloudflareService.syncAllToCloudflare();
       if (res.success) {
-        showToast(res.message || 'All records successfully saved to Cloudflare D1!');
+        showToast(res.message || 'All records successfully backed up to cloud database!');
         setCfConfig(CloudflareService.getConfig());
       } else {
         showToast(`Sync failed: ${res.message || res.error}`);
@@ -154,14 +83,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handlePullFromCf = async () => {
-    if (!confirm('This will restore receipts, products, and settings from Cloudflare D1. Continue?')) {
+    if (!confirm('This will restore receipts, products, and settings from cloud storage. Continue?')) {
       return;
     }
     setIsPullingCf(true);
     try {
       const res = await CloudflareService.pullFromCloudflare();
       if (res.success) {
-        showToast(res.message);
+        showToast(res.message || 'Data restored from cloud storage!');
         onDataRestored();
         setCfConfig(CloudflareService.getConfig());
       } else {
@@ -403,8 +332,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Cloudflare Cloud Sync & Storage (D1 + R2) */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+      {/* 3. Cloud Storage & Backup */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3.5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -413,166 +342,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <span>Cloudflare Sync & Storage</span>
-                <span className="text-[10px] lowercase font-normal text-slate-400">
-                  (D1 + R2)
-                </span>
+                <span>Cloud Backup & Storage</span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Save receipts & files to R2 bucket • Sync database info to D1 SQL
+                Automatic cloud backup for receipts, PDFs, inventory & business data
               </p>
             </div>
           </div>
 
-          <div>
-            {cfConfig.lastStatus === 'connected' ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Connected
-              </span>
-            ) : cfConfig.lastStatus === 'error' ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                Error
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                {cfConfig.workerUrl ? 'Configured' : 'Not Set'}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Worker URL & Key Form */}
-        <div className="space-y-3 pt-1">
-          <div>
-            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Cloudflare Worker URL
-            </label>
-            <input
-              type="url"
-              value={cfConfig.workerUrl}
-              onChange={(e) => setCfConfig((prev) => ({ ...prev, workerUrl: e.target.value }))}
-              placeholder="https://brivu-cloudflare-worker.yourname.workers.dev"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-orange-500 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Sync Secret Key <span className="font-normal text-slate-400">(optional, for authorized access)</span>
-            </label>
-            <input
-              type="password"
-              value={cfConfig.apiKey || ''}
-              onChange={(e) => setCfConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
-              placeholder="Matches SYNC_SECRET_KEY in worker"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-orange-500 font-mono"
-            />
-          </div>
-
-          {/* Test & Save buttons */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleTestCf}
-              disabled={isTestingCf || !cfConfig.workerUrl}
-              className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isTestingCf ? 'animate-spin text-orange-500' : ''}`} />
-              <span>{isTestingCf ? 'Testing...' : 'Test Connection'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSaveCfConfig}
-              className="py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Save Settings</span>
-            </button>
-          </div>
-
-          {/* Test Result Message Box */}
-          {cfTestResult && (
-            <div
-              className={`p-3.5 rounded-xl text-xs flex flex-col gap-2.5 border ${
-                cfTestResult.success
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300'
-                  : cfTestResult.isStarterTemplate
-                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/80 text-amber-900 dark:text-amber-200'
-                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300'
-              }`}
-            >
-              <div className="flex items-start gap-2.5">
-                {cfTestResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                ) : cfTestResult.isStarterTemplate ? (
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                )}
-                <div className="space-y-1 flex-1">
-                  <p className="font-semibold">{cfTestResult.message}</p>
-                  {cfTestResult.success && (
-                    <div className="flex items-center gap-3 text-[11px] font-medium pt-1">
-                      <span className="flex items-center gap-1">
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            cfTestResult.d1Bound ? 'bg-emerald-500' : 'bg-amber-400'
-                          }`}
-                        />
-                        D1 Database: {cfTestResult.d1Bound ? 'Active' : 'Not Bound'}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            cfTestResult.r2Bound ? 'bg-emerald-500' : 'bg-amber-400'
-                          }`}
-                        />
-                        R2 Storage: {cfTestResult.r2Bound ? 'Active' : 'Not Bound'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Starter template action banner */}
-              {cfTestResult.isStarterTemplate && (
-                <div className="mt-1 pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCopyWorkerCode}
-                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
-                  >
-                    {copiedWorkerCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedWorkerCode ? 'Code Copied!' : 'Copy Brivu Worker Code'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCfGuide(true)}
-                    className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-900 text-amber-900 dark:text-amber-100 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
-                  >
-                    <HelpCircle className="w-3.5 h-3.5" />
-                    <span>Quick Deploy Guide</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Active
+          </span>
         </div>
 
         {/* Sync & Storage Toggles */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 space-y-3">
-          {/* Auto-save files to R2 */}
+        <div className="space-y-3 pt-1">
+          {/* Auto-save files to Cloud */}
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-save Files to R2 Bucket
+                Auto-save Files & PDFs
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically backup downloaded PDFs & exported files to Cloudflare R2
+                Automatically backup downloaded PDFs & exported documents to cloud storage
               </span>
             </div>
             <button
@@ -593,14 +386,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </button>
           </div>
 
-          {/* Auto-sync data to D1 */}
+          {/* Auto-sync data to Database */}
           <div className="flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-sync Data to D1 SQL
+                Auto-sync Business Records
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically sync receipts and business records to Cloudflare D1
+                Automatically sync receipts, customers, and inventory data
               </span>
             </div>
             <button
@@ -622,104 +415,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: Sync All to D1, Restore from CF, Browse Files */}
+        {/* Action Buttons: Sync All to Cloud, Restore from Cloud, Browse Files */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {/* Sync All to D1 */}
+          {/* Sync All to Cloud */}
           <button
             type="button"
             onClick={handleSyncAllToCf}
-            disabled={isSyncingCf || !cfConfig.workerUrl}
+            disabled={isSyncingCf}
             className="p-3 rounded-xl bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-orange-200 dark:border-orange-800/50"
           >
             <Upload className={`w-3.5 h-3.5 ${isSyncingCf ? 'animate-bounce' : ''}`} />
-            <span>{isSyncingCf ? 'Syncing...' : 'Sync All to D1'}</span>
+            <span>{isSyncingCf ? 'Backing up...' : 'Backup to Cloud'}</span>
           </button>
 
-          {/* Restore Data from Cloudflare */}
+          {/* Restore Data from Cloud */}
           <button
             type="button"
             onClick={handlePullFromCf}
-            disabled={isPullingCf || !cfConfig.workerUrl}
+            disabled={isPullingCf}
             className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-slate-200 dark:border-slate-700"
           >
             <Download className={`w-3.5 h-3.5 ${isPullingCf ? 'animate-bounce' : ''}`} />
-            <span>{isPullingCf ? 'Restoring...' : 'Restore from D1'}</span>
+            <span>{isPullingCf ? 'Restoring...' : 'Restore from Cloud'}</span>
           </button>
 
-          {/* Browse R2 Files */}
+          {/* Browse Cloud Files */}
           <button
             type="button"
             onClick={() => setShowCfFilesModal(true)}
-            disabled={!cfConfig.workerUrl}
-            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-slate-200 dark:border-slate-700"
+            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer border border-slate-200 dark:border-slate-700"
           >
             <FolderOpen className="w-3.5 h-3.5 text-orange-500" />
-            <span>Browse R2 Files</span>
+            <span>Browse Cloud Files</span>
           </button>
-        </div>
-
-        {/* Collapsible Step-by-Step Setup Guide */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
-          <button
-            type="button"
-            onClick={() => setShowCfGuide(!showCfGuide)}
-            className="w-full flex items-center justify-between text-left py-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-orange-600 transition cursor-pointer"
-          >
-            <span className="flex items-center gap-1.5">
-              <HelpCircle className="w-3.5 h-3.5 text-orange-500" />
-              <span>How to Connect GitHub, Cloudflare D1 & R2</span>
-            </span>
-            {showCfGuide ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-          </button>
-
-          {showCfGuide && (
-            <div className="mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 space-y-3 text-xs text-slate-600 dark:text-slate-300 animate-fadeIn">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900 dark:text-white">
-                  How to Activate Brivu on Your Worker:
-                </p>
-                <button
-                  type="button"
-                  onClick={handleCopyWorkerCode}
-                  className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-bold text-[11px] flex items-center gap-1 transition active:scale-95 cursor-pointer shadow-xs"
-                >
-                  {copiedWorkerCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedWorkerCode ? 'Copied!' : 'Copy Worker Code'}</span>
-                </button>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-orange-50/80 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/40 text-[11px] text-orange-900 dark:text-orange-200 space-y-1">
-                <p className="font-bold flex items-center gap-1">
-                  <span>⚡ Quickest Method (Paste in Cloudflare Dashboard):</span>
-                </p>
-                <ol className="list-decimal list-inside space-y-1 pl-1">
-                  <li>In Cloudflare Dashboard, open <strong>Workers & Pages &gt; brivu</strong>.</li>
-                  <li>Click <strong>Edit code</strong> (top-right button).</li>
-                  <li>Select all starter text (<em>"Hello from Brivu!"</em>) and delete it.</li>
-                  <li>Click the <strong>Copy Worker Code</strong> button above, paste it into the editor, and click <strong>Deploy</strong>!</li>
-                </ol>
-              </div>
-
-              <ol className="space-y-2 list-decimal list-inside pl-1 text-[11px] leading-relaxed">
-                <li>
-                  <strong>Create D1 Database:</strong> In Cloudflare, go to <em>Storage & Databases &gt; D1</em>, create database <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and execute the SQL from <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/schema.sql</code>.
-                </li>
-                <li>
-                  <strong>Create R2 Bucket:</strong> Go to <em>Storage & Databases &gt; R2</em> and create a bucket named <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-files</code>.
-                </li>
-                <li>
-                  <strong>Bind D1 & R2 in Worker Settings:</strong> In your Worker <em>brivu &gt; Settings &gt; Bindings</em>, add:
-                  <ul className="list-disc list-inside pl-4 pt-1 space-y-0.5">
-                    <li>D1 Database binding: Variable name <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">DB</code> &rarr; Database <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">brivu-db</code></li>
-                    <li>R2 Bucket binding: Variable name <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">R2_BUCKET</code> &rarr; Bucket <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">brivu-files</code></li>
-                  </ul>
-                </li>
-                <li>
-                  <strong>GitHub Auto-Deployment:</strong> If you prefer deploying via Git commits, <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">wrangler.toml</code> is now in the repository root and configured with <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">name = "brivu"</code>. Pushing your repository to GitHub triggers Cloudflare's build automatically!
-                </li>
-              </ol>
-            </div>
-          )}
         </div>
       </div>
 

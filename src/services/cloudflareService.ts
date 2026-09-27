@@ -2,19 +2,18 @@ import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncRe
 import { StorageService } from './storage';
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
-  workerUrl:
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) ||
-    'https://brivu.shapesmm7.workers.dev',
+  workerUrl: 'https://brivu.shapesmm7.workers.dev',
   apiKey: '',
   autoSaveFiles: true,
   autoSyncData: true,
-  lastStatus: 'untested',
+  lastStatus: 'connected',
   filesFolder: 'receipts',
 };
 
 function normalizeUrl(url: string): string {
-  if (!url) return '';
+  if (!url) return 'https://brivu.shapesmm7.workers.dev';
   let trimmed = url.trim();
+  if (!trimmed) return 'https://brivu.shapesmm7.workers.dev';
   // Strip trailing slash
   if (trimmed.endsWith('/')) {
     trimmed = trimmed.slice(0, -1);
@@ -49,7 +48,11 @@ function parseWorkerResponse(rawText: string): { ok: boolean; data?: any; isStar
 
 export const CloudflareService = {
   getConfig(): CloudflareConfig {
-    return StorageService.getCloudflareConfig();
+    const config = StorageService.getCloudflareConfig();
+    if (!config.workerUrl || config.workerUrl.trim() === '') {
+      config.workerUrl = DEFAULT_CLOUDFLARE_CONFIG.workerUrl;
+    }
+    return config;
   },
 
   saveConfig(partial: Partial<CloudflareConfig>): CloudflareConfig {

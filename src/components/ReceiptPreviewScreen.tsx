@@ -111,7 +111,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       const filename = `${prefix}_${cleanNum}.pdf`;
       const arrayBuffer = doc.output('arraybuffer');
 
-      // 1. Upload PDF to Cloudflare R2
+      // 1. Upload PDF to Cloud Storage
       const fileRes = await CloudflareService.uploadFile({
         data: arrayBuffer,
         filename,
@@ -119,17 +119,17 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
         folder: 'receipts',
       });
 
-      // 2. Sync receipt record to Cloudflare D1
+      // 2. Sync receipt record to Cloud
       await CloudflareService.saveSingleReceipt(receipt);
 
       if (fileRes.success) {
-        showToast(`Saved to Cloudflare R2 & D1!`);
+        showToast(`Saved to Cloud Storage & Synced!`);
       } else {
-        showToast(fileRes.message || 'Saved to Cloudflare');
+        showToast(fileRes.message || 'Saved to Cloud Storage');
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      showToast(`Cloudflare save error: ${errMsg}`);
+      showToast(`Cloud save error: ${errMsg}`);
     } finally {
       setIsUploadingCf(false);
     }
@@ -369,18 +369,18 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             <span>{isInvoice ? 'Share Invoice' : 'Share Receipt'}</span>
           </button>
 
-          {/* Cloudflare Direct Save (when configured) */}
+          {/* Cloud Direct Save (Auto configured) */}
           {isCfConfigured && (
             <button
               id="btn-preview-save-cf"
               type="button"
               onClick={handleSaveToCloudflare}
               disabled={isGenerating || isUploadingCf}
-              title="Save to Cloudflare R2 & D1"
+              title="Save to Cloud Storage"
               className="py-3.5 px-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
             >
               <Cloud className={`w-4 h-4 ${isUploadingCf ? 'animate-bounce' : ''}`} />
-              <span className="hidden sm:inline">{isUploadingCf ? 'Saving...' : 'R2 Cloud'}</span>
+              <span className="hidden sm:inline">{isUploadingCf ? 'Saving...' : 'Cloud Backup'}</span>
             </button>
           )}
         </div>

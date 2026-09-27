@@ -71,7 +71,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       const success = await CloudflareService.deleteFile(key);
       if (success) {
         setFiles((prev) => prev.filter((f) => f.key !== key));
-        showToast('File deleted from Cloudflare R2');
+        showToast('File deleted from cloud storage');
       } else {
         showToast('Failed to delete file');
       }
@@ -94,7 +94,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       });
 
       if (res.success) {
-        showToast(`"${file.name}" uploaded to Cloudflare R2!`);
+        showToast(`"${file.name}" uploaded to cloud storage!`);
         await loadFiles();
       } else {
         showToast(`Upload failed: ${res.message}`);
@@ -146,13 +146,13 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Cloudflare R2 Files</span>
+                <span>Cloud Storage Files</span>
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/70 text-orange-600 dark:text-orange-400">
                   {files.length} saved
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Receipts, invoices, images & backups saved in your Cloudflare R2 bucket
+                Receipts, invoices, images & backups saved in cloud storage
               </p>
             </div>
           </div>
@@ -180,7 +180,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         {/* Action Bar (Upload & Filter) */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-            Files Stored in Object Storage
+            Saved Cloud Documents
           </span>
 
           <input
@@ -197,7 +197,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
             className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50"
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>{uploading ? 'Uploading...' : 'Upload File to R2'}</span>
+            <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
           </button>
         </div>
 
@@ -214,7 +214,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
           {isLoading && files.length === 0 ? (
             <div className="py-16 text-center space-y-3">
               <RefreshCw className="w-7 h-7 text-orange-500 animate-spin mx-auto" />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Loading files from Cloudflare R2...</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Loading files from cloud storage...</p>
             </div>
           ) : files.length === 0 ? (
             <div className="py-16 text-center space-y-3">
@@ -222,7 +222,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 <Cloud className="w-7 h-7" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No files in Cloudflare R2 yet</h4>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No files in cloud storage yet</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
                   When you download receipts, invoices, or export backups, they will automatically be stored here.
                 </p>
