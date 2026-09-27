@@ -16,6 +16,7 @@ import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
 import { UpgradeScreen } from './components/UpgradeScreen';
 import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
+import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { StorageService } from './services/storage';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
@@ -808,6 +809,13 @@ export function App() {
             onConfigChange={(newCfg) => {
               setLockConfig(newCfg);
             }}
+          />
+        )}
+
+        {activeScreen === 'cloud-backup' && (
+          <CloudBackupScreen
+            onBack={() => handleNavigate('settings')}
+            onDataRestored={refreshData}
           />
         )}
       </main>

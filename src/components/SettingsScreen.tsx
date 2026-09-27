@@ -13,14 +13,11 @@ import {
   Crown,
   Sparkles,
   Lock,
-  KeyRound,
   Cloud,
-  FolderOpen,
 } from 'lucide-react';
-import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig, CloudflareConfig } from '../types';
+import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig } from '../types';
 import { StorageService } from '../services/storage';
-import { CloudflareService } from '../services/cloudflareService';
-import { CloudflareFilesModal } from './CloudflareFilesModal';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -42,7 +39,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   useEffect(() => {
     setLocalSettings(settings);
     setLockConfig(StorageService.getAppLockConfig());
-    setCfConfig(CloudflareService.getConfig());
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
@@ -50,12 +46,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
   );
-  const [cfConfig, setCfConfig] = useState<CloudflareConfig>(() =>
-    CloudflareService.getConfig()
-  );
-  const [isSyncingCf, setIsSyncingCf] = useState(false);
-  const [isPullingCf, setIsPullingCf] = useState(false);
-  const [showCfFilesModal, setShowCfFilesModal] = useState(false);
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -63,44 +53,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  const handleSyncAllToCf = async () => {
-    setIsSyncingCf(true);
-    try {
-      const res = await CloudflareService.syncAllToCloudflare();
-      if (res.success) {
-        showToast(res.message || 'All records successfully backed up to cloud database!');
-        setCfConfig(CloudflareService.getConfig());
-      } else {
-        showToast(`Sync failed: ${res.message || res.error}`);
-      }
-    } catch (err: unknown) {
-      showToast(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsSyncingCf(false);
-    }
-  };
-
-  const handlePullFromCf = async () => {
-    if (!confirm('This will restore receipts, products, and settings from cloud storage. Continue?')) {
-      return;
-    }
-    setIsPullingCf(true);
-    try {
-      const res = await CloudflareService.pullFromCloudflare();
-      if (res.success) {
-        showToast(res.message || 'Data restored from cloud storage!');
-        onDataRestored();
-        setCfConfig(CloudflareService.getConfig());
-      } else {
-        showToast(`Restore failed: ${res.message}`);
-      }
-    } catch (err: unknown) {
-      showToast(`Restore error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsPullingCf(false);
-    }
   };
 
   const handleFieldChange = <K extends keyof AppSettings>(
@@ -282,38 +234,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           Lock your app with a digit passcode to keep receipts, inventory, and sales private from intruders. Reset easily with your secret recovery word or number.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+        <div className="pt-1">
           {lockConfig && lockConfig.isEnabled ? (
-            <>
-              <button
-                id="btn-settings-manage-lock"
-                type="button"
-                onClick={() => {
-                  if (onNavigate) {
-                    onNavigate('app-lock-setup');
-                  }
-                }}
-                className="p-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>Open PIN & Security Page</span>
-              </button>
-
-              <button
-                id="btn-settings-lock-now"
-                type="button"
-                onClick={() => {
-                  StorageService.setAppLocked(true);
-                  if (onLockApp) {
-                    onLockApp();
-                  }
-                }}
-                className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
-              >
-                <Lock className="w-4 h-4 text-emerald-500" />
-                <span>Lock App Screen</span>
-              </button>
-            </>
+            <button
+              id="btn-settings-lock-now"
+              type="button"
+              onClick={() => {
+                StorageService.setAppLocked(true);
+                if (onLockApp) {
+                  onLockApp();
+                }
+              }}
+              className="w-full p-3.5 rounded-xl bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
+            >
+              <Lock className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
+              <span>Lock App Screen</span>
+            </button>
           ) : (
             <button
               id="btn-settings-setup-lock"
@@ -323,7 +259,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   onNavigate('app-lock-setup');
                 }
               }}
-              className="col-span-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
+              className="w-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
             >
               <Lock className="w-4 h-4" />
               <span>Create Passcode & Enable App Lock</span>
@@ -332,123 +268,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Cloud Storage & Backup */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3.5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center">
-              <Cloud className="w-4 h-4" />
+      {/* 3. Cloud Storage & Backup Page Navigation Card */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
+        <button
+          id="btn-settings-open-cloud-backup"
+          type="button"
+          onClick={() => {
+            if (onNavigate) {
+              onNavigate('cloud-backup');
+            }
+          }}
+          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition active:scale-[0.99] cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+              <Cloud className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <span>Cloud Backup & Storage</span>
+                <span>Cloud Backup</span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatic cloud backup for receipts, PDFs, inventory & business data
+                Sync receipts, products & file storage in the cloud
               </p>
             </div>
           </div>
 
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Active
-          </span>
-        </div>
-
-        {/* Sync & Storage Toggles */}
-        <div className="space-y-3 pt-1">
-          {/* Auto-save files to Cloud */}
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-save Files & PDFs
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically backup downloaded PDFs & exported documents to cloud storage
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const updated = CloudflareService.saveConfig({
-                  autoSaveFiles: cfConfig.autoSaveFiles === false,
-                });
-                setCfConfig(updated);
-              }}
-              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer ${
-                cfConfig.autoSaveFiles !== false
-                  ? 'bg-orange-500 justify-end'
-                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
-              }`}
-            >
-              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
-            </button>
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Active
+            </span>
+            <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-500" />
           </div>
-
-          {/* Auto-sync data to Database */}
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-sync Business Records
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically sync receipts, customers, and inventory data
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const updated = CloudflareService.saveConfig({
-                  autoSyncData: cfConfig.autoSyncData === false,
-                });
-                setCfConfig(updated);
-              }}
-              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer ${
-                cfConfig.autoSyncData !== false
-                  ? 'bg-orange-500 justify-end'
-                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
-              }`}
-            >
-              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
-            </button>
-          </div>
-        </div>
-
-        {/* Action Buttons: Sync All to Cloud, Restore from Cloud, Browse Files */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {/* Sync All to Cloud */}
-          <button
-            type="button"
-            onClick={handleSyncAllToCf}
-            disabled={isSyncingCf}
-            className="p-3 rounded-xl bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-orange-200 dark:border-orange-800/50"
-          >
-            <Upload className={`w-3.5 h-3.5 ${isSyncingCf ? 'animate-bounce' : ''}`} />
-            <span>{isSyncingCf ? 'Backing up...' : 'Backup to Cloud'}</span>
-          </button>
-
-          {/* Restore Data from Cloud */}
-          <button
-            type="button"
-            onClick={handlePullFromCf}
-            disabled={isPullingCf}
-            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-slate-200 dark:border-slate-700"
-          >
-            <Download className={`w-3.5 h-3.5 ${isPullingCf ? 'animate-bounce' : ''}`} />
-            <span>{isPullingCf ? 'Restoring...' : 'Restore from Cloud'}</span>
-          </button>
-
-          {/* Browse Cloud Files */}
-          <button
-            type="button"
-            onClick={() => setShowCfFilesModal(true)}
-            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer border border-slate-200 dark:border-slate-700"
-          >
-            <FolderOpen className="w-3.5 h-3.5 text-orange-500" />
-            <span>Browse Cloud Files</span>
-          </button>
-        </div>
+        </button>
       </div>
 
       {/* 4. Data Backup & Restore */}
@@ -514,11 +367,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <button
           id="btn-show-privacy"
           onClick={() => setShowPrivacyModal(true)}
-          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition"
+          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition cursor-pointer"
         >
           <div className="flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <span>Privacy Policy (100% Offline)</span>
+            <span>Privacy Policy</span>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
@@ -535,18 +388,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               Brivu v1.0
             </h3>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Brivu is a fast digital receipt maker designed for small businesses, shops, salons, restaurants, and freelancers.
+              Brivu is a fast digital receipt and business management platform designed for small businesses, shops, salons, restaurants, and freelancers.
             </p>
             <ul className="mt-3 text-xs text-slate-500 dark:text-slate-400 space-y-1">
               <li>• Real vector PDF generation with selectable text</li>
               <li>• 5 professional receipt templates</li>
               <li>• Direct WhatsApp & Android share sheet support</li>
-              <li>• 100% Offline-first local storage</li>
+              <li>• Offline-first local storage with automatic Cloud Backup</li>
               <li>• Instant backup and data restoration</li>
             </ul>
             <button
               onClick={() => setShowAboutModal(false)}
-              className="mt-5 w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition"
+              className="mt-5 w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition cursor-pointer"
             >
               Close
             </button>
@@ -554,38 +407,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       )}
 
-      {/* PRIVACY POLICY MODAL */}
-      {showPrivacyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-scaleUp">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              100% Offline & Private
-            </h3>
-            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Brivu operates completely on your device.
-            </p>
-            <div className="mt-3 space-y-2 text-xs text-slate-500 dark:text-slate-400">
-              <p>• <strong>No Accounts:</strong> You do not need to register or sign in.</p>
-              <p>• <strong>Zero Remote Tracking:</strong> Your receipts, prices, customer details, and business data are never uploaded to any remote server.</p>
-              <p>• <strong>You Own Your Data:</strong> Export backups anytime in open JSON format.</p>
-            </div>
-            <button
-              onClick={() => setShowPrivacyModal(false)}
-              className="mt-5 w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition"
-            >
-              Understood
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* CLOUDFLARE R2 FILES MODAL */}
-      <CloudflareFilesModal
-        isOpen={showCfFilesModal}
-        onClose={() => setShowCfFilesModal(false)}
+      {/* COMPREHENSIVE PRIVACY POLICY MODAL */}
+      <PrivacyPolicyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
       />
     </div>
   );

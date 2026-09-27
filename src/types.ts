@@ -475,7 +475,8 @@ export type ActiveScreen =
   | 'qr-hosting'
   | 'qr-customer-view'
   | 'upgrade'
-  | 'app-lock-setup';
+  | 'app-lock-setup'
+  | 'cloud-backup';
 
 export type SubscriptionPlanId = '1-month' | '6-months' | '1-year';
 
