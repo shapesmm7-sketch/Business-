@@ -49,5 +49,11 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "wrangler": "^4.141.0"
+  },
+  "optionalDependencies": {
+    "@esbuild/darwin-arm64": "^0.25.0",
+    "@esbuild/darwin-x64": "^0.25.0",
+    "@rollup/rollup-darwin-arm64": "^4.30.0",
+    "@rollup/rollup-darwin-x64": "^4.30.0"
   }
 }

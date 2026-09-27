@@ -19,6 +19,7 @@ workflows:
       - name: Install npm dependencies
         script: |
           npm install --legacy-peer-deps
+          npm install --no-save @rollup/rollup-darwin-arm64 @rollup/rollup-darwin-x64 @esbuild/darwin-arm64 @esbuild/darwin-x64
       - name: Build Vite web application
         script: |
           npm run build
