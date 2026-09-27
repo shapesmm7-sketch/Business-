@@ -3,20 +3,10 @@ main = "cloudflare/worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# D1 SQL Database Binding
-# Connects worker to your Cloudflare D1 database 'brivu-db'
-[[d1_databases]]
-binding = "DB"
-database_name = "brivu-db"
-database_id = "YOUR_D1_DATABASE_ID"
-
-# R2 Object Storage Bucket Binding
-# Connects worker to your Cloudflare R2 bucket 'brivu-files'
-[[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "brivu-files"
+# D1 and R2 bindings are managed in Cloudflare Dashboard (Settings > Bindings):
+# - DB -> brivu-db (D1)
+# - R2_BUCKET -> brivu-files (R2)
 
 [vars]
 ENVIRONMENT = "production"
-# Uncomment if you set a secret key in Brivu settings:
-# SYNC_SECRET_KEY = "your-custom-secret-key"
+
