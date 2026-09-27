@@ -3,19 +3,9 @@ main = "worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# D1 Database Binding
-# Create your D1 database with: npx wrangler d1 create brivu-db
-# Then replace YOUR_D1_DATABASE_ID below with the database_id output by Wrangler
-[[d1_databases]]
-binding = "DB"
-database_name = "brivu-db"
-database_id = "YOUR_D1_DATABASE_ID"
-
-# R2 Object Storage Bucket Binding
-# Create your R2 bucket with: npx wrangler r2 bucket create brivu-files
-[[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "brivu-files"
+# D1 and R2 bindings are managed in Cloudflare Dashboard (Settings > Bindings):
+# - DB -> brivu-db (D1)
+# - R2_BUCKET -> brivu-files (R2)
 
 # Optional environment variables
 [vars]
