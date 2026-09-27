@@ -14,9 +14,20 @@ import {
   Sparkles,
   Lock,
   KeyRound,
+  Cloud,
+  Database,
+  RefreshCw,
+  FolderOpen,
+  HelpCircle,
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig } from '../types';
+import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig, CloudflareConfig } from '../types';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
+import { CloudflareFilesModal } from './CloudflareFilesModal';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -38,6 +49,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   useEffect(() => {
     setLocalSettings(settings);
     setLockConfig(StorageService.getAppLockConfig());
+    setCfConfig(CloudflareService.getConfig());
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
@@ -45,12 +57,94 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
   );
+  const [cfConfig, setCfConfig] = useState<CloudflareConfig>(() =>
+    CloudflareService.getConfig()
+  );
+  const [isTestingCf, setIsTestingCf] = useState(false);
+  const [isSyncingCf, setIsSyncingCf] = useState(false);
+  const [isPullingCf, setIsPullingCf] = useState(false);
+  const [cfTestResult, setCfTestResult] = useState<{
+    success: boolean;
+    d1Bound: boolean;
+    r2Bound: boolean;
+    message: string;
+  } | null>(null);
+  const [showCfFilesModal, setShowCfFilesModal] = useState(false);
+  const [showCfGuide, setShowCfGuide] = useState(false);
+
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleSaveCfConfig = () => {
+    const saved = CloudflareService.saveConfig(cfConfig);
+    setCfConfig(saved);
+    showToast('Cloudflare settings saved!');
+  };
+
+  const handleTestCf = async () => {
+    setIsTestingCf(true);
+    setCfTestResult(null);
+    try {
+      const res = await CloudflareService.testConnection(cfConfig.workerUrl, cfConfig.apiKey);
+      setCfTestResult(res);
+      const updated = CloudflareService.getConfig();
+      setCfConfig(updated);
+      showToast(res.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCfTestResult({
+        success: false,
+        d1Bound: false,
+        r2Bound: false,
+        message: `Connection failed: ${msg}`,
+      });
+      showToast('Connection failed');
+    } finally {
+      setIsTestingCf(false);
+    }
+  };
+
+  const handleSyncAllToCf = async () => {
+    setIsSyncingCf(true);
+    try {
+      const res = await CloudflareService.syncAllToCloudflare();
+      if (res.success) {
+        showToast(res.message || 'All records successfully saved to Cloudflare D1!');
+        setCfConfig(CloudflareService.getConfig());
+      } else {
+        showToast(`Sync failed: ${res.message || res.error}`);
+      }
+    } catch (err: unknown) {
+      showToast(`Sync error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSyncingCf(false);
+    }
+  };
+
+  const handlePullFromCf = async () => {
+    if (!confirm('This will restore receipts, products, and settings from Cloudflare D1. Continue?')) {
+      return;
+    }
+    setIsPullingCf(true);
+    try {
+      const res = await CloudflareService.pullFromCloudflare();
+      if (res.success) {
+        showToast(res.message);
+        onDataRestored();
+        setCfConfig(CloudflareService.getConfig());
+      } else {
+        showToast(`Restore failed: ${res.message}`);
+      }
+    } catch (err: unknown) {
+      showToast(`Restore error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsPullingCf(false);
+    }
   };
 
   const handleFieldChange = <K extends keyof AppSettings>(
@@ -282,7 +376,283 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Data Backup & Restore */}
+      {/* 3. Cloudflare Cloud Sync & Storage (D1 + R2) */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+              <Cloud className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span>Cloudflare Sync & Storage</span>
+                <span className="text-[10px] lowercase font-normal text-slate-400">
+                  (D1 + R2)
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Save receipts & files to R2 bucket • Sync database info to D1 SQL
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {cfConfig.lastStatus === 'connected' ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Connected
+              </span>
+            ) : cfConfig.lastStatus === 'error' ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                Error
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                {cfConfig.workerUrl ? 'Configured' : 'Not Set'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Worker URL & Key Form */}
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+              Cloudflare Worker URL
+            </label>
+            <input
+              type="url"
+              value={cfConfig.workerUrl}
+              onChange={(e) => setCfConfig((prev) => ({ ...prev, workerUrl: e.target.value }))}
+              placeholder="https://brivu-cloudflare-worker.yourname.workers.dev"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-orange-500 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+              Sync Secret Key <span className="font-normal text-slate-400">(optional, for authorized access)</span>
+            </label>
+            <input
+              type="password"
+              value={cfConfig.apiKey || ''}
+              onChange={(e) => setCfConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+              placeholder="Matches SYNC_SECRET_KEY in worker"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-hidden focus:border-orange-500 font-mono"
+            />
+          </div>
+
+          {/* Test & Save buttons */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleTestCf}
+              disabled={isTestingCf || !cfConfig.workerUrl}
+              className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingCf ? 'animate-spin text-orange-500' : ''}`} />
+              <span>{isTestingCf ? 'Testing...' : 'Test Connection'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveCfConfig}
+              className="py-2.5 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Save Settings</span>
+            </button>
+          </div>
+
+          {/* Test Result Message Box */}
+          {cfTestResult && (
+            <div
+              className={`p-3 rounded-xl text-xs flex items-start gap-2.5 border ${
+                cfTestResult.success
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-300'
+              }`}
+            >
+              {cfTestResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1">
+                <p className="font-semibold">{cfTestResult.message}</p>
+                {cfTestResult.success && (
+                  <div className="flex items-center gap-3 text-[11px] font-medium pt-1">
+                    <span className="flex items-center gap-1">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          cfTestResult.d1Bound ? 'bg-emerald-500' : 'bg-amber-400'
+                        }`}
+                      />
+                      D1 Database: {cfTestResult.d1Bound ? 'Active' : 'Not Bound'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          cfTestResult.r2Bound ? 'bg-emerald-500' : 'bg-amber-400'
+                        }`}
+                      />
+                      R2 Storage: {cfTestResult.r2Bound ? 'Active' : 'Not Bound'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sync & Storage Toggles */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 space-y-3">
+          {/* Auto-save files to R2 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Auto-save Files to R2 Bucket
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Automatically backup downloaded PDFs & exported files to Cloudflare R2
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const updated = CloudflareService.saveConfig({
+                  autoSaveFiles: cfConfig.autoSaveFiles === false,
+                });
+                setCfConfig(updated);
+              }}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer ${
+                cfConfig.autoSaveFiles !== false
+                  ? 'bg-orange-500 justify-end'
+                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+            </button>
+          </div>
+
+          {/* Auto-sync data to D1 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Auto-sync Data to D1 SQL
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Automatically sync receipts and business records to Cloudflare D1
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const updated = CloudflareService.saveConfig({
+                  autoSyncData: cfConfig.autoSyncData === false,
+                });
+                setCfConfig(updated);
+              }}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer ${
+                cfConfig.autoSyncData !== false
+                  ? 'bg-orange-500 justify-end'
+                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+            </button>
+          </div>
+        </div>
+
+        {/* Action Buttons: Sync All to D1, Restore from CF, Browse Files */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {/* Sync All to D1 */}
+          <button
+            type="button"
+            onClick={handleSyncAllToCf}
+            disabled={isSyncingCf || !cfConfig.workerUrl}
+            className="p-3 rounded-xl bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-orange-200 dark:border-orange-800/50"
+          >
+            <Upload className={`w-3.5 h-3.5 ${isSyncingCf ? 'animate-bounce' : ''}`} />
+            <span>{isSyncingCf ? 'Syncing...' : 'Sync All to D1'}</span>
+          </button>
+
+          {/* Restore Data from Cloudflare */}
+          <button
+            type="button"
+            onClick={handlePullFromCf}
+            disabled={isPullingCf || !cfConfig.workerUrl}
+            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-slate-200 dark:border-slate-700"
+          >
+            <Download className={`w-3.5 h-3.5 ${isPullingCf ? 'animate-bounce' : ''}`} />
+            <span>{isPullingCf ? 'Restoring...' : 'Restore from D1'}</span>
+          </button>
+
+          {/* Browse R2 Files */}
+          <button
+            type="button"
+            onClick={() => setShowCfFilesModal(true)}
+            disabled={!cfConfig.workerUrl}
+            className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 cursor-pointer border border-slate-200 dark:border-slate-700"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-orange-500" />
+            <span>Browse R2 Files</span>
+          </button>
+        </div>
+
+        {/* Collapsible Step-by-Step Setup Guide */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
+          <button
+            type="button"
+            onClick={() => setShowCfGuide(!showCfGuide)}
+            className="w-full flex items-center justify-between text-left py-1 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-orange-600 transition cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <HelpCircle className="w-3.5 h-3.5 text-orange-500" />
+              <span>How to Connect GitHub, Cloudflare D1 & R2</span>
+            </span>
+            {showCfGuide ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          </button>
+
+          {showCfGuide && (
+            <div className="mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 space-y-3 text-xs text-slate-600 dark:text-slate-300 animate-fadeIn">
+              <p className="font-semibold text-slate-900 dark:text-white">
+                Quick Setup Steps:
+              </p>
+              <ol className="space-y-2 list-decimal list-inside pl-1 text-[11px] leading-relaxed">
+                <li>
+                  <strong>Connect GitHub to Cloudflare:</strong> In Cloudflare Dashboard, go to <em>Workers & Pages</em> and connect your GitHub repo. The worker code is in <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/worker.ts</code>.
+                </li>
+                <li>
+                  <strong>Create D1 Database:</strong> In Cloudflare, go to <em>Storage & Databases &gt; D1</em>, create <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and execute the SQL from <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">cloudflare/schema.sql</code>.
+                </li>
+                <li>
+                  <strong>Create R2 Bucket:</strong> Go to <em>Storage & Databases &gt; R2</em> and create a bucket named <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-files</code>.
+                </li>
+                <li>
+                  <strong>Bind D1 & R2 in Worker Settings:</strong> In your Worker settings &gt; Bindings, add D1 binding <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">DB</code> pointing to <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-db</code>, and R2 binding <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">R2_BUCKET</code> pointing to <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">brivu-files</code>.
+                </li>
+                <li>
+                  <strong>Paste Worker URL Above:</strong> Copy your deployed Worker URL (e.g. <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">https://...workers.dev</code>) and click <em>Test Connection</em>!
+                </li>
+              </ol>
+
+              <div className="p-2.5 rounded-lg bg-slate-900 text-slate-200 font-mono text-[10px] space-y-1">
+                <p className="text-slate-400"># Or run with Wrangler CLI in the cloudflare/ folder:</p>
+                <p>npx wrangler d1 create brivu-db</p>
+                <p>npx wrangler r2 bucket create brivu-files</p>
+                <p>npx wrangler d1 execute brivu-db --file=./schema.sql</p>
+                <p>npx wrangler deploy</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 4. Data Backup & Restore */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center gap-2">
           <Download className="w-4 h-4 text-emerald-500" />
@@ -412,6 +782,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* CLOUDFLARE R2 FILES MODAL */}
+      <CloudflareFilesModal
+        isOpen={showCfFilesModal}
+        onClose={() => setShowCfFilesModal(false)}
+      />
     </div>
   );
 };

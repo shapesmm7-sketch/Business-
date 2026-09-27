@@ -499,3 +499,35 @@ export interface AppLockConfig {
   lastLockedAt?: string;
   updatedAt?: string;
 }
+
+export interface CloudflareConfig {
+  workerUrl: string; // e.g. https://brivu-worker.subdomain.workers.dev
+  apiKey?: string; // Optional secret key / token
+  autoSaveFiles: boolean; // Auto-save generated receipts/invoices/reports to R2
+  autoSyncData: boolean; // Auto-sync receipts & database info to D1 SQL database
+  lastSyncAt?: string;
+  lastStatus?: 'connected' | 'error' | 'untested';
+  lastErrorMessage?: string;
+  filesFolder?: string;
+}
+
+export interface CloudflareFileRecord {
+  key: string;
+  filename: string;
+  size: number;
+  mimeType: string;
+  folder?: string;
+  uploadedAt: string;
+  url: string;
+}
+
+export interface CloudflareSyncResponse {
+  success: boolean;
+  message: string;
+  timestamp?: string;
+  receiptsSaved?: number;
+  d1Bound?: boolean;
+  r2Bound?: boolean;
+  error?: string;
+}
+

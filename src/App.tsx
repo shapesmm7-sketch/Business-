@@ -19,6 +19,7 @@ import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { StorageService } from './services/storage';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
+import { App as CapApp } from '@capacitor/app';
 import {
   ActiveScreen,
   AppSettings,
@@ -246,6 +247,121 @@ export function App() {
     setStats(StorageService.getStats());
     setInventoryCount(StorageService.getInventoryProducts().length);
     setLockConfig(StorageService.getAppLockConfig());
+  }, []);
+
+  // App Lock Lifecycle: automatically enforce auto-lock on app launch, background/resume, reload, or visibility change
+  useEffect(() => {
+    let lastBackgroundTimestamp = 0;
+
+    const handleAppGoingBackground = () => {
+      lastBackgroundTimestamp = Date.now();
+      const currentCfg = StorageService.getAppLockConfig();
+      if (currentCfg?.isEnabled && currentCfg?.autoLockOnExit !== false) {
+        StorageService.setAppLocked(true);
+      }
+    };
+
+    const handleAppResuming = () => {
+      const currentCfg = StorageService.getAppLockConfig();
+      setLockConfig(currentCfg);
+
+      // Check if the customer QR public view is active
+      const isPublic = typeof window !== 'undefined' && (() => {
+        const params = new URLSearchParams(window.location.search);
+        return Boolean(
+          params.get('qr') ||
+          params.get('photoId') ||
+          params.get('photo') ||
+          params.get('itemId') ||
+          params.get('item')
+        );
+      })();
+
+      if (isPublic) return;
+
+      if (currentCfg?.isEnabled && currentCfg.pin && currentCfg.autoLockOnExit !== false) {
+        // If returning from system dialog (e.g. file picker / share sheet), do not lock
+        if (StorageService.consumeSystemActionActive()) {
+          return;
+        }
+
+        // If the app was backgrounded for more than 300ms or resumed
+        if (lastBackgroundTimestamp > 0 && Date.now() - lastBackgroundTimestamp > 300) {
+          StorageService.setAppLocked(true);
+          setIsAppLocked(true);
+        }
+      }
+    };
+
+    // 1. Web visibility change (works across browsers, PWAs, WebViews)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleAppGoingBackground();
+      } else if (document.visibilityState === 'visible') {
+        handleAppResuming();
+      }
+    };
+
+    // 2. Native Capacitor App State Change
+    let capListenerHandle: any = null;
+    try {
+      CapApp.addListener('appStateChange', (state) => {
+        if (!state.isActive) {
+          handleAppGoingBackground();
+        } else {
+          handleAppResuming();
+        }
+      }).then((handle) => {
+        capListenerHandle = handle;
+      }).catch((err) => {
+        console.warn('[AppLock] CapApp listener note:', err);
+      });
+    } catch (capErr) {
+      console.warn('[AppLock] CapApp setup note:', capErr);
+    }
+
+    // 3. Window focus / blur / pagehide / beforeunload listeners
+    const handleWindowFocus = () => {
+      handleAppResuming();
+    };
+    const handleWindowBlur = () => {
+      handleAppGoingBackground();
+    };
+    const handlePageHide = () => {
+      handleAppGoingBackground();
+    };
+
+    // 4. File input click interceptor to prevent file picking from triggering app lock on return
+    const handleFileInputClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'file' ||
+         target.closest('input[type="file"]') ||
+         target.getAttribute('type') === 'file')
+      ) {
+        StorageService.markSystemActionActive(60000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+    document.addEventListener('click', handleFileInputClick, true);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      document.removeEventListener('click', handleFileInputClick, true);
+      if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
+        capListenerHandle.remove();
+      }
+    };
   }, []);
 
   // Handler to navigate

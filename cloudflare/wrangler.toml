@@ -1,0 +1,24 @@
+name = "brivu-cloudflare-worker"
+main = "worker.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database Binding
+# Create your D1 database with: npx wrangler d1 create brivu-db
+# Then replace YOUR_D1_DATABASE_ID below with the database_id output by Wrangler
+[[d1_databases]]
+binding = "DB"
+database_name = "brivu-db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+# R2 Object Storage Bucket Binding
+# Create your R2 bucket with: npx wrangler r2 bucket create brivu-files
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "brivu-files"
+
+# Optional environment variables
+[vars]
+ENVIRONMENT = "production"
+# Uncomment and set a secret key if you want to require authorization for sync/upload:
+# SYNC_SECRET_KEY = "your-custom-secret-key"

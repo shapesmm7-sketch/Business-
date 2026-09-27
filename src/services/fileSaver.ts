@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { jsPDF } from 'jspdf';
+import { StorageService } from './storage';
 
 interface MediaStorePluginInterface {
   saveToMediaStore(options: {
@@ -72,6 +73,122 @@ export interface SaveFileResult {
   filename: string;
   folder: string;
   message: string;
+  cloudflareUrl?: string;
+  cloudflareSaved?: boolean;
+}
+
+/**
+ * Asynchronously uploads a file to Cloudflare R2 if the worker is configured in settings.
+ */
+export async function tryUploadToCloudflare(
+  data: Blob | ArrayBuffer | string,
+  filename: string,
+  mimeType = 'application/octet-stream',
+  folder = 'receipts'
+): Promise<{ url?: string; key?: string } | null> {
+  try {
+    const config = StorageService.getCloudflareConfig();
+    if (!config.workerUrl || config.autoSaveFiles === false) return null;
+    const url = config.workerUrl.replace(/\/$/, '');
+    const headers: Record<string, string> = {};
+    if (config.apiKey && config.apiKey.trim() !== '') {
+      headers['X-Sync-Key'] = config.apiKey.trim();
+      headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
+    }
+
+    let body: any;
+    if (data instanceof Blob) {
+      const fd = new FormData();
+      fd.append('file', data, filename);
+      fd.append('filename', filename);
+      fd.append('mimeType', mimeType);
+      fd.append('folder', folder || config.filesFolder || 'receipts');
+      body = fd;
+    } else if (data instanceof ArrayBuffer) {
+      const blob = new Blob([data], { type: mimeType });
+      const fd = new FormData();
+      fd.append('file', blob, filename);
+      fd.append('filename', filename);
+      fd.append('mimeType', mimeType);
+      fd.append('folder', folder || config.filesFolder || 'receipts');
+      body = fd;
+    } else if (typeof data === 'string') {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({
+        filename,
+        data,
+        mimeType,
+        folder: folder || config.filesFolder || 'receipts',
+      });
+    }
+
+    const res = await fetch(`${url}/api/files/upload`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      return { url: json.url, key: json.key };
+    }
+  } catch (err) {
+    console.warn('Auto upload to Cloudflare R2 note:', err);
+  }
+  return null;
+}
+
+/**
+ * Explicit helper to save any file directly to Cloudflare R2
+ */
+export async function saveFileToCloudflare(options: {
+  data: Blob | ArrayBuffer | string;
+  filename: string;
+  mimeType?: string;
+  folder?: string;
+}): Promise<{ success: boolean; url?: string; key?: string; message: string }> {
+  const { data, filename, mimeType = 'application/octet-stream', folder = 'receipts' } = options;
+  const config = StorageService.getCloudflareConfig();
+  if (!config.workerUrl) {
+    return {
+      success: false,
+      message: 'Cloudflare Worker is not configured. Please add your Worker URL in Settings.',
+    };
+  }
+
+  const result = await tryUploadToCloudflare(data, filename, mimeType, folder);
+  if (result && result.url) {
+    return {
+      success: true,
+      url: result.url,
+      key: result.key,
+      message: `File saved successfully to Cloudflare R2!`,
+    };
+  }
+  return {
+    success: false,
+    message: 'Failed to upload to Cloudflare R2. Check worker status in Settings.',
+  };
+}
+
+async function attachCloudflareUpload(
+  result: SaveFileResult,
+  data: Blob | ArrayBuffer | string,
+  filename: string,
+  mimeType: string,
+  folder?: string
+): Promise<SaveFileResult> {
+  try {
+    const cf = await tryUploadToCloudflare(data, filename, mimeType, folder);
+    if (cf && cf.url) {
+      result.cloudflareUrl = cf.url;
+      result.cloudflareSaved = true;
+      result.message = `${result.message} & backed up to Cloudflare R2`;
+    }
+  } catch {
+    // Non-blocking
+  }
+  return result;
 }
 
 /**
@@ -130,6 +247,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
           // Only open share sheet if explicitly requested
           if (openShareSheet && fileUri) {
             try {
+              StorageService.markSystemActionActive(60000);
               await Share.share({
                 title: title || filename,
                 text: `${title || filename} saved successfully.`,
@@ -140,13 +258,14 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
             }
           }
 
-          return {
+          const localResult: SaveFileResult = {
             success: true,
             uri: fileUri,
             filename,
             folder: locationNote,
             message: `Successfully saved "${filename}" to ${locationNote} folder.`,
           };
+          return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
         }
       } catch (mediaStoreErr) {
         console.warn('Native MediaStore plugin call note, falling back to Filesystem:', mediaStoreErr);
@@ -187,6 +306,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
       // Only open share sheet if explicitly requested
       if (openShareSheet) {
         try {
+          StorageService.markSystemActionActive(60000);
           await Share.share({
             title: title || filename,
             text: `${title || filename} saved successfully.`,
@@ -197,21 +317,24 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         }
       }
 
-      return {
+      const localResult: SaveFileResult = {
         success: true,
         uri: fileUri,
         filename,
         folder: targetFolder,
         message: `Successfully saved "${filename}" to ${targetFolder} folder.`,
       };
+      return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error('Native Android file save error, using web fallback:', errMsg);
-      return fallbackWebDownload(data, filename, mimeType);
+      const webRes = fallbackWebDownload(data, filename, mimeType);
+      return attachCloudflareUpload(webRes, data, filename, mimeType);
     }
   } else {
     // Web Browser fallback (direct file download without opening any share sheet)
-    return fallbackWebDownload(data, filename, mimeType);
+    const webRes = fallbackWebDownload(data, filename, mimeType);
+    return attachCloudflareUpload(webRes, data, filename, mimeType);
   }
 }
 
@@ -224,8 +347,8 @@ export async function saveJsPdf(
   title?: string,
   options?: { openShareSheet?: boolean }
 ): Promise<SaveFileResult> {
+  const arrayBuffer = doc.output('arraybuffer');
   if (Capacitor.isNativePlatform()) {
-    const arrayBuffer = doc.output('arraybuffer');
     return saveFile({
       data: arrayBuffer,
       filename,
@@ -236,12 +359,13 @@ export async function saveJsPdf(
     });
   } else {
     doc.save(filename);
-    return {
+    const baseResult: SaveFileResult = {
       success: true,
       filename,
       folder: 'Downloads',
       message: `Successfully saved "${filename}" to your Downloads folder.`,
     };
+    return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', 'receipts');
   }
 }
 
@@ -311,6 +435,7 @@ export async function shareContent(
 
     // Secondary fallback: @capacitor/share
     try {
+      StorageService.markSystemActionActive(60000);
       if (base64Data && filename) {
         const savedCache = await Filesystem.writeFile({
           path: filename,

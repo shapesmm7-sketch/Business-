@@ -11,11 +11,13 @@ import {
   FileCheck,
   Sparkles,
   Palette,
+  Cloud,
 } from 'lucide-react';
 import { Receipt, ReceiptTemplateId } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { PdfGenerator } from '../services/pdfGenerator';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 import { BRAND_COLOR_PRESETS, isValidHex, normalizeHex, getContrastTextHex } from '../utils/colors';
 
 interface ReceiptPreviewScreenProps {
@@ -36,7 +38,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 }) => {
   const [receipt, setReceipt] = useState<Receipt>(initialReceipt);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isUploadingCf, setIsUploadingCf] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const isCfConfigured = CloudflareService.isConfigured();
 
   const business = receipt.businessSnapshot;
   const currency = business.currency || 'UGX';
@@ -94,6 +99,40 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSaveToCloudflare = async () => {
+    try {
+      setIsUploadingCf(true);
+      const doc = await PdfGenerator.createPdfDoc(receipt);
+      const isInv = receipt.documentType === 'invoice';
+      const prefix = isInv ? 'Invoice' : 'Receipt';
+      const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${prefix}_${cleanNum}.pdf`;
+      const arrayBuffer = doc.output('arraybuffer');
+
+      // 1. Upload PDF to Cloudflare R2
+      const fileRes = await CloudflareService.uploadFile({
+        data: arrayBuffer,
+        filename,
+        mimeType: 'application/pdf',
+        folder: 'receipts',
+      });
+
+      // 2. Sync receipt record to Cloudflare D1
+      await CloudflareService.saveSingleReceipt(receipt);
+
+      if (fileRes.success) {
+        showToast(`Saved to Cloudflare R2 & D1!`);
+      } else {
+        showToast(fileRes.message || 'Saved to Cloudflare');
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      showToast(`Cloudflare save error: ${errMsg}`);
+    } finally {
+      setIsUploadingCf(false);
+    }
   };
 
   return (
@@ -329,6 +368,21 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             <Share2 className="w-4 h-4" />
             <span>{isInvoice ? 'Share Invoice' : 'Share Receipt'}</span>
           </button>
+
+          {/* Cloudflare Direct Save (when configured) */}
+          {isCfConfigured && (
+            <button
+              id="btn-preview-save-cf"
+              type="button"
+              onClick={handleSaveToCloudflare}
+              disabled={isGenerating || isUploadingCf}
+              title="Save to Cloudflare R2 & D1"
+              className="py-3.5 px-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
+            >
+              <Cloud className={`w-4 h-4 ${isUploadingCf ? 'animate-bounce' : ''}`} />
+              <span className="hidden sm:inline">{isUploadingCf ? 'Saving...' : 'R2 Cloud'}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -22,6 +22,7 @@ import {
   QRCodeHostedPage,
   UserSubscription,
   AppLockConfig,
+  CloudflareConfig,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 
@@ -49,6 +50,7 @@ const STORAGE_KEYS = {
   SUBSCRIPTION: 'quickreceipt_subscription_v1',
   APP_LOCK: 'quickreceipt_app_lock_config_v1',
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
+  CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -282,7 +284,27 @@ function writeToStorage<T>(key: string, value: T): boolean {
   }
 }
 
+let systemActionExpiresAt = 0;
+
 export const StorageService = {
+  // Temporary marker for system intents (e.g. system file picker, native share sheet, camera)
+  // so that briefly opening an Android system dialog doesn't trigger app lock on return
+  markSystemActionActive(durationMs: number = 60000): void {
+    systemActionExpiresAt = Date.now() + durationMs;
+  },
+
+  consumeSystemActionActive(): boolean {
+    if (systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt) {
+      systemActionExpiresAt = 0;
+      return true;
+    }
+    systemActionExpiresAt = 0;
+    return false;
+  },
+
+  isSystemActionActive(): boolean {
+    return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
+  },
   getProfile(): BusinessProfile {
     const profile = readFromStorage<BusinessProfile>(
       STORAGE_KEYS.PROFILE,
@@ -371,6 +393,11 @@ export const StorageService = {
       updated = [receipt, ...receipts];
     }
     const success = writeToStorage(STORAGE_KEYS.RECEIPTS, updated);
+
+    if (success) {
+      // Background sync to Cloudflare D1 if configured
+      this.syncReceiptToCloudflare(receipt);
+    }
 
     if (success && isNew) {
       const currencySymbol = receipt.businessSnapshot.currency || 'UGX';
@@ -1549,34 +1576,64 @@ export const StorageService = {
     if (!config || !config.isEnabled || !config.pin) {
       return false;
     }
-    // Check if explicitly locked by the user (e.g. tapping "Lock App Immediately")
-    const lockedState = readFromStorage<boolean | null>(STORAGE_KEYS.APP_LOCKED_STATE, null);
-    if (lockedState === true) {
+    // If auto-lock on app open/reload is enabled (autoLockOnExit !== false, default is true):
+    // ALWAYS require the passcode whenever the app is opened, launched, or reloaded
+    if (config.autoLockOnExit !== false) {
       return true;
     }
-    // If auto-lock on app open/reload is turned off, do not lock on open/reload
-    if (config.autoLockOnExit === false) {
-      return false;
-    }
-    // If the user already unlocked during this active browser session, keep unlocked
-    if (typeof sessionStorage !== 'undefined') {
-      const sessionUnlocked = sessionStorage.getItem('brivu_session_unlocked');
-      if (sessionUnlocked === 'true') {
-        return false;
-      }
-    }
-    // When autoLockOnExit is enabled and app is opened in a new session, require passcode
-    return true;
+    // If auto-lock on open was explicitly turned off by the user, only lock if explicitly locked
+    const lockedState = readFromStorage<boolean | null>(STORAGE_KEYS.APP_LOCKED_STATE, null);
+    return lockedState === true;
   },
 
   setAppLocked(locked: boolean): boolean {
     if (typeof sessionStorage !== 'undefined') {
-      if (locked) {
+      try {
         sessionStorage.removeItem('brivu_session_unlocked');
-      } else {
-        sessionStorage.setItem('brivu_session_unlocked', 'true');
+      } catch {
+        // Safe fallback
       }
     }
     return writeToStorage(STORAGE_KEYS.APP_LOCKED_STATE, locked);
+  },
+
+  // --- CLOUDFLARE WORKER SYNC & STORAGE ---
+  getCloudflareConfig(): CloudflareConfig {
+    const defaultVal: CloudflareConfig = {
+      workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || '',
+      apiKey: '',
+      autoSaveFiles: true,
+      autoSyncData: true,
+      lastStatus: 'untested',
+      filesFolder: 'receipts',
+    };
+    return readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, defaultVal);
+  },
+
+  saveCloudflareConfig(config: CloudflareConfig): CloudflareConfig {
+    writeToStorage(STORAGE_KEYS.CLOUDFLARE, config);
+    return config;
+  },
+
+  syncReceiptToCloudflare(receipt: Receipt): void {
+    try {
+      const config = this.getCloudflareConfig();
+      if (!config.workerUrl || config.autoSyncData === false) return;
+      const url = config.workerUrl.replace(/\/$/, '');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (config.apiKey && config.apiKey.trim() !== '') {
+        headers['X-Sync-Key'] = config.apiKey.trim();
+        headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
+      }
+      fetch(`${url}/api/receipts`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(receipt),
+      }).catch((err) => {
+        console.warn('Background Cloudflare receipt sync note:', err);
+      });
+    } catch {
+      // Non-blocking
+    }
   },
 };
