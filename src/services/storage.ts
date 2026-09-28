@@ -25,6 +25,7 @@ import {
   CloudflareConfig,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
+import { CloudflareService } from './cloudflareService';
 
 const STORAGE_KEYS = {
   PROFILE: 'quickreceipt_business_profile_v1',
@@ -317,7 +318,29 @@ export const StorageService = {
   },
 
   saveProfile(profile: BusinessProfile): boolean {
-    return writeToStorage(STORAGE_KEYS.PROFILE, profile);
+    const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
+    if (success) {
+      if (profile.logo && profile.logo.startsWith('data:image/')) {
+        const mimeType = profile.logo.slice(5, profile.logo.indexOf(';')) || 'image/png';
+        const ext = mimeType.split('/')[1] || 'png';
+        CloudflareService.uploadFile({
+          data: profile.logo,
+          filename: `logo_${Date.now()}.${ext}`,
+          mimeType,
+          folder: 'photos',
+        }).then((res) => {
+          if (res.success && res.url) {
+            const current = this.getProfile();
+            current.logo = res.url;
+            writeToStorage(STORAGE_KEYS.PROFILE, current);
+            CloudflareService.syncAllToCloudflare().catch(() => {});
+          }
+        }).catch(() => {});
+      } else {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    }
+    return success;
   },
 
   getSettings(): AppSettings {
@@ -333,7 +356,11 @@ export const StorageService = {
   },
 
   saveSettings(settings: AppSettings): boolean {
-    return writeToStorage(STORAGE_KEYS.SETTINGS, settings);
+    const success = writeToStorage(STORAGE_KEYS.SETTINGS, settings);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
   },
 
   getCustomTemplate(templateId: string) {
@@ -753,6 +780,33 @@ export const StorageService = {
       }).catch(() => {});
     }
 
+    if (success) {
+      // Auto-upload product photo to Cloudflare R2 if it is a base64 image string
+      if (product.image && product.image.startsWith('data:image/')) {
+        const prodId = product.id;
+        const mimeType = product.image.slice(5, product.image.indexOf(';')) || 'image/jpeg';
+        const ext = mimeType.split('/')[1] || 'jpeg';
+        CloudflareService.uploadFile({
+          data: product.image,
+          filename: `product_${prodId}_${Date.now()}.${ext}`,
+          mimeType,
+          folder: 'photos',
+        }).then((res) => {
+          if (res.success && res.url) {
+            const latestProds = this.getInventoryProducts();
+            const pIdx = latestProds.findIndex((p) => p.id === prodId);
+            if (pIdx >= 0) {
+              latestProds[pIdx].image = res.url;
+              writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, latestProds);
+              CloudflareService.syncAllToCloudflare().catch(() => {});
+            }
+          }
+        }).catch(() => {});
+      } else {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    }
+
     return success;
   },
 
@@ -1110,7 +1164,11 @@ export const StorageService = {
   },
 
   saveCustomers(customers: Customer[]): boolean {
-    return writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
+    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
   },
 
   addCustomer(customer: Omit<Customer, 'id' | 'createdAt'>): Customer {
@@ -1122,6 +1180,7 @@ export const StorageService = {
     };
     customers.unshift(newCustomer);
     writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newCustomer;
   },
 
@@ -1130,13 +1189,21 @@ export const StorageService = {
     const index = customers.findIndex((c) => c.id === id);
     if (index === -1) return false;
     customers[index] = { ...customers[index], ...updates };
-    return writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
+    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
   },
 
   deleteCustomer(id: string): boolean {
     const customers = this.getCustomers();
     const filtered = customers.filter((c) => c.id !== id);
-    return writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
+    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
   },
 
   // --- AGENT MANAGEMENT ---
@@ -1145,7 +1212,11 @@ export const StorageService = {
   },
 
   saveAgents(agents: BusinessAgent[]): boolean {
-    return writeToStorage(STORAGE_KEYS.AGENTS, agents);
+    const success = writeToStorage(STORAGE_KEYS.AGENTS, agents);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
   },
 
   addAgent(agent: Omit<BusinessAgent, 'id' | 'createdAt'>): BusinessAgent {
@@ -1157,6 +1228,7 @@ export const StorageService = {
     };
     agents.unshift(newAgent);
     writeToStorage(STORAGE_KEYS.AGENTS, agents);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newAgent;
   },
 

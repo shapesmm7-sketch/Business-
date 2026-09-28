@@ -77,6 +77,8 @@ export interface SaveFileResult {
   cloudflareSaved?: boolean;
 }
 
+import { CloudflareService } from './cloudflareService';
+
 /**
  * Asynchronously uploads a file to Cloudflare R2 if the worker is configured in settings.
  */
@@ -89,48 +91,15 @@ export async function tryUploadToCloudflare(
   try {
     const config = StorageService.getCloudflareConfig();
     if (!config.workerUrl || config.autoSaveFiles === false) return null;
-    const url = config.workerUrl.replace(/\/$/, '');
-    const headers: Record<string, string> = {};
-    if (config.apiKey && config.apiKey.trim() !== '') {
-      headers['X-Sync-Key'] = config.apiKey.trim();
-      headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
-    }
-
-    let body: any;
-    if (data instanceof Blob) {
-      const fd = new FormData();
-      fd.append('file', data, filename);
-      fd.append('filename', filename);
-      fd.append('mimeType', mimeType);
-      fd.append('folder', folder || config.filesFolder || 'receipts');
-      body = fd;
-    } else if (data instanceof ArrayBuffer) {
-      const blob = new Blob([data], { type: mimeType });
-      const fd = new FormData();
-      fd.append('file', blob, filename);
-      fd.append('filename', filename);
-      fd.append('mimeType', mimeType);
-      fd.append('folder', folder || config.filesFolder || 'receipts');
-      body = fd;
-    } else if (typeof data === 'string') {
-      headers['Content-Type'] = 'application/json';
-      body = JSON.stringify({
-        filename,
-        data,
-        mimeType,
-        folder: folder || config.filesFolder || 'receipts',
-      });
-    }
-
-    const res = await fetch(`${url}/api/files/upload`, {
-      method: 'POST',
-      headers,
-      body,
+    const targetFolder = folder || (mimeType.startsWith('image/') ? 'photos' : 'receipts');
+    const uploadRes = await CloudflareService.uploadFile({
+      data,
+      filename,
+      mimeType,
+      folder: targetFolder,
     });
-
-    if (res.ok) {
-      const json = await res.json();
-      return { url: json.url, key: json.key };
+    if (uploadRes.success && uploadRes.url) {
+      return { url: uploadRes.url, key: uploadRes.key };
     }
   } catch (err) {
     console.warn('Auto upload to Cloudflare R2 note:', err);
