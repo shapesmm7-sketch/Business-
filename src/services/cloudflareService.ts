@@ -46,6 +46,28 @@ function parseWorkerResponse(rawText: string): { ok: boolean; data?: any; isStar
   }
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const res = reader.result as string;
+      resolve(res);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export const CloudflareService = {
   getConfig(): CloudflareConfig {
     const config = StorageService.getCloudflareConfig();
@@ -263,53 +285,33 @@ export const CloudflareService = {
 
       let response: Response;
 
-      if (data instanceof Blob) {
-        const formData = new FormData();
-        formData.append('file', data, filename);
-        formData.append('filename', filename);
-        formData.append('mimeType', mimeType);
-        formData.append('folder', folder);
-
-        response = await fetch(targetUrl, {
-          method: 'POST',
-          headers,
-          body: formData,
-        });
+      let payloadBase64 = '';
+      if (typeof data === 'string') {
+        payloadBase64 = data;
       } else if (data instanceof ArrayBuffer) {
-        const blob = new Blob([data], { type: mimeType });
-        const formData = new FormData();
-        formData.append('file', blob, filename);
-        formData.append('filename', filename);
-        formData.append('mimeType', mimeType);
-        formData.append('folder', folder);
-
-        response = await fetch(targetUrl, {
-          method: 'POST',
-          headers,
-          body: formData,
-        });
-      } else if (typeof data === 'string') {
-        // Send JSON with base64 string
-        let payload = data;
-        response = await fetch(targetUrl, {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filename,
-            data: payload,
-            mimeType,
-            folder,
-          }),
-        });
+        payloadBase64 = arrayBufferToBase64(data);
+      } else if (data instanceof Blob) {
+        payloadBase64 = await blobToBase64(data);
       } else {
         return {
           success: false,
           message: 'Unsupported data format for Cloudflare upload',
         };
       }
+
+      response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename,
+          data: payloadBase64,
+          mimeType,
+          folder,
+        }),
+      });
 
       const rawText = await response.text().catch(() => response.statusText || '');
       const parsed = parseWorkerResponse(rawText);

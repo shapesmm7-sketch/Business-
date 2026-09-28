@@ -424,6 +424,7 @@ export const StorageService = {
     if (success) {
       // Background sync to Cloudflare D1 if configured
       this.syncReceiptToCloudflare(receipt);
+      CloudflareService.syncAllToCloudflare().catch(() => {});
     }
 
     if (success && isNew) {
