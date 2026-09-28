@@ -14,7 +14,14 @@ import {
   AlertTriangle,
   Info,
   Server,
-  HelpCircle,
+  Key,
+  Globe,
+  Settings,
+  Save,
+  CheckCircle,
+  XCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { CloudflareConfig } from '../types';
 import { CloudflareService } from '../services/cloudflareService';
@@ -29,11 +36,27 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const [cfConfig, setCfConfig] = useState<CloudflareConfig>(() =>
     CloudflareService.getConfig()
   );
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [showFilesModal, setShowFilesModal] = useState(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [showAdvancedCredentials, setShowAdvancedCredentials] = useState(false);
+  const [showSecretKey, setShowSecretKey] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Form state for editing credentials
+  const [workerUrlInput, setWorkerUrlInput] = useState(cfConfig.workerUrl || 'https://brivu.shapesmm7.workers.dev');
+  const [apiKeyInput, setApiKeyInput] = useState(cfConfig.apiKey || '');
+  const [s3EndpointInput, setS3EndpointInput] = useState(cfConfig.s3EndpointUrl || '');
+  const [bucketNameInput, setBucketNameInput] = useState(cfConfig.bucketName || 'brivu-files');
+  const [accessKeyIdInput, setAccessKeyIdInput] = useState(cfConfig.accessKeyId || '');
+  const [secretAccessKeyInput, setSecretAccessKeyInput] = useState(cfConfig.secretAccessKey || '');
+  const [publicDomainInput, setPublicDomainInput] = useState(cfConfig.publicDomainUrl || '');
+
+  // Live test probe state
+  const [isTestingProbe, setIsTestingProbe] = useState(false);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
 
   const [healthStatus, setHealthStatus] = useState<{
     loading: boolean;
@@ -83,6 +106,74 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleSaveCredentials = () => {
+    const updated = CloudflareService.saveConfig({
+      workerUrl: workerUrlInput.trim(),
+      apiKey: apiKeyInput.trim(),
+      s3EndpointUrl: s3EndpointInput.trim(),
+      bucketName: bucketNameInput.trim(),
+      accessKeyId: accessKeyIdInput.trim(),
+      secretAccessKey: secretAccessKeyInput.trim(),
+      publicDomainUrl: publicDomainInput.trim(),
+    });
+    setCfConfig(updated);
+    showToast('Cloudflare settings saved!');
+    checkLiveHealth();
+  };
+
+  const handleRunFullProbe = async () => {
+    setIsTestingProbe(true);
+    const logs: string[] = [];
+    logs.push(`[${new Date().toLocaleTimeString()}] Starting diagnostic probe...`);
+
+    try {
+      // 1. Health Ping
+      logs.push(`Pinging Cloudflare Worker (${cfConfig.workerUrl})...`);
+      const health = await CloudflareService.testConnection();
+      if (health.success && health.d1Bound && health.r2Bound) {
+        logs.push(`✓ Worker online! D1 SQL is connected. R2 Storage is connected.`);
+      } else {
+        logs.push(`⚠️ Worker response: ${health.message}`);
+      }
+
+      // 2. Database Sync Test
+      logs.push(`Testing D1 database sync...`);
+      const syncRes = await CloudflareService.syncAllToCloudflare();
+      if (syncRes.success) {
+        logs.push(`✓ D1 SQL Sync successful! Records and snapshots active in brivu-db.`);
+      } else {
+        logs.push(`❌ D1 Sync returned: ${syncRes.message}`);
+      }
+
+      // 3. R2 File Upload Probe
+      logs.push(`Testing R2 File Upload probe...`);
+      const probeData = `Brivu Probe Test - ${new Date().toISOString()}`;
+      const fileRes = await CloudflareService.uploadFile({
+        data: probeData,
+        filename: `probe_${Date.now()}.txt`,
+        mimeType: 'text/plain',
+        folder: 'diagnostics',
+      });
+
+      if (fileRes.success) {
+        logs.push(`✓ R2 File Upload successful! Live URL: ${fileRes.url}`);
+        logs.push(`✓ All systems fully operational!`);
+        showToast('All diagnostics passed successfully!');
+      } else {
+        logs.push(`❌ R2 File Upload failed: ${fileRes.message}`);
+        showToast(`Diagnostic issue: ${fileRes.message}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logs.push(`❌ Error running probe: ${msg}`);
+      showToast(`Probe failed: ${msg}`);
+    } finally {
+      setDiagnosticLogs(logs);
+      setIsTestingProbe(false);
+      checkLiveHealth();
+    }
   };
 
   const handleToggleAutoFiles = () => {
@@ -147,11 +238,9 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   };
 
   const isFullyOperational = healthStatus.checked && healthStatus.d1Bound && healthStatus.r2Bound;
-  const isPartiallyBound = healthStatus.checked && (healthStatus.d1Bound || healthStatus.r2Bound);
-  const isNotBound = healthStatus.checked && !healthStatus.d1Bound && !healthStatus.r2Bound;
 
   return (
-    <div className="space-y-4 pb-12 animate-fadeIn">
+    <div className="space-y-4 pb-12 animate-fadeIn max-w-2xl mx-auto">
       {/* Toast */}
       {toastMessage && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 text-xs font-semibold px-4 py-2.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700/50 dark:border-slate-200">
@@ -173,7 +262,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           </button>
           <div>
             <h1 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Cloud Backup</span>
+              <span>Cloudflare Storage & Backup</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Cloudflare D1 SQL & R2 File Storage
@@ -190,102 +279,15 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         ) : isFullyOperational ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Active & Bound</span>
+            <span>Active & Connected</span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-            <span>Bindings Missing</span>
+            <span>Bindings Pending</span>
           </div>
         )}
       </div>
-
-      {/* Binding Status Alert Card (When not fully bound) */}
-      {healthStatus.checked && !isFullyOperational && (
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 space-y-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <h3 className="text-xs font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider">
-                Worker Connected, but D1 & R2 are NOT bound yet
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={checkLiveHealth}
-              disabled={healthStatus.loading}
-              className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer shrink-0"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${healthStatus.loading ? 'animate-spin' : ''}`} />
-              <span>Re-check</span>
-            </button>
-          </div>
-
-          <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-            Your Cloudflare Worker is running, but Cloudflare is reporting that D1 and R2 are not attached to it yet. Until you add and deploy these bindings in Cloudflare, files and data will only be stored locally on your device.
-          </p>
-
-          <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-              healthStatus.d1Bound
-                ? 'bg-emerald-100/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300'
-                : 'bg-rose-100/60 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-300'
-            }`}>
-              <span className="font-semibold">D1 Database (DB)</span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-white/70 dark:bg-black/30">
-                {healthStatus.d1Bound ? 'Active ✓' : 'Not Bound ✕'}
-              </span>
-            </div>
-
-            <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-              healthStatus.r2Bound
-                ? 'bg-emerald-100/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300'
-                : 'bg-rose-100/60 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-300'
-            }`}>
-              <span className="font-semibold">R2 Storage (R2_BUCKET)</span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-white/70 dark:bg-black/30">
-                {healthStatus.r2Bound ? 'Active ✓' : 'Not Bound ✕'}
-              </span>
-            </div>
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setShowHelpGuide(!showHelpGuide)}
-              className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5 cursor-pointer underline"
-            >
-              <Info className="w-3.5 h-3.5" />
-              <span>{showHelpGuide ? 'Hide Instructions' : 'How to finish binding in Cloudflare Dashboard'}</span>
-            </button>
-          </div>
-
-          {showHelpGuide && (
-            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800/60 text-xs text-slate-700 dark:text-slate-300 space-y-2 mt-2">
-              <p className="font-bold text-slate-900 dark:text-white">
-                Follow these 3 exact steps in Cloudflare:
-              </p>
-              <ol className="list-decimal list-inside space-y-1.5 pl-1 text-[11px]">
-                <li>
-                  Open <strong>dash.cloudflare.com</strong> &gt; <strong>Workers & Pages</strong> &gt; Click your worker <strong>brivu</strong>.
-                </li>
-                <li>
-                  Go to <strong>Settings</strong> &gt; <strong>Variables and Bindings</strong> (or <strong>Bindings</strong>).
-                </li>
-                <li>
-                  <strong>Add D1 Binding:</strong> Variable name must be exact uppercase <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-emerald-600">DB</code>, select your database (<strong>brivu-db</strong>).
-                </li>
-                <li>
-                  <strong>Add R2 Binding:</strong> Variable name must be exact uppercase <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold text-emerald-600">R2_BUCKET</code>, select your bucket (<strong>brivu-files</strong>).
-                </li>
-                <li>
-                  <strong>IMPORTANT:</strong> Scroll down and click the blue <strong>&quot;Save and Deploy&quot;</strong> or <strong>&quot;Deploy&quot;</strong> button. If you leave the page without deploying, Cloudflare will not activate the bindings!
-                </li>
-              </ol>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Main Status Hero Card */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-600 via-orange-500 to-amber-600 p-5 text-white shadow-md">
@@ -297,14 +299,14 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             </div>
             <div className="flex items-center gap-1 text-[11px] font-bold bg-white/20 px-2.5 py-1 rounded-full backdrop-blur-xs">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Dual-Layer Storage</span>
+              <span>Dual Storage System</span>
             </div>
           </div>
 
           <div>
-            <h2 className="text-lg font-black tracking-tight">Cloud Data Protection</h2>
+            <h2 className="text-lg font-black tracking-tight">Cloud Backup & R2 Storage</h2>
             <p className="text-xs text-orange-100 mt-1 leading-relaxed">
-              Your receipts, products, customers, and exported PDFs are preserved in cloud storage. Even if you switch devices or clear browser history, your business records remain safe.
+              Your business records and inventory sync to Cloudflare D1 SQL database, and your exported receipt PDFs, reports, and photos save to Cloudflare R2 bucket.
             </p>
           </div>
 
@@ -314,66 +316,6 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
               <span>Last synced: {new Date(cfConfig.lastSyncAt).toLocaleString()}</span>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Automatic Sync Options Card */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/60">
-          <Sparkles className="w-4 h-4 text-orange-500" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-            Automatic Sync Options
-          </h3>
-        </div>
-
-        <div className="space-y-3.5">
-          {/* Toggle: Auto-save files */}
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-save Files, Photos & PDFs
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically upload receipts, product photos & downloaded PDFs to Cloudflare R2
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleToggleAutoFiles}
-              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer shrink-0 ${
-                cfConfig.autoSaveFiles !== false
-                  ? 'bg-orange-500 justify-end'
-                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
-              }`}
-              aria-label="Toggle auto-save files"
-            >
-              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
-            </button>
-          </div>
-
-          {/* Toggle: Auto-sync records */}
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-sync Business Records
-              </span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically sync receipts, customers, and inventory data to Cloudflare D1
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleToggleAutoSync}
-              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer shrink-0 ${
-                cfConfig.autoSyncData !== false
-                  ? 'bg-orange-500 justify-end'
-                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
-              }`}
-              aria-label="Toggle auto-sync records"
-            >
-              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
-            </button>
-          </div>
         </div>
       </div>
 
@@ -439,34 +381,250 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             </span>
           </button>
         </div>
+
+        {/* Live Diagnostics & Probe Tool */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={handleRunFullProbe}
+            disabled={isTestingProbe}
+            className="w-full p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isTestingProbe ? 'animate-spin text-orange-500' : ''}`} />
+            <span>{isTestingProbe ? 'Testing D1 & R2 Probe...' : 'Run Diagnostics & Test Upload Probe'}</span>
+          </button>
+        </div>
+
+        {/* Diagnostic Output Log */}
+        {diagnosticLogs.length > 0 && (
+          <div className="p-3 rounded-xl bg-slate-950 text-slate-300 font-mono text-[11px] space-y-1 overflow-x-auto max-h-40 border border-slate-800">
+            {diagnosticLogs.map((log, index) => (
+              <div key={index} className={log.startsWith('✓') ? 'text-emerald-400 font-semibold' : log.startsWith('❌') ? 'text-rose-400 font-semibold' : ''}>
+                {log}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Security & Reliability Features */}
-      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Why Cloud Backup is Safe & Reliable</span>
-        </h4>
-        <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
-          <li className="flex items-start gap-2">
-            <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-            <span>
-              <strong>Offline-first:</strong> You can continue generating receipts without internet. They sync seamlessly once reconnected.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-            <span>
-              <strong>Permanent file safety:</strong> Downloaded receipts & invoices are archived in high-availability cloud storage.
-            </span>
-          </li>
-          <li className="flex items-start gap-2">
-            <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-            <span>
-              <strong>Zero manual setup:</strong> Everything is connected securely and automatically in the background.
-            </span>
-          </li>
-        </ul>
+      {/* Automatic Sync Options Card */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <Sparkles className="w-4 h-4 text-orange-500" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+            Automatic Sync Options
+          </h3>
+        </div>
+
+        <div className="space-y-3.5">
+          {/* Toggle: Auto-save files */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Auto-save Files, Photos & PDFs
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Automatically upload receipts, product photos & downloaded PDFs to Cloudflare R2
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleAutoFiles}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer shrink-0 ${
+                cfConfig.autoSaveFiles !== false
+                  ? 'bg-orange-500 justify-end'
+                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
+              }`}
+              aria-label="Toggle auto-save files"
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+            </button>
+          </div>
+
+          {/* Toggle: Auto-sync records */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Auto-sync Business Records
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Automatically sync receipts, customers, and inventory data to Cloudflare D1
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleAutoSync}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer shrink-0 ${
+                cfConfig.autoSyncData !== false
+                  ? 'bg-orange-500 justify-end'
+                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
+              }`}
+              aria-label="Toggle auto-sync records"
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Cloudflare & S3 Credentials Settings */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        <button
+          type="button"
+          onClick={() => setShowAdvancedCredentials(!showAdvancedCredentials)}
+          className="w-full flex items-center justify-between text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-orange-500" />
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                Cloudflare Worker & S3 API Credentials
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                View or customize Worker URL, R2 bucket keys, and endpoints
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-orange-600 dark:text-orange-400">
+            {showAdvancedCredentials ? 'Hide' : 'Configure'}
+          </span>
+        </button>
+
+        {showAdvancedCredentials && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 space-y-3 text-xs">
+            {/* Worker URL */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Cloudflare Worker API URL
+              </label>
+              <input
+                type="url"
+                value={workerUrlInput}
+                onChange={(e) => setWorkerUrlInput(e.target.value)}
+                placeholder="https://brivu.shapesmm7.workers.dev"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+              <span className="text-[10px] text-slate-500">
+                The deployed Cloudflare Worker handling D1 database and R2 storage
+              </span>
+            </div>
+
+            {/* Sync Key / Bearer Token */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Worker API Secret / Sync Key (Optional)
+              </label>
+              <input
+                type="text"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="Leave blank if worker has public access"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800/50 space-y-1.5">
+              <span className="font-bold text-orange-900 dark:text-orange-300 flex items-center gap-1">
+                <Key className="w-3.5 h-3.5" />
+                Optional Direct R2 / S3 Credentials (For Custom S3 Access)
+              </span>
+              <p className="text-[10px] text-orange-800 dark:text-orange-400 leading-relaxed">
+                By default, your Worker connects directly to R2 and D1 without needing client-side S3 keys. If your organization prefers direct S3 uploads, you can fill these in:
+              </p>
+            </div>
+
+            {/* S3 API Endpoint */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                R2 S3 API Endpoint URL
+              </label>
+              <input
+                type="url"
+                value={s3EndpointInput}
+                onChange={(e) => setS3EndpointInput(e.target.value)}
+                placeholder="https://<account_id>.r2.cloudflarestorage.com"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            {/* R2 Bucket Name */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                R2 Bucket Name
+              </label>
+              <input
+                type="text"
+                value={bucketNameInput}
+                onChange={(e) => setBucketNameInput(e.target.value)}
+                placeholder="brivu-files"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            {/* Access Key ID */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Access Key ID
+              </label>
+              <input
+                type="text"
+                value={accessKeyIdInput}
+                onChange={(e) => setAccessKeyIdInput(e.target.value)}
+                placeholder="R2 Access Key ID"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            {/* Secret Access Key */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Secret Access Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showSecretKey ? 'text' : 'password'}
+                  value={secretAccessKeyInput}
+                  onChange={(e) => setSecretAccessKeyInput(e.target.value)}
+                  placeholder="R2 Secret Access Key"
+                  className="w-full p-2.5 pr-10 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecretKey(!showSecretKey)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showSecretKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Public Domain URL */}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Public Domain URL (Optional)
+              </label>
+              <input
+                type="url"
+                value={publicDomainInput}
+                onChange={(e) => setPublicDomainInput(e.target.value)}
+                placeholder="https://pub-xxxxxx.r2.dev"
+                className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+              />
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleSaveCredentials}
+                className="w-full p-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition active:scale-98"
+              >
+                <Save className="w-4 h-4" />
+                <span>Save Cloudflare Settings</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Files Modal */}

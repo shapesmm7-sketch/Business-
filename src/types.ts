@@ -510,6 +510,13 @@ export interface CloudflareConfig {
   lastStatus?: 'connected' | 'error' | 'untested';
   lastErrorMessage?: string;
   filesFolder?: string;
+
+  // Optional Direct R2 / S3 API Configuration
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  s3EndpointUrl?: string; // e.g. https://<account_id>.r2.cloudflarestorage.com
+  bucketName?: string; // e.g. brivu-files
+  publicDomainUrl?: string; // e.g. https://pub-xxx.r2.dev or custom domain
 }
 
 export interface CloudflareFileRecord {

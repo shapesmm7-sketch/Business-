@@ -377,10 +377,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
               onClick={handleSaveToCloudflare}
               disabled={isGenerating || isUploadingCf}
               title="Save to Cloud Storage"
-              className="py-3.5 px-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
+              className="py-3.5 px-3.5 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
             >
               <Cloud className={`w-4 h-4 ${isUploadingCf ? 'animate-bounce' : ''}`} />
-              <span className="hidden sm:inline">{isUploadingCf ? 'Saving...' : 'Cloud Backup'}</span>
+              <span>{isUploadingCf ? 'Saving...' : 'Cloud Save'}</span>
             </button>
           )}
         </div>
