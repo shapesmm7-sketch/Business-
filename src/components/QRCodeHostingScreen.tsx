@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
@@ -695,7 +696,19 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
     try {
       const compressed = await compressImageFile(file, options);
-      if (compressed) callback(compressed);
+      if (compressed) {
+        callback(compressed);
+        CloudflareService.uploadFile({
+          data: compressed,
+          filename: `qr_img_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+          folder: 'photos',
+        }).then((res) => {
+          if (res.success && res.url) {
+            callback(res.url);
+          }
+        }).catch(() => {});
+      }
     } catch (err) {
       console.warn('Image compression failed, trying lightweight fallback:', err);
       try {

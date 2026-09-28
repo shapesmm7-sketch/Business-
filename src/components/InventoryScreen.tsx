@@ -59,6 +59,7 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
@@ -633,6 +634,22 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsCompressingImage(true);
       const compressed = await compressImageFile(file, { maxDimension: 320, quality: 0.68 });
       setImage(compressed);
+
+      // Upload to Cloudflare R2 first
+      try {
+        const uploadRes = await CloudflareService.uploadFile({
+          data: compressed,
+          filename: `product_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+          folder: 'photos',
+        });
+        if (uploadRes.success && uploadRes.url) {
+          setImage(uploadRes.url);
+          showToast('Product photo uploaded to Cloudflare R2!');
+        }
+      } catch (cfErr) {
+        console.warn('Cloudflare product photo upload note:', cfErr);
+      }
     } catch (err) {
       console.warn('Failed to compress image:', err);
       showToast('Could not process photo');

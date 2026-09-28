@@ -18,6 +18,7 @@ import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { StorageService } from './services/storage';
+import { CloudflareService } from './services/cloudflareService';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
@@ -192,6 +193,40 @@ export function App() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Auto-restore receipts, invoices, profile & data from Cloudflare D1 on launch (especially after reinstall)
+  useEffect(() => {
+    let isCancelled = false;
+    const autoRestoreFromCloud = async () => {
+      try {
+        const config = StorageService.getCloudflareConfig();
+        if (!config.workerUrl) return;
+
+        // Pull full database state from Cloudflare D1
+        const res = await CloudflareService.pullFromCloudflare();
+        if (!isCancelled && res.success && res.data) {
+          const freshReceipts = StorageService.getReceipts();
+          setReceipts(freshReceipts);
+          setBusiness(StorageService.getProfile());
+          setSettings(StorageService.getSettings());
+          setStats(StorageService.getStats());
+          setInventoryCount(StorageService.getInventoryProducts().length);
+        }
+      } catch (err) {
+        console.warn('Startup Cloudflare sync note:', err);
+      }
+    };
+
+    // Slight delay so the initial frame mounts immediately
+    const timer = setTimeout(() => {
+      autoRestoreFromCloud();
+    }, 600);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 

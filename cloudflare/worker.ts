@@ -612,35 +612,70 @@ export default {
       try {
         const snapshot = await env.DB.prepare('SELECT * FROM sync_snapshots WHERE id = ?').bind('latest').first();
 
-        if (!snapshot || !snapshot.data_json) {
-          const receiptsQuery = await env.DB.prepare('SELECT data_json FROM receipts ORDER BY created_at DESC').all();
-          const receipts = (receiptsQuery.results || []).map((r: any) => JSON.parse(r.data_json));
-
-          const profileQuery = await env.DB.prepare('SELECT data_json FROM business_profile WHERE id = ?').bind('current').first();
-          const profile = profileQuery?.data_json ? JSON.parse(profileQuery.data_json as string) : undefined;
-
-          const settingsQuery = await env.DB.prepare('SELECT data_json FROM app_settings WHERE id = ?').bind('current').first();
-          const settings = settingsQuery?.data_json ? JSON.parse(settingsQuery.data_json as string) : undefined;
-
-          return jsonResponse({
-            success: true,
-            backupData: {
-              version: 1,
-              exportedAt: new Date().toISOString(),
-              receipts,
-              profile,
-              settings,
-            },
-            source: 'individual_tables',
-          });
+        let backupData: any = {};
+        if (snapshot && snapshot.data_json) {
+          try {
+            backupData = JSON.parse(snapshot.data_json as string);
+          } catch {}
         }
 
-        const parsedData = JSON.parse(snapshot.data_json as string);
+        // Always query individual tables from D1 to guarantee latest records are merged
+        try {
+          const receiptsQuery = await env.DB.prepare('SELECT data_json FROM receipts ORDER BY created_at DESC').all();
+          const dbReceipts = (receiptsQuery.results || []).map((r: any) => {
+            try {
+              return JSON.parse(r.data_json);
+            } catch {
+              return null;
+            }
+          }).filter(Boolean);
+
+          if (dbReceipts.length > 0) {
+            const dbIds = new Set(dbReceipts.map((r: any) => r.id));
+            const existingSnapshotReceipts = Array.isArray(backupData.receipts)
+              ? backupData.receipts.filter((r: any) => !dbIds.has(r.id))
+              : [];
+            backupData.receipts = [...dbReceipts, ...existingSnapshotReceipts];
+          }
+        } catch (rErr) {
+          console.warn('Receipts table query note:', rErr);
+        }
+
+        try {
+          const profileQuery = await env.DB.prepare('SELECT data_json FROM business_profile WHERE id = ?').bind('current').first();
+          if (profileQuery?.data_json) {
+            backupData.profile = JSON.parse(profileQuery.data_json as string);
+          }
+        } catch {}
+
+        try {
+          const settingsQuery = await env.DB.prepare('SELECT data_json FROM app_settings WHERE id = ?').bind('current').first();
+          if (settingsQuery?.data_json) {
+            backupData.settings = JSON.parse(settingsQuery.data_json as string);
+          }
+        } catch {}
+
+        try {
+          const invQuery = await env.DB.prepare('SELECT data_json FROM inventory_products ORDER BY updated_at DESC').all();
+          if (invQuery.results && invQuery.results.length > 0) {
+            const dbProducts = invQuery.results.map((p: any) => {
+              try {
+                return JSON.parse(p.data_json);
+              } catch {
+                return null;
+              }
+            }).filter(Boolean);
+            if (dbProducts.length > 0) {
+              backupData.inventoryProducts = dbProducts;
+            }
+          }
+        } catch {}
+
         return jsonResponse({
           success: true,
-          backupData: parsedData,
-          updatedAt: snapshot.updated_at,
-          source: 'snapshot',
+          backupData,
+          updatedAt: snapshot?.updated_at || new Date().toISOString(),
+          source: 'merged_d1',
         });
       } catch (err: unknown) {
         return errorResponse(`Failed to pull data from D1: ${err instanceof Error ? err.message : String(err)}`, 500);

@@ -438,15 +438,19 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
     setIsProcessing(true);
 
     try {
-      // Save to persistent local storage
-      StorageService.saveReceipt(receipt);
+      // Cloud-first: Save to Cloudflare D1 first before showing in app
+      const saveRes = await StorageService.saveReceiptAsync(receipt);
       if (!editingReceipt) {
         StorageService.advanceReceiptSequence();
         StorageService.clearDraft();
       }
 
       if (action === 'save') {
-        showToast(`Receipt ${receipt.receiptNumber} saved!`);
+        showToast(
+          saveRes.cloudSynced
+            ? `Receipt ${receipt.receiptNumber} saved to Cloud & Device!`
+            : `Receipt ${receipt.receiptNumber} saved!`
+        );
         if (onSaveOnly) {
           onSaveOnly(receipt);
         } else {

@@ -437,6 +437,54 @@ export const CloudflareService = {
   },
 
   /**
+   * Directly saves a single receipt or invoice to Cloudflare D1
+   */
+  async saveReceipt(receipt: Receipt): Promise<{ success: boolean; message: string }> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'Cloudflare Worker is not configured' };
+    }
+    try {
+      const headers = this.getAuthHeaders();
+      const targetUrl = `${config.workerUrl}/api/receipts`;
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receipt),
+      });
+
+      const rawText = await response.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: parsed.data?.error || `HTTP ${response.status} saving receipt to Cloudflare`,
+        };
+      }
+
+      this.saveConfig({
+        lastSyncAt: new Date().toISOString(),
+        lastStatus: 'connected',
+      });
+
+      return {
+        success: true,
+        message: parsed.data?.message || `Receipt ${receipt.receiptNumber} saved to Cloudflare D1`,
+      };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        message: `Cloudflare receipt save error: ${errMsg}`,
+      };
+    }
+  },
+
+  /**
    * Pulls data from Cloudflare D1 and restores it into local storage
    */
   async pullFromCloudflare(): Promise<{

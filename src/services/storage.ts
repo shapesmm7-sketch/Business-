@@ -451,6 +451,54 @@ export const StorageService = {
     return success;
   },
 
+  /**
+   * Cloud-First Receipt Save: Awaits saving to Cloudflare D1 first before persisting locally.
+   */
+  async saveReceiptAsync(receipt: Receipt): Promise<{ success: boolean; cloudSynced: boolean; message: string }> {
+    let cloudSynced = false;
+    try {
+      const config = this.getCloudflareConfig();
+      if (config.workerUrl && config.autoSyncData !== false) {
+        const res = await CloudflareService.saveReceipt(receipt);
+        if (res.success) {
+          cloudSynced = true;
+        }
+      }
+    } catch (cfErr) {
+      console.warn('Cloud-first receipt save note:', cfErr);
+    }
+
+    const localSuccess = this.saveReceipt(receipt);
+    return {
+      success: localSuccess,
+      cloudSynced,
+      message: cloudSynced
+        ? `Saved to Cloudflare D1 & stored locally`
+        : `Saved to local storage`,
+    };
+  },
+
+  /**
+   * Cloud-First Business Profile Save: Awaits saving to Cloudflare D1 first.
+   */
+  async saveProfileAsync(profile: BusinessProfile): Promise<{ success: boolean; cloudSynced: boolean }> {
+    let cloudSynced = false;
+    try {
+      const config = this.getCloudflareConfig();
+      if (config.workerUrl && config.autoSyncData !== false) {
+        const res = await CloudflareService.syncAllToCloudflare();
+        if (res.success) {
+          cloudSynced = true;
+        }
+      }
+    } catch (cfErr) {
+      console.warn('Cloud-first profile save note:', cfErr);
+    }
+
+    const localSuccess = this.saveProfile(profile);
+    return { success: localSuccess, cloudSynced };
+  },
+
   deleteReceipt(id: string): boolean {
     const receipts = this.getReceipts();
     const filtered = receipts.filter((r) => r.id !== id);
@@ -661,7 +709,15 @@ export const StorageService = {
       if (backupData.settings) {
         this.saveSettings(backupData.settings);
       }
-      writeToStorage(STORAGE_KEYS.RECEIPTS, backupData.receipts);
+      if (Array.isArray(backupData.receipts)) {
+        const existing = this.getReceipts().filter((r) => !r.id.startsWith('sample-'));
+        const cloudReceipts = backupData.receipts.filter((r) => !r.id.startsWith('sample-'));
+        const cloudIds = new Set(cloudReceipts.map((r) => r.id));
+        // Keep cloud records + any local-only records
+        const localOnly = existing.filter((r) => !cloudIds.has(r.id));
+        const mergedReceipts = [...cloudReceipts, ...localOnly];
+        writeToStorage(STORAGE_KEYS.RECEIPTS, mergedReceipts);
+      }
       if (Array.isArray(backupData.inventoryProducts)) {
         writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
       }

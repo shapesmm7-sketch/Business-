@@ -25,6 +25,7 @@ import {
 import { BusinessProfile } from '../types';
 import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { getLanguageByCode } from '../data/languages';
 import { t } from '../utils/i18n';
@@ -218,6 +219,17 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           ctx.drawImage(img, 0, 0, w, h);
           const dataUrl = c.toDataURL('image/png');
           handleChange('signature', dataUrl);
+          // Upload to Cloudflare R2 first
+          CloudflareService.uploadFile({
+            data: dataUrl,
+            filename: `signature_${Date.now()}.png`,
+            mimeType: 'image/png',
+            folder: 'signatures',
+          }).then((res) => {
+            if (res.success && res.url) {
+              handleChange('signature', res.url);
+            }
+          }).catch(() => {});
         }
       };
       img.src = event.target?.result as string;
@@ -266,6 +278,17 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
           handleChange('logo', dataUrl);
+          // Upload to Cloudflare R2 first
+          CloudflareService.uploadFile({
+            data: dataUrl,
+            filename: `logo_${Date.now()}.jpg`,
+            mimeType: 'image/jpeg',
+            folder: 'photos',
+          }).then((res) => {
+            if (res.success && res.url) {
+              handleChange('logo', res.url);
+            }
+          }).catch(() => {});
         }
       };
       img.src = event.target?.result as string;
@@ -280,11 +303,17 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
     }
   };
 
-  const handleSave = () => {
-    StorageService.saveProfile(profile);
-    onSave(profile);
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 3000);
+  const [isSaving, setIsSaving] = useState(false);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await StorageService.saveProfileAsync(profile);
+      onSave(profile);
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

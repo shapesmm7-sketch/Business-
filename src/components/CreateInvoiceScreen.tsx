@@ -477,17 +477,21 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     return invoice;
   };
 
-  const handleSaveOnly = () => {
+  const handleSaveOnly = async () => {
     const invoice = buildInvoiceData();
     if (!invoice) return;
 
     setIsProcessing(true);
-    StorageService.saveReceipt(invoice);
+    const saveRes = await StorageService.saveReceiptAsync(invoice);
     if (!editingInvoice) {
       StorageService.advanceInvoiceSequence();
     }
     setIsProcessing(false);
-    showToast('Invoice saved successfully!');
+    showToast(
+      saveRes.cloudSynced
+        ? 'Invoice saved to Cloud & Device!'
+        : 'Invoice saved successfully!'
+    );
     if (onSaveOnly) {
       onSaveOnly(invoice);
     } else {
@@ -495,12 +499,12 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     }
   };
 
-  const handleSaveAndPreview = () => {
+  const handleSaveAndPreview = async () => {
     const invoice = buildInvoiceData();
     if (!invoice) return;
 
     setIsProcessing(true);
-    StorageService.saveReceipt(invoice);
+    await StorageService.saveReceiptAsync(invoice);
     if (!editingInvoice) {
       StorageService.advanceInvoiceSequence();
     }
@@ -513,7 +517,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     if (!invoice) return;
 
     setIsProcessing(true);
-    StorageService.saveReceipt(invoice);
+    await StorageService.saveReceiptAsync(invoice);
     if (!editingInvoice) {
       StorageService.advanceInvoiceSequence();
     }
@@ -536,7 +540,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     if (!invoice) return;
 
     setIsProcessing(true);
-    StorageService.saveReceipt(invoice);
+    await StorageService.saveReceiptAsync(invoice);
     if (!editingInvoice) {
       StorageService.advanceInvoiceSequence();
     }
