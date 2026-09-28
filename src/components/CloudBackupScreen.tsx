@@ -8,11 +8,9 @@ import {
   CheckCircle2,
   ShieldCheck,
   RefreshCw,
-  FileText,
   Database,
   Check,
   Sparkles,
-  Lock,
 } from 'lucide-react';
 import { CloudflareConfig } from '../types';
 import { CloudflareService } from '../services/cloudflareService';
@@ -123,7 +121,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
               <span>Cloud Backup</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Secure automated backup & cloud storage
+              Automated cloud storage & data protection
             </p>
           </div>
         </div>
@@ -164,7 +162,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         </div>
       </div>
 
-      {/* Backup Settings Card */}
+      {/* Automatic Sync Options Card */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/60">
           <Sparkles className="w-4 h-4 text-orange-500" />
@@ -224,7 +222,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         </div>
       </div>
 
-      {/* Cloud Actions Card */}
+      {/* Cloud Operations Card */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-700/60">
           <Database className="w-4 h-4 text-orange-500" />
