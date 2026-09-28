@@ -118,6 +118,74 @@ function checkAuth(request: Request, env: Env): boolean {
   return false;
 }
 
+let dbInitialized = false;
+
+async function ensureTables(db?: D1Database): Promise<void> {
+  if (!db || dbInitialized) return;
+  try {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_snapshots (
+        id TEXT PRIMARY KEY,
+        exported_at TEXT,
+        version INTEGER DEFAULT 1,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS receipts (
+        id TEXT PRIMARY KEY,
+        receipt_number TEXT NOT NULL,
+        document_type TEXT DEFAULT 'receipt',
+        customer_name TEXT,
+        customer_phone TEXT,
+        total REAL NOT NULL,
+        amount_paid REAL DEFAULT 0,
+        balance REAL DEFAULT 0,
+        payment_status TEXT,
+        payment_method TEXT,
+        created_at TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_receipts_created_at ON receipts(created_at);
+      CREATE TABLE IF NOT EXISTS files_meta (
+        key TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER,
+        folder TEXT,
+        r2_key TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON files_meta(uploaded_at);
+      CREATE TABLE IF NOT EXISTS inventory_products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 0,
+        cost_price REAL DEFAULT 0,
+        selling_price REAL DEFAULT 0,
+        category_id TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS business_profile (
+        id TEXT PRIMARY KEY DEFAULT 'current',
+        name TEXT,
+        currency TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id TEXT PRIMARY KEY DEFAULT 'current',
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    dbInitialized = true;
+  } catch (err) {
+    console.warn('Auto D1 table creation warning:', err);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -129,6 +197,11 @@ export default {
         status: 204,
         headers: CORS_HEADERS,
       });
+    }
+
+    // Auto-initialize D1 tables if DB is attached
+    if (env.DB) {
+      await ensureTables(env.DB);
     }
 
     // 2. Health & Status Check
@@ -154,7 +227,7 @@ export default {
       return jsonResponse({
         status: 'ok',
         service: 'Brivu Cloudflare Worker',
-        version: '1.0.0',
+        version: '1.1.0',
         timestamp: new Date().toISOString(),
         d1Bound: hasD1,
         r2Bound: hasR2,
@@ -172,10 +245,9 @@ export default {
     }
 
     // 4. File Download / Stream route (GET /api/files/:key*)
-    // Matches /api/files/...
     if (method === 'GET' && url.pathname.startsWith('/api/files/') && url.pathname.length > '/api/files/'.length) {
       if (!env.R2_BUCKET) {
-        return errorResponse('R2 Storage bucket is not bound to this worker. Check wrangler.toml', 503);
+        return errorResponse('R2 Storage bucket is not bound to this worker. Please bind R2_BUCKET in Cloudflare Dashboard (Workers > Settings > Bindings).', 503);
       }
 
       const key = decodeURIComponent(url.pathname.slice('/api/files/'.length));
@@ -191,7 +263,6 @@ export default {
         headers.set('Access-Control-Allow-Origin', '*');
         headers.set('Cache-Control', 'public, max-age=31536000, immutable');
 
-        // Extract filename from key
         const filename = key.split('/').pop() || 'file';
         if (!headers.has('content-disposition')) {
           headers.set('content-disposition', `inline; filename="${filename}"`);
@@ -209,7 +280,7 @@ export default {
     // 5. File Upload route (POST /api/files/upload)
     if (method === 'POST' && (url.pathname === '/api/files/upload' || url.pathname === '/api/files')) {
       if (!env.R2_BUCKET) {
-        return errorResponse('R2 Storage bucket is not bound to this worker. Please bind R2_BUCKET in wrangler.toml', 503);
+        return errorResponse('R2 Storage bucket is not bound to this worker. Please add R2 Bucket binding with variable name "R2_BUCKET" in Cloudflare Dashboard (Workers > Settings > Bindings).', 503);
       }
 
       try {
@@ -220,21 +291,28 @@ export default {
         let folder = request.headers.get('X-Folder') || 'general';
 
         if (contentType.includes('multipart/form-data')) {
-          // Handle standard HTML FormData upload
           const formData = await request.formData();
           const file = formData.get('file');
-          if (!file || !(file instanceof File)) {
+          if (!file) {
             return errorResponse('No file provided in form data under field "file"', 400);
           }
-          filename = formData.get('filename')?.toString() || file.name || filename;
-          mimeType = formData.get('mimeType')?.toString() || file.type || mimeType;
+          if (typeof (file as any).name === 'string' && (file as any).name) {
+            filename = formData.get('filename')?.toString() || (file as any).name;
+          }
+          if (typeof (file as any).type === 'string' && (file as any).type) {
+            mimeType = formData.get('mimeType')?.toString() || (file as any).type || mimeType;
+          }
           folder = formData.get('folder')?.toString() || folder;
-          fileData = await file.arrayBuffer();
+
+          if (typeof (file as any).arrayBuffer === 'function') {
+            fileData = await (file as any).arrayBuffer();
+          } else {
+            return errorResponse('Invalid file data format', 400);
+          }
         } else if (contentType.includes('application/json')) {
-          // Handle JSON upload with Base64 payload
           const jsonBody = (await request.json()) as {
             filename?: string;
-            data: string; // base64 or raw string
+            data: string;
             mimeType?: string;
             folder?: string;
           };
@@ -259,25 +337,28 @@ export default {
             }
           }
 
-          // Decode base64 to binary Uint8Array
-          const binaryString = atob(rawBase64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+          rawBase64 = rawBase64.replace(/\s/g, '');
+
+          // Native Node buffer decode (supported via nodejs_compat)
+          if (typeof Buffer !== 'undefined') {
+            fileData = Buffer.from(rawBase64, 'base64');
+          } else {
+            const binaryString = atob(rawBase64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            fileData = bytes;
           }
-          fileData = bytes;
         } else {
-          // Raw stream body
           fileData = await request.arrayBuffer();
         }
 
-        // Clean filename and generate unique R2 key
         const cleanFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
         const cleanFolder = folder.replace(/[^a-zA-Z0-9_-]/g, '_');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const r2Key = `${cleanFolder}/${timestamp}_${cleanFilename}`;
 
-        // Save object into R2 bucket
         await env.R2_BUCKET.put(r2Key, fileData, {
           httpMetadata: {
             contentType: mimeType,
@@ -290,11 +371,9 @@ export default {
           },
         });
 
-        // Determine public file URL via this worker
         const fileUrl = `${url.origin}/api/files/${encodeURIComponent(r2Key)}`;
         const fileSize = fileData instanceof Uint8Array ? fileData.byteLength : fileData instanceof ArrayBuffer ? fileData.byteLength : 0;
 
-        // If D1 is bound, save file metadata
         if (env.DB) {
           try {
             await env.DB.prepare(
@@ -334,7 +413,6 @@ export default {
         const prefix = url.searchParams.get('prefix') || '';
         const limit = parseInt(url.searchParams.get('limit') || '50', 10);
 
-        // If D1 is bound, query files_meta for richer history
         if (env.DB) {
           try {
             const query = prefix
@@ -362,11 +440,10 @@ export default {
               source: 'd1_meta',
             });
           } catch (d1Err) {
-            console.warn('D1 files_meta query failed, falling back to direct R2 list:', d1Err);
+            console.warn('D1 files_meta query fallback to R2 direct list:', d1Err);
           }
         }
 
-        // Direct R2 bucket list fallback
         const listed = await env.R2_BUCKET.list({
           prefix: prefix || undefined,
           limit,
@@ -422,7 +499,7 @@ export default {
     // 8. D1 Sync Push: Save full application state & individual records to D1 (POST /api/sync/push)
     if (method === 'POST' && url.pathname === '/api/sync/push') {
       if (!env.DB) {
-        return errorResponse('D1 Database is not bound to this worker. Please bind DB in wrangler.toml', 503);
+        return errorResponse('D1 Database is not bound to this worker. Please add D1 Database binding with variable name "DB" in Cloudflare Dashboard (Workers > Settings > Bindings).', 503);
       }
 
       try {
@@ -446,7 +523,6 @@ export default {
         let receiptsCount = 0;
         if (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) {
           receiptsCount = backupData.receipts.length;
-          // Batch insert receipts up to D1 statement limits
           const statements = backupData.receipts.slice(0, 100).map((r: any) =>
             env.DB!.prepare(
               `INSERT OR REPLACE INTO receipts 
@@ -537,7 +613,6 @@ export default {
         const snapshot = await env.DB.prepare('SELECT * FROM sync_snapshots WHERE id = ?').bind('latest').first();
 
         if (!snapshot || !snapshot.data_json) {
-          // If no full snapshot exists, try constructing from individual tables
           const receiptsQuery = await env.DB.prepare('SELECT data_json FROM receipts ORDER BY created_at DESC').all();
           const receipts = (receiptsQuery.results || []).map((r: any) => JSON.parse(r.data_json));
 

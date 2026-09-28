@@ -3,10 +3,14 @@ main = "cloudflare/worker.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# D1 and R2 bindings are managed in Cloudflare Dashboard (Settings > Bindings):
-# - DB -> brivu-db (D1)
-# - R2_BUCKET -> brivu-files (R2)
+[[d1_databases]]
+binding = "DB"
+database_name = "brivu-db"
+database_id = "add56248-d8bf-46ba-9373-9a65037c0e55"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "brivu-files"
 
 [vars]
 ENVIRONMENT = "production"
-
