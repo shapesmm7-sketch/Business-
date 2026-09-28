@@ -1003,7 +1003,7 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
                             {prod.name}
                           </span>
                           <span className="text-[10px] text-slate-400 block mt-0.5">
-                            Stock: {prod.stockQuantity} {prod.unit || 'units'} available
+                            Stock: {prod.quantity} available
                           </span>
                         </div>
                         <div className="text-right">

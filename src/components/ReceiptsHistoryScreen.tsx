@@ -53,7 +53,7 @@ type DateFilterOption = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'year
 type StatusFilterOption = 'all' | 'paid' | 'partial' | 'unpaid';
 
 function getInitials(name?: string): string {
-  if (!name || !name.trim()) return 'RC';
+  if (!name || typeof name !== 'string' || !name.trim()) return 'RC';
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -143,7 +143,7 @@ function getReceiptCardTheme(name?: string, receiptNumber?: string): CardTheme {
     },
   ];
 
-  const key = (name || 'Customer') + (receiptNumber || '');
+  const key = String(name || 'Customer') + String(receiptNumber || '');
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = key.charCodeAt(i) + ((hash << 5) - hash);
@@ -189,7 +189,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     }, 3800);
   };
 
-  const currency = business.currency || 'UGX';
+  const currency = business?.currency || 'UGX';
 
   const handleDownload = async (receipt: Receipt) => {
     setDownloadingId(receipt.id);
@@ -222,27 +222,32 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
 
-    return receipts.filter((receipt) => {
+    return (receipts || []).filter((receipt) => {
+      if (!receipt || typeof receipt !== 'object') return false;
+
       // Strictly separate receipts vs invoices
       const isInvoice = receipt.documentType === 'invoice';
       if (isInvoiceMode && !isInvoice) return false;
       if (!isInvoiceMode && isInvoice) return false;
 
       // Status filtering
-      if (statusFilter !== 'all' && receipt.paymentStatus !== statusFilter) {
+      const pStatus = receipt.paymentStatus || (receipt as any).status || 'paid';
+      if (statusFilter !== 'all' && pStatus !== statusFilter) {
         return false;
       }
 
       // Search matching
       const query = searchQuery.trim().toLowerCase();
       if (query) {
-        const numMatch = receipt.receiptNumber.toLowerCase().includes(query);
+        const numMatch = (receipt.receiptNumber || '').toLowerCase().includes(query);
         const nameMatch = receipt.customerName?.toLowerCase().includes(query) ?? false;
         const phoneMatch = receipt.customerPhone?.includes(query) ?? false;
         const emailMatch = receipt.customerEmail?.toLowerCase().includes(query) ?? false;
         const poMatch = receipt.poNumber?.toLowerCase().includes(query) ?? false;
         const notesMatch = receipt.notes?.toLowerCase().includes(query) ?? false;
-        const itemMatch = receipt.items.some((i) => i.name.toLowerCase().includes(query));
+        const itemMatch = Array.isArray(receipt.items)
+          ? receipt.items.some((i) => i?.name?.toLowerCase().includes(query))
+          : false;
 
         if (!numMatch && !nameMatch && !phoneMatch && !emailMatch && !poMatch && !notesMatch && !itemMatch) {
           return false;
@@ -298,11 +303,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     let outstanding = 0;
 
     for (const r of filteredReceipts) {
-      sales += r.total;
+      const tot = typeof r.total === 'number' ? r.total : (parseFloat(r.total as any) || 0);
+      sales += tot;
       count++;
       if (r.paymentStatus === 'unpaid' || r.paymentStatus === 'partial') {
         pendingCount++;
-        const unpaid = Math.max(0, r.total - (r.amountPaid || 0));
+        const paid = typeof r.amountPaid === 'number' ? r.amountPaid : (parseFloat(r.amountPaid as any) || 0);
+        const unpaid = Math.max(0, tot - paid);
         outstanding += unpaid;
       }
     }
@@ -608,11 +615,16 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       ) : (
         <div className="space-y-2">
           {filteredReceipts.map((receipt) => {
-            const isPaid = receipt.paymentStatus === 'paid';
+            const isPaid = (receipt.paymentStatus || 'paid') === 'paid';
             const isPartial = receipt.paymentStatus === 'partial';
             const isExpanded = expandedReceiptId === receipt.id;
             const theme = getReceiptCardTheme(receipt.customerName, receipt.receiptNumber);
             const initials = getInitials(receipt.customerName);
+            const receiptItems = Array.isArray(receipt.items) ? receipt.items : [];
+            const safeTotal = typeof receipt.total === 'number' ? receipt.total : (parseFloat(receipt.total as any) || 0);
+            const safeSubtotal = typeof receipt.subtotal === 'number' ? receipt.subtotal : (parseFloat(receipt.subtotal as any) || safeTotal);
+            const safeAmountPaid = typeof receipt.amountPaid === 'number' ? receipt.amountPaid : (parseFloat(receipt.amountPaid as any) || 0);
+            const safeBalance = typeof receipt.balance === 'number' ? receipt.balance : (safeTotal - safeAmountPaid);
 
             return (
               <div
@@ -643,17 +655,17 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           </h3>
                         </div>
                         <div className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white shrink-0">
-                          {formatCurrency(receipt.total, currency)}
+                          {formatCurrency(safeTotal, currency)}
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between gap-2 text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                         <div className="flex items-center gap-1.5 truncate">
                           <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                            {receipt.receiptNumber}
+                            {receipt.receiptNumber || 'REC'}
                           </span>
                           <span>•</span>
-                          <span>{formatDateTime(receipt.createdAt)}</span>
+                          <span>{formatDateTime(receipt.createdAt || '')}</span>
                           {receipt.dueDate && isInvoiceMode && (
                             <>
                               <span>•</span>
@@ -661,7 +673,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                             </>
                           )}
                           <span>•</span>
-                          <span>{receipt.items.length} item{receipt.items.length !== 1 ? 's' : ''}</span>
+                          <span>{receiptItems.length} item{receiptItems.length !== 1 ? 's' : ''}</span>
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -674,7 +686,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                                 : 'bg-rose-100/90 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
                             }`}
                           >
-                            {receipt.paymentStatus}
+                            {receipt.paymentStatus || 'paid'}
                           </span>
                           <ChevronDown
                             className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
@@ -715,7 +727,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                          Items Breakdown ({receipt.items.length})
+                          Items Breakdown ({receiptItems.length})
                         </span>
                       </div>
 
@@ -730,17 +742,17 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60 font-medium">
-                            {receipt.items.map((item, idx) => (
+                            {receiptItems.map((item, idx) => (
                               <tr key={item.id || idx} className="text-slate-800 dark:text-slate-200">
                                 <td className="py-1.5 px-3 font-semibold">{item.name}</td>
                                 <td className="py-1.5 px-2 text-center text-slate-500 dark:text-slate-400">
                                   {item.quantity}
                                 </td>
                                 <td className="py-1.5 px-2 text-right font-mono text-slate-500 dark:text-slate-400">
-                                  {formatCurrency(item.unitPrice, currency)}
+                                  {formatCurrency(item.unitPrice || 0, currency)}
                                 </td>
                                 <td className="py-1.5 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                                  {formatCurrency(item.subtotal, currency)}
+                                  {formatCurrency(item.subtotal || (item.quantity * item.unitPrice) || 0, currency)}
                                 </td>
                               </tr>
                             ))}
@@ -753,15 +765,15 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                     <div className="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200/80 dark:border-slate-700/80 space-y-1 text-xs">
                       <div className="flex justify-between text-slate-600 dark:text-slate-400">
                         <span>Subtotal</span>
-                        <span className="font-mono">{formatCurrency(receipt.subtotal, currency)}</span>
+                        <span className="font-mono">{formatCurrency(safeSubtotal, currency)}</span>
                       </div>
 
-                      {receipt.discountAmount > 0 && (
+                      {Boolean(receipt.discountAmount && receipt.discountAmount > 0) && (
                         <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
                           <span>
                             Discount {receipt.discountType === 'percentage' ? `(${receipt.discount}%)` : '(Fixed)'}
                           </span>
-                          <span className="font-mono">-{formatCurrency(receipt.discountAmount, currency)}</span>
+                          <span className="font-mono">-{formatCurrency(receipt.discountAmount || 0, currency)}</span>
                         </div>
                       )}
 
@@ -782,20 +794,20 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                       <div className="flex justify-between text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white pt-1 border-t border-slate-100 dark:border-slate-700">
                         <span>{isInvoiceMode ? 'Total Invoice Amount' : 'Total Payable'}</span>
                         <span className={`font-mono ${isInvoiceMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                          {formatCurrency(receipt.total, currency)}
+                          {formatCurrency(safeTotal, currency)}
                         </span>
                       </div>
 
                       <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
                         <span>Amount Paid ({receipt.paymentMethod || 'Cash'})</span>
-                        <span className="font-mono">{formatCurrency(receipt.amountPaid, currency)}</span>
+                        <span className="font-mono">{formatCurrency(safeAmountPaid, currency)}</span>
                       </div>
 
-                      {receipt.balance !== 0 && (
+                      {safeBalance !== 0 && (
                         <div className="flex justify-between text-[11px] font-semibold pt-0.5">
-                          <span>{receipt.balance > 0 ? 'Change Returned' : 'Balance Due'}</span>
-                          <span className={`font-mono ${receipt.balance > 0 ? 'text-slate-700 dark:text-slate-300' : 'text-rose-600 dark:text-rose-400'}`}>
-                            {formatCurrency(Math.abs(receipt.balance), currency)}
+                          <span>{safeBalance > 0 ? 'Change Returned' : 'Balance Due'}</span>
+                          <span className={`font-mono ${safeBalance > 0 ? 'text-slate-700 dark:text-slate-300' : 'text-rose-600 dark:text-rose-400'}`}>
+                            {formatCurrency(Math.abs(safeBalance), currency)}
                           </span>
                         </div>
                       )}

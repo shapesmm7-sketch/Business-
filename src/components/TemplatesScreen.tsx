@@ -78,6 +78,7 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
           discountAmount: 0,
           total: 141000,
           amountPaid: 150000,
+          balance: 9000,
           currency,
           template: id,
           accentColor: business.accentColor,

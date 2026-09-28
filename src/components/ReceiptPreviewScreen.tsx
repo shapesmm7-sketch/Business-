@@ -43,8 +43,8 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   const isCfConfigured = CloudflareService.isConfigured();
 
-  const business = receipt.businessSnapshot;
-  const currency = business.currency || 'UGX';
+  const business = receipt.businessSnapshot || (receipt as any).businessProfile || StorageService.getProfile();
+  const currency = business?.currency || receipt.currency || 'UGX';
   const currentTheme = getTemplateConfig(receipt.template || 'modern');
   const isInvoice = receipt.documentType === 'invoice';
 
@@ -289,15 +289,15 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       <div className="receipt-print-area">
         <ReceiptLayoutRenderer
           data={{
-            storeName: business.name,
-            businessDescription: receipt.businessSnapshot?.description || business.description,
-            phone: business.phone,
-            email: business.email,
-            address: business.address,
-            taxNumber: business.taxNumber,
-            logo: business.logo,
-            signature: receipt.businessSnapshot?.signature || business.signature,
-            customFooter: business.customFooter,
+            storeName: business?.name || '',
+            businessDescription: receipt.businessSnapshot?.description || business?.description || '',
+            phone: business?.phone || '',
+            email: business?.email || '',
+            address: business?.address || '',
+            taxNumber: business?.taxNumber || '',
+            logo: business?.logo,
+            signature: receipt.businessSnapshot?.signature || (receipt as any).businessProfile?.signature || business?.signature,
+            customFooter: business?.customFooter || '',
             receiptNumber: receipt.receiptNumber,
             createdAt: receipt.createdAt,
             customerName: receipt.customerName,
@@ -309,7 +309,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             paymentTerms: receipt.paymentTerms,
             paymentMethod: receipt.paymentMethod,
             paymentStatus: receipt.paymentStatus,
-            items: receipt.items,
+            items: receipt.items || [],
             subtotal: receipt.subtotal,
             discountAmount: receipt.discountAmount,
             total: receipt.total,
@@ -321,16 +321,16 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             nonRefundable: Boolean(receipt.nonRefundable),
             currency: currency,
             template: receipt.template || 'modern',
-            accentColor: receipt.accentColor || business.accentColor,
+            accentColor: receipt.accentColor || business?.accentColor,
             customTheme: (() => {
               const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
               return {
-                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor || business.headerBgColor,
-                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor || business.headerTextColor,
-                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor || business.totalBgColor,
-                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor || business.totalTextColor,
-                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor || business.paperBgColor,
-                accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor || business.accentColor,
+                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor || business?.headerBgColor,
+                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor || business?.headerTextColor,
+                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor || business?.totalBgColor,
+                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor || business?.totalTextColor,
+                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor || business?.paperBgColor,
+                accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor || business?.accentColor,
                 fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
                 badgeText: receipt.customTheme?.badgeText || saved?.badgeText || (isInvoice ? 'INVOICE' : 'RECEIPT'),
               };

@@ -356,13 +356,7 @@ export function App() {
       console.warn('[AppLock] CapApp setup note:', capErr);
     }
 
-    // 3. Window focus / blur / pagehide / beforeunload listeners
-    const handleWindowFocus = () => {
-      handleAppResuming();
-    };
-    const handleWindowBlur = () => {
-      handleAppGoingBackground();
-    };
+    // 3. Pagehide / beforeunload listeners (clean web unload)
     const handlePageHide = () => {
       handleAppGoingBackground();
     };
@@ -381,16 +375,12 @@ export function App() {
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('pagehide', handlePageHide);
     window.addEventListener('beforeunload', handlePageHide);
     document.addEventListener('click', handleFileInputClick, true);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleWindowFocus);
-      window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
       document.removeEventListener('click', handleFileInputClick, true);
@@ -399,6 +389,51 @@ export function App() {
       }
     };
   }, []);
+
+  // Hardware Back Button handling on Android / Capacitor devices
+  useEffect(() => {
+    let backListenerHandle: any = null;
+    try {
+      CapApp.addListener('backButton', () => {
+        if (activeScreen === 'home') {
+          CapApp.exitApp();
+        } else if (
+          [
+            'create-receipt',
+            'create-invoice',
+            'preview-receipt',
+            'templates',
+            'settings',
+            'profile',
+            'inventory',
+            'qr-hosting',
+            'upgrade',
+            'app-lock-setup',
+            'cloud-backup',
+            'receipts-invoices',
+          ].includes(activeScreen)
+        ) {
+          handleNavigate('home');
+        } else if (previousScreen && previousScreen !== activeScreen) {
+          handleNavigate(previousScreen);
+        } else {
+          handleNavigate('home');
+        }
+      }).then((handle) => {
+        backListenerHandle = handle;
+      }).catch((err) => {
+        console.warn('[App] BackButton listener note:', err);
+      });
+    } catch (err) {
+      console.warn('[App] BackButton setup note:', err);
+    }
+
+    return () => {
+      if (backListenerHandle && typeof backListenerHandle.remove === 'function') {
+        backListenerHandle.remove();
+      }
+    };
+  }, [activeScreen, previousScreen]);
 
   // Handler to navigate
   const handleNavigate = (screen: ActiveScreen) => {
@@ -654,17 +689,38 @@ export function App() {
           />
         )}
 
-        {activeScreen === 'preview-receipt' && selectedReceipt && (
-          <ReceiptPreviewScreen
-            receipt={selectedReceipt}
-            onBack={() =>
-              handleNavigate(
-                selectedReceipt.documentType === 'invoice' ? 'invoices' : 'receipts'
-              )
-            }
-            onEdit={handleEditReceipt}
-            onDuplicate={handleDuplicateReceipt}
-          />
+        {activeScreen === 'preview-receipt' && (
+          selectedReceipt ? (
+            <ReceiptPreviewScreen
+              receipt={selectedReceipt}
+              onBack={() =>
+                handleNavigate(
+                  selectedReceipt.documentType === 'invoice' ? 'invoices' : 'receipts'
+                )
+              }
+              onEdit={handleEditReceipt}
+              onDuplicate={handleDuplicateReceipt}
+            />
+          ) : (
+            <ReceiptsHistoryScreen
+              receipts={receipts}
+              business={business}
+              mode="receipts"
+              onOpenReceipt={handleOpenReceipt}
+              onEditReceipt={handleEditReceipt}
+              onShareReceipt={handleShareReceipt}
+              onDuplicateReceipt={handleDuplicateReceipt}
+              onDownloadReceipt={handleDownloadReceipt}
+              onDeleteReceipt={handleDeleteReceipt}
+              onOpenTemplates={() => handleNavigate('templates')}
+              onCreateNew={() => {
+                setSelectedReceipt(null);
+                setDuplicateSeed(null);
+                setActiveScreen('create-receipt');
+              }}
+              onEditProfile={() => handleNavigate('profile')}
+            />
+          )
         )}
 
         {activeScreen === 'receipts' && (
@@ -851,6 +907,41 @@ export function App() {
           <CloudBackupScreen
             onBack={() => handleNavigate('settings')}
             onDataRestored={refreshData}
+          />
+        )}
+
+        {/* Safety Catch-All Screen: Guarantees the UI never renders empty white space */}
+        {![
+          'home',
+          'receipts-invoices',
+          'create-receipt',
+          'create-invoice',
+          'preview-receipt',
+          'receipts',
+          'invoices',
+          'profile',
+          'inventory',
+          'templates',
+          'settings',
+          'qr-hosting',
+          'qr-customer-view',
+          'upgrade',
+          'app-lock-setup',
+          'cloud-backup',
+        ].includes(activeScreen) && (
+          <HomeScreen
+            business={business}
+            stats={stats}
+            activeTemplate={settings.defaultTemplate}
+            onNavigate={handleNavigate}
+            onNavigateToInventory={handleNavigateToInventory}
+            onSelectReceipt={handleOpenReceipt}
+            onShareReceipt={handleShareReceipt}
+            onOpenCustomerView={(page) => {
+              setActiveCustomerPage(page);
+              setIsCustomerViewMode(false);
+              setActiveScreen('qr-customer-view');
+            }}
           />
         )}
       </main>

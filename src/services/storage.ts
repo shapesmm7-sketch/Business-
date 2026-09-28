@@ -395,8 +395,30 @@ export const StorageService = {
       return INITIAL_SAMPLE_RECEIPTS;
     }
     try {
-      const parsed = JSON.parse(data) as Receipt[];
-      return parsed.filter((r) => !r.id.startsWith('sample-'));
+      const parsed = JSON.parse(data);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((r) => r && typeof r === 'object' && (!r.id || !String(r.id).startsWith('sample-')))
+        .map((r: any): Receipt => ({
+          ...r,
+          id: String(r.id || `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+          receiptNumber: String(r.receiptNumber || 'REC-000001'),
+          items: Array.isArray(r.items) ? r.items : [],
+          subtotal: typeof r.subtotal === 'number' ? r.subtotal : (parseFloat(r.subtotal) || 0),
+          total: typeof r.total === 'number' ? r.total : (parseFloat(r.total) || 0),
+          amountPaid: typeof r.amountPaid === 'number' ? r.amountPaid : (parseFloat(r.amountPaid) || 0),
+          balance: typeof r.balance === 'number' ? r.balance : 0,
+          paymentStatus: r.paymentStatus || 'paid',
+          documentType: r.documentType === 'invoice' ? 'invoice' : 'receipt',
+          createdAt: r.createdAt || new Date().toISOString(),
+          businessSnapshot: r.businessSnapshot || {
+            name: '',
+            phone: '',
+            email: '',
+            address: '',
+            currency: 'UGX',
+          },
+        }));
     } catch {
       return [];
     }

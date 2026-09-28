@@ -1974,7 +1974,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     // Calculate Shopping List
     const pShopping = shoppingList.filter(s => isDateMatch(s.createdAt ? s.createdAt.split('T')[0] : ''));
-    const totalShoppingCost = pShopping.reduce((acc, s) => acc + ((s.estimatedCost || 0) * (s.quantity || 1)), 0);
+    const totalShoppingCost = pShopping.reduce((acc, s) => acc + ((s.estimatedCost || s.estimatedPrice || 0) * (parseFloat(s.quantity) || 1)), 0);
 
     return {
       itemsSold,
@@ -2746,9 +2746,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         y += 5;
         doc.text(`Total Cost Value: ${currency} ${stockAnalytics.totalCostValue.toLocaleString()}`, margin, y);
         y += 5;
-        doc.text(`Total Retail Valuation: ${currency} ${stockAnalytics.totalSellingValue.toLocaleString()}`, margin, y);
+        doc.text(`Total Retail Valuation: ${currency} ${stockAnalytics.totalRetailValue.toLocaleString()}`, margin, y);
         y += 5;
-        const potentialProfit = stockAnalytics.totalSellingValue - stockAnalytics.totalCostValue;
+        const potentialProfit = stockAnalytics.potentialProfit;
         doc.text(`Potential Gross Profit: ${currency} ${potentialProfit.toLocaleString()}`, margin, y);
         y += 5;
         const inStockCount = products.filter((p) => p.quantity > 0).length;
@@ -9428,7 +9428,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         {product.name}
                       </span>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                        <span>In stock: <strong className="text-slate-600 dark:text-slate-300">{product.stockQuantity}</strong></span>
+                        <span>In stock: <strong className="text-slate-600 dark:text-slate-300">{product.quantity}</strong></span>
                         {product.category && <span>• {product.category}</span>}
                       </div>
                     </div>

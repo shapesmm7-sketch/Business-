@@ -629,7 +629,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
 
       {/* Files Modal */}
       {showFilesModal && (
-        <CloudflareFilesModal onClose={() => setShowFilesModal(false)} />
+        <CloudflareFilesModal isOpen={showFilesModal} onClose={() => setShowFilesModal(false)} />
       )}
     </div>
   );

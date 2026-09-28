@@ -52,7 +52,13 @@ export type ReceiptTemplateId =
   | 'monochrome-pro'
   | 'burgundy-prestige'
   | 'slate-borderless'
-  | 'retro-kraft';
+  | 'retro-kraft'
+  | 'luxury'
+  | 'bold'
+  | 'cyber'
+  | 'vintage'
+  | 'thermal'
+  | string;
 
 export interface ReceiptItem {
   id: string;
@@ -117,6 +123,7 @@ export type DocumentType = 'receipt' | 'invoice';
 
 export interface Receipt {
   id: string;
+  currency?: string; // Optional document-level currency override
   documentType?: DocumentType; // 'receipt' | 'invoice' (default: 'receipt')
   receiptNumber: string; // or invoice number e.g. INV-000001
   createdAt: string; // ISO string
@@ -174,14 +181,18 @@ export interface AppSettings {
 export interface InventoryProduct {
   id: string;
   itemId: string;
+  barcode?: string;
   name: string;
   image?: string;
   sizes?: string[];
   quantity: number;
+  stockQuantity?: number; // Synonym/alias for quantity
+  unit?: string;
   costPrice: number;
   sellingPrice: number;
   taxPercent: number;
   categoryId?: string; // product category referencing ProductCategory
+  category?: string; // Legacy or direct category name alias
   createdAt: string;
   updatedAt: string;
 }
@@ -229,6 +240,7 @@ export interface InventoryDebt {
   date: string;         // date recorded (YYYY-MM-DD)
   dueDate?: string;     // optional repayment due date
   status: 'unpaid' | 'paid' | 'partial';
+  isPaid?: boolean;     // Helper boolean alias for status === 'paid'
   paidAmount?: number;  // amount paid so far
   payments?: DebtPayment[]; // History of payments made
   createdAt: string;
@@ -254,6 +266,7 @@ export interface ShoppingListItem {
   name: string;
   quantity: string; // e.g., "5", "5kg", "2 boxes"
   estimatedPrice?: number;
+  estimatedCost?: number; // Alias for estimatedPrice
   checked: boolean;
   notes?: string;
   categoryId?: string; // category referencing ShoppingCategory
@@ -347,6 +360,7 @@ export interface StaffSaleRecord {
   workerId: string;
   date: string; // YYYY-MM-DD
   itemSold: string; // Product / service description
+  item?: string; // Alias for itemSold
   amount: number;
   commission?: number; // Optional commission/bonus earned
   customerName?: string;
@@ -416,6 +430,7 @@ export interface QRBusinessPhoto {
   url: string;
   title?: string;
   description?: string;
+  caption?: string; // Alias for description / title
   category?: string;
   badge?: string;
 }
