@@ -168,6 +168,15 @@ export function App() {
           setActiveCustomerPage(found);
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
+        } else if (qrPageId) {
+          setIsCustomerViewMode(true);
+          setActiveScreen('qr-customer-view');
+          CloudflareService.getHostedQrPage(qrPageId).then((remotePage) => {
+            if (remotePage) {
+              StorageService.saveHostedQRPage(remotePage);
+              setActiveCustomerPage(remotePage);
+            }
+          }).catch(() => {});
         }
       }
     }

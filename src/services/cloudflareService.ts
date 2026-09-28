@@ -657,4 +657,78 @@ export const CloudflareService = {
       return false;
     }
   },
+
+  /**
+   * Fetches a specific hosted QR page directly from Cloudflare
+   */
+  async getHostedQrPage(pageId: string): Promise<any | null> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) return null;
+
+    try {
+      const headers = this.getAuthHeaders();
+      const targetUrl = `${config.workerUrl}/api/qr/${encodeURIComponent(pageId)}`;
+
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!res.ok) return null;
+      const raw = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(raw);
+      if (parsed.ok && parsed.data?.page) {
+        return parsed.data.page;
+      }
+      return null;
+    } catch (err) {
+      console.warn('Failed to fetch hosted QR page from Cloudflare:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Saves or updates a hosted QR page directly in Cloudflare D1
+   */
+  async saveSingleQrPage(page: any): Promise<{ success: boolean; message: string }> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'Cloudflare Worker is not configured' };
+    }
+
+    try {
+      const headers = this.getAuthHeaders();
+      const targetUrl = `${config.workerUrl}/api/qr`;
+
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(page),
+      });
+
+      const rawText = await response.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: parsed.data?.error || `HTTP ${response.status} saving QR page to Cloudflare`,
+        };
+      }
+
+      return {
+        success: true,
+        message: parsed.data?.message || `QR Page ${page.title || page.id} saved to Cloudflare`,
+      };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        message: `Cloudflare QR save error: ${errMsg}`,
+      };
+    }
+  },
 };

@@ -222,6 +222,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingCustPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setCustProfilePic(compressed);
+
+      try {
+        const uploadRes = await CloudflareService.uploadFile({
+          data: compressed,
+          filename: `customer_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+          folder: 'photos',
+        });
+        if (uploadRes.success && uploadRes.url) {
+          setCustProfilePic(uploadRes.url);
+        }
+      } catch (cfErr) {
+        console.warn('Cloudflare customer photo upload note:', cfErr);
+      }
     } catch (err) {
       console.warn('Failed to compress client photo:', err);
       showToast('Could not process photo');
@@ -240,6 +254,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingAgentPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setAgentProfilePic(compressed);
+
+      try {
+        const uploadRes = await CloudflareService.uploadFile({
+          data: compressed,
+          filename: `agent_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+          folder: 'photos',
+        });
+        if (uploadRes.success && uploadRes.url) {
+          setAgentProfilePic(uploadRes.url);
+        }
+      } catch (cfErr) {
+        console.warn('Cloudflare agent photo upload note:', cfErr);
+      }
     } catch (err) {
       console.warn('Failed to compress agent photo:', err);
       showToast('Could not process photo');
@@ -258,6 +286,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingWorkerPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setWorkerProfilePic(compressed);
+
+      try {
+        const uploadRes = await CloudflareService.uploadFile({
+          data: compressed,
+          filename: `staff_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+          folder: 'photos',
+        });
+        if (uploadRes.success && uploadRes.url) {
+          setWorkerProfilePic(uploadRes.url);
+        }
+      } catch (cfErr) {
+        console.warn('Cloudflare worker photo upload note:', cfErr);
+      }
     } catch (err) {
       console.warn('Failed to compress worker photo:', err);
       showToast('Could not process photo');
@@ -645,7 +687,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setImage(uploadRes.url);
-          showToast('Product photo uploaded to Cloudflare R2!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare product photo upload note:', cfErr);

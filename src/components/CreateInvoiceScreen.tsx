@@ -482,15 +482,13 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     if (!invoice) return;
 
     setIsProcessing(true);
-    const saveRes = await StorageService.saveReceiptAsync(invoice);
+    await StorageService.saveReceiptAsync(invoice);
     if (!editingInvoice) {
       StorageService.advanceInvoiceSequence();
     }
     setIsProcessing(false);
     showToast(
-      saveRes.cloudSynced
-        ? 'Invoice saved to Cloud & Device!'
-        : 'Invoice saved successfully!'
+      `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
     );
     if (onSaveOnly) {
       onSaveOnly(invoice);
@@ -509,6 +507,9 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       StorageService.advanceInvoiceSequence();
     }
     setIsProcessing(false);
+    showToast(
+      `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
+    );
     onSaveAndPreview(invoice);
   };
 
@@ -522,8 +523,8 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       StorageService.advanceInvoiceSequence();
     }
     try {
-      await PdfGenerator.downloadPdf(invoice);
-      showToast('PDF downloaded successfully!');
+      const res = await PdfGenerator.downloadPdf(invoice);
+      showToast(res.message);
       if (onQuickDownload) {
         onQuickDownload(invoice);
       }

@@ -66,3 +66,13 @@ CREATE TABLE IF NOT EXISTS app_settings (
   data_json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS qr_pages (
+  id TEXT PRIMARY KEY,
+  business_name TEXT,
+  category TEXT,
+  data_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_qr_pages_updated_at ON qr_pages(updated_at);

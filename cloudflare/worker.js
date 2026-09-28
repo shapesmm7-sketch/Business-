@@ -1,10 +1,11 @@
-// cloudflare/worker.ts
+// cloudflare/worker.js
 var CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Sync-Key, X-Filename, X-Mime-Type, X-Folder",
   "Access-Control-Max-Age": "86400"
 };
+
 function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -15,9 +16,23 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
     }
   });
 }
+
+function htmlResponse(html, status = 200, extraHeaders = {}) {
+  return new Response(html, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "public, max-age=60, s-maxage=300",
+      ...CORS_HEADERS,
+      ...extraHeaders
+    }
+  });
+}
+
 function errorResponse(message, status = 400, details) {
   return jsonResponse({ success: false, error: message, details }, status);
 }
+
 function checkAuth(request, env) {
   if (!env.SYNC_SECRET_KEY || env.SYNC_SECRET_KEY.trim() === "") {
     return true;
@@ -35,17 +50,687 @@ function checkAuth(request, env) {
   }
   return false;
 }
+
+var dbInitialized = false;
+
+async function ensureTables(db) {
+  if (!db || dbInitialized) return;
+  try {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_snapshots (
+        id TEXT PRIMARY KEY,
+        exported_at TEXT,
+        version INTEGER DEFAULT 1,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS receipts (
+        id TEXT PRIMARY KEY,
+        receipt_number TEXT NOT NULL,
+        document_type TEXT DEFAULT 'receipt',
+        customer_name TEXT,
+        customer_phone TEXT,
+        total REAL NOT NULL,
+        amount_paid REAL DEFAULT 0,
+        balance REAL DEFAULT 0,
+        payment_status TEXT,
+        payment_method TEXT,
+        created_at TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_receipts_created_at ON receipts(created_at);
+      CREATE TABLE IF NOT EXISTS files_meta (
+        key TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER,
+        folder TEXT,
+        r2_key TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON files_meta(uploaded_at);
+      CREATE TABLE IF NOT EXISTS inventory_products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 0,
+        cost_price REAL DEFAULT 0,
+        selling_price REAL DEFAULT 0,
+        category_id TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS business_profile (
+        id TEXT PRIMARY KEY DEFAULT 'current',
+        name TEXT,
+        currency TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id TEXT PRIMARY KEY DEFAULT 'current',
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS qr_pages (
+        id TEXT PRIMARY KEY,
+        business_name TEXT,
+        category TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_qr_pages_updated_at ON qr_pages(updated_at);
+    `);
+    dbInitialized = true;
+  } catch (err) {
+    console.warn("Auto D1 table creation warning:", err);
+  }
+}
+
+async function getHostedQrPage(env, pageId) {
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare("SELECT data_json FROM qr_pages WHERE id = ?").bind(pageId).first();
+      if (row?.data_json) {
+        return JSON.parse(row.data_json);
+      }
+    } catch {}
+
+    try {
+      const snap = await env.DB.prepare("SELECT data_json FROM sync_snapshots WHERE id = ?").bind("latest").first();
+      if (snap?.data_json) {
+        const backup = JSON.parse(snap.data_json);
+        if (Array.isArray(backup.qrHostedPages)) {
+          const found = backup.qrHostedPages.find((p) => p.id === pageId);
+          if (found) return found;
+          if (pageId === "default" || backup.qrHostedPages.length === 1) {
+            return backup.qrHostedPages[0];
+          }
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderCustomerPageHtml(page, options = {}) {
+  const title = page.title || "Digital Menu & Hub";
+  const tagline = page.tagline || page.description || "Welcome! Explore our items & catalog.";
+  const currency = page.currency || "UGX";
+  const accent = page.accentColor || "#059669";
+  const logo = page.logo || "";
+  const coverImage = page.coverImage || "";
+  const phone = page.phone || "";
+  const whatsapp = page.whatsapp || page.phone || "";
+  const cleanWa = whatsapp.replace(/[^0-9]/g, "");
+  const address = page.address || "";
+  const openingHours = page.openingHours || "";
+  const wifiName = page.wifiName || "";
+  const wifiPassword = page.wifiPassword || "";
+  const menuItems = Array.isArray(page.menuItems) ? page.menuItems : [];
+  const photos = Array.isArray(page.photos) ? page.photos : [];
+  const categories = Array.isArray(page.menuCategories) && page.menuCategories.length > 0 ? page.menuCategories : ["All"];
+  const allowWhatsAppOrdering = page.allowWhatsAppOrdering !== false;
+
+  const pageDataJson = JSON.stringify(page).replace(/</g, "\\u003c");
+
+  return `<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>${escapeHtml(title)} | Digital Menu & Business Hub</title>
+  <meta name="description" content="${escapeHtml(tagline)}">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(tagline)}">
+  ${logo ? `<meta property="og:image" content="${escapeHtml(logo)}">` : ""}
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased min-h-screen pb-28">
+  <header class="relative bg-slate-900 text-white overflow-hidden shadow-lg">
+    ${
+      coverImage
+        ? `<div class="absolute inset-0 bg-cover bg-center opacity-35 filter blur-[1px] scale-105 transition duration-700" style="background-image: url('${escapeHtml(coverImage)}');"></div>`
+        : `<div class="absolute inset-0 bg-gradient-to-br from-emerald-900 via-slate-900 to-slate-950 opacity-95"></div>`
+    }
+    <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent"></div>
+    <div class="relative max-w-2xl mx-auto px-4 pt-8 pb-6">
+      <div class="flex items-start gap-4">
+        ${
+          logo
+            ? `<img src="${escapeHtml(logo)}" alt="Logo" class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover bg-white/10 border-2 border-white/20 shadow-xl shrink-0" />`
+            : `<div class="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/15 border-2 border-white/20 flex items-center justify-center font-black text-2xl shrink-0 text-emerald-400 shadow-xl">${escapeHtml(title.slice(0, 2).toUpperCase())}</div>`
+        }
+        <div class="flex-1 min-w-0">
+          <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold tracking-wide uppercase border border-emerald-500/30 mb-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Open for Orders</span>
+          </div>
+          <h1 class="text-xl sm:text-2xl font-black tracking-tight text-white leading-tight">${escapeHtml(title)}</h1>
+          <p class="text-xs sm:text-sm text-slate-300 font-medium mt-1 leading-snug line-clamp-2">${escapeHtml(tagline)}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 mt-5 overflow-x-auto no-scrollbar py-1">
+        ${
+          phone
+            ? `<a href="tel:${escapeHtml(phone)}" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md flex items-center gap-1.5 border border-white/15 transition active:scale-95 shrink-0">
+                <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+                <span>Call Now</span>
+              </a>`
+            : ""
+        }
+        ${
+          cleanWa
+            ? `<a href="https://wa.me/${cleanWa}?text=${encodeURIComponent(`Hello ${title}, I am browsing your digital menu!`)}" target="_blank" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/30 transition active:scale-95 shrink-0">
+                <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.981.542 1.83.829 2.796.83h.005c3.182 0 5.768-2.587 5.769-5.766.001-3.182-2.585-5.768-5.77-5.768zm0-1.872c4.214 0 7.636 3.422 7.637 7.638 0 4.215-3.422 7.637-7.637 7.637-.001 0-.003 0-.005 0-1.309 0-2.476-.35-3.504-.963l-4.522 1.186 1.207-4.407c-.687-1.077-1.076-2.316-1.076-3.453 0-4.216 3.422-7.638 7.637-7.638zm3.627 10.742c-.157.442-.916.848-1.282.902-.34.05-.768.082-2.348-.574-1.905-.791-3.13-2.73-3.226-2.858-.095-.128-.771-1.026-.771-1.956 0-.931.488-1.387.662-1.579.174-.191.38-.239.507-.239.127 0 .254.002.365.007.118.006.277-.044.433.332.16.386.547 1.334.595 1.431.048.097.08.21.016.337-.064.127-.096.206-.191.317-.095.111-.2.248-.286.333-.095.095-.195.199-.084.389.111.19.493.813 1.058 1.316.727.647 1.34.847 1.53.942.191.095.302.079.413-.048.111-.127.476-.555.603-.745.127-.19.254-.159.429-.095.174.063 1.111.524 1.302.619.19.095.317.143.365.222.048.079.048.46-.109.902z"/></svg>
+                <span>WhatsApp</span>
+              </a>`
+            : ""
+        }
+        ${
+          wifiName || wifiPassword
+            ? `<button onclick="copyWifiPassword('${escapeHtml(wifiPassword)}')" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md flex items-center gap-1.5 border border-white/15 transition active:scale-95 shrink-0">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
+                <span>Free WiFi</span>
+              </button>`
+            : ""
+        }
+        ${
+          address
+            ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}" target="_blank" class="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md flex items-center gap-1.5 border border-white/15 transition active:scale-95 shrink-0">
+                <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span>Find Us</span>
+              </a>`
+            : ""
+        }
+      </div>
+    </div>
+  </header>
+
+  <div class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+    <div class="max-w-2xl mx-auto px-4">
+      <div class="flex items-center justify-around">
+        <button id="tab-btn-menu" onclick="switchTab('menu')" class="flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-emerald-600 text-emerald-700 transition flex items-center justify-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+          <span>Catalog & Menu (${menuItems.length})</span>
+        </button>
+        <button id="tab-btn-photos" onclick="switchTab('photos')" class="flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span>Gallery (${photos.length})</span>
+        </button>
+        <button id="tab-btn-about" onclick="switchTab('about')" class="flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>About & Info</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <main class="max-w-2xl mx-auto px-4 pt-4">
+    <section id="tab-content-menu" class="space-y-4">
+      <div class="space-y-3">
+        <div class="relative">
+          <input
+            type="text"
+            id="item-search-input"
+            oninput="handleSearch(this.value)"
+            placeholder="Search items, drinks, dishes..."
+            class="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-xs font-semibold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+          />
+          <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </div>
+        <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1" id="category-pills-container">
+          ${categories
+            .map(
+              (cat, idx) => `
+            <button
+              onclick="selectCategory('${escapeHtml(cat)}')"
+              data-cat="${escapeHtml(cat)}"
+              class="cat-pill px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition active:scale-95 ${
+                idx === 0
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+              }"
+            >
+              ${escapeHtml(cat)}
+            </button>
+          `
+            )
+            .join("")}
+        </div>
+      </div>
+      <div id="items-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+      <div id="no-items-state" class="hidden text-center py-12 bg-white rounded-3xl border border-slate-200 p-6">
+        <p class="text-sm font-bold text-slate-700">No items found</p>
+        <p class="text-xs text-slate-400 mt-1">Try another search keyword or category filter</p>
+      </div>
+    </section>
+
+    <section id="tab-content-photos" class="hidden space-y-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="photos-grid">
+        ${photos
+          .map(
+            (photo) => `
+          <div onclick="openLightbox('${escapeHtml(photo.url)}', '${escapeHtml(photo.title || photo.description || "")}')" class="group relative rounded-2xl overflow-hidden bg-slate-200 aspect-square shadow-xs cursor-pointer">
+            <img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.title || "Photo")}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition p-2.5 flex items-end">
+              <span class="text-white text-[11px] font-bold line-clamp-1">${escapeHtml(photo.title || photo.category || "")}</span>
+            </div>
+            ${
+              photo.badge
+                ? `<span class="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[9px] font-black uppercase tracking-wider">${escapeHtml(photo.badge)}</span>`
+                : ""
+            }
+          </div>
+        `
+          )
+          .join("")}
+      </div>
+      ${
+        photos.length === 0
+          ? `<div class="text-center py-12 bg-white rounded-3xl border border-slate-200 p-6">
+              <p class="text-sm font-bold text-slate-700">No photos in gallery yet</p>
+            </div>`
+          : ""
+      }
+    </section>
+
+    <section id="tab-content-about" class="hidden space-y-4">
+      <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+        <div>
+          <h2 class="text-sm font-bold uppercase tracking-wider text-emerald-700 mb-1">About Us</h2>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">${escapeHtml(page.description || tagline)}</p>
+        </div>
+        ${
+          address
+            ? `<div class="pt-3 border-t border-slate-100 flex items-start gap-3">
+                <div class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-xs font-bold text-slate-800">Physical Address</h3>
+                  <p class="text-xs text-slate-600 mt-0.5">${escapeHtml(address)}</p>
+                  <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}" target="_blank" class="inline-block mt-1.5 text-xs font-bold text-emerald-600 hover:underline">Open in Google Maps &rarr;</a>
+                </div>
+              </div>`
+            : ""
+        }
+        ${
+          openingHours
+            ? `<div class="pt-3 border-t border-slate-100 flex items-start gap-3">
+                <div class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <div>
+                  <h3 class="text-xs font-bold text-slate-800">Working Hours</h3>
+                  <p class="text-xs text-slate-600 mt-0.5">${escapeHtml(openingHours)}</p>
+                </div>
+              </div>`
+            : ""
+        }
+        ${
+          wifiName || wifiPassword
+            ? `<div class="pt-3 border-t border-slate-100 flex items-start gap-3">
+                <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
+                </div>
+                <div class="flex-1">
+                  <h3 class="text-xs font-bold text-slate-800">Guest Wi-Fi</h3>
+                  <p class="text-xs text-slate-600 mt-0.5">Network: <strong class="text-slate-800">${escapeHtml(wifiName || "Guest WiFi")}</strong></p>
+                  <p class="text-xs text-slate-600">Password: <strong class="text-slate-800 font-mono">${escapeHtml(wifiPassword || "None")}</strong></p>
+                  ${
+                    wifiPassword
+                      ? `<button onclick="copyWifiPassword('${escapeHtml(wifiPassword)}')" class="mt-2 px-3 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-200 hover:bg-indigo-100 transition">Copy Password</button>`
+                      : ""
+                  }
+                </div>
+              </div>`
+            : ""
+        }
+      </div>
+    </section>
+  </main>
+
+  ${
+    allowWhatsAppOrdering
+      ? `<div id="floating-tray-bar" class="hidden fixed bottom-4 left-4 right-4 max-w-lg mx-auto z-40">
+          <button onclick="toggleTrayDrawer(true)" class="w-full p-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold shadow-2xl shadow-emerald-700/50 flex items-center justify-between transition active:scale-98">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center font-bold text-xs" id="tray-count-badge">0</div>
+              <span class="text-xs sm:text-sm">View Order Tray</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs sm:text-sm font-black" id="tray-total-display">${escapeHtml(currency)} 0</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+            </div>
+          </button>
+        </div>`
+      : ""
+  }
+
+  <div id="tray-drawer-backdrop" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 transition opacity-0" onclick="toggleTrayDrawer(false)"></div>
+  <div id="tray-drawer" class="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white rounded-t-3xl z-50 shadow-2xl p-5 transform translate-y-full transition duration-300 max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+      <div>
+        <h3 class="text-base font-black text-slate-900">Your Order Tray</h3>
+        <p class="text-[11px] text-slate-500">Review items before sending to WhatsApp</p>
+      </div>
+      <button onclick="toggleTrayDrawer(false)" class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto py-3 space-y-2.5 no-scrollbar" id="tray-items-list"></div>
+    <div class="pt-3 border-t border-slate-100 space-y-3">
+      <div class="grid grid-cols-2 gap-2">
+        <input type="text" id="order-table-number" placeholder="Table # / Room" class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <input type="text" id="order-customer-name" placeholder="Your Name" class="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      </div>
+      <textarea id="order-notes" placeholder="Special instructions (e.g. no onions, extra ice)..." rows="1" class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+      <div class="flex items-center justify-between pt-1">
+        <span class="text-xs font-bold text-slate-600">Total Amount:</span>
+        <span class="text-base font-black text-emerald-700" id="tray-modal-total">${escapeHtml(currency)} 0</span>
+      </div>
+      <button onclick="sendOrderViaWhatsApp()" class="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition active:scale-98">
+        <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.981.542 1.83.829 2.796.83h.005c3.182 0 5.768-2.587 5.769-5.766.001-3.182-2.585-5.768-5.77-5.768zm0-1.872c4.214 0 7.636 3.422 7.637 7.638 0 4.215-3.422 7.637-7.637 7.637-.001 0-.003 0-.005 0-1.309 0-2.476-.35-3.504-.963l-4.522 1.186 1.207-4.407c-.687-1.077-1.076-2.316-1.076-3.453 0-4.216 3.422-7.638 7.637-7.638zm3.627 10.742c-.157.442-.916.848-1.282.902-.34.05-.768.082-2.348-.574-1.905-.791-3.13-2.73-3.226-2.858-.095-.128-.771-1.026-.771-1.956 0-.931.488-1.387.662-1.579.174-.191.38-.239.507-.239.127 0 .254.002.365.007.118.006.277-.044.433.332.16.386.547 1.334.595 1.431.048.097.08.21.016.337-.064.127-.096.206-.191.317-.095.111-.2.248-.286.333-.095.095-.195.199-.084.389.111.19.493.813 1.058 1.316.727.647 1.34.847 1.53.942.191.095.302.079.413-.048.111-.127.476-.555.603-.745.127-.19.254-.159.429-.095.174.063 1.111.524 1.302.619.19.095.317.143.365.222.048.079.048.46-.109.902z"/></svg>
+        <span>Send Order to WhatsApp</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="lightbox-modal" class="hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-md" onclick="closeLightbox()">
+    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white text-xl flex items-center justify-center hover:bg-white/30">&times;</button>
+    <div class="max-w-xl w-full text-center" onclick="event.stopPropagation()">
+      <img id="lightbox-img" src="" alt="Fullscreen view" class="w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl mx-auto" />
+      <p id="lightbox-caption" class="text-white text-sm font-semibold mt-3"></p>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-xl transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-4">
+    Copied!
+  </div>
+
+  <script>
+    const PAGE_DATA = ${pageDataJson};
+    const CURRENCY = '${escapeHtml(currency)}';
+    const WHATSAPP_NUMBER = '${escapeHtml(cleanWa)}';
+    let currentCategory = 'All';
+    let searchQuery = '';
+    let tray = {};
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', '-translate-y-4', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-4', 'pointer-events-none');
+      }, 2500);
+    }
+
+    function copyWifiPassword(pw) {
+      if (!pw) return;
+      navigator.clipboard.writeText(pw).then(() => {
+        showToast('WiFi Password Copied!');
+      }).catch(() => {
+        showToast('Password: ' + pw);
+      });
+    }
+
+    function switchTab(tab) {
+      ['menu', 'photos', 'about'].forEach(t => {
+        const btn = document.getElementById('tab-btn-' + t);
+        const content = document.getElementById('tab-content-' + t);
+        if (t === tab) {
+          btn.className = 'flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-emerald-600 text-emerald-700 transition flex items-center justify-center gap-1.5';
+          content.classList.remove('hidden');
+        } else {
+          btn.className = 'flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1.5';
+          content.classList.add('hidden');
+        }
+      });
+    }
+
+    function selectCategory(cat) {
+      currentCategory = cat;
+      document.querySelectorAll('.cat-pill').forEach(btn => {
+        if (btn.getAttribute('data-cat') === cat) {
+          btn.className = 'cat-pill px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition active:scale-95 bg-emerald-600 text-white shadow-xs';
+        } else {
+          btn.className = 'cat-pill px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition active:scale-95 bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+        }
+      });
+      renderItems();
+    }
+
+    function handleSearch(val) {
+      searchQuery = (val || '').toLowerCase().trim();
+      renderItems();
+    }
+
+    function addToTray(itemId) {
+      const item = (PAGE_DATA.menuItems || []).find(i => i.id === itemId);
+      if (!item) return;
+      if (tray[itemId]) {
+        tray[itemId].quantity += 1;
+      } else {
+        tray[itemId] = { item, quantity: 1 };
+      }
+      updateTrayUI();
+      showToast('Added ' + item.name + ' to tray!');
+    }
+
+    function changeQty(itemId, delta) {
+      if (!tray[itemId]) return;
+      tray[itemId].quantity += delta;
+      if (tray[itemId].quantity <= 0) {
+        delete tray[itemId];
+      }
+      updateTrayUI();
+    }
+
+    function updateTrayUI() {
+      const items = Object.values(tray);
+      let count = 0;
+      let total = 0;
+
+      items.forEach(t => {
+        count += t.quantity;
+        const price = t.item.hasPromo && t.item.promoPrice ? t.item.promoPrice : t.item.price;
+        total += price * t.quantity;
+      });
+
+      const floatingBar = document.getElementById('floating-tray-bar');
+      const countBadge = document.getElementById('tray-count-badge');
+      const totalDisplay = document.getElementById('tray-total-display');
+      const modalTotal = document.getElementById('tray-modal-total');
+      const trayList = document.getElementById('tray-items-list');
+
+      if (count > 0) {
+        if (floatingBar) floatingBar.classList.remove('hidden');
+        if (countBadge) countBadge.textContent = count;
+        if (totalDisplay) totalDisplay.textContent = CURRENCY + ' ' + total.toLocaleString();
+        if (modalTotal) modalTotal.textContent = CURRENCY + ' ' + total.toLocaleString();
+      } else {
+        if (floatingBar) floatingBar.classList.add('hidden');
+        toggleTrayDrawer(false);
+      }
+
+      if (trayList) {
+        if (items.length === 0) {
+          trayList.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Your order tray is empty.</p>';
+        } else {
+          trayList.innerHTML = items.map(t => {
+            const price = t.item.hasPromo && t.item.promoPrice ? t.item.promoPrice : t.item.price;
+            return '<div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">' +
+              '<div class="flex-1 min-w-0 pr-2">' +
+                '<h4 class="text-xs font-bold text-slate-900 truncate">' + t.item.name + '</h4>' +
+                '<p class="text-[11px] font-semibold text-emerald-700">' + CURRENCY + ' ' + (price * t.quantity).toLocaleString() + '</p>' +
+              '</div>' +
+              '<div class="flex items-center gap-2 bg-white rounded-lg border border-slate-200 p-1 shrink-0">' +
+                '<button onclick="changeQty(\\'' + t.item.id + '\\', -1)" class="w-6 h-6 rounded bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-xs hover:bg-slate-200">-</button>' +
+                '<span class="text-xs font-black w-4 text-center">' + t.quantity + '</span>' +
+                '<button onclick="changeQty(\\'' + t.item.id + '\\', 1)" class="w-6 h-6 rounded bg-emerald-600 text-white font-bold flex items-center justify-center text-xs hover:bg-emerald-500">+</button>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+        }
+      }
+    }
+
+    function toggleTrayDrawer(show) {
+      const backdrop = document.getElementById('tray-drawer-backdrop');
+      const drawer = document.getElementById('tray-drawer');
+      if (show) {
+        backdrop.classList.remove('hidden');
+        setTimeout(() => backdrop.classList.remove('opacity-0'), 10);
+        drawer.classList.remove('translate-y-full');
+      } else {
+        backdrop.classList.add('opacity-0');
+        drawer.classList.add('translate-y-full');
+        setTimeout(() => backdrop.classList.add('hidden'), 300);
+      }
+    }
+
+    function sendOrderViaWhatsApp() {
+      const items = Object.values(tray);
+      if (items.length === 0) {
+        showToast('Your tray is empty');
+        return;
+      }
+
+      const tableNum = (document.getElementById('order-table-number')?.value || '').trim();
+      const custName = (document.getElementById('order-customer-name')?.value || '').trim();
+      const notes = (document.getElementById('order-notes')?.value || '').trim();
+
+      let msg = '*NEW ORDER - ' + PAGE_DATA.title + '*\\n';
+      if (tableNum) msg += '📍 *Table/Location:* ' + tableNum + '\\n';
+      if (custName) msg += '👤 *Customer:* ' + custName + '\\n';
+      msg += '-------------------------\\n';
+
+      let total = 0;
+      items.forEach(t => {
+        const price = t.item.hasPromo && t.item.promoPrice ? t.item.promoPrice : t.item.price;
+        const itemTotal = price * t.quantity;
+        total += itemTotal;
+        msg += '• ' + t.quantity + 'x ' + t.item.name + ' - ' + CURRENCY + ' ' + itemTotal.toLocaleString() + '\\n';
+      });
+
+      msg += '-------------------------\\n';
+      msg += '*TOTAL: ' + CURRENCY + ' ' + total.toLocaleString() + '*\\n';
+
+      if (notes) {
+        msg += '📝 *Notes:* ' + notes + '\\n';
+      }
+
+      const waUrl = 'https://wa.me/' + (WHATSAPP_NUMBER || '') + '?text=' + encodeURIComponent(msg);
+      window.open(waUrl, '_blank');
+    }
+
+    function openLightbox(url, caption) {
+      document.getElementById('lightbox-img').src = url;
+      document.getElementById('lightbox-caption').textContent = caption;
+      document.getElementById('lightbox-modal').classList.remove('hidden');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox-modal').classList.add('hidden');
+    }
+
+    function renderItems() {
+      const grid = document.getElementById('items-grid');
+      const noItems = document.getElementById('no-items-state');
+      const items = PAGE_DATA.menuItems || [];
+
+      const filtered = items.filter(item => {
+        const matchCat = currentCategory === 'All' || item.category === currentCategory;
+        const matchSearch = !searchQuery ||
+          (item.name || '').toLowerCase().includes(searchQuery) ||
+          (item.description || '').toLowerCase().includes(searchQuery);
+        return matchCat && matchSearch;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '';
+        noItems.classList.remove('hidden');
+        return;
+      }
+
+      noItems.classList.add('hidden');
+      grid.innerHTML = filtered.map(item => {
+        const hasPromo = item.hasPromo && item.promoPrice && item.promoPrice < item.price;
+        const displayPrice = hasPromo ? item.promoPrice : item.price;
+
+        return '<div class="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/80 shadow-xs flex flex-col justify-between hover:shadow-md transition">' +
+          '<div class="flex gap-3">' +
+            (item.photoUrl ? '<img src="' + item.photoUrl + '" alt="' + item.name + '" loading="lazy" class="w-20 h-20 sm:w-24 sm:h-24 rounded-xl object-cover bg-slate-100 shrink-0 cursor-pointer" onclick="openLightbox(\\'' + item.photoUrl + '\\', \\'' + item.name + '\\')" />' : '') +
+            '<div class="flex-1 min-w-0">' +
+              '<div class="flex items-center gap-1.5 flex-wrap mb-1">' +
+                (item.category ? '<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">' + item.category + '</span>' : '') +
+                (item.isVegetarian ? '<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">Veg</span>' : '') +
+                (item.isSpicy ? '<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 text-[9px] font-bold">Spicy</span>' : '') +
+                (item.isBestSeller ? '<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">Popular</span>' : '') +
+              '</div>' +
+              '<h3 class="text-xs sm:text-sm font-bold text-slate-900 leading-snug">' + item.name + '</h3>' +
+              (item.description ? '<p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-snug">' + item.description + '</p>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100">' +
+            '<div class="flex items-baseline gap-1.5">' +
+              '<span class="text-xs sm:text-sm font-black text-emerald-700">' + CURRENCY + ' ' + (displayPrice || 0).toLocaleString() + '</span>' +
+              (hasPromo ? '<span class="text-[11px] text-slate-400 line-through">' + CURRENCY + ' ' + (item.price || 0).toLocaleString() + '</span>' : '') +
+            '</div>' +
+            '<button onclick="addToTray(\\'' + item.id + '\\')" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 transition active:scale-95 flex items-center gap-1">' +
+              '<span>+ Add</span>' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      if (tabParam === 'photos') switchTab('photos');
+      else if (tabParam === 'about') switchTab('about');
+      renderItems();
+    });
+  </script>
+</body>
+</html>`;
+}
+
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
+
     if (method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: CORS_HEADERS
       });
     }
-    if (url.pathname === "/" || url.pathname === "/api/health" || url.pathname === "/api/status") {
+
+    if (env.DB) {
+      await ensureTables(env.DB);
+    }
+
+    if (url.pathname === "/api/health" || url.pathname === "/api/status") {
       const hasD1 = !!env.DB;
       const hasR2 = !!env.R2_BUCKET;
       let d1Status = "not_bound";
@@ -64,8 +749,8 @@ var worker_default = {
       return jsonResponse({
         status: "ok",
         service: "Brivu Cloudflare Worker",
-        version: "1.0.0",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        version: "1.2.0",
+        timestamp: new Date().toISOString(),
         d1Bound: hasD1,
         r2Bound: hasR2,
         storage: {
@@ -75,24 +760,89 @@ var worker_default = {
         requiresAuth: !!(env.SYNC_SECRET_KEY && env.SYNC_SECRET_KEY.trim() !== "")
       });
     }
-    if (!checkAuth(request, env)) {
-      return errorResponse("Unauthorized: Invalid or missing X-Sync-Key or Authorization header", 401);
+
+    // Public QR Customer View
+    const isQrRoute =
+      url.pathname.startsWith("/qr") ||
+      url.searchParams.has("qr") ||
+      url.pathname.startsWith("/p/");
+
+    if (method === "GET" && isQrRoute) {
+      let pageId = "";
+      if (url.pathname.startsWith("/qr/")) {
+        pageId = decodeURIComponent(url.pathname.slice("/qr/".length));
+      } else if (url.pathname.startsWith("/p/")) {
+        pageId = decodeURIComponent(url.pathname.slice("/p/".length));
+      } else {
+        pageId = url.searchParams.get("qr") || url.searchParams.get("id") || "default";
+      }
+
+      const format = url.searchParams.get("format");
+      const acceptHeader = request.headers.get("accept") || "";
+      const wantsJson = format === "json" || acceptHeader.includes("application/json");
+
+      const page = await getHostedQrPage(env, pageId);
+      if (!page) {
+        if (wantsJson) {
+          return errorResponse(`QR Page not found: ${pageId}`, 404);
+        }
+        return htmlResponse(
+          `<div style="font-family:sans-serif;padding:40px;text-align:center;color:#334155;">
+            <h2 style="font-size:24px;font-weight:bold;color:#0f172a;">Menu / QR Page Not Found</h2>
+            <p style="margin-top:8px;font-size:14px;color:#64748b;">The requested page (<strong>${escapeHtml(pageId)}</strong>) has not been synced to Cloudflare yet.</p>
+            <p style="margin-top:16px;font-size:12px;color:#94a3b8;">Please open your Brivu merchant app and tap <strong>Sync All to Cloudflare</strong> in Settings.</p>
+          </div>`,
+          404
+        );
+      }
+
+      if (wantsJson) {
+        return jsonResponse({ success: true, page });
+      }
+
+      const initialTab = url.searchParams.get("tab") || undefined;
+      const initialItemId = url.searchParams.get("itemId") || url.searchParams.get("item") || undefined;
+      const initialPhotoId = url.searchParams.get("photoId") || url.searchParams.get("photo") || undefined;
+
+      const html = renderCustomerPageHtml(page, { initialTab, initialItemId, initialPhotoId });
+      return htmlResponse(html);
     }
+
+    // Public API Get QR Page JSON
+    if (method === "GET" && url.pathname.startsWith("/api/qr")) {
+      let pageId = "";
+      if (url.pathname.startsWith("/api/qr/")) {
+        pageId = decodeURIComponent(url.pathname.slice("/api/qr/".length));
+      } else {
+        pageId = url.searchParams.get("id") || url.searchParams.get("qr") || "default";
+      }
+
+      const page = await getHostedQrPage(env, pageId);
+      if (!page) {
+        return errorResponse(`QR Page ${pageId} not found`, 404);
+      }
+      return jsonResponse({ success: true, page });
+    }
+
+    // Public File Download from R2
     if (method === "GET" && url.pathname.startsWith("/api/files/") && url.pathname.length > "/api/files/".length) {
       if (!env.R2_BUCKET) {
-        return errorResponse("R2 Storage bucket is not bound to this worker. Check wrangler.toml", 503);
+        return errorResponse("R2 Storage bucket is not bound to this worker.", 503);
       }
+
       const key = decodeURIComponent(url.pathname.slice("/api/files/".length));
       try {
         const object = await env.R2_BUCKET.get(key);
         if (!object) {
           return errorResponse(`File not found: ${key}`, 404);
         }
+
         const headers = new Headers();
         object.writeHttpMetadata(headers);
         headers.set("etag", object.httpEtag);
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Cache-Control", "public, max-age=31536000, immutable");
+
         const filename = key.split("/").pop() || "file";
         if (!headers.has("content-disposition")) {
           headers.set("content-disposition", `inline; filename="${filename}"`);
@@ -100,39 +850,90 @@ var worker_default = {
         if (!headers.has("content-type")) {
           headers.set("content-type", "application/octet-stream");
         }
+
         return new Response(object.body, { headers });
       } catch (err) {
         return errorResponse(`Failed to retrieve file from R2: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    if (!checkAuth(request, env)) {
+      return errorResponse("Unauthorized: Invalid or missing X-Sync-Key or Authorization header", 401);
+    }
+
+    // Save Single QR Page
+    if (method === "POST" && url.pathname === "/api/qr") {
+      if (!env.DB) {
+        return errorResponse("D1 Database is not bound", 503);
+      }
+
+      try {
+        const page = await request.json();
+        if (!page || !page.id) {
+          return errorResponse("Invalid QR page data. Must include id.", 400);
+        }
+
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `INSERT OR REPLACE INTO qr_pages (id, business_name, category, data_json, updated_at)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+          .bind(page.id, page.title || "", page.pageType || "menu", JSON.stringify(page), now)
+          .run();
+
+        return jsonResponse({
+          success: true,
+          message: `QR page "${page.title || page.id}" saved to Cloudflare D1`,
+          id: page.id
+        });
+      } catch (err) {
+        return errorResponse(`Failed to save QR page to D1: ${err instanceof Error ? err.message : String(err)}`, 500);
+      }
+    }
+
+    // File Upload
     if (method === "POST" && (url.pathname === "/api/files/upload" || url.pathname === "/api/files")) {
       if (!env.R2_BUCKET) {
-        return errorResponse("R2 Storage bucket is not bound to this worker. Please bind R2_BUCKET in wrangler.toml", 503);
+        return errorResponse("R2 Storage bucket is not bound to this worker.", 503);
       }
+
       try {
         const contentType = request.headers.get("content-type") || "";
         let fileData;
         let filename = request.headers.get("X-Filename") || `file_${Date.now()}`;
         let mimeType = request.headers.get("X-Mime-Type") || "application/octet-stream";
         let folder = request.headers.get("X-Folder") || "general";
+
         if (contentType.includes("multipart/form-data")) {
           const formData = await request.formData();
           const file = formData.get("file");
-          if (!file || !(file instanceof File)) {
+          if (!file) {
             return errorResponse('No file provided in form data under field "file"', 400);
           }
-          filename = formData.get("filename")?.toString() || file.name || filename;
-          mimeType = formData.get("mimeType")?.toString() || file.type || mimeType;
+          if (typeof file.name === "string" && file.name) {
+            filename = formData.get("filename")?.toString() || file.name;
+          }
+          if (typeof file.type === "string" && file.type) {
+            mimeType = formData.get("mimeType")?.toString() || file.type || mimeType;
+          }
           folder = formData.get("folder")?.toString() || folder;
-          fileData = await file.arrayBuffer();
+
+          if (typeof file.arrayBuffer === "function") {
+            fileData = await file.arrayBuffer();
+          } else {
+            return errorResponse("Invalid file data format", 400);
+          }
         } else if (contentType.includes("application/json")) {
           const jsonBody = await request.json();
+
           if (!jsonBody || !jsonBody.data) {
             return errorResponse('Missing "data" field in JSON body', 400);
           }
+
           filename = jsonBody.filename || filename;
           mimeType = jsonBody.mimeType || mimeType;
           folder = jsonBody.folder || folder;
+
           let rawBase64 = jsonBody.data;
           if (rawBase64.startsWith("data:")) {
             const commaIndex = rawBase64.indexOf(",");
@@ -144,19 +945,28 @@ var worker_default = {
               rawBase64 = rawBase64.slice(commaIndex + 1);
             }
           }
-          const binaryString = atob(rawBase64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
+
+          rawBase64 = rawBase64.replace(/\s/g, "");
+
+          if (typeof Buffer !== "undefined") {
+            fileData = Buffer.from(rawBase64, "base64");
+          } else {
+            const binaryString = atob(rawBase64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            fileData = bytes;
           }
-          fileData = bytes;
         } else {
           fileData = await request.arrayBuffer();
         }
+
         const cleanFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
         const cleanFolder = folder.replace(/[^a-zA-Z0-9_-]/g, "_");
-        const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         const r2Key = `${cleanFolder}/${timestamp}_${cleanFilename}`;
+
         await env.R2_BUCKET.put(r2Key, fileData, {
           httpMetadata: {
             contentType: mimeType,
@@ -165,21 +975,26 @@ var worker_default = {
           customMetadata: {
             originalFilename: filename,
             folder: cleanFolder,
-            uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+            uploadedAt: new Date().toISOString()
           }
         });
+
         const fileUrl = `${url.origin}/api/files/${encodeURIComponent(r2Key)}`;
         const fileSize = fileData instanceof Uint8Array ? fileData.byteLength : fileData instanceof ArrayBuffer ? fileData.byteLength : 0;
+
         if (env.DB) {
           try {
             await env.DB.prepare(
               `INSERT OR REPLACE INTO files_meta (key, filename, mime_type, size, folder, r2_key, uploaded_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)`
-            ).bind(r2Key, cleanFilename, mimeType, fileSize, cleanFolder, r2Key, (/* @__PURE__ */ new Date()).toISOString()).run();
+            )
+              .bind(r2Key, cleanFilename, mimeType, fileSize, cleanFolder, r2Key, new Date().toISOString())
+              .run();
           } catch (dbErr) {
             console.warn("Could not record file meta in D1:", dbErr);
           }
         }
+
         return jsonResponse({
           success: true,
           message: `File "${cleanFilename}" saved successfully to Cloudflare R2`,
@@ -189,26 +1004,33 @@ var worker_default = {
           mimeType,
           size: fileSize,
           url: fileUrl,
-          uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+          uploadedAt: new Date().toISOString()
         });
       } catch (err) {
         return errorResponse(`Failed to upload file to R2: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // List Files
     if (method === "GET" && url.pathname === "/api/files") {
       if (!env.R2_BUCKET) {
         return errorResponse("R2 Storage bucket is not bound to this worker", 503);
       }
+
       try {
         const prefix = url.searchParams.get("prefix") || "";
         const limit = parseInt(url.searchParams.get("limit") || "50", 10);
+
         if (env.DB) {
           try {
-            const query = prefix ? env.DB.prepare("SELECT * FROM files_meta WHERE folder LIKE ? OR filename LIKE ? ORDER BY uploaded_at DESC LIMIT ?").bind(
-              `%${prefix}%`,
-              `%${prefix}%`,
-              limit
-            ) : env.DB.prepare("SELECT * FROM files_meta ORDER BY uploaded_at DESC LIMIT ?").bind(limit);
+            const query = prefix
+              ? env.DB.prepare("SELECT * FROM files_meta WHERE folder LIKE ? OR filename LIKE ? ORDER BY uploaded_at DESC LIMIT ?").bind(
+                  `%${prefix}%`,
+                  `%${prefix}%`,
+                  limit
+                )
+              : env.DB.prepare("SELECT * FROM files_meta ORDER BY uploaded_at DESC LIMIT ?").bind(limit);
+
             const { results } = await query.all();
             const formatted = (results || []).map((row) => ({
               key: row.key,
@@ -219,19 +1041,22 @@ var worker_default = {
               uploadedAt: row.uploaded_at,
               url: `${url.origin}/api/files/${encodeURIComponent(row.key)}`
             }));
+
             return jsonResponse({
               success: true,
               files: formatted,
               source: "d1_meta"
             });
           } catch (d1Err) {
-            console.warn("D1 files_meta query failed, falling back to direct R2 list:", d1Err);
+            console.warn("D1 files_meta query fallback to R2 direct list:", d1Err);
           }
         }
+
         const listed = await env.R2_BUCKET.list({
-          prefix: prefix || void 0,
+          prefix: prefix || undefined,
           limit
         });
+
         const files = listed.objects.map((obj) => ({
           key: obj.key,
           filename: obj.key.split("/").pop() || obj.key,
@@ -240,6 +1065,7 @@ var worker_default = {
           mimeType: obj.httpMetadata?.contentType || "application/octet-stream",
           url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`
         }));
+
         return jsonResponse({
           success: true,
           files,
@@ -250,13 +1076,17 @@ var worker_default = {
         return errorResponse(`Failed to list files: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // Delete File
     if (method === "DELETE" && url.pathname.startsWith("/api/files/")) {
       if (!env.R2_BUCKET) {
         return errorResponse("R2 Storage bucket is not bound", 503);
       }
+
       const key = decodeURIComponent(url.pathname.slice("/api/files/".length));
       try {
         await env.R2_BUCKET.delete(key);
+
         if (env.DB) {
           try {
             await env.DB.prepare("DELETE FROM files_meta WHERE key = ?").bind(key).run();
@@ -264,6 +1094,7 @@ var worker_default = {
             console.warn("Could not remove file from D1 meta:", d1Err);
           }
         }
+
         return jsonResponse({
           success: true,
           message: `File ${key} deleted from Cloudflare R2`
@@ -272,26 +1103,34 @@ var worker_default = {
         return errorResponse(`Failed to delete file from R2: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // D1 Sync Push
     if (method === "POST" && url.pathname === "/api/sync/push") {
       if (!env.DB) {
-        return errorResponse("D1 Database is not bound to this worker. Please bind DB in wrangler.toml", 503);
+        return errorResponse("D1 Database is not bound to this worker.", 503);
       }
+
       try {
         const payload = await request.json();
         if (!payload || typeof payload !== "object") {
           return errorResponse("Invalid sync payload", 400);
         }
-        const now = (/* @__PURE__ */ new Date()).toISOString();
+
+        const now = new Date().toISOString();
         const backupData = payload.backupData || payload;
+
         await env.DB.prepare(
           `INSERT OR REPLACE INTO sync_snapshots (id, exported_at, version, data_json, updated_at)
            VALUES ('latest', ?, ?, ?, ?)`
-        ).bind(backupData.exportedAt || now, backupData.version || 1, JSON.stringify(backupData), now).run();
+        )
+          .bind(backupData.exportedAt || now, backupData.version || 1, JSON.stringify(backupData), now)
+          .run();
+
         let receiptsCount = 0;
         if (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) {
           receiptsCount = backupData.receipts.length;
-          const statements = backupData.receipts.slice(0, 100).map(
-            (r) => env.DB.prepare(
+          const statements = backupData.receipts.slice(0, 100).map((r) =>
+            env.DB.prepare(
               `INSERT OR REPLACE INTO receipts 
                (id, receipt_number, document_type, customer_name, customer_phone, total, amount_paid, balance, payment_status, payment_method, created_at, data_json, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -311,25 +1150,33 @@ var worker_default = {
               now
             )
           );
+
           if (statements.length > 0) {
             await env.DB.batch(statements);
           }
         }
+
         if (backupData.profile) {
           await env.DB.prepare(
             `INSERT OR REPLACE INTO business_profile (id, name, currency, data_json, updated_at)
              VALUES ('current', ?, ?, ?, ?)`
-          ).bind(backupData.profile.name || "", backupData.profile.currency || "UGX", JSON.stringify(backupData.profile), now).run();
+          )
+            .bind(backupData.profile.name || "", backupData.profile.currency || "UGX", JSON.stringify(backupData.profile), now)
+            .run();
         }
+
         if (backupData.settings) {
           await env.DB.prepare(
             `INSERT OR REPLACE INTO app_settings (id, data_json, updated_at)
              VALUES ('current', ?, ?)`
-          ).bind(JSON.stringify(backupData.settings), now).run();
+          )
+            .bind(JSON.stringify(backupData.settings), now)
+            .run();
         }
+
         if (Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0) {
-          const prodStatements = backupData.inventoryProducts.slice(0, 50).map(
-            (p) => env.DB.prepare(
+          const prodStatements = backupData.inventoryProducts.slice(0, 50).map((p) =>
+            env.DB.prepare(
               `INSERT OR REPLACE INTO inventory_products (id, name, quantity, cost_price, selling_price, category_id, data_json, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
@@ -347,6 +1194,25 @@ var worker_default = {
             await env.DB.batch(prodStatements);
           }
         }
+
+        if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+          const qrStatements = backupData.qrHostedPages.map((qp) =>
+            env.DB.prepare(
+              `INSERT OR REPLACE INTO qr_pages (id, business_name, category, data_json, updated_at)
+               VALUES (?, ?, ?, ?, ?)`
+            ).bind(
+              qp.id,
+              qp.title || "",
+              qp.pageType || "menu",
+              JSON.stringify(qp),
+              now
+            )
+          );
+          if (qrStatements.length > 0) {
+            await env.DB.batch(qrStatements);
+          }
+        }
+
         return jsonResponse({
           success: true,
           message: "All information successfully synced and saved to Cloudflare D1",
@@ -357,71 +1223,136 @@ var worker_default = {
         return errorResponse(`Failed to sync data to D1: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // D1 Sync Pull
     if (method === "GET" && url.pathname === "/api/sync/pull") {
       if (!env.DB) {
         return errorResponse("D1 Database is not bound to this worker", 503);
       }
+
       try {
         const snapshot = await env.DB.prepare("SELECT * FROM sync_snapshots WHERE id = ?").bind("latest").first();
-        if (!snapshot || !snapshot.data_json) {
-          const receiptsQuery = await env.DB.prepare("SELECT data_json FROM receipts ORDER BY created_at DESC").all();
-          const receipts = (receiptsQuery.results || []).map((r) => JSON.parse(r.data_json));
-          const profileQuery = await env.DB.prepare("SELECT data_json FROM business_profile WHERE id = ?").bind("current").first();
-          const profile = profileQuery?.data_json ? JSON.parse(profileQuery.data_json) : void 0;
-          const settingsQuery = await env.DB.prepare("SELECT data_json FROM app_settings WHERE id = ?").bind("current").first();
-          const settings = settingsQuery?.data_json ? JSON.parse(settingsQuery.data_json) : void 0;
-          return jsonResponse({
-            success: true,
-            backupData: {
-              version: 1,
-              exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-              receipts,
-              profile,
-              settings
-            },
-            source: "individual_tables"
-          });
+
+        let backupData = {};
+        if (snapshot && snapshot.data_json) {
+          try {
+            backupData = JSON.parse(snapshot.data_json);
+          } catch {}
         }
-        const parsedData = JSON.parse(snapshot.data_json);
+
+        try {
+          const receiptsQuery = await env.DB.prepare("SELECT data_json FROM receipts ORDER BY created_at DESC").all();
+          const dbReceipts = (receiptsQuery.results || []).map((r) => {
+            try {
+              return JSON.parse(r.data_json);
+            } catch {
+              return null;
+            }
+          }).filter(Boolean);
+
+          if (dbReceipts.length > 0) {
+            const dbIds = new Set(dbReceipts.map((r) => r.id));
+            const existingSnapshotReceipts = Array.isArray(backupData.receipts)
+              ? backupData.receipts.filter((r) => !dbIds.has(r.id))
+              : [];
+            backupData.receipts = [...dbReceipts, ...existingSnapshotReceipts];
+          }
+        } catch (rErr) {
+          console.warn("Receipts table query note:", rErr);
+        }
+
+        try {
+          const profileQuery = await env.DB.prepare("SELECT data_json FROM business_profile WHERE id = ?").bind("current").first();
+          if (profileQuery?.data_json) {
+            backupData.profile = JSON.parse(profileQuery.data_json);
+          }
+        } catch {}
+
+        try {
+          const settingsQuery = await env.DB.prepare("SELECT data_json FROM app_settings WHERE id = ?").bind("current").first();
+          if (settingsQuery?.data_json) {
+            backupData.settings = JSON.parse(settingsQuery.data_json);
+          }
+        } catch {}
+
+        try {
+          const invQuery = await env.DB.prepare("SELECT data_json FROM inventory_products ORDER BY updated_at DESC").all();
+          if (invQuery.results && invQuery.results.length > 0) {
+            const dbProducts = invQuery.results.map((p) => {
+              try {
+                return JSON.parse(p.data_json);
+              } catch {
+                return null;
+              }
+            }).filter(Boolean);
+            if (dbProducts.length > 0) {
+              backupData.inventoryProducts = dbProducts;
+            }
+          }
+        } catch {}
+
+        try {
+          const qrQuery = await env.DB.prepare("SELECT data_json FROM qr_pages ORDER BY updated_at DESC").all();
+          if (qrQuery.results && qrQuery.results.length > 0) {
+            const dbQrPages = qrQuery.results.map((q) => {
+              try {
+                return JSON.parse(q.data_json);
+              } catch {
+                return null;
+              }
+            }).filter(Boolean);
+            if (dbQrPages.length > 0) {
+              backupData.qrHostedPages = dbQrPages;
+            }
+          }
+        } catch {}
+
         return jsonResponse({
           success: true,
-          backupData: parsedData,
-          updatedAt: snapshot.updated_at,
-          source: "snapshot"
+          backupData,
+          updatedAt: snapshot?.updated_at || new Date().toISOString(),
+          source: "merged_d1"
         });
       } catch (err) {
         return errorResponse(`Failed to pull data from D1: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // Upsert single receipt
     if (method === "POST" && url.pathname === "/api/receipts") {
       if (!env.DB) {
         return errorResponse("D1 Database is not bound", 503);
       }
+
       try {
         const receipt = await request.json();
         if (!receipt || !receipt.id || !receipt.receiptNumber) {
           return errorResponse("Invalid receipt data. Must include id and receiptNumber", 400);
         }
-        const now = (/* @__PURE__ */ new Date()).toISOString();
+
+        const now = new Date().toISOString();
         await env.DB.prepare(
           `INSERT OR REPLACE INTO receipts 
            (id, receipt_number, document_type, customer_name, customer_phone, total, amount_paid, balance, payment_status, payment_method, created_at, data_json, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          receipt.id,
-          receipt.receiptNumber,
-          receipt.documentType || "receipt",
-          receipt.customerName || null,
-          receipt.customerPhone || null,
-          receipt.total || 0,
-          receipt.amountPaid || 0,
-          receipt.balance || 0,
-          receipt.paymentStatus || "paid",
-          receipt.paymentMethod || "Cash",
-          receipt.createdAt || now,
-          JSON.stringify(receipt),
-          now
-        ).run();
+        )
+          .bind(
+            receipt.id,
+            receipt.receiptNumber,
+            receipt.documentType || "receipt",
+            receipt.customerName || null,
+            receipt.customerPhone || null,
+            receipt.total || 0,
+            receipt.amountPaid || 0,
+            receipt.balance || 0,
+            receipt.paymentStatus || "paid",
+            receipt.paymentMethod || "Cash",
+            receipt.createdAt || now,
+            JSON.stringify(receipt),
+            now
+          )
+          .run();
+
         return jsonResponse({
           success: true,
           message: `Receipt ${receipt.receiptNumber} saved to Cloudflare D1`,
@@ -432,14 +1363,21 @@ var worker_default = {
         return errorResponse(`Failed to save receipt to D1: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    // List receipts
     if (method === "GET" && url.pathname === "/api/receipts") {
       if (!env.DB) {
         return errorResponse("D1 Database is not bound", 503);
       }
+
       try {
         const limit = parseInt(url.searchParams.get("limit") || "100", 10);
         const docType = url.searchParams.get("type");
-        const query = docType ? env.DB.prepare("SELECT * FROM receipts WHERE document_type = ? ORDER BY created_at DESC LIMIT ?").bind(docType, limit) : env.DB.prepare("SELECT * FROM receipts ORDER BY created_at DESC LIMIT ?").bind(limit);
+
+        const query = docType
+          ? env.DB.prepare("SELECT * FROM receipts WHERE document_type = ? ORDER BY created_at DESC LIMIT ?").bind(docType, limit)
+          : env.DB.prepare("SELECT * FROM receipts ORDER BY created_at DESC LIMIT ?").bind(limit);
+
         const { results } = await query.all();
         const receipts = (results || []).map((row) => {
           try {
@@ -455,6 +1393,7 @@ var worker_default = {
             };
           }
         });
+
         return jsonResponse({
           success: true,
           count: receipts.length,
@@ -464,6 +1403,27 @@ var worker_default = {
         return errorResponse(`Failed to query receipts: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
+
+    if (url.pathname === "/") {
+      return htmlResponse(`
+        <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:60px auto;padding:32px;background:#ffffff;border-radius:24px;border:1px solid #e2e8f0;box-shadow:0 10px 25px -5px rgba(0,0,0,0.05);text-align:center;">
+          <div style="display:inline-block;padding:8px 16px;background:#ecfdf5;color:#047857;border-radius:9999px;font-size:12px;font-weight:bold;margin-bottom:16px;">
+            Brivu Cloudflare Worker is Active
+          </div>
+          <h1 style="font-size:24px;font-weight:800;color:#0f172a;margin:0 0 8px 0;">Brivu Cloud Backend & QR Hosting</h1>
+          <p style="color:#64748b;font-size:14px;line-height:1.6;margin:0 0 24px 0;">
+            This Cloudflare Worker powers D1 SQL Database Sync, R2 Object Storage for receipts and photos, and instant QR Menu & Hub hosting.
+          </p>
+          <div style="padding:16px;background:#f8fafc;border-radius:16px;text-align:left;font-size:12px;color:#475569;font-family:monospace;">
+            <div>Status: <strong>Connected</strong></div>
+            <div>D1 Database: <strong>${env.DB ? "Bound" : "Not Bound"}</strong></div>
+            <div>R2 Storage: <strong>${env.R2_BUCKET ? "Bound" : "Not Bound"}</strong></div>
+            <div>QR Hosting: <strong>Enabled (/qr/:id)</strong></div>
+          </div>
+        </div>
+      `);
+    }
+
     return errorResponse(`Endpoint not found: ${method} ${url.pathname}`, 404);
   }
 };

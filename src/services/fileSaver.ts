@@ -232,7 +232,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
             uri: fileUri,
             filename,
             folder: locationNote,
-            message: `Successfully saved "${filename}" to ${locationNote} folder.`,
+            message: `Saved successfully! You can find "${filename}" in your phone's ${locationNote} folder and in Receipts & Invoices.`,
           };
           return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
         }
@@ -291,7 +291,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         uri: fileUri,
         filename,
         folder: targetFolder,
-        message: `Successfully saved "${filename}" to ${targetFolder} folder.`,
+        message: `Saved successfully! You can find "${filename}" in your phone's ${targetFolder} folder and in Receipts & Invoices.`,
       };
       return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
     } catch (err: unknown) {
@@ -332,7 +332,7 @@ export async function saveJsPdf(
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Successfully saved "${filename}" to your Downloads folder.`,
+      message: `Saved successfully! You can find "${filename}" in your device's Downloads folder and in Receipts & Invoices.`,
     };
     return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', 'receipts');
   }
@@ -530,7 +530,7 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Successfully saved "${filename}" to your Downloads folder.`,
+      message: `Saved successfully! You can find "${filename}" in your device's Downloads folder and in Receipts & Invoices.`,
     };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);

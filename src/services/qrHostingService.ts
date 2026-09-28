@@ -2,45 +2,48 @@ import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { saveJsPdf, SaveFileResult } from './fileSaver';
+import { CloudflareService } from './cloudflareService';
 
 export class QRHostingService {
   /**
-   * Generates a clean URL for customer scanning with optional specific tab targeting
+   * Resolves the public Cloudflare worker base URL for customer links
+   */
+  private static getWorkerBaseUrl(): string {
+    try {
+      const config = CloudflareService.getConfig();
+      let url = (config.workerUrl || '').trim();
+      if (!url || url.includes('localhost') || url.includes('127.0.0.1')) {
+        url = 'https://brivu.shapesmm7.workers.dev';
+      }
+      return url.endsWith('/') ? url.slice(0, -1) : url;
+    } catch {
+      return 'https://brivu.shapesmm7.workers.dev';
+    }
+  }
+
+  /**
+   * Generates a clean Cloudflare-hosted URL for customer scanning with optional specific tab targeting
    */
   static getCustomerPageUrl(pageId: string, targetTab?: string): string {
-    if (typeof window === 'undefined') {
-      const tabParam = targetTab && targetTab !== 'all' ? `&tab=${encodeURIComponent(targetTab)}` : '';
-      return `https://brivu.app/?qr=${pageId}${tabParam}`;
-    }
-    const base = `${window.location.origin}${window.location.pathname}`;
-    // Strip trailing slash if present for clean query
-    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-    const tabParam = targetTab && targetTab !== 'all' ? `&tab=${encodeURIComponent(targetTab)}` : '';
-    return `${cleanBase}?qr=${encodeURIComponent(pageId)}${tabParam}`;
+    const base = this.getWorkerBaseUrl();
+    const tabParam = targetTab && targetTab !== 'all' ? `?tab=${encodeURIComponent(targetTab)}` : '';
+    return `${base}/qr/${encodeURIComponent(pageId)}${tabParam}`;
   }
 
   /**
-   * Generates direct URL for a specific Item
+   * Generates direct Cloudflare-hosted URL for a specific Item
    */
   static getCustomerItemUrl(pageId: string, itemId: string): string {
-    if (typeof window === 'undefined') {
-      return `https://brivu.app/?qr=${pageId}&tab=menu&itemId=${encodeURIComponent(itemId)}`;
-    }
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-    return `${cleanBase}?qr=${encodeURIComponent(pageId)}&tab=menu&itemId=${encodeURIComponent(itemId)}`;
+    const base = this.getWorkerBaseUrl();
+    return `${base}/qr/${encodeURIComponent(pageId)}?tab=menu&itemId=${encodeURIComponent(itemId)}`;
   }
 
   /**
-   * Generates direct URL for a specific Photo
+   * Generates direct Cloudflare-hosted URL for a specific Photo
    */
   static getCustomerPhotoUrl(pageId: string, photoId: string): string {
-    if (typeof window === 'undefined') {
-      return `https://brivu.app/?qr=${pageId}&tab=photos&photoId=${encodeURIComponent(photoId)}`;
-    }
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-    return `${cleanBase}?qr=${encodeURIComponent(pageId)}&tab=photos&photoId=${encodeURIComponent(photoId)}`;
+    const base = this.getWorkerBaseUrl();
+    return `${base}/qr/${encodeURIComponent(pageId)}?tab=photos&photoId=${encodeURIComponent(photoId)}`;
   }
 
   /**

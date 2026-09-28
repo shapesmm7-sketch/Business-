@@ -715,7 +715,19 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         const reader = new FileReader();
         reader.onload = (uploadEvent) => {
           const res = uploadEvent.target?.result as string;
-          if (res) callback(res);
+          if (res) {
+            callback(res);
+            CloudflareService.uploadFile({
+              data: res,
+              filename: `qr_img_${Date.now()}.jpg`,
+              mimeType: 'image/jpeg',
+              folder: 'photos',
+            }).then((resCf) => {
+              if (resCf.success && resCf.url) {
+                callback(resCf.url);
+              }
+            }).catch(() => {});
+          }
         };
         reader.readAsDataURL(file);
       } catch {}

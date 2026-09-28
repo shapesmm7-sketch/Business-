@@ -447,9 +447,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
 
       if (action === 'save') {
         showToast(
-          saveRes.cloudSynced
-            ? `Receipt ${receipt.receiptNumber} saved to Cloud & Device!`
-            : `Receipt ${receipt.receiptNumber} saved!`
+          `Receipt ${receipt.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
         );
         if (onSaveOnly) {
           onSaveOnly(receipt);
@@ -457,11 +455,11 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           onSaveAndPreview(receipt);
         }
       } else if (action === 'download') {
-        showToast('Generating & downloading PDF...');
         if (onQuickDownload) {
           await onQuickDownload(receipt);
         } else {
-          await PdfGenerator.downloadPdf(receipt);
+          const res = await PdfGenerator.downloadPdf(receipt);
+          showToast(res.message);
           onSaveAndPreview(receipt);
         }
       } else if (action === 'share') {
