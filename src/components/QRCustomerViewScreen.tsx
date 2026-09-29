@@ -28,10 +28,14 @@ import {
   BadgePercent,
   Calendar,
   Heart,
+  Mail,
+  Copy,
+  Globe,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
 import { QRHostingService } from '../services/qrHostingService';
+import { PhoneInputField } from './PhoneInputField';
 
 interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
@@ -165,6 +169,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const [trayItems, setTrayItems] = useState<Record<string, TrayItem>>({});
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedWifi, setCopiedWifi] = useState<boolean>(false);
+  const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
+  const [copiedWhatsApp, setCopiedWhatsApp] = useState<boolean>(false);
+  const [copiedEmail, setCopiedEmail] = useState<boolean>(false);
   const [photoCopiedLink, setPhotoCopiedLink] = useState<boolean>(false);
   const [lightboxImage, setLightboxImage] = useState<{
     url: string;
@@ -905,6 +912,24 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         {/* TAB 3: ABOUT & VENUE INFO */}
         {activeTab === 'about' && (
           <div className="space-y-4">
+            {/* Special Promo / Announcement Card if present */}
+            {page.announcement && (
+              <div className="bg-gradient-to-br from-amber-500/15 via-amber-500/10 to-amber-500/5 dark:from-amber-950/40 dark:via-amber-950/20 dark:to-transparent border border-amber-300 dark:border-amber-800/80 rounded-2xl p-4 shadow-2xs space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400">Special Promo & Notice</span>
+                    <h4 className="text-xs sm:text-sm font-bold text-amber-950 dark:text-amber-100 leading-snug">Active Special Offer</h4>
+                  </div>
+                </div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 pl-10 leading-relaxed whitespace-pre-line">
+                  {page.announcement}
+                </p>
+              </div>
+            )}
+
             {/* Description Card */}
             {page.description && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-2xs">
@@ -912,6 +937,132 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
                   {page.description}
                 </p>
+              </div>
+            )}
+
+            {/* Direct Contact & Phone Numbers Card */}
+            {(page.phone || page.whatsapp || page.email) && (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Contact & Helplines</h3>
+
+                {/* Direct Phone Number */}
+                {page.phone && (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-400">Phone Number / Voice Call</p>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{page.phone}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(page.phone || '');
+                          setCopiedPhone(true);
+                          setTimeout(() => setCopiedPhone(false), 2000);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1"
+                        title="Copy phone number"
+                      >
+                        {copiedPhone ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedPhone ? 'Copied' : 'Copy'}</span>
+                      </button>
+
+                      <a
+                        href={`tel:${page.phone}`}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Call</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* WhatsApp Number */}
+                {page.whatsapp && (
+                  <div className={`flex items-center justify-between gap-3 ${page.phone ? 'pt-3 border-t border-slate-100 dark:border-slate-800' : ''}`}>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <MessageCircle className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-400">WhatsApp Direct Support</p>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{page.whatsapp}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(page.whatsapp || '');
+                          setCopiedWhatsApp(true);
+                          setTimeout(() => setCopiedWhatsApp(false), 2000);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1"
+                        title="Copy WhatsApp number"
+                      >
+                        {copiedWhatsApp ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedWhatsApp ? 'Copied' : 'Copy'}</span>
+                      </button>
+
+                      <a
+                        href={`https://wa.me/${page.whatsapp.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>Chat</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Email Address */}
+                {page.email && (
+                  <div className={`flex items-center justify-between gap-3 ${page.phone || page.whatsapp ? 'pt-3 border-t border-slate-100 dark:border-slate-800' : ''}`}>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-400">Official Email</p>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{page.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(page.email || '');
+                          setCopiedEmail(true);
+                          setTimeout(() => setCopiedEmail(false), 2000);
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition flex items-center gap-1"
+                        title="Copy email address"
+                      >
+                        {copiedEmail ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedEmail ? 'Copied' : 'Copy'}</span>
+                      </button>
+
+                      <a
+                        href={`mailto:${page.email}`}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs active:scale-95"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Email</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1115,13 +1266,13 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase">Customer Phone Number (Optional)</label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. +256 700 000000"
+                  <PhoneInputField
+                    id="input-customer-tray-phone"
+                    label={<span className="text-[11px] font-bold text-slate-500 uppercase">Customer Phone Number (Optional)</span>}
                     value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    onChange={(val) => setCustomerPhone(val)}
+                    placeholder="700 000000"
+                    compact
                   />
                 </div>
 

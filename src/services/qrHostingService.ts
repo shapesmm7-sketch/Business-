@@ -205,7 +205,7 @@ export class QRHostingService {
     
     let subText = page.tagline || 'Scan to view our digital items, special offers & business information';
     if (targetTab === 'menu') {
-      subText = 'Scan to explore our complete items & digital catalog instantly';
+      subText = 'Scan to explore our complete items & special offers instantly';
     } else if (targetTab === 'about') {
       subText = 'Scan to view our business location, contact details & operating hours';
     } else if (targetTab === 'photos') {

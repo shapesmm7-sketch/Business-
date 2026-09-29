@@ -64,6 +64,7 @@ import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
 import { AgentManageModal } from './AgentManageModal';
+import { PhoneInputField } from './PhoneInputField';
 import { jsPDF } from 'jspdf';
 
 interface InventoryScreenProps {
@@ -232,7 +233,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setCustProfilePic(uploadRes.url);
-          showToast('Customer photo saved to Cloudflare R2!');
+          showToast('Customer photo saved to Cloud Storage!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare customer photo upload note:', cfErr);
@@ -265,7 +266,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setAgentProfilePic(uploadRes.url);
-          showToast('Agent photo saved to Cloudflare R2!');
+          showToast('Agent photo saved to Cloud Storage!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare agent photo upload note:', cfErr);
@@ -298,7 +299,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setWorkerProfilePic(uploadRes.url);
-          showToast('Staff photo saved to Cloudflare R2!');
+          showToast('Staff photo saved to Cloud Storage!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare worker photo upload note:', cfErr);
@@ -356,7 +357,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: custProfilePic,
         notes: customerNotes.trim() || undefined,
       });
-      showToast('Client details updated & saved to Cloudflare!');
+      showToast('Client details updated & saved to Cloud Storage!');
     } else {
       StorageService.addCustomer({
         name: custDirectoryName.trim(),
@@ -366,7 +367,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: custProfilePic,
         notes: customerNotes.trim() || undefined,
       });
-      showToast('Client added to directory & saved to Cloudflare!');
+      showToast('Client added to directory & saved to Cloud Storage!');
     }
 
     setEditingCustomerId(null);
@@ -444,7 +445,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: agentProfilePic,
         notes: agentNotesInput.trim() || undefined,
       });
-      showToast('Agent details updated & saved to Cloudflare!');
+      showToast('Agent details updated & saved to Cloud Storage!');
     } else {
       StorageService.addAgent({
         agentName: agentNameInput.trim(),
@@ -455,7 +456,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: agentProfilePic,
         notes: agentNotesInput.trim() || undefined,
       });
-      showToast('Agent added to directory & saved to Cloudflare!');
+      showToast('Agent added to directory & saved to Cloud Storage!');
     }
 
     setEditingAgentId(null);
@@ -545,7 +546,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         role: workerRoleInput.trim() || undefined,
         notes: workerNotesInput.trim() || undefined,
       });
-      showToast('Staff details updated & saved to Cloudflare!');
+      showToast('Staff details updated & saved to Cloud Storage!');
     } else {
       StorageService.addWorker({
         name: workerNameInput.trim(),
@@ -562,7 +563,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         role: workerRoleInput.trim() || undefined,
         notes: workerNotesInput.trim() || undefined,
       });
-      showToast('Staff member added & saved to Cloudflare!');
+      showToast('Staff member added & saved to Cloud Storage!');
     }
 
     setEditingWorkerId(null);
@@ -696,7 +697,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setImage(uploadRes.url);
-          showToast('Product photo saved to Cloudflare R2!');
+          showToast('Product photo saved to Cloud Storage!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare product photo upload note:', cfErr);
@@ -796,7 +797,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     refreshData();
 
     if (saved) {
-      showToast(editingProductId ? 'Product updated & saved to Cloudflare!' : 'Product saved to Cloudflare & inventory!');
+      showToast(editingProductId ? 'Product updated & saved to Cloud Storage!' : 'Product saved to Cloud Storage & inventory!');
     } else {
       showToast(`Could not save: Product with ID "${targetItemId}" already exists.`);
       return;
@@ -1123,10 +1124,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     refreshData();
     if (selectedProductForSale) {
       showToast(
-        `Sale recorded & saved to Cloudflare! ${saleQuantity} ${selectedProductForSale.name} sold • ${remainingStockAfterSale} left in stock.`
+        `Sale recorded & saved to Cloud Storage! ${saleQuantity} ${selectedProductForSale.name} sold • ${remainingStockAfterSale} left in stock.`
       );
     } else {
-      showToast('Sale recorded & saved to Cloudflare!');
+      showToast('Sale recorded & saved to Cloud Storage!');
     }
 
     // Reset sale form
@@ -1160,7 +1161,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     });
 
     refreshData();
-    showToast('Expense recorded & saved to Cloudflare!');
+    showToast('Expense recorded & saved to Cloud Storage!');
 
     setExpenseTitle('');
     setExpenseAmount('');
@@ -1296,7 +1297,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         date: debtDate,
         dueDate: debtDueDate || undefined,
       });
-      showToast(`Debt record for ${debtCustomerName} updated & saved to Cloudflare!`);
+      showToast(`Debt record for ${debtCustomerName} updated & saved to Cloud Storage!`);
       setEditingDebtId(null);
       setShowDebtForm(false);
     } else {
@@ -1312,7 +1313,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         status: 'unpaid',
         paidAmount: 0,
       });
-      showToast(`Debt for ${debtCustomerName} recorded & saved to Cloudflare!`);
+      showToast(`Debt for ${debtCustomerName} recorded & saved to Cloud Storage!`);
       setShowDebtForm(false);
     }
 
@@ -1410,7 +1411,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         payments: [...currentPayments, newPayment]
       });
       refreshData();
-      showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloudflare!`);
+      showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloud Storage!`);
     } else {
       const pAmt = parseFloat(partialAmount) || 0;
       if (pAmt <= 0) {
@@ -1431,7 +1432,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           payments: [...currentPayments, newPayment]
         });
         refreshData();
-        showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloudflare!`);
+        showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloud Storage!`);
       } else {
         StorageService.updateInventoryDebt(debtToSettle.id, {
           paidAmount: newPaidTotal,
@@ -1439,7 +1440,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           payments: [...currentPayments, newPayment]
         });
         refreshData();
-        showToast(`Recorded payment of ${currency} ${pAmt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} for ${debtToSettle.customerName} & synced to Cloudflare!`);
+        showToast(`Recorded payment of ${currency} ${pAmt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} for ${debtToSettle.customerName} & synced to Cloud Storage!`);
       }
     }
     setSettleDebtModalOpen(false);
@@ -1607,7 +1608,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setNewProductCategoryName('');
     setShowProductCategoryForm(false);
     refreshData();
-    showToast(`Category "${created.name}" created & saved to Cloudflare!`);
+    showToast(`Category "${created.name}" created & saved to Cloud Storage!`);
   };
 
   const handleDeleteProductCategory = (id: string, name: string) => {
@@ -1647,7 +1648,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowNewCategoryInline(false);
     refreshData();
     setShoppingItemCategoryId(created.id);
-    showToast(`Category "${created.name}" created & saved to Cloudflare!`);
+    showToast(`Category "${created.name}" created & saved to Cloud Storage!`);
   };
 
   const handleDeleteCategory = (id: string, name: string) => {
@@ -1685,7 +1686,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
       });
-      showToast('Shopping item updated & saved to Cloudflare!');
+      showToast('Shopping item updated & saved to Cloud Storage!');
     } else {
       StorageService.addShoppingListItem({
         name: shoppingItemName.trim(),
@@ -1694,7 +1695,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
       });
-      showToast('Item added to shopping list & saved to Cloudflare!');
+      showToast('Item added to shopping list & saved to Cloud Storage!');
     }
 
     cancelEditShoppingItem();
@@ -3862,13 +3863,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               type="button"
               onClick={() => {
                 refreshData();
-                showToast('All inventory sections synced with Cloudflare D1 & R2!');
+                showToast('All inventory sections synced with Cloud Storage!');
               }}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
-              title="All inventory sections (Stock, Sales, Expenses, Debts, Shopping List, Customers, Agents, Staff, Reports) save to Cloudflare"
+              title="All inventory sections (Stock, Sales, Expenses, Debts, Shopping List, Customers, Agents, Staff, Reports) save to Cloud Storage"
             >
               <Cloud className="w-3.5 h-3.5 text-sky-100" />
-              <span>Cloudflare Sync</span>
+              <span>Cloud Sync</span>
             </button>
             <button
               onClick={onNavigateHome}
@@ -5720,19 +5721,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                     {/* 2. Phone Number */}
                     <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
-                        Phone Number
-                      </label>
-                      <div className="relative">
-                        <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="tel"
-                          value={debtPhone}
-                          onChange={(e) => setDebtPhone(e.target.value)}
-                          placeholder="e.g. 0755341098"
-                          className="w-full pl-8 pr-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
-                        />
-                      </div>
+                      <PhoneInputField
+                        id="input-debt-phone"
+                        label={<span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Phone Number</span>}
+                        value={debtPhone}
+                        onChange={(val) => setDebtPhone(val)}
+                        placeholder="700 123 456"
+                        compact
+                      />
                     </div>
                   </div>
 
@@ -7797,20 +7793,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                   {/* Contact / Phone */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Contact / Phone <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        required
-                        value={agentContactInput}
-                        onChange={(e) => setAgentContactInput(e.target.value)}
-                        placeholder="e.g. +256 700 123456 / 0772..."
-                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs font-medium text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
+                    <PhoneInputField
+                      id="input-agent-phone"
+                      label="Contact / Phone"
+                      required
+                      value={agentContactInput}
+                      onChange={(val) => setAgentContactInput(val)}
+                      placeholder="700 123 456"
+                    />
                   </div>
 
                   {/* Address / Location */}
@@ -8289,21 +8279,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
 
                   {/* Phone / Contact */}
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
-                      Phone Number <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="tel"
-                        required
-                        value={workerPhoneInput}
-                        onChange={(e) => setWorkerPhoneInput(e.target.value)}
-                        placeholder="e.g. +256 772 123456"
-                        className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                      />
-                      <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    </div>
+                  <div>
+                    <PhoneInputField
+                      id="input-worker-phone"
+                      label="Phone Number"
+                      required
+                      value={workerPhoneInput}
+                      onChange={(val) => setWorkerPhoneInput(val)}
+                      placeholder="772 123 456"
+                    />
                   </div>
 
                   {/* Email */}
@@ -8966,20 +8950,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                   {/* Client Contact / Phone */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">
-                      Contact / Phone <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        required
-                        value={customerContact}
-                        onChange={(e) => setCustomerContact(e.target.value)}
-                        placeholder="e.g. +256 700 123456 / 0772..."
-                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs font-medium text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                      />
-                    </div>
+                    <PhoneInputField
+                      id="input-customer-phone"
+                      label="Contact / Phone"
+                      required
+                      value={customerContact}
+                      onChange={(val) => setCustomerContact(val)}
+                      placeholder="700 123 456"
+                    />
                   </div>
 
                   {/* Location / Address */}

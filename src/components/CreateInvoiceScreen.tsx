@@ -42,6 +42,7 @@ import { StorageService } from '../services/storage';
 import { PdfGenerator } from '../services/pdfGenerator';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { PhoneInputField } from './PhoneInputField';
 
 interface CreateInvoiceScreenProps {
   business: BusinessProfile;
@@ -471,7 +472,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       template: editingInvoice?.template || defaultTemplate || 'modern',
       accentColor: editingInvoice?.accentColor,
       customTheme: editingInvoice?.customTheme,
-      businessSnapshot: business,
+      businessSnapshot: StorageService.getProfile() || business,
     };
 
     return invoice;
@@ -713,19 +714,13 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Client Phone / WhatsApp
-            </label>
-            <div className="relative">
-              <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="e.g. +256 700 000 000"
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-              />
-            </div>
+            <PhoneInputField
+              id="input-invoice-customer-phone"
+              label="Client Phone / WhatsApp"
+              value={customerPhone}
+              onChange={(val) => setCustomerPhone(val)}
+              placeholder="700 000 000"
+            />
           </div>
 
           <div>

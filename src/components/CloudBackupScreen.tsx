@@ -119,7 +119,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
       publicDomainUrl: publicDomainInput.trim(),
     });
     setCfConfig(updated);
-    showToast('Cloudflare settings saved!');
+    showToast('Cloud settings saved!');
     checkLiveHealth();
   };
 
@@ -262,10 +262,10 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           </button>
           <div>
             <h1 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Cloudflare Storage & Backup</span>
+              <span>Cloud Storage & Backup</span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Cloudflare D1 SQL & R2 File Storage
+              High-Speed Cloud Database & Object Storage
             </p>
           </div>
         </div>
@@ -304,9 +304,9 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           </div>
 
           <div>
-            <h2 className="text-lg font-black tracking-tight">Cloud Backup & R2 Storage</h2>
+            <h2 className="text-lg font-black tracking-tight">Cloud Backup & Storage</h2>
             <p className="text-xs text-orange-100 mt-1 leading-relaxed">
-              Your business records and inventory sync to Cloudflare D1 SQL database, and your exported receipt PDFs, reports, and photos save to Cloudflare R2 bucket.
+              Your business records and inventory sync securely to cloud database, and your exported receipt PDFs, reports, and photos save to cloud storage.
             </p>
           </div>
 
@@ -424,7 +424,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 Auto-save Files, Photos & PDFs
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically upload receipts, product photos & downloaded PDFs to Cloudflare R2
+                Automatically upload receipts, product photos & downloaded PDFs to cloud storage
               </span>
             </div>
             <button
@@ -448,7 +448,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 Auto-sync Business Records
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically sync receipts, customers, and inventory data to Cloudflare D1
+                Automatically sync receipts, customers, and inventory data to cloud database
               </span>
             </div>
             <button
@@ -478,7 +478,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             <Settings className="w-4 h-4 text-orange-500" />
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                Cloudflare Worker & S3 API Credentials
+                Cloud Server & S3 API Credentials
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 View or customize Worker URL, R2 bucket keys, and endpoints
@@ -495,7 +495,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             {/* Worker URL */}
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Cloudflare Worker API URL
+                Cloud Server API URL
               </label>
               <input
                 type="url"
@@ -505,7 +505,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 className="w-full p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
               />
               <span className="text-[10px] text-slate-500">
-                The deployed Cloudflare Worker handling D1 database and R2 storage
+                The deployed cloud server endpoint handling database and storage
               </span>
             </div>
 
@@ -620,7 +620,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 className="w-full p-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition active:scale-98"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Cloudflare Settings</span>
+                <span>Save Cloud Settings</span>
               </button>
             </div>
           </div>

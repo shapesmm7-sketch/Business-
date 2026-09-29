@@ -45,6 +45,7 @@ import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
+import { PhoneInputField } from './PhoneInputField';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
@@ -74,16 +75,16 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     id: 'all',
     label: 'All Pages (Full Hub)',
     badge: 'All-in-One Experience',
-    desc: 'Customer opens the full hub with items catalog, gallery, WiFi, and contact channels.',
+    desc: 'Customer opens the full hub with items showcase, gallery, WiFi, and contact channels.',
     icon: Layers,
     accentColor: 'emerald',
     targetTabName: undefined,
   },
   {
     id: 'menu',
-    label: 'Items / Catalog',
-    badge: 'Items & Menu Only',
-    desc: 'Customer opens directly into the digital items catalog with category filters and ordering.',
+    label: 'Items',
+    badge: 'Items Only',
+    desc: 'Customer opens directly into the digital items showcase with category filters and ordering.',
     icon: Utensils,
     accentColor: 'amber',
     targetTabName: 'menu',
@@ -718,12 +719,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
     const label = options.fileTypeLabel || 'Image';
     setIsUploadingToCloudflare(true);
-    setUploadProgressText(`Uploading ${label} to Cloudflare R2...`);
+    setUploadProgressText(`Uploading ${label} to Cloud Storage...`);
 
     try {
       const compressed = await compressImageFile(file, options);
       if (compressed) {
-        // Direct upload to Cloudflare R2 first
+        // Direct upload to Cloud Storage first
         try {
           const uploadRes = await CloudflareService.uploadFile({
             data: compressed,
@@ -733,7 +734,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           });
           if (uploadRes.success && uploadRes.url) {
             callback(uploadRes.url);
-            showToast(`${label} saved to Cloudflare R2!`);
+            showToast(`${label} saved to Cloud Storage!`);
             return;
           }
         } catch (cfErr) {
@@ -741,7 +742,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         }
         // Fallback to compressed image string so user is never blocked
         callback(compressed);
-        showToast(`${label} saved locally and queued for Cloudflare sync.`);
+        showToast(`${label} saved locally and queued for Cloud sync.`);
       }
     } catch (err) {
       console.warn('Image compression failed, trying lightweight fallback:', err);
@@ -759,7 +760,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               });
               if (uploadRes.success && uploadRes.url) {
                 callback(uploadRes.url);
-                showToast(`${label} saved to Cloudflare R2!`);
+                showToast(`${label} saved to Cloud Storage!`);
                 return;
               }
             } catch {}
@@ -853,7 +854,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
 
     setShowPhotoModal(false);
-    showToast(editingPhoto ? 'Photo updated & saved to Cloudflare!' : 'Photo added & saved to Cloudflare!');
+    showToast(editingPhoto ? 'Photo updated & saved to Cloud Storage!' : 'Photo added & saved to Cloud Storage!');
     setEditingPhoto(null);
   };
 
@@ -998,7 +999,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     });
 
     setShowAddItemModal(false);
-    showToast(editingItem ? 'Item updated & saved to Cloudflare!' : 'Item added & saved to Cloudflare!');
+    showToast(editingItem ? 'Item updated & saved to Cloud Storage!' : 'Item added & saved to Cloud Storage!');
   };
 
   const handleDeleteMenuItem = (id: string) => {
@@ -1135,14 +1136,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1024, quality: 0.95, fileTypeLabel: 'Business Logo' })}
       />
 
-      {/* Uploading to Cloudflare R2 Overlay */}
+      {/* Uploading to Cloud Overlay */}
       {isUploadingToCloudflare && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center gap-3 max-w-xs text-center">
             <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin" />
             <div className="space-y-1">
               <p className="text-sm font-bold text-slate-800 dark:text-white">{uploadProgressText}</p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Saving directly to Cloudflare R2 object storage...</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Saving directly to secure cloud storage...</p>
             </div>
           </div>
         </div>
@@ -1176,13 +1177,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 CloudflareService.saveSingleQrPage(activePage).catch(() => {});
               }
               CloudflareService.syncAllToCloudflare().catch(() => {});
-              showToast('QR Code hosting data & files synced with Cloudflare!');
+              showToast('QR Code hosting data & files synced with Cloud Storage!');
             }}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95"
-            title="All QR code files, stand PDFs, gallery photos, and items save to Cloudflare R2 & D1"
+            title="All QR code files, stand PDFs, gallery photos, and items save to Cloud Storage"
           >
             <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Cloudflare Sync</span>
+            <span>Cloud Sync</span>
           </button>
 
           {isSaved && (
@@ -1562,27 +1563,22 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="font-bold text-slate-600 dark:text-slate-400">Phone Number</label>
-                <input
-                  type="text"
-                  placeholder="+256 700 123 456"
-                  value={activePage.phone || ''}
-                  onChange={(e) => handleUpdateActivePage({ phone: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
+              <PhoneInputField
+                id="input-qr-phone"
+                label="Phone Number"
+                value={activePage.phone || ''}
+                onChange={(val) => handleUpdateActivePage({ phone: val })}
+                placeholder="700 123 456"
+              />
 
-              <div>
-                <label className="font-bold text-slate-600 dark:text-slate-400">WhatsApp Number</label>
-                <input
-                  type="text"
-                  placeholder="+256 700 123 456"
-                  value={activePage.whatsapp || ''}
-                  onChange={(e) => handleUpdateActivePage({ whatsapp: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
+              <PhoneInputField
+                id="input-qr-whatsapp"
+                label="WhatsApp Number"
+                icon={MessageCircle}
+                value={activePage.whatsapp || ''}
+                onChange={(val) => handleUpdateActivePage({ whatsapp: val })}
+                placeholder="700 123 456"
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

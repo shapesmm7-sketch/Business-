@@ -27,6 +27,7 @@ import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
+import { PhoneInputField } from './PhoneInputField';
 import { getLanguageByCode } from '../data/languages';
 import { t } from '../utils/i18n';
 import {
@@ -631,35 +632,23 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
 
         {/* Phone & WhatsApp */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              <Phone className="w-3.5 h-3.5 text-slate-400" />
-              <span>Phone Number *</span>
-            </label>
-            <input
-              id="input-profile-phone"
-              type="tel"
-              value={profile.phone}
-              onChange={(e) => handleChange('phone', e.target.value)}
-              placeholder="e.g. +256 700 123 456"
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-            />
-          </div>
+          <PhoneInputField
+            id="input-profile-phone"
+            label="Phone Number"
+            required
+            value={profile.phone}
+            onChange={(val) => handleChange('phone', val)}
+            placeholder="700 123 456"
+          />
 
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-500" />
-              <span>WhatsApp Number</span>
-            </label>
-            <input
-              id="input-profile-whatsapp"
-              type="tel"
-              value={profile.whatsapp || ''}
-              onChange={(e) => handleChange('whatsapp', e.target.value)}
-              placeholder="e.g. +256 700 123 456"
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-            />
-          </div>
+          <PhoneInputField
+            id="input-profile-whatsapp"
+            label="WhatsApp Number"
+            icon={MessageSquare}
+            value={profile.whatsapp || ''}
+            onChange={(val) => handleChange('whatsapp', val)}
+            placeholder="700 123 456"
+          />
         </div>
 
         {/* Email */}

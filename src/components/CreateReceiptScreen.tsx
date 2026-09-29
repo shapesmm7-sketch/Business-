@@ -34,6 +34,7 @@ import { StorageService } from '../services/storage';
 import { PdfGenerator } from '../services/pdfGenerator';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { PhoneInputField } from './PhoneInputField';
 
 interface CreateReceiptScreenProps {
   business: BusinessProfile;
@@ -425,7 +426,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       nonRefundable,
       template: editingReceipt ? editingReceipt.template : defaultTemplate,
       accentColor: editingReceipt?.accentColor || business.accentColor,
-      businessSnapshot: business,
+      businessSnapshot: StorageService.getProfile() || business,
     };
 
     return receipt;
@@ -568,20 +569,13 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
             />
           </div>
 
-          <div>
-            <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
-              <Phone className="w-3.5 h-3.5 text-slate-400" />
-              <span>Customer Phone (Optional)</span>
-            </label>
-            <input
-              id="input-customer-phone"
-              type="tel"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              placeholder="e.g. +256 700 000 000"
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-            />
-          </div>
+          <PhoneInputField
+            id="input-customer-phone"
+            label="Customer Phone (Optional)"
+            value={customerPhone}
+            onChange={(val) => setCustomerPhone(val)}
+            placeholder="700 000 000"
+          />
 
           <div>
             <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">

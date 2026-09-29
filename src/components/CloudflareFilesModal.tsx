@@ -42,7 +42,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       const records = await CloudflareService.listFiles();
       setFiles(records);
     } catch {
-      showToast('Failed to load files from Cloudflare');
+      showToast('Failed to load files from cloud storage');
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +66,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
   };
 
   const handleDelete = async (key: string) => {
-    if (!confirm('Are you sure you want to delete this file from Cloudflare R2?')) return;
+    if (!confirm('Are you sure you want to delete this file from cloud storage?')) return;
     try {
       const success = await CloudflareService.deleteFile(key);
       if (success) {
@@ -306,7 +306,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         {/* Footer */}
         <div className="p-3 sm:p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
           <span className="text-[11px] text-slate-500 dark:text-slate-400">
-            Backed by Cloudflare R2 Distributed Object Storage
+            Backed by Secure Cloud Object Storage
           </span>
           <button
             type="button"

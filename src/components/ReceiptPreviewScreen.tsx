@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Receipt, ReceiptTemplateId } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
-import { PdfGenerator } from '../services/pdfGenerator';
+import { PdfGenerator, resolveEffectiveBusinessProfile } from '../services/pdfGenerator';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { BRAND_COLOR_PRESETS, isValidHex, normalizeHex, getContrastTextHex } from '../utils/colors';
@@ -43,7 +43,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   const isCfConfigured = CloudflareService.isConfigured();
 
-  const business = receipt.businessSnapshot || (receipt as any).businessProfile || StorageService.getProfile();
+  const business = resolveEffectiveBusinessProfile(receipt);
   const currency = business?.currency || receipt.currency || 'UGX';
   const currentTheme = getTemplateConfig(receipt.template || 'modern');
   const isInvoice = receipt.documentType === 'invoice';
@@ -289,15 +289,15 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       <div className="receipt-print-area">
         <ReceiptLayoutRenderer
           data={{
-            storeName: business?.name || '',
-            businessDescription: receipt.businessSnapshot?.description || business?.description || '',
-            phone: business?.phone || '',
-            email: business?.email || '',
-            address: business?.address || '',
-            taxNumber: business?.taxNumber || '',
-            logo: business?.logo,
-            signature: receipt.businessSnapshot?.signature || (receipt as any).businessProfile?.signature || business?.signature,
-            customFooter: business?.customFooter || '',
+            storeName: business.name || '',
+            businessDescription: business.description || '',
+            phone: business.phone || '',
+            email: business.email || '',
+            address: business.address || '',
+            taxNumber: business.taxNumber || '',
+            logo: business.logo,
+            signature: business.signature,
+            customFooter: business.customFooter || '',
             receiptNumber: receipt.receiptNumber,
             createdAt: receipt.createdAt,
             customerName: receipt.customerName,

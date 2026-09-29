@@ -1,11 +1,87 @@
 import { jsPDF } from 'jspdf';
-import { Receipt, ReceiptTemplateId, TemplateCustomization } from '../types';
+import { Receipt, ReceiptTemplateId, TemplateCustomization, BusinessProfile } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
 import { resolveEffectiveTheme } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
 import { saveJsPdf, shareContent, SaveFileResult } from './fileSaver';
+
+/**
+ * Resolves effective business profile by overlaying latest profile onto snapshot
+ * so updated business information (name, address, phone, logo, signature, etc.) always reflects on PDFs.
+ */
+export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfile {
+  const latest = StorageService.getProfile();
+  const snapshot = receipt.businessSnapshot || (receipt as any).businessProfile || {};
+
+  return {
+    name: (latest.name && latest.name.trim() !== '') ? latest.name : (snapshot.name || 'Business Name'),
+    description: (latest.description !== undefined && latest.description !== null) ? latest.description : (snapshot.description || ''),
+    logo: latest.logo || snapshot.logo,
+    signature: latest.signature || snapshot.signature,
+    phone: (latest.phone && latest.phone.trim() !== '') ? latest.phone : (snapshot.phone || ''),
+    whatsapp: (latest.whatsapp && latest.whatsapp.trim() !== '') ? latest.whatsapp : (snapshot.whatsapp || ''),
+    email: (latest.email && latest.email.trim() !== '') ? latest.email : (snapshot.email || ''),
+    address: (latest.address && latest.address.trim() !== '') ? latest.address : (snapshot.address || ''),
+    taxNumber: (latest.taxNumber && latest.taxNumber.trim() !== '') ? latest.taxNumber : (snapshot.taxNumber || ''),
+    website: (latest.website && latest.website.trim() !== '') ? latest.website : (snapshot.website || ''),
+    currency: snapshot.currency || latest.currency || 'UGX',
+    language: latest.language || snapshot.language,
+    customFooter: (latest.customFooter !== undefined && latest.customFooter !== null) ? latest.customFooter : (snapshot.customFooter || ''),
+    accentColor: latest.accentColor || snapshot.accentColor,
+    headerBgColor: latest.headerBgColor || snapshot.headerBgColor,
+    headerTextColor: latest.headerTextColor || snapshot.headerTextColor,
+    totalBgColor: latest.totalBgColor || snapshot.totalBgColor,
+    totalTextColor: latest.totalTextColor || snapshot.totalTextColor,
+    paperBgColor: latest.paperBgColor || snapshot.paperBgColor,
+    bankName: (latest.bankName && latest.bankName.trim() !== '') ? latest.bankName : (snapshot.bankName || ''),
+    bankAccountNumber: (latest.bankAccountNumber && latest.bankAccountNumber.trim() !== '') ? latest.bankAccountNumber : (snapshot.bankAccountNumber || ''),
+    bankAccountName: (latest.bankAccountName && latest.bankAccountName.trim() !== '') ? latest.bankAccountName : (snapshot.bankAccountName || ''),
+    bankBranchSwift: (latest.bankBranchSwift && latest.bankBranchSwift.trim() !== '') ? latest.bankBranchSwift : (snapshot.bankBranchSwift || ''),
+    mobileMoneyMerchant: (latest.mobileMoneyMerchant && latest.mobileMoneyMerchant.trim() !== '') ? latest.mobileMoneyMerchant : (snapshot.mobileMoneyMerchant || ''),
+    mobileMoneyName: (latest.mobileMoneyName && latest.mobileMoneyName.trim() !== '') ? latest.mobileMoneyName : (snapshot.mobileMoneyName || ''),
+    defaultPaymentInstructions: (latest.defaultPaymentInstructions && latest.defaultPaymentInstructions.trim() !== '') ? latest.defaultPaymentInstructions : (snapshot.defaultPaymentInstructions || ''),
+  };
+}
+
+/**
+ * Loads an image URL (data URL or http URL) and converts it to a base64 Data URL for jsPDF.
+ */
+async function loadImgDataUrl(src?: string): Promise<string | undefined> {
+  if (!src || typeof src !== 'string' || !src.trim()) return undefined;
+  const clean = src.trim();
+  if (clean.startsWith('data:image')) return clean;
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('/')) {
+    try {
+      return await new Promise<string>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width || 200;
+            canvas.height = img.naturalHeight || img.height || 200;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              resolve(canvas.toDataURL('image/png'));
+            } else {
+              resolve(undefined);
+            }
+          } catch {
+            resolve(undefined);
+          }
+        };
+        img.onerror = () => resolve(undefined);
+        img.src = clean;
+      });
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
 
 /**
  * High quality vector PDF generator for Brivu
@@ -259,18 +335,37 @@ export const PdfGenerator = {
    * Generates a jsPDF instance for a given receipt based on its template
    */
   async createPdfDoc(receipt: Receipt): Promise<jsPDF> {
-    const template: ReceiptTemplateId = receipt.template || 'modern';
+    const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
+
+    // Pre-load logo and signature as base64 Data URLs so they render reliably on PDFs
+    const [logoDataUrl, sigDataUrl] = await Promise.all([
+      loadImgDataUrl(resolvedBiz.logo),
+      loadImgDataUrl(resolvedBiz.signature),
+    ]);
+
+    const enrichedBusiness: BusinessProfile = {
+      ...resolvedBiz,
+      logo: logoDataUrl || resolvedBiz.logo,
+      signature: sigDataUrl || resolvedBiz.signature,
+    };
+
+    const enrichedReceipt: Receipt = {
+      ...receipt,
+      businessSnapshot: enrichedBusiness,
+    };
+
+    const template: ReceiptTemplateId = enrichedReceipt.template || 'modern';
 
     if (template === 'compact') {
-      return this.renderCompactTemplate(receipt);
+      return this.renderCompactTemplate(enrichedReceipt);
     } else if (template === 'classic') {
-      return this.renderClassicTemplate(receipt);
+      return this.renderClassicTemplate(enrichedReceipt);
     } else if (template === 'minimal') {
-      return this.renderMinimalTemplate(receipt);
+      return this.renderMinimalTemplate(enrichedReceipt);
     } else if (template === 'business') {
-      return this.renderBusinessTemplate(receipt);
+      return this.renderBusinessTemplate(enrichedReceipt);
     } else {
-      return this.renderModernTemplate(receipt);
+      return this.renderModernTemplate(enrichedReceipt);
     }
   },
 
