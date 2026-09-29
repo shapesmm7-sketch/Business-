@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker for Brivu App
- * Provides D1 SQL Database Sync, R2 File Object Storage, and Hosted Customer QR Code Web Pages
+ * Provides D1 SQL Database Sync for All Inventory Sections & QR Code Hosted Web Pages, plus R2 Object Storage
  */
 
 export interface D1PreparedStatement {
@@ -179,6 +179,86 @@ async function ensureTables(db?: D1Database): Promise<void> {
         data_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS inventory_sales (
+        id TEXT PRIMARY KEY,
+        product_id TEXT,
+        product_name TEXT,
+        quantity REAL DEFAULT 1,
+        total_price REAL NOT NULL DEFAULT 0,
+        profit REAL DEFAULT 0,
+        date TEXT,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS inventory_expenses (
+        id TEXT PRIMARY KEY,
+        category TEXT,
+        amount REAL NOT NULL DEFAULT 0,
+        description TEXT,
+        date TEXT,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS inventory_debts (
+        id TEXT PRIMARY KEY,
+        customer_name TEXT NOT NULL,
+        amount REAL NOT NULL DEFAULT 0,
+        status TEXT DEFAULT 'unpaid',
+        due_date TEXT,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS customers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        contact TEXT,
+        email TEXT,
+        location TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        agent_name TEXT NOT NULL,
+        shop_name TEXT,
+        contact TEXT,
+        address TEXT,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS agent_ledger (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        record_type TEXT,
+        amount REAL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS workers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT,
+        role TEXT,
+        salary REAL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS staff_sales (
+        id TEXT PRIMARY KEY,
+        worker_id TEXT NOT NULL,
+        worker_name TEXT,
+        amount REAL DEFAULT 0,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shopping_list (
+        id TEXT PRIMARY KEY,
+        item_name TEXT NOT NULL,
+        quantity REAL DEFAULT 1,
+        checked INTEGER DEFAULT 0,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS business_profile (
         id TEXT PRIMARY KEY DEFAULT 'current',
         name TEXT,
@@ -253,7 +333,6 @@ function renderCustomerPageHtml(
   const title = page.title || 'Digital Menu & Hub';
   const tagline = page.tagline || page.description || 'Welcome! Explore our items & catalog.';
   const currency = page.currency || 'UGX';
-  const accent = page.accentColor || '#059669';
   const logo = page.logo || '';
   const coverImage = page.coverImage || '';
   const phone = page.phone || '';
@@ -874,7 +953,7 @@ export default {
       return jsonResponse({
         status: 'ok',
         service: 'Brivu Cloudflare Worker',
-        version: '1.2.0',
+        version: '1.3.0',
         timestamp: new Date().toISOString(),
         d1Bound: hasD1,
         r2Bound: hasR2,
@@ -902,7 +981,6 @@ export default {
         pageId = url.searchParams.get('qr') || url.searchParams.get('id') || 'default';
       }
 
-      // Check if format is json
       const format = url.searchParams.get('format');
       const acceptHeader = request.headers.get('accept') || '';
       const wantsJson = format === 'json' || acceptHeader.includes('application/json');
@@ -986,6 +1064,87 @@ export default {
     // 6. Check Authentication for administrative / sync routes
     if (!checkAuth(request, env)) {
       return errorResponse('Unauthorized: Invalid or missing X-Sync-Key or Authorization header', 401);
+    }
+
+    // 6b. List Files in R2 & D1 (GET /api/files)
+    if (method === 'GET' && url.pathname === '/api/files') {
+      try {
+        const prefix = url.searchParams.get('prefix') || '';
+        let fileRecords: any[] = [];
+
+        if (env.DB) {
+          try {
+            let query = 'SELECT * FROM files_meta';
+            const params: any[] = [];
+            if (prefix) {
+              query += ' WHERE folder = ? OR key LIKE ?';
+              params.push(prefix, `${prefix}%`);
+            }
+            query += ' ORDER BY uploaded_at DESC LIMIT 150';
+            const dbRes = await env.DB.prepare(query).bind(...params).all();
+            if (dbRes.results && dbRes.results.length > 0) {
+              fileRecords = dbRes.results.map((r: any) => ({
+                key: r.key || r.r2_key,
+                filename: r.filename,
+                mimeType: r.mime_type,
+                size: r.size,
+                folder: r.folder,
+                url: `${url.origin}/api/files/${encodeURIComponent(r.r2_key || r.key)}`,
+                uploadedAt: r.uploaded_at,
+              }));
+            }
+          } catch (dbErr) {
+            console.warn('files_meta table query note:', dbErr);
+          }
+        }
+
+        // If files_meta was empty or DB not bound, list directly from R2 Bucket
+        if (fileRecords.length === 0 && env.R2_BUCKET) {
+          const listRes = await env.R2_BUCKET.list({ prefix: prefix || undefined, limit: 150 });
+          fileRecords = (listRes.objects || []).map((obj) => {
+            const parts = obj.key.split('/');
+            const filename = parts.pop() || obj.key;
+            const folder = parts.join('/') || 'receipts';
+            return {
+              key: obj.key,
+              filename,
+              mimeType: obj.httpMetadata?.contentType || 'application/octet-stream',
+              size: obj.size,
+              folder,
+              url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
+              uploadedAt: obj.uploaded.toISOString(),
+            };
+          });
+        }
+
+        return jsonResponse({
+          success: true,
+          files: fileRecords,
+        });
+      } catch (err: unknown) {
+        return errorResponse(`Failed to list files: ${err instanceof Error ? err.message : String(err)}`, 500);
+      }
+    }
+
+    // 6c. Delete File from R2 & D1 (DELETE /api/files/:key*)
+    if (method === 'DELETE' && url.pathname.startsWith('/api/files/') && url.pathname.length > '/api/files/'.length) {
+      const key = decodeURIComponent(url.pathname.slice('/api/files/'.length));
+      try {
+        if (env.R2_BUCKET) {
+          await env.R2_BUCKET.delete(key);
+        }
+        if (env.DB) {
+          try {
+            await env.DB.prepare('DELETE FROM files_meta WHERE key = ? OR r2_key = ?').bind(key, key).run();
+          } catch {}
+        }
+        return jsonResponse({
+          success: true,
+          message: `File "${key}" deleted successfully`,
+        });
+      } catch (err: unknown) {
+        return errorResponse(`Failed to delete file: ${err instanceof Error ? err.message : String(err)}`, 500);
+      }
     }
 
     // 7. Save Single Hosted QR Page (POST /api/qr)
@@ -1080,7 +1239,6 @@ export default {
 
           rawBase64 = rawBase64.replace(/\s/g, '');
 
-          // Native Node buffer decode (supported via nodejs_compat)
           if (typeof Buffer !== 'undefined') {
             fileData = Buffer.from(rawBase64, 'base64');
           } else {
@@ -1144,100 +1302,7 @@ export default {
       }
     }
 
-    // 9. List Files route (GET /api/files)
-    if (method === 'GET' && url.pathname === '/api/files') {
-      if (!env.R2_BUCKET) {
-        return errorResponse('R2 Storage bucket is not bound to this worker', 503);
-      }
-
-      try {
-        const prefix = url.searchParams.get('prefix') || '';
-        const limit = parseInt(url.searchParams.get('limit') || '50', 10);
-
-        if (env.DB) {
-          try {
-            const query = prefix
-              ? env.DB.prepare('SELECT * FROM files_meta WHERE folder LIKE ? OR filename LIKE ? ORDER BY uploaded_at DESC LIMIT ?').bind(
-                  `%${prefix}%`,
-                  `%${prefix}%`,
-                  limit
-                )
-              : env.DB.prepare('SELECT * FROM files_meta ORDER BY uploaded_at DESC LIMIT ?').bind(limit);
-
-            const { results } = await query.all();
-            const formatted = (results || []).map((row: any) => ({
-              key: row.key,
-              filename: row.filename,
-              size: row.size,
-              mimeType: row.mime_type,
-              folder: row.folder,
-              uploadedAt: row.uploaded_at,
-              url: `${url.origin}/api/files/${encodeURIComponent(row.key)}`,
-            }));
-
-            return jsonResponse({
-              success: true,
-              files: formatted,
-              source: 'd1_meta',
-            });
-          } catch (d1Err) {
-            console.warn('D1 files_meta query fallback to R2 direct list:', d1Err);
-          }
-        }
-
-        const listed = await env.R2_BUCKET.list({
-          prefix: prefix || undefined,
-          limit,
-        });
-
-        const files = listed.objects.map((obj) => ({
-          key: obj.key,
-          filename: obj.key.split('/').pop() || obj.key,
-          size: obj.size,
-          uploadedAt: obj.uploaded.toISOString(),
-          mimeType: obj.httpMetadata?.contentType || 'application/octet-stream',
-          url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
-        }));
-
-        return jsonResponse({
-          success: true,
-          files,
-          truncated: listed.truncated,
-          source: 'r2_direct',
-        });
-      } catch (err: unknown) {
-        return errorResponse(`Failed to list files: ${err instanceof Error ? err.message : String(err)}`, 500);
-      }
-    }
-
-    // 10. Delete File route (DELETE /api/files/:key*)
-    if (method === 'DELETE' && url.pathname.startsWith('/api/files/')) {
-      if (!env.R2_BUCKET) {
-        return errorResponse('R2 Storage bucket is not bound', 503);
-      }
-
-      const key = decodeURIComponent(url.pathname.slice('/api/files/'.length));
-      try {
-        await env.R2_BUCKET.delete(key);
-
-        if (env.DB) {
-          try {
-            await env.DB.prepare('DELETE FROM files_meta WHERE key = ?').bind(key).run();
-          } catch (d1Err) {
-            console.warn('Could not remove file from D1 meta:', d1Err);
-          }
-        }
-
-        return jsonResponse({
-          success: true,
-          message: `File ${key} deleted from Cloudflare R2`,
-        });
-      } catch (err: unknown) {
-        return errorResponse(`Failed to delete file from R2: ${err instanceof Error ? err.message : String(err)}`, 500);
-      }
-    }
-
-    // 11. D1 Sync Push: Save full application state & individual records to D1 (POST /api/sync/push)
+    // 9. D1 Sync Push: Save full application state & individual SQL records across ALL Inventory & QR tables (POST /api/sync/push)
     if (method === 'POST' && url.pathname === '/api/sync/push') {
       if (!env.DB) {
         return errorResponse('D1 Database is not bound to this worker.', 503);
@@ -1252,7 +1317,7 @@ export default {
         const now = new Date().toISOString();
         const backupData = payload.backupData || payload;
 
-        // 11a. Upsert latest full snapshot into sync_snapshots table
+        // 9a. Upsert latest full snapshot into sync_snapshots table
         await env.DB.prepare(
           `INSERT OR REPLACE INTO sync_snapshots (id, exported_at, version, data_json, updated_at)
            VALUES ('latest', ?, ?, ?, ?)`
@@ -1260,10 +1325,8 @@ export default {
           .bind(backupData.exportedAt || now, backupData.version || 1, JSON.stringify(backupData), now)
           .run();
 
-        // 11b. Upsert individual receipts into receipts table if present
-        let receiptsCount = 0;
+        // 9b. Upsert Receipts
         if (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) {
-          receiptsCount = backupData.receipts.length;
           const statements = backupData.receipts.slice(0, 100).map((r: any) =>
             env.DB!.prepare(
               `INSERT OR REPLACE INTO receipts 
@@ -1285,41 +1348,18 @@ export default {
               now
             )
           );
-
-          if (statements.length > 0) {
-            await env.DB.batch(statements);
-          }
+          if (statements.length > 0) await env.DB.batch(statements);
         }
 
-        // 11c. Upsert business profile if present
-        if (backupData.profile) {
-          await env.DB.prepare(
-            `INSERT OR REPLACE INTO business_profile (id, name, currency, data_json, updated_at)
-             VALUES ('current', ?, ?, ?, ?)`
-          )
-            .bind(backupData.profile.name || '', backupData.profile.currency || 'UGX', JSON.stringify(backupData.profile), now)
-            .run();
-        }
-
-        // 11d. Upsert app settings if present
-        if (backupData.settings) {
-          await env.DB.prepare(
-            `INSERT OR REPLACE INTO app_settings (id, data_json, updated_at)
-             VALUES ('current', ?, ?)`
-          )
-            .bind(JSON.stringify(backupData.settings), now)
-            .run();
-        }
-
-        // 11e. Upsert inventory products if present
+        // 9c. Upsert Inventory Products
         if (Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0) {
-          const prodStatements = backupData.inventoryProducts.slice(0, 50).map((p: any) =>
+          const prodStatements = backupData.inventoryProducts.map((p: any) =>
             env.DB!.prepare(
               `INSERT OR REPLACE INTO inventory_products (id, name, quantity, cost_price, selling_price, category_id, data_json, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
             ).bind(
               p.id,
-              p.name,
+              p.name || '',
               p.quantity || 0,
               p.costPrice || 0,
               p.sellingPrice || 0,
@@ -1328,12 +1368,180 @@ export default {
               now
             )
           );
-          if (prodStatements.length > 0) {
-            await env.DB.batch(prodStatements);
-          }
+          if (prodStatements.length > 0) await env.DB.batch(prodStatements);
         }
 
-        // 11f. Upsert QR Hosted Pages if present
+        // 9d. Upsert Inventory Sales
+        if (Array.isArray(backupData.inventorySales) && backupData.inventorySales.length > 0) {
+          const saleStatements = backupData.inventorySales.map((s: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO inventory_sales (id, product_id, product_name, quantity, total_price, profit, date, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              s.id,
+              s.productId || null,
+              s.productName || '',
+              s.quantity || 1,
+              s.totalPrice || 0,
+              s.profit || 0,
+              s.date || now.slice(0, 10),
+              JSON.stringify(s),
+              s.createdAt || now
+            )
+          );
+          if (saleStatements.length > 0) await env.DB.batch(saleStatements);
+        }
+
+        // 9e. Upsert Inventory Expenses
+        if (Array.isArray(backupData.inventoryExpenses) && backupData.inventoryExpenses.length > 0) {
+          const expStatements = backupData.inventoryExpenses.map((e: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO inventory_expenses (id, category, amount, description, date, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              e.id,
+              e.category || '',
+              e.amount || 0,
+              e.description || '',
+              e.date || now.slice(0, 10),
+              JSON.stringify(e),
+              e.createdAt || now
+            )
+          );
+          if (expStatements.length > 0) await env.DB.batch(expStatements);
+        }
+
+        // 9f. Upsert Inventory Debts
+        if (Array.isArray(backupData.inventoryDebts) && backupData.inventoryDebts.length > 0) {
+          const debtStatements = backupData.inventoryDebts.map((d: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO inventory_debts (id, customer_name, amount, status, due_date, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              d.id,
+              d.customerName || '',
+              d.amount || 0,
+              d.status || 'unpaid',
+              d.dueDate || null,
+              JSON.stringify(d),
+              d.createdAt || now
+            )
+          );
+          if (debtStatements.length > 0) await env.DB.batch(debtStatements);
+        }
+
+        // 9g. Upsert Customers
+        if (Array.isArray(backupData.customers) && backupData.customers.length > 0) {
+          const custStatements = backupData.customers.map((c: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO customers (id, name, contact, email, location, data_json, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              c.id,
+              c.name || '',
+              c.contact || '',
+              c.email || null,
+              c.location || null,
+              JSON.stringify(c),
+              now
+            )
+          );
+          if (custStatements.length > 0) await env.DB.batch(custStatements);
+        }
+
+        // 9h. Upsert Agents
+        if (Array.isArray(backupData.agents) && backupData.agents.length > 0) {
+          const agentStatements = backupData.agents.map((a: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO agents (id, agent_name, shop_name, contact, address, data_json, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              a.id,
+              a.agentName || '',
+              a.shopName || null,
+              a.contact || '',
+              a.address || null,
+              JSON.stringify(a),
+              now
+            )
+          );
+          if (agentStatements.length > 0) await env.DB.batch(agentStatements);
+        }
+
+        // 9i. Upsert Agent Ledger
+        if (Array.isArray(backupData.agentLedger) && backupData.agentLedger.length > 0) {
+          const ledgerStatements = backupData.agentLedger.map((al: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO agent_ledger (id, agent_id, record_type, amount, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            ).bind(
+              al.id,
+              al.agentId || '',
+              al.type || 'stock_issue',
+              al.amount || 0,
+              JSON.stringify(al),
+              al.createdAt || now
+            )
+          );
+          if (ledgerStatements.length > 0) await env.DB.batch(ledgerStatements);
+        }
+
+        // 9j. Upsert Workers
+        if (Array.isArray(backupData.workers) && backupData.workers.length > 0) {
+          const workerStatements = backupData.workers.map((w: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO workers (id, name, phone, role, salary, data_json, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).bind(
+              w.id,
+              w.name || '',
+              w.phone || '',
+              w.role || null,
+              w.salary || 0,
+              JSON.stringify(w),
+              now
+            )
+          );
+          if (workerStatements.length > 0) await env.DB.batch(workerStatements);
+        }
+
+        // 9k. Upsert Staff Sales
+        if (Array.isArray(backupData.staffSales) && backupData.staffSales.length > 0) {
+          const staffSaleStatements = backupData.staffSales.map((ss: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO staff_sales (id, worker_id, worker_name, amount, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            ).bind(
+              ss.id,
+              ss.workerId || '',
+              ss.workerName || '',
+              ss.amount || 0,
+              JSON.stringify(ss),
+              ss.createdAt || now
+            )
+          );
+          if (staffSaleStatements.length > 0) await env.DB.batch(staffSaleStatements);
+        }
+
+        // 9l. Upsert Shopping List
+        if (Array.isArray(backupData.shoppingListItems) && backupData.shoppingListItems.length > 0) {
+          const shopStatements = backupData.shoppingListItems.map((item: any) =>
+            env.DB!.prepare(
+              `INSERT OR REPLACE INTO shopping_list (id, item_name, quantity, checked, data_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)`
+            ).bind(
+              item.id,
+              item.name || '',
+              item.quantity || 1,
+              item.checked ? 1 : 0,
+              JSON.stringify(item),
+              item.createdAt || now
+            )
+          );
+          if (shopStatements.length > 0) await env.DB.batch(shopStatements);
+        }
+
+        // 9m. Upsert QR Hosted Pages
         if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
           const qrStatements = backupData.qrHostedPages.map((qp: any) =>
             env.DB!.prepare(
@@ -1347,23 +1555,39 @@ export default {
               now
             )
           );
-          if (qrStatements.length > 0) {
-            await env.DB.batch(qrStatements);
-          }
+          if (qrStatements.length > 0) await env.DB.batch(qrStatements);
+        }
+
+        // 9n. Business Profile & Settings
+        if (backupData.profile) {
+          await env.DB.prepare(
+            `INSERT OR REPLACE INTO business_profile (id, name, currency, data_json, updated_at)
+             VALUES ('current', ?, ?, ?, ?)`
+          )
+            .bind(backupData.profile.name || '', backupData.profile.currency || 'UGX', JSON.stringify(backupData.profile), now)
+            .run();
+        }
+
+        if (backupData.settings) {
+          await env.DB.prepare(
+            `INSERT OR REPLACE INTO app_settings (id, data_json, updated_at)
+             VALUES ('current', ?, ?)`
+          )
+            .bind(JSON.stringify(backupData.settings), now)
+            .run();
         }
 
         return jsonResponse({
           success: true,
-          message: 'All information successfully synced and saved to Cloudflare D1',
+          message: 'All inventory, QR code hosting, receipts, and settings successfully saved to Cloudflare D1',
           timestamp: now,
-          receiptsSaved: receiptsCount,
         });
       } catch (err: unknown) {
         return errorResponse(`Failed to sync data to D1: ${err instanceof Error ? err.message : String(err)}`, 500);
       }
     }
 
-    // 12. D1 Sync Pull: Retrieve latest application state from D1 (GET /api/sync/pull)
+    // 10. D1 Sync Pull: Retrieve latest application state from D1 across all tables (GET /api/sync/pull)
     if (method === 'GET' && url.pathname === '/api/sync/pull') {
       if (!env.DB) {
         return errorResponse('D1 Database is not bound to this worker', 503);
@@ -1379,73 +1603,59 @@ export default {
           } catch {}
         }
 
-        // Merge individual tables from D1
-        try {
-          const receiptsQuery = await env.DB.prepare('SELECT data_json FROM receipts ORDER BY created_at DESC').all();
-          const dbReceipts = (receiptsQuery.results || []).map((r: any) => {
-            try {
-              return JSON.parse(r.data_json);
-            } catch {
-              return null;
-            }
-          }).filter(Boolean);
-
-          if (dbReceipts.length > 0) {
-            const dbIds = new Set(dbReceipts.map((r: any) => r.id));
-            const existingSnapshotReceipts = Array.isArray(backupData.receipts)
-              ? backupData.receipts.filter((r: any) => !dbIds.has(r.id))
-              : [];
-            backupData.receipts = [...dbReceipts, ...existingSnapshotReceipts];
+        // Merge individual tables from D1 SQL
+        const queryTable = async (tableName: string, jsonCol = 'data_json') => {
+          try {
+            const query = await env.DB!.prepare(`SELECT ${jsonCol} FROM ${tableName}`).all();
+            return (query.results || [])
+              .map((row: any) => {
+                try {
+                  return JSON.parse(row[jsonCol]);
+                } catch {
+                  return null;
+                }
+              })
+              .filter(Boolean);
+          } catch {
+            return [];
           }
-        } catch (rErr) {
-          console.warn('Receipts table query note:', rErr);
-        }
+        };
 
-        try {
-          const profileQuery = await env.DB.prepare('SELECT data_json FROM business_profile WHERE id = ?').bind('current').first();
-          if (profileQuery?.data_json) {
-            backupData.profile = JSON.parse(profileQuery.data_json as string);
-          }
-        } catch {}
+        const dbReceipts = await queryTable('receipts');
+        if (dbReceipts.length > 0) backupData.receipts = dbReceipts;
 
-        try {
-          const settingsQuery = await env.DB.prepare('SELECT data_json FROM app_settings WHERE id = ?').bind('current').first();
-          if (settingsQuery?.data_json) {
-            backupData.settings = JSON.parse(settingsQuery.data_json as string);
-          }
-        } catch {}
+        const dbProducts = await queryTable('inventory_products');
+        if (dbProducts.length > 0) backupData.inventoryProducts = dbProducts;
 
-        try {
-          const invQuery = await env.DB.prepare('SELECT data_json FROM inventory_products ORDER BY updated_at DESC').all();
-          if (invQuery.results && invQuery.results.length > 0) {
-            const dbProducts = invQuery.results.map((p: any) => {
-              try {
-                return JSON.parse(p.data_json);
-              } catch {
-                return null;
-              }
-            }).filter(Boolean);
-            if (dbProducts.length > 0) {
-              backupData.inventoryProducts = dbProducts;
-            }
-          }
-        } catch {}
+        const dbSales = await queryTable('inventory_sales');
+        if (dbSales.length > 0) backupData.inventorySales = dbSales;
 
-        try {
-          const qrQuery = await env.DB.prepare('SELECT data_json FROM qr_pages ORDER BY updated_at DESC').all();
-          if (qrQuery.results && qrQuery.results.length > 0) {
-            const dbQrPages = qrQuery.results.map((q: any) => {
-              try {
-                return JSON.parse(q.data_json);
-              } catch {
-                return null;
-              }
-            }).filter(Boolean);
-            if (dbQrPages.length > 0) {
-              backupData.qrHostedPages = dbQrPages;
-            }
-          }
-        } catch {}
+        const dbExpenses = await queryTable('inventory_expenses');
+        if (dbExpenses.length > 0) backupData.inventoryExpenses = dbExpenses;
+
+        const dbDebts = await queryTable('inventory_debts');
+        if (dbDebts.length > 0) backupData.inventoryDebts = dbDebts;
+
+        const dbCustomers = await queryTable('customers');
+        if (dbCustomers.length > 0) backupData.customers = dbCustomers;
+
+        const dbAgents = await queryTable('agents');
+        if (dbAgents.length > 0) backupData.agents = dbAgents;
+
+        const dbLedger = await queryTable('agent_ledger');
+        if (dbLedger.length > 0) backupData.agentLedger = dbLedger;
+
+        const dbWorkers = await queryTable('workers');
+        if (dbWorkers.length > 0) backupData.workers = dbWorkers;
+
+        const dbStaffSales = await queryTable('staff_sales');
+        if (dbStaffSales.length > 0) backupData.staffSales = dbStaffSales;
+
+        const dbShopping = await queryTable('shopping_list');
+        if (dbShopping.length > 0) backupData.shoppingListItems = dbShopping;
+
+        const dbQrPages = await queryTable('qr_pages');
+        if (dbQrPages.length > 0) backupData.qrHostedPages = dbQrPages;
 
         return jsonResponse({
           success: true,
@@ -1458,93 +1668,6 @@ export default {
       }
     }
 
-    // 13. Single Receipt upsert (POST /api/receipts)
-    if (method === 'POST' && url.pathname === '/api/receipts') {
-      if (!env.DB) {
-        return errorResponse('D1 Database is not bound', 503);
-      }
-
-      try {
-        const receipt = (await request.json()) as any;
-        if (!receipt || !receipt.id || !receipt.receiptNumber) {
-          return errorResponse('Invalid receipt data. Must include id and receiptNumber', 400);
-        }
-
-        const now = new Date().toISOString();
-        await env.DB.prepare(
-          `INSERT OR REPLACE INTO receipts 
-           (id, receipt_number, document_type, customer_name, customer_phone, total, amount_paid, balance, payment_status, payment_method, created_at, data_json, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-          .bind(
-            receipt.id,
-            receipt.receiptNumber,
-            receipt.documentType || 'receipt',
-            receipt.customerName || null,
-            receipt.customerPhone || null,
-            receipt.total || 0,
-            receipt.amountPaid || 0,
-            receipt.balance || 0,
-            receipt.paymentStatus || 'paid',
-            receipt.paymentMethod || 'Cash',
-            receipt.createdAt || now,
-            JSON.stringify(receipt),
-            now
-          )
-          .run();
-
-        return jsonResponse({
-          success: true,
-          message: `Receipt ${receipt.receiptNumber} saved to Cloudflare D1`,
-          id: receipt.id,
-          receiptNumber: receipt.receiptNumber,
-        });
-      } catch (err: unknown) {
-        return errorResponse(`Failed to save receipt to D1: ${err instanceof Error ? err.message : String(err)}`, 500);
-      }
-    }
-
-    // 14. List receipts (GET /api/receipts)
-    if (method === 'GET' && url.pathname === '/api/receipts') {
-      if (!env.DB) {
-        return errorResponse('D1 Database is not bound', 503);
-      }
-
-      try {
-        const limit = parseInt(url.searchParams.get('limit') || '100', 10);
-        const docType = url.searchParams.get('type');
-
-        const query = docType
-          ? env.DB.prepare('SELECT * FROM receipts WHERE document_type = ? ORDER BY created_at DESC LIMIT ?').bind(docType, limit)
-          : env.DB.prepare('SELECT * FROM receipts ORDER BY created_at DESC LIMIT ?').bind(limit);
-
-        const { results } = await query.all();
-        const receipts = (results || []).map((row: any) => {
-          try {
-            return JSON.parse(row.data_json);
-          } catch {
-            return {
-              id: row.id,
-              receiptNumber: row.receipt_number,
-              documentType: row.document_type,
-              customerName: row.customer_name,
-              total: row.total,
-              createdAt: row.created_at,
-            };
-          }
-        });
-
-        return jsonResponse({
-          success: true,
-          count: receipts.length,
-          receipts,
-        });
-      } catch (err: unknown) {
-        return errorResponse(`Failed to query receipts: ${err instanceof Error ? err.message : String(err)}`, 500);
-      }
-    }
-
-    // Fallback: If root URL "/" is accessed in a browser, show service status with quick links
     if (url.pathname === '/') {
       return htmlResponse(`
         <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:60px auto;padding:32px;background:#ffffff;border-radius:24px;border:1px solid #e2e8f0;box-shadow:0 10px 25px -5px rgba(0,0,0,0.05);text-align:center;">
@@ -1553,14 +1676,8 @@ export default {
           </div>
           <h1 style="font-size:24px;font-weight:800;color:#0f172a;margin:0 0 8px 0;">Brivu Cloud Backend & QR Hosting</h1>
           <p style="color:#64748b;font-size:14px;line-height:1.6;margin:0 0 24px 0;">
-            This Cloudflare Worker powers D1 SQL Database Sync, R2 Object Storage for receipts and photos, and instant QR Menu & Hub hosting.
+            This Cloudflare Worker powers D1 SQL Database Sync for all Inventory sections and QR Code Hosted web pages.
           </p>
-          <div style="padding:16px;background:#f8fafc;border-radius:16px;text-align:left;font-size:12px;color:#475569;font-family:monospace;">
-            <div>Status: <strong>Connected</strong></div>
-            <div>D1 Database: <strong>${env.DB ? 'Bound' : 'Not Bound'}</strong></div>
-            <div>R2 Storage: <strong>${env.R2_BUCKET ? 'Bound' : 'Not Bound'}</strong></div>
-            <div>QR Hosting: <strong>Enabled (/qr/:id)</strong></div>
-          </div>
         </div>
       `);
     }

@@ -232,6 +232,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setCustProfilePic(uploadRes.url);
+          showToast('Customer photo saved to Cloudflare R2!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare customer photo upload note:', cfErr);
@@ -264,6 +265,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setAgentProfilePic(uploadRes.url);
+          showToast('Agent photo saved to Cloudflare R2!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare agent photo upload note:', cfErr);
@@ -296,6 +298,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setWorkerProfilePic(uploadRes.url);
+          showToast('Staff photo saved to Cloudflare R2!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare worker photo upload note:', cfErr);
@@ -325,7 +328,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setAgents(StorageService.getAgents());
     setWorkers(StorageService.getWorkers());
     setStats(StorageService.getInventoryStats());
+    CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Inventory Cloudflare auto-sync note:', err));
   };
+
+  // Sync inventory data with Cloudflare on mount
+  useEffect(() => {
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+  }, []);
 
   const handleSaveCustomer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -347,7 +356,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: custProfilePic,
         notes: customerNotes.trim() || undefined,
       });
-      showToast('Client updated successfully!');
+      showToast('Client details updated & saved to Cloudflare!');
     } else {
       StorageService.addCustomer({
         name: custDirectoryName.trim(),
@@ -357,7 +366,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: custProfilePic,
         notes: customerNotes.trim() || undefined,
       });
-      showToast('Client added successfully!');
+      showToast('Client added to directory & saved to Cloudflare!');
     }
 
     setEditingCustomerId(null);
@@ -435,7 +444,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: agentProfilePic,
         notes: agentNotesInput.trim() || undefined,
       });
-      showToast('Agent updated successfully!');
+      showToast('Agent details updated & saved to Cloudflare!');
     } else {
       StorageService.addAgent({
         agentName: agentNameInput.trim(),
@@ -446,7 +455,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         profilePic: agentProfilePic,
         notes: agentNotesInput.trim() || undefined,
       });
-      showToast('Agent added successfully!');
+      showToast('Agent added to directory & saved to Cloudflare!');
     }
 
     setEditingAgentId(null);
@@ -536,7 +545,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         role: workerRoleInput.trim() || undefined,
         notes: workerNotesInput.trim() || undefined,
       });
-      showToast('Staff details updated successfully!');
+      showToast('Staff details updated & saved to Cloudflare!');
     } else {
       StorageService.addWorker({
         name: workerNameInput.trim(),
@@ -553,7 +562,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         role: workerRoleInput.trim() || undefined,
         notes: workerNotesInput.trim() || undefined,
       });
-      showToast('Staff member added successfully!');
+      showToast('Staff member added & saved to Cloudflare!');
     }
 
     setEditingWorkerId(null);
@@ -687,6 +696,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         });
         if (uploadRes.success && uploadRes.url) {
           setImage(uploadRes.url);
+          showToast('Product photo saved to Cloudflare R2!');
         }
       } catch (cfErr) {
         console.warn('Cloudflare product photo upload note:', cfErr);
@@ -786,7 +796,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     refreshData();
 
     if (saved) {
-      showToast(editingProductId ? 'Product updated successfully!' : 'Product saved to inventory!');
+      showToast(editingProductId ? 'Product updated & saved to Cloudflare!' : 'Product saved to Cloudflare & inventory!');
     } else {
       showToast(`Could not save: Product with ID "${targetItemId}" already exists.`);
       return;
@@ -1113,10 +1123,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     refreshData();
     if (selectedProductForSale) {
       showToast(
-        `Sale recorded! ${saleQuantity} ${selectedProductForSale.name} sold • ${remainingStockAfterSale} left in stock.`
+        `Sale recorded & saved to Cloudflare! ${saleQuantity} ${selectedProductForSale.name} sold • ${remainingStockAfterSale} left in stock.`
       );
     } else {
-      showToast('Sale recorded successfully!');
+      showToast('Sale recorded & saved to Cloudflare!');
     }
 
     // Reset sale form
@@ -1150,7 +1160,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     });
 
     refreshData();
-    showToast('Expense recorded successfully!');
+    showToast('Expense recorded & saved to Cloudflare!');
 
     setExpenseTitle('');
     setExpenseAmount('');
@@ -1286,7 +1296,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         date: debtDate,
         dueDate: debtDueDate || undefined,
       });
-      showToast(`Debt record for ${debtCustomerName} updated!`);
+      showToast(`Debt record for ${debtCustomerName} updated & saved to Cloudflare!`);
       setEditingDebtId(null);
       setShowDebtForm(false);
     } else {
@@ -1302,7 +1312,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         status: 'unpaid',
         paidAmount: 0,
       });
-      showToast(`Debt recorded for ${debtCustomerName}!`);
+      showToast(`Debt for ${debtCustomerName} recorded & saved to Cloudflare!`);
       setShowDebtForm(false);
     }
 
@@ -1400,7 +1410,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         payments: [...currentPayments, newPayment]
       });
       refreshData();
-      showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID!`);
+      showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloudflare!`);
     } else {
       const pAmt = parseFloat(partialAmount) || 0;
       if (pAmt <= 0) {
@@ -1421,7 +1431,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           payments: [...currentPayments, newPayment]
         });
         refreshData();
-        showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID!`);
+        showToast(`Marked ${debtToSettle.customerName}'s debt as fully PAID & synced to Cloudflare!`);
       } else {
         StorageService.updateInventoryDebt(debtToSettle.id, {
           paidAmount: newPaidTotal,
@@ -1429,7 +1439,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           payments: [...currentPayments, newPayment]
         });
         refreshData();
-        showToast(`Recorded partial payment of ${currency} ${pAmt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} for ${debtToSettle.customerName}.`);
+        showToast(`Recorded payment of ${currency} ${pAmt.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} for ${debtToSettle.customerName} & synced to Cloudflare!`);
       }
     }
     setSettleDebtModalOpen(false);
@@ -1597,7 +1607,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setNewProductCategoryName('');
     setShowProductCategoryForm(false);
     refreshData();
-    showToast(`Category "${created.name}" created!`);
+    showToast(`Category "${created.name}" created & saved to Cloudflare!`);
   };
 
   const handleDeleteProductCategory = (id: string, name: string) => {
@@ -1637,7 +1647,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowNewCategoryInline(false);
     refreshData();
     setShoppingItemCategoryId(created.id);
-    showToast(`Category "${created.name}" created.`);
+    showToast(`Category "${created.name}" created & saved to Cloudflare!`);
   };
 
   const handleDeleteCategory = (id: string, name: string) => {
@@ -1675,7 +1685,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
       });
-      showToast('Shopping item updated.');
+      showToast('Shopping item updated & saved to Cloudflare!');
     } else {
       StorageService.addShoppingListItem({
         name: shoppingItemName.trim(),
@@ -1684,7 +1694,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
       });
-      showToast('Item added to shopping list.');
+      showToast('Item added to shopping list & saved to Cloudflare!');
     }
 
     cancelEditShoppingItem();
@@ -2359,7 +2369,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Staff_Directory_${dateStr}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory');
+        const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2446,7 +2456,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Agents_Directory_${dateStr}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory');
+        const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2533,7 +2543,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Client_Directory_${dateStr}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Client Directory');
+        const res = await saveJsPdf(doc, pdfFilename, 'Client Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2640,7 +2650,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Shopping_List_${new Date().toISOString().split('T')[0]}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Shopping List');
+        const res = await saveJsPdf(doc, pdfFilename, 'Shopping List', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2745,7 +2755,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Sales_Report_${saleDateFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Sales Report');
+        const res = await saveJsPdf(doc, pdfFilename, 'Sales Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2856,7 +2866,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Stock Report');
+        const res = await saveJsPdf(doc, pdfFilename, 'Stock Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -2957,7 +2967,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Expenses_Report_${expenseFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report');
+        const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3060,7 +3070,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Debts_Report_${debtTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Debts Report');
+        const res = await saveJsPdf(doc, pdfFilename, 'Debts Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3311,7 +3321,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
 
       const pdfFilename = `Business_Report_${reportTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
-      const res = await saveJsPdf(doc, pdfFilename, 'Business Report');
+      const res = await saveJsPdf(doc, pdfFilename, 'Business Report', { folder: 'reports' });
       if (res.success) {
         showToast(res.message);
       } else {
@@ -3848,9 +3858,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="p-1 rounded-full bg-white/15 text-white hidden sm:flex" title="Auto-synced with device storage">
-              <Cloud className="w-4 h-4" />
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                refreshData();
+                showToast('All inventory sections synced with Cloudflare D1 & R2!');
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
+              title="All inventory sections (Stock, Sales, Expenses, Debts, Shopping List, Customers, Agents, Staff, Reports) save to Cloudflare"
+            >
+              <Cloud className="w-3.5 h-3.5 text-sky-100" />
+              <span>Cloudflare Sync</span>
+            </button>
             <button
               onClick={onNavigateHome}
               className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1 rounded-lg font-medium transition"

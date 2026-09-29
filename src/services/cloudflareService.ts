@@ -47,11 +47,13 @@ function parseWorkerResponse(rawText: string): { ok: boolean; data?: any; isStar
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
   const bytes = new Uint8Array(buffer);
   const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
   }
   return btoa(binary);
 }
@@ -66,6 +68,54 @@ async function blobToBase64(blob: Blob): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    receipts: (data.receipts || []).map((r) => ({
+      ...r,
+      businessSnapshot: r.businessSnapshot
+        ? {
+            ...r.businessSnapshot,
+            logo: r.businessSnapshot.logo?.startsWith('data:') ? undefined : r.businessSnapshot.logo,
+            signature: r.businessSnapshot.signature?.startsWith('data:') ? undefined : r.businessSnapshot.signature,
+          }
+        : r.businessSnapshot,
+    })),
+    inventoryProducts: (data.inventoryProducts || []).map((p) => ({
+      ...p,
+      image: p.image?.startsWith('data:') ? undefined : p.image,
+    })),
+    customers: (data.customers || []).map((c) => ({
+      ...c,
+      profilePic: c.profilePic?.startsWith('data:') ? undefined : c.profilePic,
+    })),
+    agents: (data.agents || []).map((a) => ({
+      ...a,
+      profilePic: a.profilePic?.startsWith('data:') ? undefined : a.profilePic,
+    })),
+    workers: (data.workers || []).map((w) => ({
+      ...w,
+      profilePic: w.profilePic?.startsWith('data:') ? undefined : w.profilePic,
+    })),
+    qrHostedPages: (data.qrHostedPages || []).map((page) => ({
+      ...page,
+      coverImage: page.coverImage?.startsWith('data:') ? undefined : page.coverImage,
+      logo: page.logo?.startsWith('data:') ? undefined : page.logo,
+      photos: (page.photos || [])
+        .map((photo) => ({
+          ...photo,
+          url: photo.url?.startsWith('data:') ? '' : photo.url,
+        }))
+        .filter((photo) => Boolean(photo.url)),
+      menuItems: (page.menuItems || []).map((item) => ({
+        ...item,
+        photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
+      })),
+    })),
+  };
 }
 
 export const CloudflareService = {
@@ -370,7 +420,8 @@ export const CloudflareService = {
     }
 
     try {
-      const backupData = customBackup || StorageService.exportBackup();
+      const rawBackup = customBackup || StorageService.exportBackup();
+      const backupData = sanitizeBackupForD1Sync(rawBackup);
       const headers = this.getAuthHeaders();
       const targetUrl = `${config.workerUrl}/api/sync/push`;
 
@@ -427,10 +478,10 @@ export const CloudflareService = {
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('Cloudflare D1 sync error:', errMsg);
+      console.warn('Cloudflare D1 sync note:', errMsg);
       return {
         success: false,
-        message: `Cloudflare D1 sync failed: ${errMsg}`,
+        message: `Cloudflare D1 sync note: ${errMsg}`,
         error: errMsg,
       };
     }
@@ -583,13 +634,24 @@ export const CloudflareService = {
       const headers = this.getAuthHeaders();
       const targetUrl = `${config.workerUrl}/api/receipts`;
 
+      const cleanReceipt = {
+        ...receipt,
+        businessSnapshot: receipt.businessSnapshot
+          ? {
+              ...receipt.businessSnapshot,
+              logo: receipt.businessSnapshot.logo?.startsWith('data:') ? undefined : receipt.businessSnapshot.logo,
+              signature: receipt.businessSnapshot.signature?.startsWith('data:') ? undefined : receipt.businessSnapshot.signature,
+            }
+          : receipt.businessSnapshot,
+      };
+
       const response = await fetch(targetUrl, {
         method: 'POST',
         headers: {
           ...headers,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(receipt),
+        body: JSON.stringify(cleanReceipt),
       });
 
       if (!response.ok) {
@@ -700,13 +762,29 @@ export const CloudflareService = {
       const headers = this.getAuthHeaders();
       const targetUrl = `${config.workerUrl}/api/qr`;
 
+      const cleanPage = {
+        ...page,
+        coverImage: page.coverImage?.startsWith('data:') ? undefined : page.coverImage,
+        logo: page.logo?.startsWith('data:') ? undefined : page.logo,
+        photos: (page.photos || [])
+          .map((photo: any) => ({
+            ...photo,
+            url: photo.url?.startsWith('data:') ? '' : photo.url,
+          }))
+          .filter((photo: any) => Boolean(photo.url)),
+        menuItems: (page.menuItems || []).map((item: any) => ({
+          ...item,
+          photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
+        })),
+      };
+
       const response = await fetch(targetUrl, {
         method: 'POST',
         headers: {
           ...headers,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(page),
+        body: JSON.stringify(cleanPage),
       });
 
       const rawText = await response.text().catch(() => '');

@@ -53,6 +53,95 @@ CREATE TABLE IF NOT EXISTS inventory_products (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS inventory_sales (
+  id TEXT PRIMARY KEY,
+  product_id TEXT,
+  product_name TEXT,
+  quantity REAL DEFAULT 1,
+  total_price REAL NOT NULL DEFAULT 0,
+  profit REAL DEFAULT 0,
+  date TEXT,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_expenses (
+  id TEXT PRIMARY KEY,
+  category TEXT,
+  amount REAL NOT NULL DEFAULT 0,
+  description TEXT,
+  date TEXT,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_debts (
+  id TEXT PRIMARY KEY,
+  customer_name TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  status TEXT DEFAULT 'unpaid',
+  due_date TEXT,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact TEXT,
+  email TEXT,
+  location TEXT,
+  data_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY,
+  agent_name TEXT NOT NULL,
+  shop_name TEXT,
+  contact TEXT,
+  address TEXT,
+  data_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_ledger (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  record_type TEXT,
+  amount REAL DEFAULT 0,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  phone TEXT,
+  role TEXT,
+  salary REAL DEFAULT 0,
+  data_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS staff_sales (
+  id TEXT PRIMARY KEY,
+  worker_id TEXT NOT NULL,
+  worker_name TEXT,
+  amount REAL DEFAULT 0,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shopping_list (
+  id TEXT PRIMARY KEY,
+  item_name TEXT NOT NULL,
+  quantity REAL DEFAULT 1,
+  checked INTEGER DEFAULT 0,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS business_profile (
   id TEXT PRIMARY KEY DEFAULT 'current',
   name TEXT,

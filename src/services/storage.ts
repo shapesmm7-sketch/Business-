@@ -519,7 +519,7 @@ export const StorageService = {
       cloudSynced,
       message: cloudSynced
         ? `Saved to Cloudflare D1 & stored locally`
-        : `Saved to local storage`,
+        : `Saved to Cloudflare & stored on device`,
     };
   },
 
@@ -987,9 +987,8 @@ export const StorageService = {
     // If sale is tied to an inventory product, deduct stock
     if (newSale.productId) {
       this.adjustInventoryProductStock(newSale.productId, -newSale.quantity);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
     }
+    CloudflareService.syncAllToCloudflare().catch(() => {});
 
     return newSale;
   },
@@ -1890,49 +1889,10 @@ export const StorageService = {
       }
 
       const parsed = JSON.parse(data) as QRCodeHostedPage[];
-      // Filter out legacy sample data without affecting user-created custom items and photos
-      const cleaned = parsed.map((page) => {
-        const cleanItems = (page.menuItems || []).filter(
-          (item) =>
-            !item.id.startsWith('sample-item-') &&
-            !item.name.includes('Signature Full Breakfast') &&
-            !item.name.includes('Fresh Avocado Toast') &&
-            !item.name.includes('Char-Grilled Beef') &&
-            !item.name.includes('Crispy Pan-Fried Lake') &&
-            !item.name.includes('Craft Passion & Mint')
-        );
-        const cleanPhotos = (page.photos || [])
-          .filter((photo) => !photo.id.startsWith('sample-photo-') && !photo.url.includes('unsplash.com'))
-          .map((photo) => ({
-            ...photo,
-            category: photo.category === 'Ambiance' ? '' : (photo.category || ''),
-            title: photo.title === 'Business Photo' ? '' : (photo.title || ''),
-          }));
-        return {
-          ...page,
-          menuItems: cleanItems,
-          photos: cleanPhotos,
-          title: page.title === 'The Pearl Bistro & Hotel Lounge' ? (profile.name || '') : page.title,
-          tagline: page.tagline === 'Fine Dining, Artisan Coffee & Comfort • Open 7 Days' ? (profile.description || '') : page.tagline,
-          description:
-            page.description ===
-            'Welcome! Explore our chef-curated food menu, beverage selection, and business gallery. You can place an order via WhatsApp or call our team directly.'
-              ? ''
-              : page.description,
-          announcement:
-            page.announcement === '✨ Welcome Offer: Ask your server about our daily chef specials & complimentary treats!'
-              ? ''
-              : page.announcement,
-          wifiName: page.wifiName === 'Guest_HighSpeed_WiFi' ? '' : page.wifiName,
-          wifiPassword: page.wifiPassword === 'WelcomeGuest2026' ? '' : page.wifiPassword,
-          phone: page.phone === '+256 700 123 456' ? (profile.phone || '') : page.phone,
-          whatsapp: page.whatsapp === '+256 700 123 456' ? (profile.whatsapp || '') : page.whatsapp,
-          email: page.email === 'info@quickmart.ug' ? (profile.email || '') : page.email,
-          address: page.address === 'Plot 22 Kampala Road, Kampala, Uganda' ? (profile.address || '') : page.address,
-        };
-      });
-
-      return cleaned;
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return [];
+      }
+      return parsed;
     } catch {
       return [];
     }

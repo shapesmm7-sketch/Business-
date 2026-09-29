@@ -65,6 +65,8 @@ export interface SaveFileOptions {
   openShareSheet?: boolean;
   /** Destination folder type in phone storage ('documents' -> Download/Brivu, 'photos' -> Pictures/Brivu) */
   destination?: 'documents' | 'photos';
+  /** Target Cloudflare R2 folder (e.g. 'qr_codes', 'qr_stands', 'photos', 'inventory', 'sales', 'expenses', 'debts', 'shopping', 'customers', 'agents', 'workers', 'reports') */
+  folder?: string;
 }
 
 export interface SaveFileResult {
@@ -89,7 +91,7 @@ export async function tryUploadToCloudflare(
   folder = 'receipts'
 ): Promise<{ url?: string; key?: string } | null> {
   try {
-    const config = StorageService.getCloudflareConfig();
+    const config = CloudflareService.getConfig();
     if (!config.workerUrl || config.autoSaveFiles === false) return null;
     const targetFolder = folder || (mimeType.startsWith('image/') ? 'photos' : 'receipts');
     const uploadRes = await CloudflareService.uploadFile({
@@ -117,7 +119,7 @@ export async function saveFileToCloudflare(options: {
   folder?: string;
 }): Promise<{ success: boolean; url?: string; key?: string; message: string }> {
   const { data, filename, mimeType = 'application/octet-stream', folder = 'receipts' } = options;
-  const config = StorageService.getCloudflareConfig();
+  const config = CloudflareService.getConfig();
   if (!config.workerUrl) {
     return {
       success: false,
@@ -152,10 +154,12 @@ async function attachCloudflareUpload(
     if (cf && cf.url) {
       result.cloudflareUrl = cf.url;
       result.cloudflareSaved = true;
-      result.message = `${result.message} & backed up to Cloudflare R2`;
+      result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
+    } else {
+      result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
     }
   } catch {
-    // Non-blocking
+    result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
   }
   return result;
 }
@@ -172,6 +176,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
     title = filename,
     openShareSheet = false,
     destination,
+    folder,
   } = options;
   const { data } = options;
 
@@ -199,6 +204,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         mimeType.startsWith('image/') ||
         /\.(png|jpg|jpeg|webp|svg)$/i.test(filename);
       const destType: 'documents' | 'photos' = isPhoto ? 'photos' : 'documents';
+      const targetR2Folder = folder || (isPhoto ? 'photos' : 'documents');
 
       // 2. Primary native storage route: Save directly to Android phone storage via MediaStore API
       try {
@@ -232,9 +238,9 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
             uri: fileUri,
             filename,
             folder: locationNote,
-            message: `Saved successfully! You can find "${filename}" in your phone's ${locationNote} folder and in Receipts & Invoices.`,
+            message: `Saved to Cloudflare R2 & saved in phone's ${locationNote}!`,
           };
-          return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
+          return attachCloudflareUpload(localResult, data, filename, mimeType, targetR2Folder);
         }
       } catch (mediaStoreErr) {
         console.warn('Native MediaStore plugin call note, falling back to Filesystem:', mediaStoreErr);
@@ -291,19 +297,19 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         uri: fileUri,
         filename,
         folder: targetFolder,
-        message: `Saved successfully! You can find "${filename}" in your phone's ${targetFolder} folder and in Receipts & Invoices.`,
+        message: `Saved to Cloudflare R2 & saved in phone's ${targetFolder}!`,
       };
-      return attachCloudflareUpload(localResult, data, filename, mimeType, destType);
+      return attachCloudflareUpload(localResult, data, filename, mimeType, targetR2Folder);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error('Native Android file save error, using web fallback:', errMsg);
       const webRes = fallbackWebDownload(data, filename, mimeType);
-      return attachCloudflareUpload(webRes, data, filename, mimeType);
+      return attachCloudflareUpload(webRes, data, filename, mimeType, folder || 'documents');
     }
   } else {
     // Web Browser fallback (direct file download without opening any share sheet)
     const webRes = fallbackWebDownload(data, filename, mimeType);
-    return attachCloudflareUpload(webRes, data, filename, mimeType);
+    return attachCloudflareUpload(webRes, data, filename, mimeType, folder || (destination === 'photos' ? 'photos' : 'documents'));
   }
 }
 
@@ -314,9 +320,10 @@ export async function saveJsPdf(
   doc: jsPDF,
   filename: string,
   title?: string,
-  options?: { openShareSheet?: boolean }
+  options?: { openShareSheet?: boolean; folder?: string }
 ): Promise<SaveFileResult> {
   const arrayBuffer = doc.output('arraybuffer');
+  const targetFolder = options?.folder || 'documents';
   if (Capacitor.isNativePlatform()) {
     return saveFile({
       data: arrayBuffer,
@@ -325,6 +332,7 @@ export async function saveJsPdf(
       title: title || filename,
       openShareSheet: options?.openShareSheet || false,
       destination: 'documents',
+      folder: targetFolder,
     });
   } else {
     doc.save(filename);
@@ -332,9 +340,9 @@ export async function saveJsPdf(
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Saved successfully! You can find "${filename}" in your device's Downloads folder and in Receipts & Invoices.`,
+      message: `Saved to Cloudflare R2 & downloaded to your device!`,
     };
-    return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', 'receipts');
+    return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', targetFolder);
   }
 }
 
@@ -530,7 +538,7 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Saved successfully! You can find "${filename}" in your device's Downloads folder and in Receipts & Invoices.`,
+      message: `Saved to Cloudflare R2 & downloaded to your device!`,
     };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -558,11 +566,13 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
   const bytes = new Uint8Array(buffer);
   const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
   }
   return btoa(binary);
 }

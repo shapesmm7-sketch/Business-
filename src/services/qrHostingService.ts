@@ -364,7 +364,7 @@ export class QRHostingService {
     const tabSuffix = targetTab && targetTab !== 'all' ? `_${targetTab}` : '';
     const safeTitle = (page.title || 'Table_Stand').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeTitle}${tabSuffix}_QR_Table_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'QR Table Stand');
+    return await saveJsPdf(doc, pdfFilename, 'QR Table Stand', { folder: 'qr_stands' });
   }
 
   /**
@@ -561,7 +561,7 @@ export class QRHostingService {
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeItemName}_Item_QR_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`);
+    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`, { folder: 'qr_stands' });
   }
 
   /**
@@ -678,6 +678,6 @@ export class QRHostingService {
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safePhotoName}_Photo_QR_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'Photo QR Stand');
+    return await saveJsPdf(doc, pdfFilename, 'Photo QR Stand', { folder: 'qr_stands' });
   }
 }

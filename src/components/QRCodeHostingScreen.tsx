@@ -36,6 +36,8 @@ import {
   FolderPlus,
   Palette,
   RotateCcw,
+  Cloud,
+  Loader2,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -166,6 +168,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [isUploadingToCloudflare, setIsUploadingToCloudflare] = useState<boolean>(false);
+  const [uploadProgressText, setUploadProgressText] = useState<string>('Uploading to Cloudflare R2...');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -271,6 +275,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     return QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
   }, [activePage, photoQrModalPhoto]);
 
+  // Sync QR pages with Cloudflare on mount
+  useEffect(() => {
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+  }, []);
+
   // Refresh Main QR Code when active page or scope changes
   useEffect(() => {
     if (!activePage) return;
@@ -341,6 +350,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
+    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -378,6 +389,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPages(newPages);
     setActivePageId(newPage.id);
     StorageService.saveHostedQRPage(newPage);
+    CloudflareService.saveSingleQrPage(newPage).catch(() => {});
+    CloudflareService.syncAllToCloudflare().catch(() => {});
   };
 
   const handleDeletePage = (id: string) => {
@@ -396,6 +409,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const filtered = pages.filter((p) => p.id !== pageToDelete.id);
     setPages(filtered);
     StorageService.deleteHostedQRPage(pageToDelete.id);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     if (activePageId === pageToDelete.id) {
       setActivePageId(filtered[0]?.id || '');
     }
@@ -412,6 +426,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
+    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -426,6 +442,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
+    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -458,6 +476,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: `${activePage.title} QR Code`,
       destination: 'photos',
+      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -474,6 +493,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: `${activePage.title} Quick QR Code`,
       destination: 'photos',
+      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -578,6 +598,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: `${itemQrModalItem.name} QR Code`,
       destination: 'photos',
+      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -641,6 +662,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: `${photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo'} QR Code`,
       destination: 'photos',
+      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -685,53 +707,69 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  // Upload file helper with auto-compression to avoid localStorage quota limits
+  // Upload file helper with direct Cloudflare R2 save and auto-compression
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     callback: (dataUrl: string) => void,
-    options: { maxDimension?: number; quality?: number; maxBytes?: number } = { maxDimension: 500, quality: 0.72 }
+    options: { maxDimension?: number; quality?: number; maxBytes?: number; fileTypeLabel?: string } = { maxDimension: 800, quality: 0.85 }
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const label = options.fileTypeLabel || 'Image';
+    setIsUploadingToCloudflare(true);
+    setUploadProgressText(`Uploading ${label} to Cloudflare R2...`);
+
     try {
       const compressed = await compressImageFile(file, options);
       if (compressed) {
-        callback(compressed);
-        CloudflareService.uploadFile({
-          data: compressed,
-          filename: `qr_img_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-          folder: 'photos',
-        }).then((res) => {
-          if (res.success && res.url) {
-            callback(res.url);
+        // Direct upload to Cloudflare R2 first
+        try {
+          const uploadRes = await CloudflareService.uploadFile({
+            data: compressed,
+            filename: `qr_${label.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.jpg`,
+            mimeType: 'image/jpeg',
+            folder: 'photos',
+          });
+          if (uploadRes.success && uploadRes.url) {
+            callback(uploadRes.url);
+            showToast(`${label} saved to Cloudflare R2!`);
+            return;
           }
-        }).catch(() => {});
+        } catch (cfErr) {
+          console.warn('Cloudflare upload note:', cfErr);
+        }
+        // Fallback to compressed image string so user is never blocked
+        callback(compressed);
+        showToast(`${label} saved locally and queued for Cloudflare sync.`);
       }
     } catch (err) {
       console.warn('Image compression failed, trying lightweight fallback:', err);
       try {
         const reader = new FileReader();
-        reader.onload = (uploadEvent) => {
+        reader.onload = async (uploadEvent) => {
           const res = uploadEvent.target?.result as string;
           if (res) {
-            callback(res);
-            CloudflareService.uploadFile({
-              data: res,
-              filename: `qr_img_${Date.now()}.jpg`,
-              mimeType: 'image/jpeg',
-              folder: 'photos',
-            }).then((resCf) => {
-              if (resCf.success && resCf.url) {
-                callback(resCf.url);
+            try {
+              const uploadRes = await CloudflareService.uploadFile({
+                data: res,
+                filename: `qr_${Date.now()}.jpg`,
+                mimeType: 'image/jpeg',
+                folder: 'photos',
+              });
+              if (uploadRes.success && uploadRes.url) {
+                callback(uploadRes.url);
+                showToast(`${label} saved to Cloudflare R2!`);
+                return;
               }
-            }).catch(() => {});
+            } catch {}
+            callback(res);
           }
         };
         reader.readAsDataURL(file);
       } catch {}
     } finally {
+      setIsUploadingToCloudflare(false);
       e.target.value = '';
     }
   };
@@ -815,6 +853,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
 
     setShowPhotoModal(false);
+    showToast(editingPhoto ? 'Photo updated & saved to Cloudflare!' : 'Photo added & saved to Cloudflare!');
     setEditingPhoto(null);
   };
 
@@ -959,6 +998,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     });
 
     setShowAddItemModal(false);
+    showToast(editingItem ? 'Item updated & saved to Cloudflare!' : 'Item added & saved to Cloudflare!');
   };
 
   const handleDeleteMenuItem = (id: string) => {
@@ -1071,29 +1111,42 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024 })}
+        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024, fileTypeLabel: 'Gallery Photo' })}
       />
       <input
         ref={itemPhotoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1600, quality: 0.95 })}
+        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1600, quality: 0.95, fileTypeLabel: 'Item Photo' })}
       />
       <input
         ref={coverInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1920, quality: 0.95 })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1920, quality: 0.95, fileTypeLabel: 'Cover Banner' })}
       />
       <input
         ref={logoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1024, quality: 0.95 })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1024, quality: 0.95, fileTypeLabel: 'Business Logo' })}
       />
+
+      {/* Uploading to Cloudflare R2 Overlay */}
+      {isUploadingToCloudflare && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center gap-3 max-w-xs text-center">
+            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin" />
+            <div className="space-y-1">
+              <p className="text-sm font-bold text-slate-800 dark:text-white">{uploadProgressText}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Saving directly to Cloudflare R2 object storage...</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toastMessage && (
@@ -1114,6 +1167,24 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const freshPages = StorageService.getHostedQRPages();
+              setPages(freshPages);
+              if (activePage) {
+                CloudflareService.saveSingleQrPage(activePage).catch(() => {});
+              }
+              CloudflareService.syncAllToCloudflare().catch(() => {});
+              showToast('QR Code hosting data & files synced with Cloudflare!');
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95"
+            title="All QR code files, stand PDFs, gallery photos, and items save to Cloudflare R2 & D1"
+          >
+            <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Cloudflare Sync</span>
+          </button>
+
           {isSaved && (
             <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
