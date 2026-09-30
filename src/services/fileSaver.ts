@@ -149,18 +149,19 @@ async function attachCloudflareUpload(
   mimeType: string,
   folder?: string
 ): Promise<SaveFileResult> {
-  try {
-    const cf = await tryUploadToCloudflare(data, filename, mimeType, folder);
-    if (cf && cf.url) {
-      result.cloudflareUrl = cf.url;
-      result.cloudflareSaved = true;
-      result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
-    } else {
-      result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
-    }
-  } catch {
-    result.message = `Saved to Cloudflare R2 & downloaded to your device!`;
-  }
+  // Fire Cloudflare R2 upload asynchronously in background without blocking local download/UI state
+  tryUploadToCloudflare(data, filename, mimeType, folder)
+    .then((cf) => {
+      if (cf && cf.url) {
+        result.cloudflareUrl = cf.url;
+        result.cloudflareSaved = true;
+      }
+    })
+    .catch((err) => {
+      console.warn('Background Cloudflare upload note:', err);
+    });
+
+  // Return local save result immediately so loading spinners reset instantly
   return result;
 }
 

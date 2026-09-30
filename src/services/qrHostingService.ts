@@ -143,7 +143,7 @@ export class QRHostingService {
   }
 
   /**
-   * Generates and downloads a printable Table Tent Stand / Wall Poster PDF (A4)
+   * Generates and downloads a printable Table & Wall QR Code Poster PDF (A4)
    */
   static async downloadPrintableTableStand(
     page: QRCodeHostedPage,
@@ -209,12 +209,13 @@ export class QRHostingService {
     } else if (targetTab === 'about') {
       subText = 'Scan to view our business location, contact details & operating hours';
     } else if (targetTab === 'photos') {
-      subText = 'Scan to view our photo gallery and showcase';
+      subText = 'Scan to view our photos and showcase';
     }
     doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
 
+    let currentY = 58;
+
     // Section Pill if specific page
-    let currentY = 60;
     if (tabLabel && targetTab && targetTab !== 'all') {
       doc.setFillColor(r, g, b);
       doc.roundedRect(pageWidth / 2 - 35, currentY, 70, 7.5, 2, 2, 'F');
@@ -222,22 +223,26 @@ export class QRHostingService {
       doc.setFontSize(8.5);
       doc.setTextColor(255, 255, 255);
       doc.text(tabLabel.toUpperCase(), pageWidth / 2, currentY + 5.2, { align: 'center' });
-      currentY += 13;
+      currentY += 12;
     }
 
-    // Table badge if provided
-    if (tableNumber) {
+    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    if (tableNumber && tableNumber.trim()) {
+      const badgeText = tableNumber.trim();
+      const textWidth = doc.getTextWidth(badgeText);
+      const boxWidth = Math.max(50, textWidth + 24);
+
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 9, 2, 2, 'F');
+      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 9, 2, 2, 'F');
       doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 9, 2, 2, 'S');
+      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 9, 2, 2, 'S');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(10.5);
       doc.setTextColor(51, 65, 85);
-      doc.text(`TABLE #${tableNumber}`, pageWidth / 2, currentY + 6.2, { align: 'center' });
-      currentY += 15;
+      doc.text(badgeText, pageWidth / 2, currentY + 6.2, { align: 'center' });
+      currentY += 14;
     } else {
-      currentY += 4;
+      currentY += 2;
     }
 
     // "Scan to View" Callout
@@ -253,7 +258,7 @@ export class QRHostingService {
       : 'SCAN WITH YOUR PHONE CAMERA';
     doc.text(scanCallout, pageWidth / 2, currentY, { align: 'center' });
 
-    currentY += 9;
+    currentY += 8;
 
     // QR Code generation for specific target URL with custom colors
     const customerUrl = this.getCustomerPageUrl(page.id, targetTab);
@@ -261,13 +266,13 @@ export class QRHostingService {
     const lightColor = page.qrLightColor || '#ffffff';
     const eyeColor = page.qrEyeColor || darkColor;
     const qrDataUrl = await this.generateQrCodeDataUrl(customerUrl, {
-      width: 600,
+      width: 800,
       margin: 1,
       color: { dark: darkColor, light: lightColor, eyeColor },
     });
 
-    // QR Code Frame
-    const qrSize = 80;
+    // Increased QR Code Frame to 120mm to fill A4 poster vertically and remove blank bottom space
+    const qrSize = 120;
     const qrX = (pageWidth - qrSize) / 2;
 
     // Box background and border color resolution
@@ -299,43 +304,43 @@ export class QRHostingService {
     doc.roundedRect(qrX - 5, currentY - 5, qrSize + 10, qrSize + 10, 4, 4, 'FD');
     doc.addImage(qrDataUrl, 'PNG', qrX, currentY, qrSize, qrSize);
 
-    currentY += qrSize + 12;
+    currentY += qrSize + 10;
 
     // Instruction pill
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth / 2 - 45, currentY, 90, 8, 2, 2, 'F');
+    doc.roundedRect(pageWidth / 2 - 48, currentY, 96, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text('POINT CAMERA AT CODE TO OPEN LINK', pageWidth / 2, currentY + 5.5, { align: 'center' });
 
-    currentY += 15;
+    currentY += 12;
 
     // WiFi info box if available
     if (page.wifiName || page.wifiPassword) {
       doc.setFillColor(240, 253, 244);
       doc.setDrawColor(187, 247, 208);
-      doc.roundedRect(30, currentY, pageWidth - 60, 17, 3, 3, 'FD');
+      doc.roundedRect(26, currentY, pageWidth - 52, 15, 3, 3, 'FD');
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
+      doc.setFontSize(9);
       doc.setTextColor(22, 101, 52);
-      doc.text('FREE GUEST WI-FI AVAILABLE', pageWidth / 2, currentY + 5.5, { align: 'center' });
+      doc.text('FREE GUEST WI-FI AVAILABLE', pageWidth / 2, currentY + 5, { align: 'center' });
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8.5);
+      doc.setFontSize(8);
       doc.setTextColor(51, 65, 85);
       const wifiText = `Network: ${page.wifiName || 'Guest WiFi'}   |   Password: ${page.wifiPassword || 'None'}`;
-      doc.text(wifiText, pageWidth / 2, currentY + 12, { align: 'center' });
+      doc.text(wifiText, pageWidth / 2, currentY + 11, { align: 'center' });
 
-      currentY += 23;
+      currentY += 18;
     } else {
-      currentY += 6;
+      currentY += 4;
     }
 
     // Contact and Ordering Info
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.setTextColor(100, 116, 139);
 
     const contactLineParts = [];
@@ -348,7 +353,7 @@ export class QRHostingService {
         align: 'center',
         maxWidth: pageWidth - 60,
       });
-      currentY += 5.5;
+      currentY += 5;
     }
 
     if (page.address) {
@@ -359,12 +364,12 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 22, { align: 'center' });
+    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const tabSuffix = targetTab && targetTab !== 'all' ? `_${targetTab}` : '';
-    const safeTitle = (page.title || 'Table_Stand').replace(/[^a-zA-Z0-9]/g, '_');
-    const pdfFilename = `${safeTitle}${tabSuffix}_QR_Table_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'QR Table Stand', { folder: 'qr_stands' });
+    const safeTitle = (page.title || 'QR_Poster').replace(/[^a-zA-Z0-9]/g, '_');
+    const pdfFilename = `${safeTitle}${tabSuffix}_QR_Poster.pdf`;
+    return await saveJsPdf(doc, pdfFilename, 'QR Code Poster', { folder: 'qr_stands' });
   }
 
   /**
@@ -400,7 +405,7 @@ export class QRHostingService {
   }
 
   /**
-   * Generates and downloads a printable Item Table Card / Promo Poster PDF (A4)
+   * Generates and downloads a printable Item Promo Poster PDF (A4)
    */
   static async downloadPrintableItemStand(
     page: QRCodeHostedPage,
@@ -432,38 +437,38 @@ export class QRHostingService {
 
     // Header Background Banner
     doc.setFillColor(r, g, b);
-    doc.roundedRect(15, 15, pageWidth - 30, 36, 4, 4, 'F');
+    doc.roundedRect(18, 18, pageWidth - 36, 28, 3, 3, 'F');
 
     // Business Title & Subtitle
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(20);
+    doc.setFontSize(18);
     doc.setTextColor(255, 255, 255);
-    doc.text(page.title || 'Special Featured Item', pageWidth / 2, 28, { align: 'center' });
+    doc.text(page.title || 'Special Featured Item', pageWidth / 2, 32, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(240, 253, 244);
-    doc.text('Scan below to view item details, pricing & place your order', pageWidth / 2, 38, { align: 'center' });
+    doc.text('Scan below to view item details, pricing & place your order', pageWidth / 2, 41, { align: 'center' });
 
-    let currentY = 58;
+    let currentY = 52;
 
     // Item Category Pill
     if (item.category) {
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 7.5, 2, 2, 'F');
+      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 7, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(71, 85, 105);
-      doc.text(item.category.toUpperCase(), pageWidth / 2, currentY + 5.2, { align: 'center' });
-      currentY += 13;
+      doc.text(item.category.toUpperCase(), pageWidth / 2, currentY + 4.8, { align: 'center' });
+      currentY += 10;
     }
 
     // Item Name
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setTextColor(15, 23, 42);
     doc.text(item.name, pageWidth / 2, currentY, { align: 'center', maxWidth: pageWidth - 50 });
-    currentY += 8;
+    currentY += 7;
 
     // Price / Promo Tag
     const currency = page.currency || '$';
@@ -471,78 +476,82 @@ export class QRHostingService {
     
     if (hasActivePromo) {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(220, 38, 38); // Red
+      doc.setFontSize(15);
+      doc.setTextColor(220, 38, 38);
       doc.text(`${currency}${item.promoPrice?.toFixed(2)}`, pageWidth / 2 - 12, currentY, { align: 'center' });
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setTextColor(148, 163, 184);
       doc.text(`${currency}${item.price.toFixed(2)}`, pageWidth / 2 + 16, currentY, { align: 'center' });
 
       const promoBadge = item.promoDescription || 'PROMO';
       doc.setFillColor(254, 226, 226);
-      doc.roundedRect(pageWidth / 2 + 28, currentY - 5, 26, 6.5, 1.5, 1.5, 'F');
+      doc.roundedRect(pageWidth / 2 + 28, currentY - 5, 26, 6, 1.5, 1.5, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(185, 28, 28);
       doc.text(promoBadge.slice(0, 10).toUpperCase(), pageWidth / 2 + 41, currentY - 0.7, { align: 'center' });
     } else {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
+      doc.setFontSize(15);
       doc.setTextColor(5, 150, 105);
       doc.text(`${currency}${item.price.toFixed(2)}`, pageWidth / 2, currentY, { align: 'center' });
     }
-    currentY += 8;
+    currentY += 7;
 
-    // Description
-    if (item.description) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(item.description, pageWidth / 2, currentY, { align: 'center', maxWidth: pageWidth - 60 });
-      currentY += 10;
-    }
+    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    if (tableNumber && tableNumber.trim()) {
+      const badgeText = tableNumber.trim();
+      const textWidth = doc.getTextWidth(badgeText);
+      const boxWidth = Math.max(45, textWidth + 20);
 
-    // Table badge if provided
-    if (tableNumber) {
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 8.5, 2, 2, 'F');
+      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 8.5, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(51, 65, 85);
-      doc.text(`TABLE #${tableNumber}`, pageWidth / 2, currentY + 5.8, { align: 'center' });
-      currentY += 13;
+      doc.text(badgeText, pageWidth / 2, currentY + 5.8, { align: 'center' });
+      currentY += 12;
     } else {
-      currentY += 4;
+      currentY += 2;
     }
+
+    // Callout box
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text('SCAN TO ORDER / VIEW ITEM', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 8;
 
     // QR Code generation for this item
     const itemUrl = this.getCustomerItemUrl(page.id, item.id);
     const qrDataUrl = await this.generateQrCodeDataUrl(itemUrl, {
-      width: 600,
+      width: 800,
       margin: 1,
       color: { dark: '#0f172a', light: '#ffffff' },
     });
 
-    const qrSize = 75;
+    // Enlarge QR size to 120mm to match full poster
+    const qrSize = 120;
     const qrX = (pageWidth - qrSize) / 2;
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(qrX - 4, currentY - 4, qrSize + 8, qrSize + 8, 4, 4, 'FD');
+    doc.roundedRect(qrX - 5, currentY - 5, qrSize + 10, qrSize + 10, 4, 4, 'FD');
     doc.addImage(qrDataUrl, 'PNG', qrX, currentY, qrSize, qrSize);
 
     currentY += qrSize + 10;
 
-    // Scan Callout Box
-    doc.setFillColor(r, g, b);
+    // Instruction pill
+    doc.setFillColor(248, 250, 252);
     doc.roundedRect(pageWidth / 2 - 45, currentY, 90, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(255, 255, 255);
-    doc.text('SCAN TO ORDER / VIEW ITEM', pageWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.setTextColor(71, 85, 105);
+    doc.text('POINT CAMERA AT CODE TO OPEN ITEM', pageWidth / 2, currentY + 5.5, { align: 'center' });
 
-    currentY += 14;
+    currentY += 12;
 
     // Wi-Fi or Contact note
     if (page.wifiName || page.phone) {
@@ -560,12 +569,12 @@ export class QRHostingService {
     doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
-    const pdfFilename = `${safeItemName}_Item_QR_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Stand`, { folder: 'qr_stands' });
+    const pdfFilename = `${safeItemName}_Item_QR_Poster.pdf`;
+    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Poster`, { folder: 'qr_stands' });
   }
 
   /**
-   * Generates and downloads a printable Photo Spotlight Stand PDF (A4)
+   * Generates and downloads a printable Photo Spotlight Poster PDF (A4)
    */
   static async downloadPrintablePhotoStand(
     page: QRCodeHostedPage,
@@ -597,30 +606,30 @@ export class QRHostingService {
 
     // Header Background Banner
     doc.setFillColor(r, g, b);
-    doc.roundedRect(15, 15, pageWidth - 30, 36, 4, 4, 'F');
+    doc.roundedRect(18, 18, pageWidth - 36, 28, 3, 3, 'F');
 
     // Business Title & Subtitle
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(20);
+    doc.setFontSize(18);
     doc.setTextColor(255, 255, 255);
-    doc.text(page.title || 'Photo Spotlight', pageWidth / 2, 28, { align: 'center' });
+    doc.text(page.title || 'Photo Spotlight', pageWidth / 2, 32, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(240, 253, 244);
-    doc.text('Scan below to explore our photo gallery and showcase', pageWidth / 2, 38, { align: 'center' });
+    doc.text('Scan below to explore our photos and showcase', pageWidth / 2, 41, { align: 'center' });
 
-    let currentY = 60;
+    let currentY = 52;
 
-    // Photo Caption / Category
+    // Photo Category Pill
     if (photo.category) {
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 7.5, 2, 2, 'F');
+      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 7, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(71, 85, 105);
-      doc.text(photo.category.toUpperCase(), pageWidth / 2, currentY + 5.2, { align: 'center' });
-      currentY += 12;
+      doc.text(photo.category.toUpperCase(), pageWidth / 2, currentY + 4.8, { align: 'center' });
+      currentY += 10;
     }
 
     const photoHeadline = photo.title || photo.description;
@@ -632,43 +641,67 @@ export class QRHostingService {
       currentY += 8;
     }
 
-    // Table badge if provided
-    if (tableNumber) {
+    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    if (tableNumber && tableNumber.trim()) {
+      const badgeText = tableNumber.trim();
+      const textWidth = doc.getTextWidth(badgeText);
+      const boxWidth = Math.max(45, textWidth + 20);
+
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - 25, currentY, 50, 8.5, 2, 2, 'F');
+      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 8.5, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(51, 65, 85);
-      doc.text(`TABLE #${tableNumber}`, pageWidth / 2, currentY + 5.8, { align: 'center' });
-      currentY += 13;
+      doc.text(badgeText, pageWidth / 2, currentY + 5.8, { align: 'center' });
+      currentY += 12;
     } else {
-      currentY += 4;
+      currentY += 2;
     }
+
+    // Callout box
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text('SCAN TO OPEN PHOTOS', pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 8;
 
     // QR Code generation for this photo
     const photoUrl = this.getCustomerPhotoUrl(page.id, photo.id);
     const qrDataUrl = await this.generateQrCodeDataUrl(photoUrl, {
-      width: 600,
+      width: 800,
       margin: 1,
       color: { dark: '#0f172a', light: '#ffffff' },
     });
 
-    const qrSize = 75;
+    // Enlarge QR size to 120mm to match full poster
+    const qrSize = 120;
     const qrX = (pageWidth - qrSize) / 2;
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(qrX - 4, currentY - 4, qrSize + 8, qrSize + 8, 4, 4, 'FD');
+    doc.roundedRect(qrX - 5, currentY - 5, qrSize + 10, qrSize + 10, 4, 4, 'FD');
     doc.addImage(qrDataUrl, 'PNG', qrX, currentY, qrSize, qrSize);
 
     currentY += qrSize + 10;
 
-    // Scan Callout Box
-    doc.setFillColor(r, g, b);
+    // Instruction pill
+    doc.setFillColor(248, 250, 252);
     doc.roundedRect(pageWidth / 2 - 45, currentY, 90, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(255, 255, 255);
-    doc.text('SCAN TO OPEN PHOTO GALLERY', pageWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.setTextColor(71, 85, 105);
+    doc.text('POINT CAMERA AT CODE TO OPEN PHOTO', pageWidth / 2, currentY + 5.5, { align: 'center' });
+
+    currentY += 12;
+
+    // Wi-Fi or Contact note
+    if (page.wifiName || page.phone) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      const note = page.wifiName ? `Free Wi-Fi: ${page.wifiName} | Pass: ${page.wifiPassword || 'None'}` : `Call: ${page.phone}`;
+      doc.text(note, pageWidth / 2, currentY, { align: 'center', maxWidth: pageWidth - 60 });
+    }
 
     // Footer branding
     doc.setFont('helvetica', 'italic');
@@ -677,7 +710,7 @@ export class QRHostingService {
     doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
-    const pdfFilename = `${safePhotoName}_Photo_QR_Stand.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'Photo QR Stand', { folder: 'qr_stands' });
+    const pdfFilename = `${safePhotoName}_Photo_QR_Poster.pdf`;
+    return await saveJsPdf(doc, pdfFilename, 'Photo QR Poster', { folder: 'qr_stands' });
   }
 }

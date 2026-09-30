@@ -100,7 +100,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
   },
   {
     id: 'photos',
-    label: 'Photo Gallery',
+    label: 'Photos',
     badge: 'Photos Only',
     desc: 'Customer opens directly to the business photo showcase and photo gallery.',
     icon: Camera,
@@ -1446,7 +1446,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                  Print Table Tent / Wall Poster (PDF)
+                  Print Table & Wall QR Code Poster (PDF)
                 </h3>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
                   Download a high-resolution A4 poster with your business name & QR code.
@@ -1457,11 +1457,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  Table / Stand Number (Optional)
+                  QR Code Name
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 5, Bar 1, VIP Room"
+                  placeholder="e.g. Table 5, Bar 1, VIP Room"
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -1475,7 +1475,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table Stand (PDF)'}</span>
+                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
                 </button>
               </div>
             </div>
@@ -2085,7 +2085,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photo Gallery</h2>
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photos</h2>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                   {activePage.photos.length}/20 Max
                 </span>
@@ -2951,7 +2951,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Printable Table Stand Settings */}
               <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
                 <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  Table / Stand / Room # (Optional)
+                  QR Code Name
                 </label>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <input
@@ -3132,7 +3132,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Printable Table Stand / Tent Card Settings */}
               <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
                 <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  Table / Counter / Stand # (Optional)
+                  QR Code Name
                 </label>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <input
@@ -3293,7 +3293,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Printable Table Stand / Poster Settings */}
               <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
                 <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  Table / Room / Location # (Optional)
+                  QR Code Name
                 </label>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <input
