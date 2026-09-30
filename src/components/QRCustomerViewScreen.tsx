@@ -31,14 +31,12 @@ import {
   Mail,
   Copy,
   Globe,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
 import { QRHostingService } from '../services/qrHostingService';
 import { PhoneInputField } from './PhoneInputField';
+import { TouchZoomLightbox, LightboxImageItem } from './TouchZoomLightbox';
 
 interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
@@ -247,118 +245,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     }
   }, [activeTab]);
 
-  // Fullscreen Lightbox Zoom & Pan State
-  const [zoomScale, setZoomScale] = useState<number>(1);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDraggingImage, setIsDraggingImage] = useState<boolean>(false);
-  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [touchPinchDistStart, setTouchPinchDistStart] = useState<number | null>(null);
-  const [touchPinchScaleStart, setTouchPinchScaleStart] = useState<number>(1);
-  const [lastTapTime, setLastTapTime] = useState<number>(0);
-
-  // Reset zoom whenever the active lightbox image changes
-  useEffect(() => {
-    setZoomScale(1);
-    setPanOffset({ x: 0, y: 0 });
-    setIsDraggingImage(false);
-  }, [lightboxImage?.url, selectedPhoto?.url]);
-
-  // Touch handlers for 2-finger pinch gesture, double-tap, and single-finger panning
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2) {
-      const t1 = e.touches[0];
-      const t2 = e.touches[1];
-      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-      setTouchPinchDistStart(dist);
-      setTouchPinchScaleStart(zoomScale);
-    } else if (e.touches.length === 1) {
-      const now = Date.now();
-      if (now - lastTapTime < 300) {
-        if (zoomScale > 1.2) {
-          setZoomScale(1);
-          setPanOffset({ x: 0, y: 0 });
-        } else {
-          setZoomScale(2.5);
-          setPanOffset({ x: 0, y: 0 });
-        }
-      }
-      setLastTapTime(now);
-
-      if (zoomScale > 1) {
-        setIsDraggingImage(true);
-        setDragStartPos({
-          x: e.touches[0].clientX - panOffset.x,
-          y: e.touches[0].clientY - panOffset.y,
-        });
-      }
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2 && touchPinchDistStart !== null) {
-      const t1 = e.touches[0];
-      const t2 = e.touches[1];
-      const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-      if (touchPinchDistStart > 0) {
-        const factor = currentDist / touchPinchDistStart;
-        const newScale = Math.min(Math.max(1, touchPinchScaleStart * factor), 4);
-        setZoomScale(newScale);
-        if (newScale === 1) {
-          setPanOffset({ x: 0, y: 0 });
-        }
-      }
-    } else if (e.touches.length === 1 && isDraggingImage && zoomScale > 1) {
-      const newX = e.touches[0].clientX - dragStartPos.x;
-      const newY = e.touches[0].clientY - dragStartPos.y;
-      setPanOffset({ x: newX, y: newY });
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length < 2) {
-      setTouchPinchDistStart(null);
-    }
-    if (e.touches.length === 0) {
-      setIsDraggingImage(false);
-      if (zoomScale <= 1.05) {
-        setZoomScale(1);
-        setPanOffset({ x: 0, y: 0 });
-      }
-    }
-  };
-
-  const handleWheelZoom = (e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const delta = -e.deltaY * 0.003;
-    const newScale = Math.min(Math.max(1, zoomScale + delta), 4);
-    setZoomScale(newScale);
-    if (newScale === 1) {
-      setPanOffset({ x: 0, y: 0 });
-    }
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (zoomScale > 1) {
-      setIsDraggingImage(true);
-      setDragStartPos({
-        x: e.clientX - panOffset.x,
-        y: e.clientY - panOffset.y,
-      });
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isDraggingImage && zoomScale > 1) {
-      setPanOffset({
-        x: e.clientX - dragStartPos.x,
-        y: e.clientY - dragStartPos.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDraggingImage(false);
-  };
   const [favorites, setFavorites] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(`quickreceipt_favorites_${page.id}`);
@@ -832,13 +718,31 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                       {/* Product Image Container */}
                       <div className="relative aspect-[3/4] sm:aspect-square bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
                         {item.photoUrl ? (
-                          <img
-                            src={item.photoUrl}
-                            alt={item.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            referrerPolicy="no-referrer"
-                            title="Click to view details and photo"
-                          />
+                          <>
+                            <img
+                              src={item.photoUrl}
+                              alt={item.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                              title="Click to view details and photo"
+                            />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLightboxImage({
+                                  url: item.photoUrl!,
+                                  title: item.name,
+                                  description: item.description,
+                                  category: item.category,
+                                });
+                              }}
+                              className="absolute bottom-2 right-2 z-10 p-1.5 rounded-lg bg-black/60 hover:bg-black/85 text-white flex items-center justify-center backdrop-blur-xs border border-white/20 shadow-md transition active:scale-90"
+                              title="Pinch to zoom picture"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                            </button>
+                          </>
                         ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 p-4">
                             <Utensils className="w-8 h-8 opacity-40 mb-1" />
@@ -969,7 +873,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         {activeTab === 'photos' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photos</h2>
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Photos</h2>
               <span className="text-xs text-slate-400">{page.photos.length} Photos</span>
             </div>
 
@@ -995,11 +899,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                       });
                     }}
                     className="group relative aspect-4/3 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 cursor-pointer shadow-xs border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 transition"
-                    title="Click to view in full screen"
+                    title="Click to view with 2-finger pinch zoom"
                   >
                     <img
                       src={photo.url}
-                      alt={photo.title || 'Business photo'}
+                      alt={photo.title || 'Photo'}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       referrerPolicy="no-referrer"
                     />
@@ -1029,7 +933,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     </div>
                     {(photo.title || photo.category) && (
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent p-2 text-white">
-                        <p className="text-xs font-semibold truncate drop-shadow-xs">{photo.title || 'Business Photo'}</p>
+                        <p className="text-xs font-semibold truncate drop-shadow-xs">{photo.title || 'Photo'}</p>
                         {photo.category && <p className="text-[10px] text-emerald-300 font-medium">{photo.category}</p>}
                       </div>
                     )}
@@ -1458,20 +1362,21 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               {/* Photo Display */}
               {selectedItemModal.photoUrl ? (
                 <div
-                  className="w-full bg-slate-950 flex items-center justify-center p-3 sm:p-4 cursor-zoom-in group relative"
+                  className="w-full bg-slate-950 flex flex-col items-center justify-center p-3 sm:p-4 cursor-zoom-in group relative"
                   onClick={() => {
                     setLightboxImage({
                       url: selectedItemModal.photoUrl!,
                       title: selectedItemModal.name,
                       description: selectedItemModal.description,
+                      category: selectedItemModal.category,
                     });
                   }}
-                  title="Click to view full screen"
+                  title="Click to view full picture with 2-finger pinch zoom"
                 >
                   <img
                     src={selectedItemModal.photoUrl}
                     alt={selectedItemModal.name}
-                    className="w-full h-auto rounded-2xl shadow-xl border border-white/10 group-hover:scale-[1.01] transition-transform duration-300"
+                    className="w-full h-auto max-h-[50vh] object-contain rounded-2xl shadow-xl border border-white/10 group-hover:scale-[1.01] transition-transform duration-300"
                     referrerPolicy="no-referrer"
                   />
                   {/* Top Badges Overlay inside Modal Photo */}
@@ -1497,12 +1402,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         <span>Special</span>
                       </span>
                     )}
-                  </div>
-                  <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-2xl m-3 sm:m-4">
-                    <span className="px-3 py-1.5 rounded-full bg-black/75 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5" />
-                      View Full Screen
-                    </span>
                   </div>
                 </div>
               ) : null}
@@ -1675,7 +1574,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         </div>
       )}
 
-      {/* MODAL: FULL-RESOLUTION ORIGINAL IMAGE LIGHTBOX (FOR ITEMS & PHOTOS) */}
+      {/* MODAL: FULL-RESOLUTION ORIGINAL IMAGE LIGHTBOX (FOR ITEMS & PHOTOS WITH 2-FINGER PINCH ZOOM) */}
       {(lightboxImage || selectedPhoto) && (() => {
         const activeImg = lightboxImage || (selectedPhoto ? {
           url: selectedPhoto.url,
@@ -1687,208 +1586,59 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
         if (!activeImg) return null;
 
+        const currentIdx = activeImg.photoIndex;
+        const total = page.photos.length;
+
         return (
-          <div
-            className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-fade-in select-none overflow-hidden"
-            onClick={() => {
+          <TouchZoomLightbox
+            image={{
+              ...activeImg,
+              photoIndex: currentIdx,
+              totalPhotos: total,
+            }}
+            onClose={() => {
               setLightboxImage(null);
               setSelectedPhoto(null);
             }}
-          >
-            {/* Top Control Bar */}
-            <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-6 sm:right-6 z-[95] flex items-center justify-between pointer-events-none">
-              {activeImg.photoIndex !== undefined && page.photos.length > 1 ? (
-                <span className="pointer-events-auto px-3 py-1.5 rounded-full bg-black/60 border border-white/20 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
-                  <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{activeImg.photoIndex + 1} of {page.photos.length}</span>
-                </span>
-              ) : (
-                <span className="pointer-events-auto px-3 py-1.5 rounded-full bg-black/60 border border-white/20 text-white text-xs font-semibold backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
-                  <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Zoom & View</span>
-                </span>
-              )}
-
-              {/* Zoom Control Buttons Bar */}
-              <div
-                className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/20 text-white shadow-2xl backdrop-blur-md"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomScale((prev) => {
-                      const next = Math.max(1, prev - 0.5);
-                      if (next === 1) setPanOffset({ x: 0, y: 0 });
-                      return next;
+            onNext={
+              currentIdx !== undefined && total > 1
+                ? () => {
+                    const nextIdx = (currentIdx + 1) % total;
+                    const p = page.photos[nextIdx];
+                    setLightboxImage({
+                      url: p.url,
+                      title: p.title || page.title,
+                      description: p.description,
+                      category: p.category,
+                      badge: p.badge,
+                      photoIndex: nextIdx,
                     });
-                  }}
-                  disabled={zoomScale <= 1}
-                  className="p-1.5 rounded-full hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-transparent text-white transition active:scale-90"
-                  title="Zoom Out (-)"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-
-                <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-white/10 text-emerald-300 min-w-[42px] text-center">
-                  {Math.round(zoomScale * 100)}%
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoomScale((prev) => Math.min(4, prev + 0.5));
-                  }}
-                  disabled={zoomScale >= 4}
-                  className="p-1.5 rounded-full hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-transparent text-white transition active:scale-90"
-                  title="Zoom In (+)"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-
-                {zoomScale > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZoomScale(1);
-                      setPanOffset({ x: 0, y: 0 });
-                    }}
-                    className="p-1 rounded-full hover:bg-white/20 text-slate-300 transition active:scale-90 ml-1 border-l border-white/20 pl-1.5"
-                    title="Reset Zoom"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <div className="pointer-events-auto flex items-center gap-2">
-                {activeImg.photoIndex !== undefined && page.photos[activeImg.photoIndex] && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSharePhoto(page.photos[activeImg.photoIndex!]);
-                    }}
-                    className="px-3 py-2 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center gap-1.5 border border-white/20 transition shadow-xl text-xs font-semibold active:scale-95"
-                    title="Share or copy link to this photo"
-                  >
-                    <Share2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{photoCopiedLink ? 'Copied!' : 'Share'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLightboxImage(null);
-                    setSelectedPhoto(null);
-                  }}
-                  className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-xl active:scale-90"
-                  title="Close (Esc)"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Previous Arrow for Navigation */}
-            {activeImg.photoIndex !== undefined && page.photos.length > 1 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const prevIdx = (activeImg.photoIndex! - 1 + page.photos.length) % page.photos.length;
-                  const p = page.photos[prevIdx];
-                  setLightboxImage({
-                    url: p.url,
-                    title: p.title || page.title,
-                    description: p.description,
-                    category: p.category,
-                    badge: p.badge,
-                    photoIndex: prevIdx,
-                  });
-                }}
-                className="fixed left-2 sm:left-6 top-1/2 -translate-y-1/2 z-[95] w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-2xl active:scale-90"
-                title="Previous photo (←)"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
-            {/* Next Arrow for Navigation */}
-            {activeImg.photoIndex !== undefined && page.photos.length > 1 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const nextIdx = (activeImg.photoIndex! + 1) % page.photos.length;
-                  const p = page.photos[nextIdx];
-                  setLightboxImage({
-                    url: p.url,
-                    title: p.title || page.title,
-                    description: p.description,
-                    category: p.category,
-                    badge: p.badge,
-                    photoIndex: nextIdx,
-                  });
-                }}
-                className="fixed right-2 sm:right-6 top-1/2 -translate-y-1/2 z-[95] w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition shadow-2xl active:scale-90"
-                title="Next photo (→)"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-
-            {/* Image & Captions */}
-            <div className="max-w-5xl w-full text-center relative flex flex-col items-center justify-center my-auto px-2" onClick={(e) => e.stopPropagation()}>
-              <div
-                className="w-full max-h-[75vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/10 shadow-2xl touch-none select-none relative cursor-grab active:cursor-grabbing"
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onWheel={handleWheelZoom}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              >
-                <img
-                  src={activeImg.url}
-                  alt={activeImg.title}
-                  className="max-h-[75vh] w-auto max-w-full object-contain pointer-events-auto select-none"
-                  style={{
-                    transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
-                    transition: isDraggingImage ? 'none' : 'transform 0.15s ease-out',
-                  }}
-                  referrerPolicy="no-referrer"
-                  draggable={false}
-                />
-              </div>
-
-              {/* Pinch & Zoom Hint */}
-              <div className="mt-2 flex items-center justify-center gap-2">
-                <span className="text-[11px] font-medium text-slate-400 bg-black/50 px-3 py-0.5 rounded-full border border-white/10">
-                  {zoomScale > 1
-                    ? 'Drag image to pan • Tap reset or - to zoom out'
-                    : 'Pinch with 2 fingers, double tap, or use +/- buttons to zoom'}
-                </span>
-              </div>
-
-              <div className="mt-2 sm:mt-3 px-4 text-center max-w-xl mx-auto">
-                {activeImg.badge && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40 mb-1.5">
-                    <Tag className="w-3 h-3" />
-                    <span>{activeImg.badge}</span>
-                  </span>
-                )}
-                <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md">{activeImg.title}</h4>
-                {activeImg.category && (
-                  <p className="text-emerald-400 text-xs font-semibold mt-0.5">{activeImg.category}</p>
-                )}
-                {activeImg.description && (
-                  <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed">{activeImg.description}</p>
-                )}
-              </div>
-            </div>
-          </div>
+                  }
+                : undefined
+            }
+            onPrev={
+              currentIdx !== undefined && total > 1
+                ? () => {
+                    const prevIdx = (currentIdx - 1 + total) % total;
+                    const p = page.photos[prevIdx];
+                    setLightboxImage({
+                      url: p.url,
+                      title: p.title || page.title,
+                      description: p.description,
+                      category: p.category,
+                      badge: p.badge,
+                      photoIndex: prevIdx,
+                    });
+                  }
+                : undefined
+            }
+            onShare={
+              currentIdx !== undefined && page.photos[currentIdx]
+                ? () => handleSharePhoto(page.photos[currentIdx])
+                : undefined
+            }
+            isCopied={photoCopiedLink}
+          />
         );
       })()}
 

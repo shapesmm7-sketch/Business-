@@ -780,7 +780,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handlePhotoUploadClick = () => {
     if (activePage && activePage.photos.length >= MAX_PHOTOS) {
-      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed per gallery. Please delete a photo to upload a new one.`);
+      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed. Please delete a photo to upload a new one.`);
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
@@ -818,7 +818,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage || !photoUrl.trim()) return;
 
     if (!editingPhoto && activePage.photos.length >= MAX_PHOTOS) {
-      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed per gallery. Please remove a photo.`);
+      setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed. Please remove a photo.`);
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
@@ -1113,7 +1113,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024, fileTypeLabel: 'Gallery Photo' })}
+        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024, fileTypeLabel: 'Photo' })}
       />
       <input
         ref={itemPhotoInputRef}
@@ -1186,7 +1186,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               showToast('QR Code hosting data & files synced with Cloud Storage!');
             }}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95"
-            title="All QR code files, stand PDFs, gallery photos, and items save to Cloud Storage"
+            title="All QR code files, stand PDFs, photos, and items save to Cloud Storage"
           >
             <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Cloud Sync</span>
@@ -3305,7 +3305,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
 
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
-                  Scanning opens your gallery directly zoomed into this spotlight photo.
+                  Scanning opens your photos directly zoomed into this spotlight photo.
                 </p>
               </div>
 
