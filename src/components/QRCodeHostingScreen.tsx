@@ -1460,34 +1460,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </div>
 
-            {/* Poster Destination Selector */}
-            <div>
-              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase block mb-1.5">
-                Poster Destination
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {SCOPE_OPTIONS.map((scope) => {
-                  const Icon = scope.icon;
-                  const isSelected = qrScope === scope.id;
-                  return (
-                    <button
-                      key={scope.id}
-                      type="button"
-                      onClick={() => setQrScope(scope.id)}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{scope.badge}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
