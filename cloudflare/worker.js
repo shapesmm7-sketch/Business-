@@ -331,7 +331,7 @@ function renderCustomerPageHtml(page, options = {}) {
         </button>
         <button id="tab-btn-photos" onclick="switchTab('photos')" class="flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <span>Gallery & Photos (${photos.length})</span>
+          <span>Photos (${photos.length})</span>
         </button>
         <button id="tab-btn-about" onclick="switchTab('about')" class="flex-1 py-3.5 text-center font-bold text-xs sm:text-sm border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -383,7 +383,7 @@ function renderCustomerPageHtml(page, options = {}) {
       </div>
     </section>
 
-    <!-- TAB 2: PHOTOS GALLERY -->
+    <!-- TAB 2: PHOTOS -->
     <section id="tab-content-photos" class="hidden space-y-4">
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="photos-grid">
         ${photos.map(
@@ -399,7 +399,7 @@ function renderCustomerPageHtml(page, options = {}) {
   ).join("")}
       </div>
       ${photos.length === 0 ? `<div class="text-center py-12 bg-white rounded-3xl border border-slate-200 p-6">
-              <p class="text-sm font-bold text-slate-700">No photos in gallery yet</p>
+              <p class="text-sm font-bold text-slate-700">No photos uploaded yet</p>
             </div>` : ""}
     </section>
 
@@ -589,12 +589,14 @@ function renderCustomerPageHtml(page, options = {}) {
     </div>
   </div>
 
-  <!-- LIGHTBOX MODAL -->
-  <div id="lightbox-modal" class="hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-md" onclick="closeLightbox()">
-    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white text-xl flex items-center justify-center hover:bg-white/30">&times;</button>
-    <div class="max-w-xl w-full text-center" onclick="event.stopPropagation()">
-      <img id="lightbox-img" src="" alt="Fullscreen view" class="w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl mx-auto" />
-      <p id="lightbox-caption" class="text-white text-sm font-semibold mt-3"></p>
+  <!-- LIGHTBOX MODAL (WITH 2-FINGER PINCH ZOOM & PAN) -->
+  <div id="lightbox-modal" class="hidden fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-2 sm:p-4 select-none overflow-hidden touch-none" onclick="closeLightbox()">
+    <button onclick="closeLightbox()" class="fixed top-4 right-4 z-[110] w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white text-xl flex items-center justify-center backdrop-blur-md shadow-xl">&times;</button>
+    <div class="max-w-5xl w-full text-center relative flex flex-col items-center justify-center my-auto px-2" onclick="event.stopPropagation()">
+      <div id="lightbox-container" class="w-full max-h-[75vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/10 shadow-2xl touch-none select-none relative cursor-grab">
+        <img id="lightbox-img" src="" alt="Fullscreen view" class="max-h-[75vh] w-auto max-w-full object-contain select-none" draggable="false" />
+      </div>
+      <p id="lightbox-caption" class="text-white text-sm font-semibold mt-3 max-w-xl mx-auto"></p>
     </div>
   </div>
 
@@ -803,14 +805,123 @@ function renderCustomerPageHtml(page, options = {}) {
       window.open(waUrl, '_blank');
     }
 
+    let lbScale = 1;
+    let lbPan = { x: 0, y: 0 };
+    let lbPinchDistStart = null;
+    let lbPinchScaleStart = 1;
+    let lbPanStart = { x: 0, y: 0 };
+    let lbIsDragging = false;
+    let lbLastTap = 0;
+
+    function updateLightboxTransform() {
+      const img = document.getElementById('lightbox-img');
+      if (img) {
+        img.style.transform = 'translate(' + lbPan.x + 'px, ' + lbPan.y + 'px) scale(' + lbScale + ')';
+        img.style.transformOrigin = 'center center';
+        img.style.transition = lbIsDragging ? 'none' : 'transform 0.12s ease-out';
+      }
+    }
+
     function openLightbox(url, caption) {
-      document.getElementById('lightbox-img').src = url;
-      document.getElementById('lightbox-caption').textContent = caption;
+      lbScale = 1;
+      lbPan = { x: 0, y: 0 };
+      lbIsDragging = false;
+      const img = document.getElementById('lightbox-img');
+      img.src = url;
+      updateLightboxTransform();
+      document.getElementById('lightbox-caption').textContent = caption || '';
       document.getElementById('lightbox-modal').classList.remove('hidden');
     }
 
     function closeLightbox() {
       document.getElementById('lightbox-modal').classList.add('hidden');
+      lbScale = 1;
+      lbPan = { x: 0, y: 0 };
+      updateLightboxTransform();
+    }
+
+    // Touch handlers for 2-finger pinch zoom & single finger pan on mobile
+    function setupLightboxTouch() {
+      const el = document.getElementById('lightbox-container');
+      if (!el) return;
+
+      el.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          const t1 = e.touches[0];
+          const t2 = e.touches[1];
+          lbPinchDistStart = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          lbPinchScaleStart = lbScale;
+        } else if (e.touches.length === 1) {
+          const now = Date.now();
+          if (now - lbLastTap < 300) {
+            e.preventDefault();
+            if (lbScale > 1.2) {
+              lbScale = 1;
+              lbPan = { x: 0, y: 0 };
+            } else {
+              lbScale = 2.5;
+              lbPan = { x: 0, y: 0 };
+            }
+            updateLightboxTransform();
+          }
+          lbLastTap = now;
+
+          if (lbScale > 1) {
+            lbIsDragging = true;
+            lbPanStart = {
+              x: e.touches[0].clientX - lbPan.x,
+              y: e.touches[0].clientY - lbPan.y
+            };
+          }
+        }
+      }, { passive: false });
+
+      el.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 2 && lbPinchDistStart !== null && lbPinchDistStart > 0) {
+          e.preventDefault();
+          const t1 = e.touches[0];
+          const t2 = e.touches[1];
+          const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          const factor = currentDist / lbPinchDistStart;
+          lbScale = Math.min(Math.max(1, lbPinchScaleStart * factor), 5);
+          if (lbScale === 1) {
+            lbPan = { x: 0, y: 0 };
+          }
+          updateLightboxTransform();
+        } else if (e.touches.length === 1 && lbIsDragging && lbScale > 1) {
+          e.preventDefault();
+          lbPan = {
+            x: e.touches[0].clientX - lbPanStart.x,
+            y: e.touches[0].clientY - lbPanStart.y
+          };
+          updateLightboxTransform();
+        }
+      }, { passive: false });
+
+      el.addEventListener('touchend', function(e) {
+        if (e.touches.length < 2) {
+          lbPinchDistStart = null;
+        }
+        if (e.touches.length === 0) {
+          lbIsDragging = false;
+          if (lbScale <= 1.05) {
+            lbScale = 1;
+            lbPan = { x: 0, y: 0 };
+            updateLightboxTransform();
+          }
+        }
+      }, { passive: false });
+
+      el.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.003;
+        lbScale = Math.min(Math.max(1, lbScale + delta), 5);
+        if (lbScale === 1) {
+          lbPan = { x: 0, y: 0 };
+        }
+        updateLightboxTransform();
+      }, { passive: false });
     }
 
     let currentOpenModalItemId = null;
@@ -1010,6 +1121,7 @@ function renderCustomerPageHtml(page, options = {}) {
 
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', () => {
+      setupLightboxTouch();
       const urlParams = new URLSearchParams(window.location.search);
       const tabParam = urlParams.get('tab') || INITIAL_TAB;
       const itemIdParam = urlParams.get('item') || urlParams.get('itemId') || INITIAL_ITEM_ID;
