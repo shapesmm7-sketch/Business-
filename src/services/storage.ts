@@ -517,9 +517,7 @@ export const StorageService = {
     return {
       success: localSuccess,
       cloudSynced,
-      message: cloudSynced
-        ? `Saved to Cloudflare D1 & stored locally`
-        : `Saved to Cloudflare & stored on device`,
+      message: `Receipt saved to device successfully!`,
     };
   },
 

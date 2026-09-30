@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Download,
   Share2,
@@ -137,12 +138,17 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   return (
     <div className="space-y-4 pb-36 animate-fadeIn max-w-2xl mx-auto">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2 border border-slate-700 animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
+      {/* Toast Notification (Centered prominently in screen) */}
+      {toastMessage && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
+          <div className="pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-emerald-500/40 flex items-center gap-3 backdrop-blur-md animate-bounce">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <span className="leading-snug">{toastMessage}</span>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Top Header Controls */}

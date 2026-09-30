@@ -892,17 +892,17 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         </div>
 
                         {/* Bottom Row: Price & Cart Button */}
-                        <div className="flex items-end justify-between mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50">
-                          <div className="flex flex-col min-w-0 pr-1">
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex flex-col gap-2">
+                          <div className="flex items-baseline justify-between min-w-0">
                             {isItemPromoActive(item) && item.promoPrice !== undefined && item.promoPrice > 0 ? (
-                              <>
+                              <div className="flex flex-col min-w-0">
                                 <span className="text-[10px] line-through text-slate-400 dark:text-slate-500 font-medium leading-none mb-0.5">
                                   {page.currency} {item.price.toLocaleString()}
                                 </span>
                                 <span className="text-xs sm:text-sm font-black text-amber-500 dark:text-amber-400 leading-tight truncate">
                                   {page.currency} {item.promoPrice.toLocaleString()}
                                 </span>
-                              </>
+                              </div>
                             ) : (
                               <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 leading-tight truncate">
                                 {page.currency} {item.price.toLocaleString()}
@@ -912,29 +912,32 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
                           {/* Cart Add Button / Quantity Counter */}
                           {page.allowWhatsAppOrdering && (
-                            <div className="flex-shrink-0">
+                            <div className="w-full">
                               {inTray > 0 ? (
-                                <div className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-full p-0.5">
+                                <div className="w-full flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-1">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleRemoveFromCart(item.id);
                                     }}
-                                    className="w-5 h-5 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold shadow-xs hover:bg-slate-100"
+                                    className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold shadow-xs hover:bg-slate-100 text-sm active:scale-90"
+                                    title="Decrease quantity"
                                   >
-                                    <Minus className="w-2.5 h-2.5" />
+                                    <Minus className="w-3.5 h-3.5" />
                                   </button>
-                                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 px-1 font-mono">
-                                    {inTray}
-                                  </span>
+                                  <div className="flex items-center gap-1 font-bold text-emerald-800 dark:text-emerald-200 text-xs px-1">
+                                    <span className="font-mono font-black text-sm">{inTray}</span>
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold">in order</span>
+                                  </div>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleAddToCart(item);
                                     }}
-                                    className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-emerald-500"
+                                    className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-emerald-500 text-sm active:scale-90"
+                                    title="Increase quantity"
                                   >
-                                    <Plus className="w-2.5 h-2.5" />
+                                    <Plus className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               ) : (
@@ -943,10 +946,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                                     e.stopPropagation();
                                     handleAddToCart(item);
                                   }}
-                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center shadow-xs active:scale-90 transition shrink-0"
-                                  title="Add to tray"
+                                  className="w-full py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition"
+                                  title="Add to Order"
                                 >
-                                  <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                                  <span>+ Add to Order</span>
                                 </button>
                               )}
                             </div>

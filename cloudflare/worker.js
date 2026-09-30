@@ -956,16 +956,22 @@ function renderCustomerPageHtml(page, options = {}) {
         }
 
         let cartButtonHtml = '';
-        if (inTray > 0) {
-          cartButtonHtml = '<div class="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-full p-0.5">' +
-            '<button onclick="event.stopPropagation(); changeQty(\\'' + item.id + '\\', -1)" class="w-5 h-5 rounded-full bg-white text-slate-700 flex items-center justify-center font-bold shadow-xs hover:bg-slate-100 text-xs">-</button>' +
-            '<span class="text-[11px] font-bold text-emerald-700 px-1 font-mono">' + inTray + '</span>' +
-            '<button onclick="event.stopPropagation(); addToTray(\\'' + item.id + '\\')" class="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-emerald-500 text-xs">+</button>' +
-          '</div>';
-        } else {
-          cartButtonHtml = '<button onclick="event.stopPropagation(); addToTray(\\'' + item.id + '\\')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center shadow-xs active:scale-90 transition shrink-0" title="Add to order">' +
-            '<svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-none stroke-currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>' +
-          '</button>';
+        if (PAGE_DATA.allowWhatsAppOrdering !== false) {
+          if (inTray > 0) {
+            cartButtonHtml = '<div class="w-full flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl p-1">' +
+              '<button onclick="event.stopPropagation(); changeQty(\\'' + item.id + '\\', -1)" class="w-7 h-7 rounded-lg bg-white text-slate-700 flex items-center justify-center font-bold shadow-xs hover:bg-slate-100 text-sm active:scale-90" title="Decrease">-</button>' +
+              '<div class="flex items-center gap-1 font-bold text-emerald-800 text-xs px-1">' +
+                '<span class="font-mono font-black text-sm">' + inTray + '</span>' +
+                '<span class="text-[10px] text-emerald-600 uppercase font-semibold">in order</span>' +
+              '</div>' +
+              '<button onclick="event.stopPropagation(); addToTray(\\'' + item.id + '\\')" class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs hover:bg-emerald-500 text-sm active:scale-90" title="Increase">+</button>' +
+            '</div>';
+          } else {
+            cartButtonHtml = '<button onclick="event.stopPropagation(); addToTray(\\'' + item.id + '\\')" class="w-full py-1.5 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] sm:text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition" title="Add to Order">' +
+              '<svg class="w-3.5 h-3.5 stroke-[2.5]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>' +
+              '<span>+ Add to Order</span>' +
+            '</button>';
+          }
         }
 
         return '<div class="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-slate-300 hover:shadow-md transition duration-300 flex flex-col overflow-hidden group cursor-pointer" onclick="openItemModal(\\'' + item.id + '\\')">' +
@@ -985,14 +991,17 @@ function renderCustomerPageHtml(page, options = {}) {
               (item.description ? '<p class="text-[11px] text-slate-500 font-normal line-clamp-2 mt-1 leading-normal">' + item.description + '</p>' : '') +
             '</div>' +
 
-            '<div class="flex items-end justify-between mt-2 pt-2 border-t border-slate-100">' +
-              '<div class="flex flex-col min-w-0 pr-1">' +
+            '<div class="mt-2.5 pt-2 border-t border-slate-100 flex flex-col gap-2">' +
+              '<div class="flex items-baseline justify-between min-w-0">' +
                 (hasPromo ?
-                  '<span class="text-[10px] line-through text-slate-400 font-medium leading-none mb-0.5">' + CURRENCY + ' ' + (item.price || 0).toLocaleString() + '</span><span class="text-xs sm:text-sm font-black text-amber-500 leading-tight truncate">' + CURRENCY + ' ' + (item.promoPrice || 0).toLocaleString() + '</span>' :
+                  '<div class="flex flex-col min-w-0">' +
+                    '<span class="text-[10px] line-through text-slate-400 font-medium leading-none mb-0.5">' + CURRENCY + ' ' + (item.price || 0).toLocaleString() + '</span>' +
+                    '<span class="text-xs sm:text-sm font-black text-amber-500 leading-tight truncate">' + CURRENCY + ' ' + (item.promoPrice || 0).toLocaleString() + '</span>' +
+                  '</div>' :
                   '<span class="text-xs sm:text-sm font-black text-emerald-600 leading-tight truncate">' + CURRENCY + ' ' + (displayPrice || 0).toLocaleString() + '</span>'
                 ) +
               '</div>' +
-              '<div class="shrink-0">' + cartButtonHtml + '</div>' +
+              (cartButtonHtml ? '<div class="w-full">' + cartButtonHtml + '</div>' : '') +
             '</div>' +
           '</div>' +
         '</div>';

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { saveFile, shareContent } from '../services/fileSaver';
 import { t } from '../utils/i18n';
 import {
@@ -75,7 +76,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     id: 'all',
     label: 'All Pages (Full Hub)',
     badge: 'All-in-One Experience',
-    desc: 'Customer opens the full hub with items showcase, gallery, WiFi, and contact channels.',
+    desc: 'Customer opens the full hub with items showcase, photos, WiFi, and contact channels.',
     icon: Layers,
     accentColor: 'emerald',
     targetTabName: undefined,
@@ -83,7 +84,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
   {
     id: 'menu',
     label: 'Items',
-    badge: 'Items Only',
+    badge: 'Items',
     desc: 'Customer opens directly into the digital items showcase with category filters and ordering.',
     icon: Utensils,
     accentColor: 'amber',
@@ -91,8 +92,8 @@ const SCOPE_OPTIONS: ScopeOption[] = [
   },
   {
     id: 'about',
-    label: 'Info & Contacts',
-    badge: 'Business Info Only',
+    label: 'Business Info',
+    badge: 'Business Info',
     desc: 'Customer opens directly to venue address, phone, WhatsApp, opening hours & WiFi.',
     icon: Building2,
     accentColor: 'indigo',
@@ -101,8 +102,8 @@ const SCOPE_OPTIONS: ScopeOption[] = [
   {
     id: 'photos',
     label: 'Photos',
-    badge: 'Photos Only',
-    desc: 'Customer opens directly to the business photo showcase and photo gallery.',
+    badge: 'Photos',
+    desc: 'Customer opens directly to the business photos & details.',
     icon: Camera,
     accentColor: 'rose',
     targetTabName: 'photos',
@@ -693,7 +694,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleSharePhotoLink = async () => {
     if (!activePage || !photoQrModalPhoto) return;
     const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
-    const title = `${photoQrModalPhoto.caption || 'Photo Showcase'} - ${activePage.title}`;
+    const title = `${photoQrModalPhoto.caption || 'Photo Details'} - ${activePage.title}`;
     const text = `Check out this photo from ${activePage.title}:`;
 
     const res = await shareContent({
@@ -1149,12 +1150,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </div>
       )}
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2 border border-slate-700 animate-bounce max-w-[90vw]">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
+      {/* Toast Notification (Centered prominently so user sees it without scrolling) */}
+      {toastMessage && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
+          <div className="pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-emerald-500/40 flex items-center gap-3 backdrop-blur-md animate-bounce">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <span className="leading-snug">{toastMessage}</span>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Top Header Bar */}
@@ -1454,7 +1460,35 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            {/* Poster Destination Selector */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase block mb-1.5">
+                Poster Destination
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {SCOPE_OPTIONS.map((scope) => {
+                  const Icon = scope.icon;
+                  const isSelected = qrScope === scope.id;
+                  return (
+                    <button
+                      key={scope.id}
+                      type="button"
+                      onClick={() => setQrScope(scope.id)}
+                      className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-emerald-300'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{scope.badge}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
                   QR Code Name
@@ -3204,7 +3238,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">
-                    Photo Showcase QR Code
+                    Photo QR Code
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                     {photoQrModalPhoto.title || photoQrModalPhoto.caption || 'Venue Photo'}
@@ -3253,7 +3287,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               {/* Scannable Photo QR Code Frame */}
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 text-center">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold mb-2">
-                  <span>Direct Photo Showcase QR</span>
+                  <span>Photo QR Code</span>
                 </div>
 
                 <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100">

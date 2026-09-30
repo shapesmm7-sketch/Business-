@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { saveJsPdf } from '../services/fileSaver';
 import { t } from '../utils/i18n';
 import {
@@ -3831,12 +3832,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
   return (
     <div className="min-h-screen bg-[#0284c7] text-slate-900 dark:text-slate-100 flex flex-col transition-colors pb-24">
-      {/* Toast alert */}
-      {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-slate-900/90 text-white text-xs font-semibold shadow-xl flex items-center gap-2 animate-fadeIn backdrop-blur-md">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
+      {/* Toast alert (Centered prominently in screen) */}
+      {toastMessage && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
+          <div className="pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-emerald-500/40 flex items-center gap-3 backdrop-blur-md animate-bounce">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <span className="leading-snug">{toastMessage}</span>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* TOP APP BAR - Matches Screenshot header with user avatar, store name, cloud sync */}

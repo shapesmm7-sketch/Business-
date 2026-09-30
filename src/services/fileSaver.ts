@@ -239,7 +239,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
             uri: fileUri,
             filename,
             folder: locationNote,
-            message: `Saved to Cloudflare R2 & saved in phone's ${locationNote}!`,
+            message: `Saved to your phone (${locationNote})!`,
           };
           return attachCloudflareUpload(localResult, data, filename, mimeType, targetR2Folder);
         }
@@ -298,7 +298,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         uri: fileUri,
         filename,
         folder: targetFolder,
-        message: `Saved to Cloudflare R2 & saved in phone's ${targetFolder}!`,
+        message: `Saved to your phone (${targetFolder})!`,
       };
       return attachCloudflareUpload(localResult, data, filename, mimeType, targetR2Folder);
     } catch (err: unknown) {
@@ -341,7 +341,7 @@ export async function saveJsPdf(
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Saved to Cloudflare R2 & downloaded to your device!`,
+      message: `Saved to your phone's Downloads!`,
     };
     return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', targetFolder);
   }
@@ -539,7 +539,7 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
       success: true,
       filename,
       folder: 'Downloads',
-      message: `Saved to Cloudflare R2 & downloaded to your device!`,
+      message: `Saved to your phone's Downloads!`,
     };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);

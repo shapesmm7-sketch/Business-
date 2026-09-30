@@ -155,7 +155,7 @@ export class QRHostingService {
   ): Promise<SaveFileResult> {
     const tableNumber = typeof options === 'string' ? options : options?.tableNumber;
     const targetTab = typeof options === 'object' ? options?.targetTab : undefined;
-    const tabLabel = typeof options === 'object' ? options?.tabLabel : undefined;
+    const _tabLabel = typeof options === 'object' ? options?.tabLabel : undefined;
 
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -203,44 +203,71 @@ export class QRHostingService {
     doc.setFontSize(10);
     doc.setTextColor(240, 253, 244);
     
-    let subText = page.tagline || 'Scan to view our digital items, special offers & business information';
+    let subText = page.tagline || 'Scan to view our items, special offers & business info';
     if (targetTab === 'menu') {
-      subText = 'Scan to explore our complete items & special offers instantly';
+      subText = 'Scan to explore our items & special offers instantly';
     } else if (targetTab === 'about') {
       subText = 'Scan to view our business location, contact details & operating hours';
     } else if (targetTab === 'photos') {
-      subText = 'Scan to view our photos and showcase';
+      subText = 'Scan to view our business photos & details';
+    }
+
+    if (subText) {
+      subText = subText
+        .replace(/photos?\s*only/gi, '')
+        .replace(/items?\s*only/gi, '')
+        .replace(/business\s*info\s*only/gi, '')
+        .trim();
     }
     doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
 
     let currentY = 58;
 
-    // Section Pill if specific page
-    if (tabLabel && targetTab && targetTab !== 'all') {
-      doc.setFillColor(r, g, b);
-      doc.roundedRect(pageWidth / 2 - 35, currentY, 70, 7.5, 2, 2, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text(tabLabel.toUpperCase(), pageWidth / 2, currentY + 5.2, { align: 'center' });
-      currentY += 12;
-    }
-
-    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    // High-Visibility QR Code Name Tag
     if (tableNumber && tableNumber.trim()) {
-      const badgeText = tableNumber.trim();
-      const textWidth = doc.getTextWidth(badgeText);
-      const boxWidth = Math.max(50, textWidth + 24);
+      let badgeText = tableNumber.trim()
+        .replace(/photos?\s*only/gi, '')
+        .replace(/items?\s*only/gi, '')
+        .replace(/business\s*info\s*only/gi, '')
+        .trim();
 
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 9, 2, 2, 'F');
-      doc.setDrawColor(203, 213, 225);
-      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 9, 2, 2, 'S');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.setTextColor(51, 65, 85);
-      doc.text(badgeText, pageWidth / 2, currentY + 6.2, { align: 'center' });
-      currentY += 14;
+      if (badgeText) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        const textWidth = doc.getTextWidth(badgeText);
+        const boxWidth = Math.min(pageWidth - 48, Math.max(70, textWidth + 30));
+        const boxHeight = 13.5;
+        const boxX = pageWidth / 2 - boxWidth / 2;
+        const boxY = currentY;
+
+        // Tag Background (Warm golden amber tag for high visibility)
+        doc.setFillColor(254, 243, 199);
+        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'F');
+
+        // Tag Border
+        doc.setDrawColor(217, 119, 6);
+        doc.setLineWidth(1.2);
+        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'S');
+
+        // Tag eyelet / hole circle on left for an authentic physical tag look
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(217, 119, 6);
+        doc.setLineWidth(0.8);
+        doc.circle(boxX + 6.5, boxY + boxHeight / 2, 2, 'FD');
+
+        // Tag Name Text (Increased size & high-contrast deep amber color)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(146, 64, 14);
+        doc.text(badgeText, boxX + (boxWidth + 6.5) / 2, boxY + 9.2, {
+          align: 'center',
+          maxWidth: boxWidth - 18,
+        });
+
+        currentY += boxHeight + 5;
+      } else {
+        currentY += 2;
+      }
     } else {
       currentY += 2;
     }
@@ -250,11 +277,11 @@ export class QRHostingService {
     doc.setFontSize(15);
     doc.setTextColor(15, 23, 42);
     const scanCallout = targetTab === 'menu' 
-      ? 'SCAN TO VIEW MENU & ITEMS'
+      ? 'SCAN TO VIEW ITEMS'
       : targetTab === 'about'
-      ? 'SCAN FOR BUSINESS INFO & CONTACTS'
+      ? 'SCAN TO VIEW BUSINESS INFO & CONTACTS'
       : targetTab === 'photos'
-      ? 'SCAN TO VIEW PHOTO SHOWCASE'
+      ? 'SCAN TO VIEW DETAILS'
       : 'SCAN WITH YOUR PHONE CAMERA';
     doc.text(scanCallout, pageWidth / 2, currentY, { align: 'center' });
 
@@ -308,11 +335,11 @@ export class QRHostingService {
 
     // Instruction pill
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth / 2 - 48, currentY, 96, 8, 2, 2, 'F');
+    doc.roundedRect(pageWidth / 2 - 42, currentY, 84, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text('POINT CAMERA AT CODE TO OPEN LINK', pageWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.text('POINT CAMERA AT CODE TO SCAN', pageWidth / 2, currentY + 5.5, { align: 'center' });
 
     currentY += 12;
 
@@ -500,19 +527,42 @@ export class QRHostingService {
     }
     currentY += 7;
 
-    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    // High-Visibility QR Code Name Tag
     if (tableNumber && tableNumber.trim()) {
       const badgeText = tableNumber.trim();
-      const textWidth = doc.getTextWidth(badgeText);
-      const boxWidth = Math.max(45, textWidth + 20);
-
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 8.5, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(51, 65, 85);
-      doc.text(badgeText, pageWidth / 2, currentY + 5.8, { align: 'center' });
-      currentY += 12;
+      doc.setFontSize(15);
+      const textWidth = doc.getTextWidth(badgeText);
+      const boxWidth = Math.min(pageWidth - 48, Math.max(65, textWidth + 28));
+      const boxHeight = 12.5;
+      const boxX = pageWidth / 2 - boxWidth / 2;
+      const boxY = currentY;
+
+      // Tag Background (Warm golden amber tag for high visibility)
+      doc.setFillColor(254, 243, 199);
+      doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'F');
+
+      // Tag Border
+      doc.setDrawColor(217, 119, 6);
+      doc.setLineWidth(1.2);
+      doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'S');
+
+      // Tag eyelet / hole circle on left
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(217, 119, 6);
+      doc.setLineWidth(0.8);
+      doc.circle(boxX + 6.5, boxY + boxHeight / 2, 1.8, 'FD');
+
+      // Tag Name Text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(146, 64, 14);
+      doc.text(badgeText, boxX + (boxWidth + 6.5) / 2, boxY + 8.6, {
+        align: 'center',
+        maxWidth: boxWidth - 18,
+      });
+
+      currentY += boxHeight + 4;
     } else {
       currentY += 2;
     }
@@ -545,11 +595,11 @@ export class QRHostingService {
 
     // Instruction pill
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth / 2 - 45, currentY, 90, 8, 2, 2, 'F');
+    doc.roundedRect(pageWidth / 2 - 42, currentY, 84, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text('POINT CAMERA AT CODE TO OPEN ITEM', pageWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.text('POINT CAMERA AT CODE TO SCAN', pageWidth / 2, currentY + 5.5, { align: 'center' });
 
     currentY += 12;
 
@@ -617,7 +667,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(240, 253, 244);
-    doc.text('Scan below to explore our photos and showcase', pageWidth / 2, 41, { align: 'center' });
+    doc.text('Scan below to explore our photos and details', pageWidth / 2, 41, { align: 'center' });
 
     let currentY = 52;
 
@@ -641,19 +691,51 @@ export class QRHostingService {
       currentY += 8;
     }
 
-    // QR Name / Stand Badge if provided (Without hardcoded "TABLE #" prefix)
+    // High-Visibility QR Code Name Tag
     if (tableNumber && tableNumber.trim()) {
-      const badgeText = tableNumber.trim();
-      const textWidth = doc.getTextWidth(badgeText);
-      const boxWidth = Math.max(45, textWidth + 20);
+      let badgeText = tableNumber.trim()
+        .replace(/photos?\s*only/gi, '')
+        .replace(/items?\s*only/gi, '')
+        .replace(/business\s*info\s*only/gi, '')
+        .trim();
 
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(pageWidth / 2 - boxWidth / 2, currentY, boxWidth, 8.5, 2, 2, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.setTextColor(51, 65, 85);
-      doc.text(badgeText, pageWidth / 2, currentY + 5.8, { align: 'center' });
-      currentY += 12;
+      if (badgeText) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(15);
+        const textWidth = doc.getTextWidth(badgeText);
+        const boxWidth = Math.min(pageWidth - 48, Math.max(65, textWidth + 28));
+        const boxHeight = 12.5;
+        const boxX = pageWidth / 2 - boxWidth / 2;
+        const boxY = currentY;
+
+        // Tag Background (Warm golden amber tag for high visibility)
+        doc.setFillColor(254, 243, 199);
+        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'F');
+
+        // Tag Border
+        doc.setDrawColor(217, 119, 6);
+        doc.setLineWidth(1.2);
+        doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'S');
+
+        // Tag eyelet / hole circle on left
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(217, 119, 6);
+        doc.setLineWidth(0.8);
+        doc.circle(boxX + 6.5, boxY + boxHeight / 2, 1.8, 'FD');
+
+        // Tag Name Text
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(15);
+        doc.setTextColor(146, 64, 14);
+        doc.text(badgeText, boxX + (boxWidth + 6.5) / 2, boxY + 8.6, {
+          align: 'center',
+          maxWidth: boxWidth - 18,
+        });
+
+        currentY += boxHeight + 4;
+      } else {
+        currentY += 2;
+      }
     } else {
       currentY += 2;
     }
@@ -662,7 +744,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.setTextColor(15, 23, 42);
-    doc.text('SCAN TO OPEN PHOTOS', pageWidth / 2, currentY, { align: 'center' });
+    doc.text('SCAN TO VIEW DETAILS', pageWidth / 2, currentY, { align: 'center' });
 
     currentY += 8;
 
@@ -686,11 +768,11 @@ export class QRHostingService {
 
     // Instruction pill
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(pageWidth / 2 - 45, currentY, 90, 8, 2, 2, 'F');
+    doc.roundedRect(pageWidth / 2 - 42, currentY, 84, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text('POINT CAMERA AT CODE TO OPEN PHOTO', pageWidth / 2, currentY + 5.5, { align: 'center' });
+    doc.text('POINT CAMERA AT CODE TO SCAN', pageWidth / 2, currentY + 5.5, { align: 'center' });
 
     currentY += 12;
 
