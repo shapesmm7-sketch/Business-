@@ -139,7 +139,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         setLightboxImage({
           url: found.url,
           title: found.title || page.title,
-          description: found.description,
+          description: found.description || found.caption,
           category: found.category,
           badge: found.badge,
           photoIndex: foundIdx,
@@ -892,7 +892,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                       setLightboxImage({
                         url: photo.url,
                         title: photo.title || page.title,
-                        description: photo.description,
+                        description: photo.description || photo.caption,
                         category: photo.category,
                         badge: photo.badge,
                         photoIndex: idx,
@@ -931,10 +931,13 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         <Maximize2 className="w-3 h-3" />
                       </span>
                     </div>
-                    {(photo.title || photo.category) && (
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent p-2 text-white">
-                        <p className="text-xs font-semibold truncate drop-shadow-xs">{photo.title || 'Photo'}</p>
-                        {photo.category && <p className="text-[10px] text-emerald-300 font-medium">{photo.category}</p>}
+                    {(photo.title || photo.category || photo.description || photo.caption) && (
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/60 to-transparent p-2.5 text-white">
+                        <p className="text-xs font-bold truncate drop-shadow-xs">{photo.title || 'Photo'}</p>
+                        {photo.category && <p className="text-[10px] text-emerald-300 font-medium truncate">{photo.category}</p>}
+                        {(photo.description || photo.caption) && (
+                          <p className="text-[10px] text-slate-200/90 line-clamp-2 mt-0.5 leading-snug">{photo.description || photo.caption}</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1579,7 +1582,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         const activeImg = lightboxImage || (selectedPhoto ? {
           url: selectedPhoto.url,
           title: selectedPhoto.title || page.title,
-          description: selectedPhoto.description,
+          description: selectedPhoto.description || selectedPhoto.caption,
           category: selectedPhoto.category,
           badge: selectedPhoto.badge,
         } : null);

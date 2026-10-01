@@ -329,19 +329,31 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
         </div>
 
         {/* Bottom Captions */}
-        <div className="mt-2 sm:mt-3 px-4 text-center max-w-xl mx-auto">
-          {image.badge && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40 mb-1.5">
-              <Tag className="w-3 h-3" />
-              <span>{image.badge}</span>
-            </span>
+        <div className="mt-2 sm:mt-3 px-3 text-center max-w-xl mx-auto space-y-1">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            {image.badge && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/40">
+                <Tag className="w-3 h-3" />
+                <span>{image.badge}</span>
+              </span>
+            )}
+            {image.category && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-800/80 text-emerald-400 text-xs font-semibold border border-slate-700">
+                <span>{image.category}</span>
+              </span>
+            )}
+          </div>
+
+          {image.title && (
+            <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md leading-tight">
+              {image.title}
+            </h4>
           )}
-          <h4 className="text-white font-extrabold text-base sm:text-lg drop-shadow-md">{image.title}</h4>
-          {image.category && (
-            <p className="text-emerald-400 text-xs font-semibold mt-0.5">{image.category}</p>
-          )}
+
           {image.description && (
-            <p className="text-slate-300 text-xs sm:text-sm mt-1.5 leading-relaxed">{image.description}</p>
+            <div className="p-3 rounded-2xl bg-slate-900/90 text-slate-100 text-xs sm:text-sm leading-relaxed text-center max-w-lg mx-auto border border-white/15 shadow-xl backdrop-blur-md">
+              {image.description}
+            </div>
           )}
         </div>
       </div>
