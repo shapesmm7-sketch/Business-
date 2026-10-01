@@ -37,6 +37,7 @@ import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
+import { DownloadSuccessModal } from './DownloadSuccessModal';
 
 interface CreateReceiptScreenProps {
   business: BusinessProfile;
@@ -118,6 +119,13 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
   // Stock Product Picker & Barcode Scanner Modal States
   const [isStockPickerOpen, setIsStockPickerOpen] = useState<boolean>(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
+  const [downloadModalData, setDownloadModalData] = useState<{
+    isOpen: boolean;
+    fileName?: string;
+    folderName?: string;
+    documentType?: 'receipt' | 'invoice';
+    documentNumber?: string;
+  }>({ isOpen: false });
 
   // Initialize receipt number and form data
   useEffect(() => {
@@ -471,6 +479,13 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         } else {
           const res = await PdfGenerator.downloadPdf(receipt);
           showToast(res.message);
+          setDownloadModalData({
+            isOpen: true,
+            fileName: res.filename,
+            folderName: res.folder || 'Documents/Brivu',
+            documentType: 'receipt',
+            documentNumber: receipt.receiptNumber,
+          });
           onSaveAndPreview(receipt);
         }
       } else if (action === 'share') {
@@ -1051,6 +1066,15 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         currency={currency}
         onClose={() => setIsBarcodeScannerOpen(false)}
         onScanResult={handleScanBarcodeResult}
+      />
+
+      <DownloadSuccessModal
+        isOpen={downloadModalData.isOpen}
+        onClose={() => setDownloadModalData({ isOpen: false })}
+        fileName={downloadModalData.fileName}
+        folderName={downloadModalData.folderName}
+        documentType={downloadModalData.documentType}
+        documentNumber={downloadModalData.documentNumber}
       />
     </div>
   );

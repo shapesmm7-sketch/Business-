@@ -43,6 +43,7 @@ import { PdfGenerator } from '../services/pdfGenerator';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
+import { DownloadSuccessModal } from './DownloadSuccessModal';
 
 interface CreateInvoiceScreenProps {
   business: BusinessProfile;
@@ -148,6 +149,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
   // Error state
   const [errorMessage, setErrorMessage] = useState<string>('');
+
+  const [downloadModalData, setDownloadModalData] = useState<{
+    isOpen: boolean;
+    fileName?: string;
+    folderName?: string;
+    documentType?: 'receipt' | 'invoice';
+    documentNumber?: string;
+  }>({ isOpen: false });
 
   // Stock Product Picker & Barcode Scanner Modal States
   const [isStockPickerOpen, setIsStockPickerOpen] = useState<boolean>(false);
@@ -526,6 +535,13 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     try {
       const res = await PdfGenerator.downloadPdf(invoice);
       showToast(res.message);
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Documents/Brivu',
+        documentType: 'invoice',
+        documentNumber: invoice.receiptNumber,
+      });
       if (onQuickDownload) {
         onQuickDownload(invoice);
       }
@@ -1475,6 +1491,15 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         currency={currency}
         onClose={() => setIsBarcodeScannerOpen(false)}
         onScanResult={handleScanBarcodeResult}
+      />
+
+      <DownloadSuccessModal
+        isOpen={downloadModalData.isOpen}
+        onClose={() => setDownloadModalData({ isOpen: false })}
+        fileName={downloadModalData.fileName}
+        folderName={downloadModalData.folderName}
+        documentType={downloadModalData.documentType}
+        documentNumber={downloadModalData.documentNumber}
       />
     </div>
   );

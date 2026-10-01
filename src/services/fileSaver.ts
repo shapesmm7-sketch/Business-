@@ -218,7 +218,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
 
         if (mediaStoreResult && mediaStoreResult.success) {
           const fileUri = mediaStoreResult.uri;
-          const locationNote = mediaStoreResult.savedLocation || (isPhoto ? 'Pictures/Brivu' : 'Download/Brivu');
+          const locationNote = mediaStoreResult.savedLocation || (isPhoto ? 'Pictures/Brivu' : 'Documents/Brivu');
 
           // Only open share sheet if explicitly requested
           if (openShareSheet && fileUri) {
@@ -340,8 +340,8 @@ export async function saveJsPdf(
     const baseResult: SaveFileResult = {
       success: true,
       filename,
-      folder: 'Downloads',
-      message: `Saved to your phone's Downloads!`,
+      folder: 'Documents/Brivu',
+      message: `Saved to your phone's Documents/Brivu folder!`,
     };
     return attachCloudflareUpload(baseResult, arrayBuffer, filename, 'application/pdf', targetFolder);
   }
@@ -538,8 +538,8 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
     return {
       success: true,
       filename,
-      folder: 'Downloads',
-      message: `Saved to your phone's Downloads!`,
+      folder: 'Documents/Brivu',
+      message: `Saved to your phone's Documents/Brivu folder!`,
     };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -547,7 +547,7 @@ function fallbackWebDownload(data: Blob | ArrayBuffer | string, filename: string
     return {
       success: false,
       filename,
-      folder: 'Downloads',
+      folder: 'Documents/Brivu',
       message: `Download failed: ${errMsg}`,
     };
   }

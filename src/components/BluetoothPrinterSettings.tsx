@@ -288,14 +288,17 @@ export const BluetoothPrinterSettings: React.FC<BluetoothPrinterSettingsProps> =
         </div>
       )}
 
-      {/* Info / Browser Support Note */}
-      <div className="p-3 rounded-xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/40 text-[11px] text-blue-900 dark:text-blue-200 leading-relaxed flex items-start gap-2">
-        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <span className="font-bold block">Compatible Thermal Printers</span>
-          <p className="text-blue-800 dark:text-blue-300 text-[10px]">
-            Supports standard 58mm & 80mm ESC/POS Bluetooth printers (POS-58, POS-80, MPT-II, GOOJPRT, Xprinter, Zjiang, Epson). On Android Chrome, pairing saves your printer for instant 1-tap printing.
-          </p>
+      {/* Info / Android Setup Guide Note */}
+      <div className="p-3.5 rounded-xl bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/50 text-[11px] text-blue-900 dark:text-blue-200 leading-relaxed flex items-start gap-2.5">
+        <Info className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+        <div className="space-y-1.5 flex-1 min-w-0">
+          <span className="font-extrabold block text-xs">How to Connect Your Bluetooth Thermal Printer:</span>
+          <ol className="list-decimal list-inside space-y-1 text-[11px] text-blue-950 dark:text-blue-200 font-medium">
+            <li>Turn on your Bluetooth printer (e.g. POS-58, POS-80, MPT-II, GOOJPRT, Xprinter, Zjiang).</li>
+            <li>Pair it once in your phone's <strong>Android Settings &rarr; Bluetooth</strong>.</li>
+            <li>Tap <strong>Search & Connect Bluetooth Printer</strong> above and choose your paper roll width (58mm or 80mm).</li>
+            <li>Tap <strong>Print Test Receipt Page</strong> to verify 1-tap printing!</li>
+          </ol>
         </div>
       </div>
     </div>

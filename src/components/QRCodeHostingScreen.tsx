@@ -2229,8 +2229,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL: ADD / EDIT ITEM */}
       {showAddItemModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[80vh] sm:max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
@@ -2560,8 +2560,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL: ADD / MANAGE CATEGORY */}
       {showCategoryModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[80vh] sm:max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0 animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
@@ -2668,8 +2668,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL: ADD / EDIT BUSINESS PHOTO (TITLE, CATEGORY, BADGE, DETAILS) */}
       {showPhotoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[80vh] sm:max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900 z-10">
               <div className="flex items-center gap-2">
@@ -2835,8 +2835,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL 3: QUICK PAGE-SPECIFIC QR CODE GENERATOR MODAL */}
       {showQuickQrModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[80vh] sm:max-h-[85vh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5">
@@ -3023,8 +3023,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL 4: SPECIFIC ITEM QR CODE MODAL */}
       {itemQrModalItem && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[80vh] sm:max-h-[85vh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -3202,8 +3202,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* MODAL 5: SPECIFIC PHOTO QR CODE MODAL */}
       {photoQrModalPhoto && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6 animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[80vh] sm:max-h-[85vh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5 min-w-0">

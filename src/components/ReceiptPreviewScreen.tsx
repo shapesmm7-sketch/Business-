@@ -32,6 +32,8 @@ interface ReceiptPreviewScreenProps {
 import { TEMPLATES_CONFIG, getTemplateConfig } from '../utils/templates';
 import { ReceiptLayoutRenderer } from './ReceiptLayoutRenderer';
 
+import { DownloadSuccessModal } from './DownloadSuccessModal';
+
 export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   receipt: initialReceipt,
   onBack,
@@ -42,6 +44,13 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUploadingCf, setIsUploadingCf] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [downloadModalData, setDownloadModalData] = useState<{
+    isOpen: boolean;
+    fileName?: string;
+    folderName?: string;
+    documentType?: 'receipt' | 'invoice';
+    documentNumber?: string;
+  }>({ isOpen: false });
 
   const isCfConfigured = CloudflareService.isConfigured();
 
@@ -86,6 +95,13 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       setIsGenerating(true);
       const res = await PdfGenerator.downloadPdf(receipt);
       showToast(res.message);
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Documents/Brivu',
+        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentNumber: receipt.receiptNumber,
+      });
     } catch (err) {
       console.error('PDF download error:', err);
       showToast('Error generating PDF file');
@@ -460,6 +476,15 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
           )}
         </div>
       </div>
+
+      <DownloadSuccessModal
+        isOpen={downloadModalData.isOpen}
+        onClose={() => setDownloadModalData({ isOpen: false })}
+        fileName={downloadModalData.fileName}
+        folderName={downloadModalData.folderName}
+        documentType={downloadModalData.documentType}
+        documentNumber={downloadModalData.documentNumber}
+      />
     </div>
   );
 };

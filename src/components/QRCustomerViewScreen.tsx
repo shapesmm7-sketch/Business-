@@ -194,7 +194,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         return {
           url: found.url,
           title: found.title || page.title,
-          description: found.description,
+          description: found.description || found.caption,
           category: found.category,
           badge: found.badge,
           photoIndex: foundIdx,
@@ -215,8 +215,8 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         const p = page.photos[nextIdx];
         setLightboxImage({
           url: p.url,
-          title: p.title || 'Photo',
-          description: p.description,
+          title: p.title || page.title,
+          description: p.description || p.caption,
           category: p.category,
           badge: p.badge,
           photoIndex: nextIdx,
@@ -226,8 +226,8 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         const p = page.photos[prevIdx];
         setLightboxImage({
           url: p.url,
-          title: p.title || 'Photo',
-          description: p.description,
+          title: p.title || page.title,
+          description: p.description || p.caption,
           category: p.category,
           badge: p.badge,
           photoIndex: prevIdx,
@@ -1611,7 +1611,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     setLightboxImage({
                       url: p.url,
                       title: p.title || page.title,
-                      description: p.description,
+                      description: p.description || p.caption,
                       category: p.category,
                       badge: p.badge,
                       photoIndex: nextIdx,
@@ -1627,7 +1627,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     setLightboxImage({
                       url: p.url,
                       title: p.title || page.title,
-                      description: p.description,
+                      description: p.description || p.caption,
                       category: p.category,
                       badge: p.badge,
                       photoIndex: prevIdx,

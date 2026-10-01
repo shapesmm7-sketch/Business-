@@ -398,6 +398,7 @@ export interface AppBackupData {
   profile: BusinessProfile;
   settings: AppSettings;
   receipts: Receipt[];
+  deletedReceiptIds?: string[];
   inventoryProducts?: InventoryProduct[];
   inventorySales?: InventorySale[];
   inventoryExpenses?: InventoryExpense[];

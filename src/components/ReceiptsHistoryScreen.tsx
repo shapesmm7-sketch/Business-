@@ -36,6 +36,7 @@ import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { PdfGenerator } from '../services/pdfGenerator';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StorageService } from '../services/storage';
+import { DownloadSuccessModal } from './DownloadSuccessModal';
 
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
@@ -186,6 +187,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [downloadModalData, setDownloadModalData] = useState<{
+    isOpen: boolean;
+    fileName?: string;
+    folderName?: string;
+    documentType?: 'receipt' | 'invoice';
+    documentNumber?: string;
+  }>({ isOpen: false });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -234,6 +242,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       } else {
         const res = await PdfGenerator.downloadPdf(receipt);
         showToast(res.message);
+        setDownloadModalData({
+          isOpen: true,
+          fileName: res.filename,
+          folderName: res.folder || 'Documents/Brivu',
+          documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+          documentNumber: receipt.receiptNumber,
+        });
       }
     } catch (err) {
       console.error('Download error:', err);
@@ -1028,6 +1043,15 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
           </div>
         </div>
       )}
+
+      <DownloadSuccessModal
+        isOpen={downloadModalData.isOpen}
+        onClose={() => setDownloadModalData({ isOpen: false })}
+        fileName={downloadModalData.fileName}
+        folderName={downloadModalData.folderName}
+        documentType={downloadModalData.documentType}
+        documentNumber={downloadModalData.documentNumber}
+      />
     </div>
   );
 };

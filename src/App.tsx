@@ -17,6 +17,7 @@ import { UpgradeScreen } from './components/UpgradeScreen';
 import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
+import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { StorageService } from './services/storage';
 import { CloudflareService } from './services/cloudflareService';
 import { PdfGenerator } from './services/pdfGenerator';
@@ -128,6 +129,13 @@ export function App() {
   // Current receipt or invoice for preview or editing
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
+  const [appDownloadModal, setAppDownloadModal] = useState<{
+    isOpen: boolean;
+    fileName?: string;
+    folderName?: string;
+    documentType?: 'receipt' | 'invoice';
+    documentNumber?: string;
+  }>({ isOpen: false });
 
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=photos&photoId=...)
   useEffect(() => {
@@ -504,7 +512,14 @@ export function App() {
   // Direct download from history
   const handleDownloadReceipt = async (receipt: Receipt) => {
     try {
-      await PdfGenerator.downloadPdf(receipt);
+      const res = await PdfGenerator.downloadPdf(receipt);
+      setAppDownloadModal({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Documents/Brivu',
+        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentNumber: receipt.receiptNumber,
+      });
     } catch (err) {
       console.error('Download error:', err);
     }
@@ -651,7 +666,14 @@ export function App() {
             onQuickDownload={async (rcpt) => {
               handleReceiptSaved(rcpt);
               try {
-                await PdfGenerator.downloadPdf(rcpt);
+                const res = await PdfGenerator.downloadPdf(rcpt);
+                setAppDownloadModal({
+                  isOpen: true,
+                  fileName: res.filename,
+                  folderName: res.folder || 'Documents/Brivu',
+                  documentType: 'receipt',
+                  documentNumber: rcpt.receiptNumber,
+                });
               } catch (err) {
                 console.error('Download error:', err);
               }
@@ -681,7 +703,14 @@ export function App() {
             onQuickDownload={async (inv) => {
               handleReceiptSaved(inv);
               try {
-                await PdfGenerator.downloadPdf(inv);
+                const res = await PdfGenerator.downloadPdf(inv);
+                setAppDownloadModal({
+                  isOpen: true,
+                  fileName: res.filename,
+                  folderName: res.folder || 'Documents/Brivu',
+                  documentType: 'invoice',
+                  documentNumber: inv.receiptNumber,
+                });
               } catch (err) {
                 console.error('Download error:', err);
               }
@@ -960,6 +989,15 @@ export function App() {
           inventoryCount={inventoryCount}
         />
       )}
+
+      <DownloadSuccessModal
+        isOpen={appDownloadModal.isOpen}
+        onClose={() => setAppDownloadModal({ isOpen: false })}
+        fileName={appDownloadModal.fileName}
+        folderName={appDownloadModal.folderName}
+        documentType={appDownloadModal.documentType}
+        documentNumber={appDownloadModal.documentNumber}
+      />
     </div>
   );
 }

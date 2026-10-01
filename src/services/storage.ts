@@ -829,6 +829,7 @@ export const StorageService = {
       profile: this.getProfile(),
       settings: this.getSettings(),
       receipts: this.getReceipts(),
+      deletedReceiptIds: this.getDeletedReceiptIds(),
       inventoryProducts: this.getInventoryProducts(),
       inventorySales: this.getInventorySales(),
       inventoryExpenses: this.getInventoryExpenses(),
@@ -862,6 +863,16 @@ export const StorageService = {
       if (backupData.settings) {
         this.saveSettings(backupData.settings);
       }
+      // Import and merge deleted receipt ids so tombstones survive across devices/APK installs
+      if (Array.isArray(backupData.deletedReceiptIds) && backupData.deletedReceiptIds.length > 0) {
+        const currentDeleted = this.getDeletedReceiptIds();
+        const mergedSet = new Set([
+          ...currentDeleted.map((s) => String(s).trim().toLowerCase()),
+          ...backupData.deletedReceiptIds.map((s) => String(s).trim().toLowerCase()),
+        ]);
+        writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
+      }
+
       if (Array.isArray(backupData.receipts)) {
         const deletedList = this.getDeletedReceiptIds();
         const deletedSet = new Set(deletedList.map((s) => String(s).trim().toLowerCase()));
