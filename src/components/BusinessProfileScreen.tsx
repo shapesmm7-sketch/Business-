@@ -1059,7 +1059,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                           >
                             PAID CASH
                           </span>
-                          <span className="text-slate-400 text-[10px]">REC-000001</span>
+                          <span className="text-slate-400 text-[10px]">REC-01</span>
                         </div>
 
                         {/* Item List */}

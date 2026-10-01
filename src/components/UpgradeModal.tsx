@@ -3,24 +3,22 @@ import {
   Crown,
   Sparkles,
   Check,
-  X,
+  CheckCircle2,
   ShieldCheck,
   Zap,
-  CreditCard,
-  Lock,
-  ArrowRight,
-  CheckCircle2,
-  Calendar,
-  Layers,
-  Infinity as InfinityIcon,
-  RefreshCw,
-  Cloud,
-  Globe2,
-  QrCode,
+  X,
   ShieldAlert,
+  CreditCard,
+  RefreshCw,
+  ArrowRight,
+  Cloud,
+  QrCode,
+  Infinity as InfinityIcon,
+  Layers,
+  Lock,
 } from 'lucide-react';
-import { SubscriptionPlanId, UserSubscription } from '../types';
 import { StorageService } from '../services/storage';
+import { SubscriptionPlanId, UserSubscription } from '../types';
 
 interface UpgradeModalProps {
   isOpen: boolean;

@@ -90,7 +90,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <button
             id="btn-main-inventory"
             type="button"
-            onClick={() => onNavigateToInventory ? onNavigateToInventory('stock', true) : onNavigate('inventory')}
+            onClick={() => onNavigate('inventory')}
             className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm shadow-sky-600/20 active:scale-[0.99] transition-all overflow-hidden border border-sky-500/50 text-left min-h-[96px] sm:min-h-[108px]"
           >
             <div className="flex items-start justify-between w-full mb-2">

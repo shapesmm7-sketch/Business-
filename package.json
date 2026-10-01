@@ -4,14 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "dev": "vite",
+    "build": "tsc && vite build",
     "lint": "tsc --noEmit",
-    "cap:sync": "cap sync android",
-    "cap:build": "vite build && cap sync android",
-    "build:android": "vite build && cap sync android"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.5",
@@ -23,11 +19,13 @@
     "@capacitor/share": "^8.0.2",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/html2canvas": "^1.0.0",
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.19.0",
+    "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
@@ -51,15 +49,5 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "wrangler": "^4.141.0"
-  },
-  "optionalDependencies": {
-    "@esbuild/darwin-arm64": "^0.25.0",
-    "@esbuild/darwin-x64": "^0.25.0",
-    "@rollup/rollup-darwin-arm64": "^4.30.0",
-    "@rollup/rollup-darwin-x64": "^4.30.0",
-    "@tailwindcss/oxide-darwin-arm64": "^4.0.0",
-    "@tailwindcss/oxide-darwin-x64": "^4.0.0",
-    "lightningcss-darwin-arm64": "^1.29.0",
-    "lightningcss-darwin-x64": "^1.29.0"
   }
 }

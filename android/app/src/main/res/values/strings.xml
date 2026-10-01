@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Brivu</string>
-    <string name="title_activity_main">Brivu</string>
-    <string name="package_name">com.quickreceipt.app</string>
-    <string name="custom_url_scheme">com.quickreceipt.app</string>
-</resources>

@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X,
-  Lock,
-  Unlock,
-  KeyRound,
   ShieldCheck,
-  AlertCircle,
-  CheckCircle2,
+  Lock,
   Eye,
   EyeOff,
-  Sparkles,
-  ArrowRight,
-  ShieldAlert,
   Save,
   Trash2,
+  X,
+  AlertTriangle,
+  KeyRound,
+  Sparkles,
+  CheckCircle2,
+  HelpCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { AppLockConfig } from '../types';
 import { StorageService } from '../services/storage';

@@ -29,10 +29,13 @@ import {
   Loader2,
   Palette,
   CheckCircle2,
+  Printer,
 } from 'lucide-react';
 import { BusinessProfile, Receipt } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { PdfGenerator } from '../services/pdfGenerator';
+import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
+import { StorageService } from '../services/storage';
 
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
@@ -181,6 +184,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null);
   const [deletingReceipt, setDeletingReceipt] = useState<Receipt | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [printingId, setPrintingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -191,6 +195,36 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   };
 
   const currency = business?.currency || 'UGX';
+
+  const handlePrintReceipt = async (receipt: Receipt) => {
+    setPrintingId(receipt.id);
+    try {
+      const savedPrinter = StorageService.getSavedThermalPrinter();
+      if (savedPrinter) {
+        showToast(`Printing to ${savedPrinter.name}...`);
+        const res = await BluetoothPrinterService.printReceipt(savedPrinter, receipt);
+        showToast(res.message);
+      } else {
+        showToast('Spooling print document...');
+        const tempPrinter: any = {
+          id: 'system-default',
+          name: 'Thermal / System Printer',
+          paperWidth: '80mm',
+          autoPrintOnSave: false,
+          connectedAt: new Date().toISOString(),
+        };
+        const res = await BluetoothPrinterService.printReceipt(tempPrinter, receipt);
+        if (res?.message) {
+          showToast(res.message);
+        }
+      }
+    } catch (err: any) {
+      console.error('Print error:', err);
+      showToast(`Print note: ${err.message || 'Check printer connection'}`);
+    } finally {
+      setPrintingId(null);
+    }
+  };
 
   const handleDownload = async (receipt: Receipt) => {
     setDownloadingId(receipt.id);
@@ -856,73 +890,94 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                     )}
 
                     {/* Action Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                      <button
-                        id={`btn-open-doc-${receipt.id}`}
-                        onClick={() => onOpenReceipt(receipt)}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:bg-slate-800 dark:hover:bg-slate-100 shadow-xs active:scale-95 transition"
-                      >
-                        <Eye className={`w-3.5 h-3.5 ${isInvoiceMode ? 'text-indigo-400 dark:text-indigo-600' : 'text-emerald-400 dark:text-emerald-600'}`} />
-                        <span>{isInvoiceMode ? 'View / Print Invoice PDF' : 'View / Print Receipt PDF'}</span>
-                      </button>
-
-                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    <div className="space-y-2 pt-1">
+                      {/* Row 1: Primary Actions (Preview, Print, Share) */}
+                      <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                         <button
-                          id={`btn-edit-doc-${receipt.id}`}
-                          onClick={() => onEditReceipt(receipt)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 text-xs font-semibold transition active:scale-95"
-                          title={isInvoiceMode ? 'Edit invoice details' : 'Edit receipt details'}
+                          id={`btn-open-doc-${receipt.id}`}
+                          onClick={() => onOpenReceipt(receipt)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:bg-slate-800 dark:hover:bg-slate-100 shadow-xs active:scale-95 transition min-w-0"
+                          title={isInvoiceMode ? 'Preview Invoice' : 'Preview Receipt'}
                         >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
+                          <Eye className={`w-3.5 h-3.5 shrink-0 ${isInvoiceMode ? 'text-indigo-400 dark:text-indigo-600' : 'text-emerald-400 dark:text-emerald-600'}`} />
+                          <span className="truncate">Preview</span>
+                        </button>
+
+                        <button
+                          id={`btn-print-doc-${receipt.id}`}
+                          onClick={() => handlePrintReceipt(receipt)}
+                          disabled={printingId === receipt.id}
+                          className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200/70 dark:border-purple-800/70 text-xs font-bold transition active:scale-95 disabled:opacity-50 min-w-0"
+                          title={isInvoiceMode ? 'Print Invoice (Bluetooth Thermal / Printer)' : 'Print Receipt (Bluetooth Thermal / Printer)'}
+                        >
+                          {printingId === receipt.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          ) : (
+                            <Printer className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                          )}
+                          <span className="truncate">Print</span>
                         </button>
 
                         <button
                           id={`btn-share-doc-${receipt.id}`}
                           onClick={() => onShareReceipt(receipt)}
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition active:scale-95 ${
+                          className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition active:scale-95 border min-w-0 ${
                             isInvoiceMode
-                              ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100'
-                              : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
+                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border-indigo-200/70 dark:border-indigo-800/70'
+                              : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border-emerald-200/70 dark:border-emerald-800/70'
                           }`}
                           title="Share Document"
                         >
-                          <Share2 className="w-3 h-3" />
-                          <span>Share</span>
+                          <Share2 className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Share</span>
+                        </button>
+                      </div>
+
+                      {/* Row 2: Secondary Actions (Edit, Download, Duplicate, Delete) */}
+                      <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                        <button
+                          id={`btn-edit-doc-${receipt.id}`}
+                          onClick={() => onEditReceipt(receipt)}
+                          className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200/60 dark:border-amber-800/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
+                          title={isInvoiceMode ? 'Edit invoice details' : 'Edit receipt details'}
+                        >
+                          <Pencil className="w-3 h-3 shrink-0" />
+                          <span className="truncate">Edit</span>
                         </button>
 
                         <button
                           id={`btn-download-doc-${receipt.id}`}
                           onClick={() => handleDownload(receipt)}
                           disabled={downloadingId === receipt.id}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold transition active:scale-95 disabled:opacity-50"
+                          className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0"
                           title={isInvoiceMode ? 'Download PDF Invoice' : 'Download PDF Receipt'}
                         >
                           {downloadingId === receipt.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
                           ) : (
-                            <Download className="w-3 h-3" />
+                            <Download className="w-3 h-3 shrink-0" />
                           )}
-                          <span>Download</span>
+                          <span className="truncate">PDF</span>
                         </button>
 
                         <button
                           id={`btn-duplicate-doc-${receipt.id}`}
                           onClick={() => onDuplicateReceipt(receipt)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 text-xs font-semibold transition active:scale-95"
+                          className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
                           title={isInvoiceMode ? 'Duplicate as new invoice' : 'Duplicate as new receipt'}
                         >
-                          <Copy className="w-3 h-3" />
-                          <span>Duplicate</span>
+                          <Copy className="w-3 h-3 shrink-0" />
+                          <span className="truncate">Duplicate</span>
                         </button>
 
                         <button
                           id={`btn-delete-doc-${receipt.id}`}
                           onClick={() => setDeletingReceipt(receipt)}
-                          className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition active:scale-95"
+                          className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200/60 dark:border-rose-900/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
                           title={isInvoiceMode ? 'Delete Invoice' : 'Delete Receipt'}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3 h-3 shrink-0" />
+                          <span className="truncate">Delete</span>
                         </button>
                       </div>
                     </div>

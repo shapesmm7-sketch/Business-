@@ -524,10 +524,19 @@ export function App() {
     }
   };
 
-  // Delete receipt or invoice
-  const handleDeleteReceipt = (id: string) => {
+  // Delete receipt or invoice permanently from local & cloud
+  const handleDeleteReceipt = async (id: string) => {
+    // 1. Delete locally & immediately update UI state
     StorageService.deleteReceipt(id);
     refreshData();
+
+    // 2. Await cloud wipe
+    try {
+      await StorageService.deleteReceiptAsync(id);
+      refreshData();
+    } catch (err) {
+      console.warn('Cloud delete background note:', err);
+    }
   };
 
   // Business profile updated

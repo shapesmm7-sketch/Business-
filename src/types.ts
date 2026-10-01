@@ -1,7 +1,3 @@
-/**
- * Core type definitions for Brivu
- */
-
 export type CurrencyCode =
   | 'UGX'
   | 'USD'
@@ -125,7 +121,7 @@ export interface Receipt {
   id: string;
   currency?: string; // Optional document-level currency override
   documentType?: DocumentType; // 'receipt' | 'invoice' (default: 'receipt')
-  receiptNumber: string; // or invoice number e.g. INV-000001
+  receiptNumber: string; // or invoice number e.g. INV-01
   createdAt: string; // ISO string
   dueDate?: string; // ISO string or YYYY-MM-DD (for invoices)
   poNumber?: string; // Purchase Order / Ref No
@@ -159,6 +155,16 @@ export interface Receipt {
   businessSnapshot: BusinessProfile;
 }
 
+export interface ThermalPrinterDevice {
+  id: string;
+  name: string;
+  paperWidth: '58mm' | '80mm';
+  autoPrintOnSave?: boolean;
+  connectedAt?: string;
+  serviceUuid?: string;
+  characteristicUuid?: string;
+}
+
 export interface AppSettings {
   currency: string;
   receiptPrefix: string;
@@ -176,6 +182,7 @@ export interface AppSettings {
   customFooter: string;
   darkMode: boolean;
   hapticsEnabled: boolean;
+  defaultPrinter?: ThermalPrinterDevice;
 }
 
 export interface InventoryProduct {
@@ -538,19 +545,17 @@ export interface CloudflareFileRecord {
   key: string;
   filename: string;
   size: number;
-  mimeType: string;
-  folder?: string;
+  mimeType?: string;
   uploadedAt: string;
   url: string;
+  folder?: string;
 }
 
 export interface CloudflareSyncResponse {
   success: boolean;
-  message: string;
+  message?: string;
+  error?: string;
   timestamp?: string;
   receiptsSaved?: number;
-  d1Bound?: boolean;
-  r2Bound?: boolean;
-  error?: string;
+  data?: any;
 }
-

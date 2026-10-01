@@ -19,6 +19,7 @@ import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { PdfGenerator, resolveEffectiveBusinessProfile } from '../services/pdfGenerator';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { BRAND_COLOR_PRESETS, isValidHex, normalizeHex, getContrastTextHex } from '../utils/colors';
 
 interface ReceiptPreviewScreenProps {
@@ -55,14 +56,22 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   };
 
   const handleTemplateChange = (templateId: ReceiptTemplateId) => {
-    const updated = { ...receipt, template: templateId };
+    const updated: Receipt = {
+      ...receipt,
+      template: templateId,
+      accentColor: undefined,
+      customTheme: undefined,
+    };
     setReceipt(updated);
     StorageService.saveReceipt(updated);
     showToast(`Switched to ${templateId.toUpperCase()} template`);
   };
 
   const handleAccentColorChange = (newColor: string) => {
-    const updated = { ...receipt, accentColor: newColor };
+    const updated: Receipt = {
+      ...receipt,
+      accentColor: newColor || undefined,
+    };
     setReceipt(updated);
     StorageService.saveReceipt(updated);
     if (newColor) {
@@ -98,8 +107,50 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
     }
   };
 
+  const savedPrinter = StorageService.getSavedThermalPrinter();
+  const [isThermalPrinting, setIsThermalPrinting] = useState(false);
+
+  const handleSmartPrint = async () => {
+    if (savedPrinter) {
+      setIsThermalPrinting(true);
+      try {
+        showToast(`Printing to ${savedPrinter.name}...`);
+        const res = await BluetoothPrinterService.printReceipt(savedPrinter, receipt);
+        showToast(res.message);
+      } catch (err: any) {
+        showToast(`Thermal print error: ${err.message || 'Check printer connection'}`);
+      } finally {
+        setIsThermalPrinting(false);
+      }
+    } else {
+      // Direct thermal / system spooler print
+      setIsThermalPrinting(true);
+      try {
+        const tempPrinter: any = {
+          id: 'system-default',
+          name: 'Thermal / System Printer',
+          paperWidth: '80mm',
+          autoPrintOnSave: false,
+          connectedAt: new Date().toISOString(),
+        };
+        const res = await BluetoothPrinterService.printReceipt(tempPrinter, receipt);
+        if (res?.message) {
+          showToast(res.message);
+        }
+      } catch (err: any) {
+        window.print();
+      } finally {
+        setIsThermalPrinting(false);
+      }
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    handleSmartPrint();
+  };
+
+  const handleThermalPrint = async () => {
+    handleSmartPrint();
   };
 
   const handleSaveToCloudflare = async () => {
@@ -292,7 +343,12 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       {/* ============================================================ */}
       {/* REALISTIC RECEIPT PREVIEW CONTAINER                          */}
       {/* ============================================================ */}
-      <div className="receipt-print-area">
+      <div
+        className="receipt-print-area"
+        id="receipt-preview-render-node"
+        data-receipt-id={receipt.id}
+        data-receipt-number={receipt.receiptNumber}
+      >
         <ReceiptLayoutRenderer
           data={{
             storeName: business.name || '',
@@ -327,16 +383,16 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             nonRefundable: Boolean(receipt.nonRefundable),
             currency: currency,
             template: receipt.template || 'modern',
-            accentColor: receipt.accentColor || business?.accentColor,
+            accentColor: receipt.accentColor,
             customTheme: (() => {
               const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
               return {
-                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor || business?.headerBgColor,
-                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor || business?.headerTextColor,
-                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor || business?.totalBgColor,
-                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor || business?.totalTextColor,
-                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor || business?.paperBgColor,
-                accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor || business?.accentColor,
+                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
+                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
+                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor,
+                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor,
+                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
+                accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor,
                 fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
                 badgeText: receipt.customTheme?.badgeText || saved?.badgeText || (isInvoice ? 'INVOICE' : 'RECEIPT'),
               };
@@ -373,6 +429,19 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
           >
             <Share2 className="w-4 h-4" />
             <span>{isInvoice ? 'Share Invoice' : 'Share Receipt'}</span>
+          </button>
+
+          {/* Print Button (Bluetooth Thermal / System Printer) */}
+          <button
+            id="btn-preview-thermal-print"
+            type="button"
+            onClick={handleThermalPrint}
+            disabled={isGenerating || isThermalPrinting}
+            title={savedPrinter ? `Print directly to ${savedPrinter.name}` : 'Print Invoice / Receipt'}
+            className="flex-1 py-3.5 px-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
+          >
+            <Printer className={`w-4 h-4 ${isThermalPrinting ? 'animate-bounce' : ''}`} />
+            <span>{isThermalPrinting ? 'Printing...' : savedPrinter ? 'Print (BT)' : 'Print'}</span>
           </button>
 
           {/* Cloud Direct Save (Auto configured) */}

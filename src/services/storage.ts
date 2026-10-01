@@ -23,6 +23,7 @@ import {
   UserSubscription,
   AppLockConfig,
   CloudflareConfig,
+  ThermalPrinterDevice,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 import { CloudflareService } from './cloudflareService';
@@ -52,6 +53,7 @@ const STORAGE_KEYS = {
   APP_LOCK: 'quickreceipt_app_lock_config_v1',
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
+  DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -80,7 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   nextReceiptNumber: 1,
   invoicePrefix: 'INV-',
   nextInvoiceNumber: 1,
-  numberPadding: 6,
+  numberPadding: 2,
   defaultPaymentMethod: 'Cash',
   defaultTemplate: 'modern',
   defaultDueDateDays: 14,
@@ -375,6 +377,10 @@ export const StorageService = {
     if (settings.customFooter === 'Thank you for your business!') {
       settings.customFooter = '';
     }
+    // Default to 1 leading zero (2 digits, e.g. 01 instead of legacy 000001)
+    if (!settings.numberPadding || settings.numberPadding === 6) {
+      settings.numberPadding = 2;
+    }
     return settings;
   },
 
@@ -384,6 +390,17 @@ export const StorageService = {
       CloudflareService.syncAllToCloudflare().catch(() => {});
     }
     return success;
+  },
+
+  getSavedThermalPrinter(): ThermalPrinterDevice | undefined {
+    const settings = this.getSettings();
+    return settings.defaultPrinter;
+  },
+
+  saveThermalPrinter(printer: ThermalPrinterDevice | undefined): boolean {
+    const settings = this.getSettings();
+    settings.defaultPrinter = printer;
+    return this.saveSettings(settings);
   },
 
   getCustomTemplate(templateId: string) {
@@ -410,8 +427,43 @@ export const StorageService = {
     return this.saveSettings(settings);
   },
 
+  getDeletedReceiptIds(): string[] {
+    return readFromStorage<string[]>(STORAGE_KEYS.DELETED_RECEIPTS, []);
+  },
+
+  recordDeletedReceipt(id: string, receiptNumber?: string, customerName?: string): void {
+    const list = this.getDeletedReceiptIds();
+    const set = new Set(list.map((s) => String(s).trim()));
+    if (id) {
+      set.add(String(id).trim());
+      set.add(String(id).trim().toLowerCase());
+    }
+    if (receiptNumber) {
+      set.add(String(receiptNumber).trim());
+      set.add(String(receiptNumber).trim().toLowerCase());
+    }
+    if (customerName && customerName.trim().length > 1) {
+      set.add(`cust:${customerName.trim().toLowerCase()}`);
+    }
+    writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(set));
+  },
+
+  unmarkDeletedReceipt(id: string, receiptNumber?: string): void {
+    const list = this.getDeletedReceiptIds();
+    const idLower = String(id).trim().toLowerCase();
+    const numLower = receiptNumber ? String(receiptNumber).trim().toLowerCase() : '';
+    const filtered = list.filter((item) => {
+      const itemLower = String(item).trim().toLowerCase();
+      return itemLower !== idLower && (!numLower || itemLower !== numLower);
+    });
+    writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, filtered);
+  },
+
   getReceipts(): Receipt[] {
     const data = localStorage.getItem(STORAGE_KEYS.RECEIPTS);
+    const deletedList = this.getDeletedReceiptIds();
+    const deletedSet = new Set(deletedList.map((s) => String(s).trim().toLowerCase()));
+
     if (!data) {
       // First time initialization
       writeToStorage(STORAGE_KEYS.RECEIPTS, INITIAL_SAMPLE_RECEIPTS);
@@ -422,10 +474,22 @@ export const StorageService = {
       if (!Array.isArray(parsed)) return [];
       return parsed
         .filter((r) => r && typeof r === 'object' && (!r.id || !String(r.id).startsWith('sample-')))
+        .filter((r) => {
+          const rId = String(r.id || '').trim().toLowerCase();
+          const rNum = String(r.receiptNumber || '').trim().toLowerCase();
+          const rCust = r.customerName ? `cust:${String(r.customerName).trim().toLowerCase()}` : '';
+          if (deletedSet.has(rId) || (rNum && deletedSet.has(rNum))) {
+            return false;
+          }
+          if (rCust && deletedSet.has(rCust)) {
+            return false;
+          }
+          return true;
+        })
         .map((r: any): Receipt => ({
           ...r,
           id: String(r.id || `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
-          receiptNumber: String(r.receiptNumber || 'REC-000001'),
+          receiptNumber: String(r.receiptNumber || 'REC-01'),
           items: Array.isArray(r.items) ? r.items : [],
           subtotal: typeof r.subtotal === 'number' ? r.subtotal : (parseFloat(r.subtotal) || 0),
           total: typeof r.total === 'number' ? r.total : (parseFloat(r.total) || 0),
@@ -453,6 +517,9 @@ export const StorageService = {
   },
 
   saveReceipt(receipt: Receipt): boolean {
+    // Unmark from deleted list if user explicitly created/saved this receipt
+    this.unmarkDeletedReceipt(receipt.id, receipt.receiptNumber);
+
     const receipts = this.getReceipts();
     const existingIndex = receipts.findIndex((r) => r.id === receipt.id);
     let updated: Receipt[];
@@ -544,8 +611,49 @@ export const StorageService = {
 
   deleteReceipt(id: string): boolean {
     const receipts = this.getReceipts();
+    const target = receipts.find((r) => r.id === id);
+    const receiptNumber = target?.receiptNumber;
+    const customerName = target?.customerName;
+
+    // Record persistent deletion tombstone
+    this.recordDeletedReceipt(id, receiptNumber, customerName);
+
     const filtered = receipts.filter((r) => r.id !== id);
-    return writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
+    const success = writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
+
+    if (success) {
+      // Instantly synchronize the updated receipts list to Cloudflare D1 so pull cannot restore it
+      CloudflareService.deleteReceipt(id).catch(() => {});
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+
+    return success;
+  },
+
+  /**
+   * Permanent Async Receipt & Cloud Deletion
+   */
+  async deleteReceiptAsync(id: string): Promise<{ success: boolean; cloudSynced: boolean }> {
+    const receipts = this.getReceipts();
+    const target = receipts.find((r) => r.id === id);
+    const receiptNumber = target?.receiptNumber;
+    const customerName = target?.customerName;
+
+    this.recordDeletedReceipt(id, receiptNumber, customerName);
+
+    const filtered = receipts.filter((r) => r.id !== id);
+    const success = writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
+
+    let cloudSynced = false;
+    try {
+      await CloudflareService.deleteReceipt(id);
+      await CloudflareService.syncAllToCloudflare();
+      cloudSynced = true;
+    } catch (cfErr) {
+      console.warn('Async cloud receipt deletion note:', cfErr);
+    }
+
+    return { success, cloudSynced };
   },
 
   /**
@@ -558,11 +666,12 @@ export const StorageService = {
     const existingNumbers = new Set(receipts.map((r) => r.receiptNumber.trim()));
 
     let currentNum = settings.nextReceiptNumber;
-    let candidate = `${settings.receiptPrefix}${String(currentNum).padStart(settings.numberPadding, '0')}`;
+    const padding = settings.numberPadding === 6 ? 2 : (settings.numberPadding || 2);
+    let candidate = `${settings.receiptPrefix}${String(currentNum).padStart(padding, '0')}`;
 
     while (existingNumbers.has(candidate)) {
       currentNum++;
-      candidate = `${settings.receiptPrefix}${String(currentNum).padStart(settings.numberPadding, '0')}`;
+      candidate = `${settings.receiptPrefix}${String(currentNum).padStart(padding, '0')}`;
     }
 
     return candidate;
@@ -588,11 +697,12 @@ export const StorageService = {
 
     let currentNum = settings.nextInvoiceNumber || 1;
     const prefix = settings.invoicePrefix || 'INV-';
-    let candidate = `${prefix}${String(currentNum).padStart(settings.numberPadding, '0')}`;
+    const padding = settings.numberPadding === 6 ? 2 : (settings.numberPadding || 2);
+    let candidate = `${prefix}${String(currentNum).padStart(padding, '0')}`;
 
     while (existingNumbers.has(candidate)) {
       currentNum++;
-      candidate = `${prefix}${String(currentNum).padStart(settings.numberPadding, '0')}`;
+      candidate = `${prefix}${String(currentNum).padStart(padding, '0')}`;
     }
 
     return candidate;
@@ -753,13 +863,35 @@ export const StorageService = {
         this.saveSettings(backupData.settings);
       }
       if (Array.isArray(backupData.receipts)) {
-        const existing = this.getReceipts().filter((r) => !r.id.startsWith('sample-'));
-        const cloudReceipts = backupData.receipts.filter((r) => !r.id.startsWith('sample-'));
+        const deletedList = this.getDeletedReceiptIds();
+        const deletedSet = new Set(deletedList.map((s) => String(s).trim().toLowerCase()));
+
+        const isDeleted = (r: any) => {
+          if (!r || typeof r !== 'object') return true;
+          if (r.id && String(r.id).startsWith('sample-')) return true;
+          const rId = String(r.id || '').trim().toLowerCase();
+          const rNum = String(r.receiptNumber || '').trim().toLowerCase();
+          const rCust = r.customerName ? `cust:${String(r.customerName).trim().toLowerCase()}` : '';
+          if (deletedSet.has(rId) || (rNum && deletedSet.has(rNum))) return true;
+          if (rCust && deletedSet.has(rCust)) return true;
+          return false;
+        };
+
+        const existing = this.getReceipts().filter((r) => !isDeleted(r));
+        const cloudReceipts = backupData.receipts.filter((r) => !isDeleted(r));
         const cloudIds = new Set(cloudReceipts.map((r) => r.id));
-        // Keep cloud records + any local-only records
+        // Keep cloud records + any local-only records (excluding deleted receipts)
         const localOnly = existing.filter((r) => !cloudIds.has(r.id));
         const mergedReceipts = [...cloudReceipts, ...localOnly];
         writeToStorage(STORAGE_KEYS.RECEIPTS, mergedReceipts);
+
+        // If cloud backup still held receipts that were locally deleted, push sanitized state back to D1 immediately
+        const hadDeletedInCloud = backupData.receipts.some((r) => isDeleted(r));
+        if (hadDeletedInCloud) {
+          setTimeout(() => {
+            CloudflareService.syncAllToCloudflare().catch(() => {});
+          }, 100);
+        }
       }
       if (Array.isArray(backupData.inventoryProducts)) {
         writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
@@ -2046,6 +2178,7 @@ export const StorageService = {
     const filtered = pages.filter((p) => p.id !== id);
     const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, filtered);
     if (success) {
+      CloudflareService.deleteHostedQrPage(id).catch(() => {});
       CloudflareService.syncAllToCloudflare().catch(() => {});
     }
     return success;

@@ -12,12 +12,12 @@ import {
   FileText,
   Crown,
   Sparkles,
-  Lock,
   Cloud,
 } from 'lucide-react';
-import { ActiveScreen, AppBackupData, AppSettings, AppLockConfig } from '../types';
+import { ActiveScreen, AppBackupData, AppSettings } from '../types';
 import { StorageService } from '../services/storage';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
+import { BluetoothPrinterSettings } from './BluetoothPrinterSettings';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -32,20 +32,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
   onNavigate,
   onDataRestored,
-  onLockApp,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
   useEffect(() => {
     setLocalSettings(settings);
-    setLockConfig(StorageService.getAppLockConfig());
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
-    StorageService.getAppLockConfig()
-  );
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -214,61 +209,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </button>
       </div>
 
-      {/* 2. App Lock & Security Protection */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-emerald-500" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              App Lock & Intruder Security
-            </h2>
-          </div>
-          {lockConfig && lockConfig.isEnabled && (
-            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white">
-              PIN Protected
-            </span>
-          )}
-        </div>
+      {/* 3. Bluetooth Thermal Printer Discovery & Setup */}
+      <BluetoothPrinterSettings
+        settings={localSettings}
+        onUpdateSettings={(updated) => {
+          setLocalSettings(updated);
+          onUpdateSettings(updated);
+        }}
+      />
 
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Lock your app with a digit passcode to keep receipts, inventory, and sales private from intruders. Reset easily with your secret recovery word or number.
-        </p>
-
-        <div className="pt-1">
-          {lockConfig && lockConfig.isEnabled ? (
-            <button
-              id="btn-settings-lock-now"
-              type="button"
-              onClick={() => {
-                StorageService.setAppLocked(true);
-                if (onLockApp) {
-                  onLockApp();
-                }
-              }}
-              className="w-full p-3.5 rounded-xl bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
-            >
-              <Lock className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
-              <span>Lock App Screen</span>
-            </button>
-          ) : (
-            <button
-              id="btn-settings-setup-lock"
-              type="button"
-              onClick={() => {
-                if (onNavigate) {
-                  onNavigate('app-lock-setup');
-                }
-              }}
-              className="w-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-sm"
-            >
-              <Lock className="w-4 h-4" />
-              <span>Create Passcode & Enable App Lock</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 3. Cloud Storage & Backup Page Navigation Card */}
+      {/* 4. Cloud Storage & Backup Page Navigation Card */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
         <button
           id="btn-settings-open-cloud-backup"

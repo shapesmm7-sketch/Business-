@@ -633,7 +633,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 type="text"
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(e.target.value)}
-                placeholder="e.g. INV-000001"
+                placeholder="e.g. INV-01"
                 className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
               />
             </div>
@@ -812,8 +812,8 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               key={item.id}
               className="p-3 sm:p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2.5"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-700/60">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px]">
                   Item #{index + 1}
                 </span>
                 <button
@@ -827,12 +827,21 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               </div>
 
               <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>ITEM NAME</span>
+                    <span className="text-rose-500 font-bold text-xs">*</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    (Product or service description)
+                  </span>
+                </label>
                 <input
                   type="text"
                   value={item.name}
                   onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                  placeholder="Item description or service name..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  placeholder="Enter item name (e.g. Graphic Design, Shoes, Cement, Repair)..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden placeholder:font-normal placeholder:text-slate-400"
                 />
               </div>
 
@@ -848,11 +857,20 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                     value={item.quantity === 0 ? '' : item.quantity}
                     onChange={(e) => handleItemChange(item.id, 'quantity', e.target.value)}
                     placeholder="1"
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden text-center"
+                    title={String(item.quantity || '')}
+                    className={`w-full min-w-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden text-center transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-1.5 ${
+                      String(item.quantity || '').length >= 7
+                        ? 'text-[8.5px] tracking-tighter px-0.5'
+                        : String(item.quantity || '').length >= 5
+                        ? 'text-[9.5px] tracking-tighter px-0.5'
+                        : String(item.quantity || '').length >= 4
+                        ? 'text-[11px] tracking-tight px-1'
+                        : 'text-xs sm:text-sm px-1.5'
+                    }`}
                   />
                 </div>
 
-                <div className="col-span-4 sm:col-span-4">
+                <div className="col-span-5 sm:col-span-4">
                   <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1 truncate">
                     Price ({currency})
                   </label>
@@ -863,15 +881,39 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                     value={item.unitPrice === 0 ? '' : item.unitPrice}
                     onChange={(e) => handleItemChange(item.id, 'unitPrice', e.target.value)}
                     placeholder="0"
-                    className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    title={String(item.unitPrice || '')}
+                    className={`w-full min-w-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-1.5 ${
+                      String(item.unitPrice || '').length >= 13
+                        ? 'text-[8px] tracking-tighter px-0.5'
+                        : String(item.unitPrice || '').length >= 10
+                        ? 'text-[9px] tracking-tighter px-1'
+                        : String(item.unitPrice || '').length >= 8
+                        ? 'text-[10px] tracking-tight px-1'
+                        : String(item.unitPrice || '').length >= 6
+                        ? 'text-[11px] tracking-tight px-1.5'
+                        : 'text-xs sm:text-sm px-2'
+                    }`}
                   />
                 </div>
 
-                <div className="col-span-5 sm:col-span-5">
+                <div className="col-span-4 sm:col-span-5">
                   <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1 text-right">
-                    Item Subtotal
+                    Subtotal
                   </label>
-                  <div className="px-2.5 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-700/80 border border-slate-300/60 dark:border-slate-600/60 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center justify-end font-mono whitespace-nowrap overflow-x-auto no-scrollbar shadow-2xs">
+                  <div
+                    className={`min-w-0 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-700/80 border border-slate-300/60 dark:border-slate-600/60 font-bold text-slate-900 dark:text-slate-100 flex items-center justify-end font-mono whitespace-nowrap overflow-hidden shadow-2xs transition-all ${
+                      formatCurrency(item.subtotal || 0, currency).length >= 18
+                        ? 'text-[8px] tracking-tighter px-0.5'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 15
+                        ? 'text-[9px] tracking-tighter px-1'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 12
+                        ? 'text-[10px] tracking-tight px-1'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 9
+                        ? 'text-[11px] tracking-tight px-1.5'
+                        : 'text-xs sm:text-sm px-2'
+                    }`}
+                    title={formatCurrency(item.subtotal || 0, currency)}
+                  >
                     {formatCurrency(item.subtotal || 0, currency)}
                   </div>
                 </div>
@@ -1123,7 +1165,16 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                     setAmountPaidValue(Math.min(grandTotal, Math.max(0, val)));
                   }}
                   placeholder={`e.g. ${Math.round(grandTotal / 2)}`}
-                  className="w-full px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                  title={String(amountPaidValue || '')}
+                  className={`w-full min-w-0 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-2 ${
+                    String(amountPaidValue || '').length >= 13
+                      ? 'text-[8.5px] tracking-tighter px-1.5'
+                      : String(amountPaidValue || '').length >= 10
+                      ? 'text-[9.5px] tracking-tighter px-2'
+                      : String(amountPaidValue || '').length >= 8
+                      ? 'text-xs tracking-tight px-2.5'
+                      : 'text-sm px-3'
+                  }`}
                 />
               </div>
             </div>
@@ -1165,7 +1216,16 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                     setAmountPaidValue(Math.max(0, val));
                   }}
                   placeholder={String(grandTotal)}
-                  className="w-full px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                  title={String(amountPaidValue || grandTotal)}
+                  className={`w-full min-w-0 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-2 ${
+                    String(amountPaidValue || grandTotal || '').length >= 13
+                      ? 'text-[8.5px] tracking-tighter px-1.5'
+                      : String(amountPaidValue || grandTotal || '').length >= 10
+                      ? 'text-[9.5px] tracking-tighter px-2'
+                      : String(amountPaidValue || grandTotal || '').length >= 8
+                      ? 'text-xs tracking-tight px-2.5'
+                      : 'text-sm px-3'
+                  }`}
                 />
               </div>
             </div>
@@ -1186,7 +1246,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 value={discountValue === 0 ? '' : discountValue}
                 onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
                 placeholder="0"
-                className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                title={String(discountValue || '')}
+                className={`flex-1 min-w-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-2 ${
+                  String(discountValue || '').length >= 10
+                    ? 'text-[9.5px] tracking-tighter px-1.5'
+                    : String(discountValue || '').length >= 7
+                    ? 'text-xs tracking-tight px-2'
+                    : 'text-sm px-3'
+                }`}
               />
               <button
                 type="button"
@@ -1214,7 +1281,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 value={taxRate === 0 ? '' : taxRate}
                 onChange={(e) => setTaxRate(Number(e.target.value) || 0)}
                 placeholder="0% (e.g. 18)"
-                className="w-full pl-3 pr-9 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                className="w-full pl-3 pr-9 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
               />
             </div>
           </div>
@@ -1230,7 +1297,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               value={shippingFee === 0 ? '' : shippingFee}
               onChange={(e) => setShippingFee(Number(e.target.value) || 0)}
               placeholder="0"
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+              title={String(shippingFee || '')}
+              className={`w-full min-w-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-2 ${
+                String(shippingFee || '').length >= 10
+                  ? 'text-[9.5px] tracking-tighter px-1.5'
+                  : String(shippingFee || '').length >= 7
+                  ? 'text-xs tracking-tight px-2'
+                  : 'text-sm px-3'
+              }`}
             />
           </div>
         </div>

@@ -536,6 +536,31 @@ export const CloudflareService = {
   },
 
   /**
+   * Deletes a receipt from Cloudflare D1 and synchronizes latest state
+   */
+  async deleteReceipt(id: string): Promise<{ success: boolean; message?: string }> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'Cloudflare Worker is not configured' };
+    }
+    try {
+      const headers = this.getAuthHeaders();
+      const targetUrl = `${config.workerUrl}/api/receipts/${encodeURIComponent(id)}`;
+      const response = await fetch(targetUrl, {
+        method: 'DELETE',
+        headers,
+      });
+      // Also push full updated state to be 100% sure D1 backup tables are in sync
+      await this.syncAllToCloudflare().catch(() => {});
+      return { success: response.ok };
+    } catch (err) {
+      console.warn('Cloudflare delete note:', err);
+      await this.syncAllToCloudflare().catch(() => {});
+      return { success: false };
+    }
+  },
+
+  /**
    * Pulls data from Cloudflare D1 and restores it into local storage
    */
   async pullFromCloudflare(): Promise<{
@@ -807,6 +832,28 @@ export const CloudflareService = {
         success: false,
         message: `Cloudflare QR save error: ${errMsg}`,
       };
+    }
+  },
+
+  /**
+   * Deletes a hosted QR page from Cloudflare D1
+   */
+  async deleteHostedQrPage(pageId: string): Promise<boolean> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) return false;
+    try {
+      const headers = this.getAuthHeaders();
+      const targetUrl = `${config.workerUrl}/api/qr/${encodeURIComponent(pageId)}`;
+      const res = await fetch(targetUrl, {
+        method: 'DELETE',
+        headers,
+      });
+      await this.syncAllToCloudflare().catch(() => {});
+      return res.ok;
+    } catch (err) {
+      console.warn('Failed to delete hosted QR page from Cloudflare:', err);
+      await this.syncAllToCloudflare().catch(() => {});
+      return false;
     }
   },
 };

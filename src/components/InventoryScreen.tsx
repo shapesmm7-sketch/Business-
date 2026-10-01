@@ -26,6 +26,7 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Cloud,
   User,
   ArrowLeft,
@@ -57,6 +58,8 @@ import {
   IdCard,
   Upload,
   Image as ImageIcon,
+  ArrowUpRight,
+  Boxes,
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
@@ -89,6 +92,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
   const currency = business.currency || 'UGX';
+
+  const [currentCategory, setCurrentCategory] = useState<'products' | 'money' | 'people' | null>(() => {
+    if (initialTab === 'expense' || initialTab === 'debts' || initialTab === 'report') return 'money';
+    if (initialTab === 'customers' || initialTab === 'agents' || initialTab === 'workers') return 'people';
+    if (initialTab === 'sales' || initialTab === 'shoppingList') return 'products';
+    return null;
+  });
 
   // Data states
   const [products, setProducts] = useState<InventoryProduct[]>(() => StorageService.getInventoryProducts());
@@ -3831,7 +3841,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#0284c7] text-slate-900 dark:text-slate-100 flex flex-col transition-colors pb-24">
+    <div className={`min-h-screen ${currentCategory === null ? 'bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100' : 'bg-[#0284c7] text-slate-900 dark:text-slate-100'} flex flex-col transition-colors pb-24`}>
       {/* Toast alert (Centered prominently in screen) */}
       {toastMessage && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
@@ -3845,22 +3855,37 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         document.body
       )}
 
-      {/* TOP APP BAR - Matches Screenshot header with user avatar, store name, cloud sync */}
+      {/* TOP APP BAR */}
       <div className="bg-[#0284c7] text-white pt-3 pb-2 px-4">
         <div className="max-w-xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <button
-              onClick={onNavigateHome}
+              onClick={() => {
+                if (currentCategory !== null) {
+                  setCurrentCategory(null);
+                } else {
+                  onNavigateHome();
+                }
+              }}
               className="p-1 -ml-1 rounded-full hover:bg-white/10 transition text-white"
-              title="Return to Home"
+              title={currentCategory !== null ? 'Back to Inventory' : 'Return to Home'}
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xs">
-              <User className="w-4 h-4" />
+              {currentCategory === 'products' && <Package className="w-4 h-4" />}
+              {currentCategory === 'money' && <DollarSign className="w-4 h-4" />}
+              {currentCategory === 'people' && <Users className="w-4 h-4" />}
+              {currentCategory === null && <User className="w-4 h-4" />}
             </div>
             <span className="font-bold text-base tracking-tight truncate max-w-[180px] sm:max-w-xs">
-              {business.name || 'music hub256'}
+              {currentCategory === 'products'
+                ? 'Products'
+                : currentCategory === 'money'
+                ? 'Money'
+                : currentCategory === 'people'
+                ? 'People'
+                : business.name || 'Inventory'}
             </span>
           </div>
 
@@ -3886,175 +3911,255 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           </div>
         </div>
 
-        {/* PRIMARY NAVIGATION TABS: STOCK | SALES | EXPENSE | DEBTS | LIST | REPORT */}
-        <div className="max-w-xl mx-auto mt-3 border-b border-sky-400/30">
-          <div className="grid grid-cols-6 text-center">
-            {/* TAB 3: STOCK */}
-            <button
-              id="tab-inventory-stock"
-              type="button"
-              onClick={() => setActiveTab('stock')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'stock' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('stock', business.language)}</span>
-              {activeTab === 'stock' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
+        {/* SINGLE TAB BAR ROW (EXACTLY ONE ROW PER SCREEN, ONLY SHOWN INSIDE A CATEGORY) */}
+        {currentCategory !== null && (
+          <div className="max-w-xl mx-auto mt-3 pb-1">
+            {/* 1. PRODUCTS PAGE: ONLY 3 TABS (STOCK, SALES, LIST) - MONEY & PEOPLE ARE HIDDEN */}
+            {currentCategory === 'products' && (
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
+                <button
+                  id="tab-inventory-stock"
+                  type="button"
+                  onClick={() => setActiveTab('stock')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'stock'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Stock</span>
+                </button>
 
-            {/* TAB 2: SALES */}
-            <button
-              id="tab-inventory-sales"
-              type="button"
-              onClick={() => setActiveTab('sales')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'sales' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <Tag className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('sales_record', business.language)}</span>
-              {activeTab === 'sales' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
+                <button
+                  id="tab-inventory-sales"
+                  type="button"
+                  onClick={() => setActiveTab('sales')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'sales'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <Tag className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Sales</span>
+                </button>
 
-            {/* TAB 4: EXPENSE */}
-            <button
-              id="tab-inventory-expense"
-              type="button"
-              onClick={() => setActiveTab('expense')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'expense' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <ReceiptIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('expenses', business.language)}</span>
-              {activeTab === 'expense' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
-
-            {/* TAB 5: DEBTS */}
-            <button
-              id="tab-inventory-debts"
-              type="button"
-              onClick={() => setActiveTab('debts')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'debts' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <div className="relative">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                <button
+                  id="tab-inventory-shopping-list"
+                  type="button"
+                  onClick={() => setActiveTab('shoppingList')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'shoppingList'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">List</span>
+                </button>
               </div>
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">{t('debtors', business.language)}</span>
-              {activeTab === 'debts' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
+            )}
 
-            {/* TAB 6: SHOPPING LIST */}
-            <button
-              id="tab-inventory-shopping-list"
-              type="button"
-              onClick={() => setActiveTab('shoppingList')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'shoppingList' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <div className="relative">
-                <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
+            {/* 2. MONEY PAGE: ONLY 3 TABS (EXPENSES, DEBTS, REPORT) - PRODUCTS & PEOPLE ARE HIDDEN */}
+            {currentCategory === 'money' && (
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
+                <button
+                  id="tab-inventory-expense"
+                  type="button"
+                  onClick={() => setActiveTab('expense')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'expense'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <ReceiptIcon className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Expenses</span>
+                </button>
+
+                <button
+                  id="tab-inventory-debts"
+                  type="button"
+                  onClick={() => setActiveTab('debts')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'debts'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <DollarSign className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Debts</span>
+                </button>
+
+                <button
+                  id="tab-inventory-report"
+                  type="button"
+                  onClick={() => setActiveTab('report')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'report'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <ClipboardList className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Report</span>
+                </button>
               </div>
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">LIST</span>
-              {activeTab === 'shoppingList' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
+            )}
 
-            {/* TAB 7: REPORT */}
-            <button
-              id="tab-inventory-report"
-              type="button"
-              onClick={() => setActiveTab('report')}
-              className={`pb-2.5 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative ${
-                activeTab === 'report' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-              }`}
-            >
-              <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">REPORT</span>
-              {activeTab === 'report' && (
-                <div className="absolute bottom-0 left-1 right-1 h-0.5 bg-white rounded-full" />
-              )}
-            </button>
+            {/* 3. PEOPLE PAGE: ONLY 3 TABS (CLIENT, AGENT, STAFF) - PRODUCTS & MONEY ARE HIDDEN */}
+            {currentCategory === 'people' && (
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
+                <button
+                  id="tab-inventory-clients"
+                  type="button"
+                  onClick={() => setActiveTab('customers')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'customers'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Client</span>
+                </button>
+
+                <button
+                  id="tab-inventory-agents"
+                  type="button"
+                  onClick={() => setActiveTab('agents')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'agents'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <Briefcase className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Agent</span>
+                </button>
+
+                <button
+                  id="tab-inventory-workers"
+                  type="button"
+                  onClick={() => setActiveTab('workers')}
+                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    activeTab === 'workers'
+                      ? 'bg-white text-sky-950 shadow-sm'
+                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Staff</span>
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* SECOND ROW IN HEADER: CLIENTS, AGENTS & WORKERS TABS */}
-        <div className="max-w-xl mx-auto pt-1.5 pb-0.5 flex items-center gap-4 sm:gap-6 px-1">
-          {/* TAB: CLIENT (first) */}
-          <button
-            id="tab-inventory-clients"
-            type="button"
-            onClick={() => setActiveTab('customers')}
-            className={`pb-2 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative px-1 ${
-              activeTab === 'customers' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">CLIENT</span>
-            {activeTab === 'customers' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-            )}
-          </button>
-
-          {/* TAB: AGENT (next) */}
-          <button
-            id="tab-inventory-agents"
-            type="button"
-            onClick={() => setActiveTab('agents')}
-            className={`pb-2 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative px-1 ${
-              activeTab === 'agents' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              <Briefcase className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">AGENT</span>
-            {activeTab === 'agents' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-            )}
-          </button>
-
-          {/* TAB: STAFF (after agent) */}
-          <button
-            id="tab-inventory-workers"
-            type="button"
-            onClick={() => setActiveTab('workers')}
-            className={`pb-2 pt-1 font-bold text-xs flex flex-col items-center justify-center gap-1 transition relative px-1 ${
-              activeTab === 'workers' ? 'text-white' : 'text-sky-200 hover:text-white opacity-80'
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <span className="tracking-wider uppercase text-[8.5px] sm:text-[10px]">STAFF</span>
-            {activeTab === 'workers' && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full" />
-            )}
-          </button>
-        </div>
+        )}
       </div>
 
       {/* TAB CONTENT CONTAINER */}
       <div className="max-w-xl mx-auto w-full px-4 pt-4 flex-1">
+        {/* MAIN INVENTORY SCREEN BODY: 3 BIG ACTION BUTTONS */}
+        {currentCategory === null && (
+          <div className="space-y-4 py-2 animate-fadeIn pb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+              {/* BUTTON 1: PRODUCTS */}
+              <button
+                id="btn-main-products"
+                type="button"
+                onClick={() => {
+                  setCurrentCategory('products');
+                  setActiveTab('stock');
+                }}
+                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm shadow-sky-600/20 active:scale-[0.99] transition-all overflow-hidden border border-sky-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
+              >
+                <div className="flex items-start justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                    <Package className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
+                  </div>
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition">
+                    <span>Open</span>
+                    <ArrowUpRight className="w-3 h-3 text-white" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
+                    PRODUCTS
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug">
+                    Stock, Sales, List
+                  </p>
+                </div>
+              </button>
+
+              {/* BUTTON 2: MONEY */}
+              <button
+                id="btn-main-money"
+                type="button"
+                onClick={() => {
+                  setCurrentCategory('money');
+                  setActiveTab('expense');
+                }}
+                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold shadow-sm shadow-emerald-600/20 active:scale-[0.99] transition-all overflow-hidden border border-emerald-500/40 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
+              >
+                <div className="flex items-start justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                    <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
+                  </div>
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition">
+                    <span>Open</span>
+                    <ArrowUpRight className="w-3 h-3 text-white" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
+                    MONEY
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug">
+                    Expenses, Debts, Report
+                  </p>
+                </div>
+              </button>
+
+              {/* BUTTON 3: PEOPLE */}
+              <button
+                id="btn-main-people"
+                type="button"
+                onClick={() => {
+                  setCurrentCategory('people');
+                  setActiveTab('customers');
+                }}
+                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow-sm shadow-teal-600/20 active:scale-[0.99] transition-all overflow-hidden border border-teal-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
+              >
+                <div className="flex items-start justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                    <Users className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
+                  </div>
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition">
+                    <span>Open</span>
+                    <ArrowUpRight className="w-3 h-3 text-white" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
+                    PEOPLE
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug">
+                    Clients, Agent, Staff
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
         {/* ==================================================================== */}
         {/* SECTION 2: SALES TAB (Screenshot 2)                                  */}
         {/* ==================================================================== */}
-        {activeTab === 'sales' && (
+        {currentCategory === 'products' && activeTab === 'sales' && (
           <div className="space-y-3 animate-fadeIn">
             {/* Top of Sales Page: Add Sale Button */}
             <button
@@ -4889,7 +4994,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 3: STOCK TAB (Screenshot 3)                                  */}
         {/* ==================================================================== */}
-        {activeTab === 'stock' && (
+        {currentCategory === 'products' && activeTab === 'stock' && (
           <div className="space-y-2 animate-fadeIn pb-6">
             {/* Inline Add Product Form */}
             {showAddProductInline && (
@@ -5383,7 +5488,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 4: EXPENSES TAB                                              */}
         {/* ==================================================================== */}
-        {activeTab === 'expense' && (
+        {currentCategory === 'money' && activeTab === 'expense' && (
           <div className="space-y-3 animate-fadeIn pb-6">
             {/* Top of Expenses Page: Add Expense Button */}
             <button
@@ -5648,7 +5753,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 5: DEBTS & DEMANDS TAB                                       */}
         {/* ==================================================================== */}
-        {activeTab === 'debts' && (
+        {currentCategory === 'money' && activeTab === 'debts' && (
           <div className="space-y-3 animate-fadeIn">
             {/* Top of Debts Page: Add new debt Button */}
             <button
@@ -6410,7 +6515,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 7: SHOPPING LIST TAB                                         */}
         {/* ==================================================================== */}
-        {activeTab === 'shoppingList' && (
+        {currentCategory === 'products' && activeTab === 'shoppingList' && (
           <div className="space-y-3 animate-fadeIn">
             {/* Header Title */}
             <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-xl px-4 py-3 shadow-xs border border-sky-100 dark:border-slate-800">
@@ -7138,7 +7243,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 6: REPORT TAB                                                */}
         {/* ==================================================================== */}
-        {activeTab === 'report' && (
+        {currentCategory === 'money' && activeTab === 'report' && (
           <div className="space-y-3.5 animate-fadeIn">
             {sales.length === 0 ? (
               <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center border border-sky-100 dark:border-slate-800 shadow-lg space-y-3">
@@ -7615,7 +7720,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 7.5: AGENTS TAB (Directory in Header Row 2)                 */}
         {/* ==================================================================== */}
-        {activeTab === 'agents' && (
+        {currentCategory === 'people' && activeTab === 'agents' && (
           <div className="space-y-3 animate-fadeIn pb-8">
             {/* Header Title & Actions Card */}
             <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-slate-900 rounded-2xl px-4 py-3.5 shadow-sm border border-sky-100 dark:border-slate-800">
@@ -8071,7 +8176,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 7B: WORKERS TAB (Top-level Staff Directory)                  */}
         {/* ==================================================================== */}
-        {activeTab === 'workers' && (
+        {currentCategory === 'people' && activeTab === 'workers' && (
           <div className="space-y-3 animate-fadeIn pb-8">
             {/* Header Title & Actions Card */}
             <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-slate-900 rounded-2xl px-4 py-3.5 shadow-sm border border-sky-100 dark:border-slate-800">
@@ -8789,7 +8894,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* ==================================================================== */}
         {/* SECTION 8: CLIENTS TAB (Top-level Directory in Header)               */}
         {/* ==================================================================== */}
-        {activeTab === 'customers' && (
+        {currentCategory === 'people' && activeTab === 'customers' && (
           <div className="space-y-3 animate-fadeIn pb-8">
             {/* Header Title & Actions Card */}
             <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-slate-900 rounded-2xl px-4 py-3.5 shadow-sm border border-sky-100 dark:border-slate-800">

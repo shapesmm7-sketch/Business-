@@ -33,6 +33,7 @@ import {
 import { formatCurrency, roundMoney } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { PdfGenerator } from '../services/pdfGenerator';
+import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
@@ -447,6 +448,14 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         StorageService.clearDraft();
       }
 
+      // Check if default thermal printer has auto-print enabled
+      const defaultPrinter = StorageService.getSavedThermalPrinter();
+      if (defaultPrinter && defaultPrinter.autoPrintOnSave) {
+        BluetoothPrinterService.printReceipt(defaultPrinter, receipt).catch((err) => {
+          console.warn('Auto thermal print note:', err);
+        });
+      }
+
       if (action === 'save') {
         showToast(
           `Receipt ${receipt.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
@@ -535,7 +544,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 type="text"
                 value={receiptNumber}
                 onChange={(e) => setReceiptNumber(e.target.value)}
-                placeholder="REC-000001"
+                placeholder="REC-01"
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
               />
             </div>
@@ -645,27 +654,43 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-2"
             >
               {/* Item Name Row */}
-              <div className="flex items-center gap-2">
-                <span className="w-5 text-center text-xs font-bold text-slate-400">
-                  {index + 1}.
-                </span>
-                <input
-                  id={`input-item-name-${item.id}`}
-                  type="text"
-                  value={item.name}
-                  onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                  placeholder="Item name (e.g. Rice, Hair Styling, Soap)"
-                  className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                />
-                <button
-                  id={`btn-remove-item-${item.id}`}
-                  type="button"
-                  onClick={() => handleRemoveItem(item.id)}
-                  className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg transition"
-                  title="Remove item"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-800">
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+                    Item #{index + 1}
+                  </span>
+                  <button
+                    id={`btn-remove-item-${item.id}`}
+                    type="button"
+                    onClick={() => handleRemoveItem(item.id)}
+                    className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition"
+                    title="Remove item"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div>
+                  <label
+                    htmlFor={`input-item-name-${item.id}`}
+                    className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>ITEM NAME</span>
+                      <span className="text-rose-500 font-bold text-xs">*</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">
+                      (Product or service name)
+                    </span>
+                  </label>
+                  <input
+                    id={`input-item-name-${item.id}`}
+                    type="text"
+                    value={item.name}
+                    onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
+                    placeholder="Enter item name (e.g. Rice, Hair Styling, Soap, Shoes)..."
+                    className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden placeholder:font-normal placeholder:text-slate-400"
+                  />
+                </div>
               </div>
 
               {/* Quantity, Unit Price, and Auto Subtotal */}
@@ -679,7 +704,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => handleItemChange(item.id, 'quantity', Math.max(1, (Number(item.quantity) || 1) - 1))}
-                      className="px-1.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs"
+                      className="px-1 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs shrink-0 select-none"
                     >
                       -
                     </button>
@@ -691,12 +716,21 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                       onChange={(e) =>
                         handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)
                       }
-                      className="w-full text-center py-1 text-xs font-bold text-slate-900 dark:text-white focus:outline-hidden"
+                      title={String(item.quantity || '')}
+                      className={`w-full min-w-0 text-center py-1 font-bold text-slate-900 dark:text-white focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                        String(item.quantity || '').length >= 7
+                          ? 'text-[8px] tracking-tighter px-0.5'
+                          : String(item.quantity || '').length >= 5
+                          ? 'text-[9.5px] tracking-tighter px-0.5'
+                          : String(item.quantity || '').length >= 4
+                          ? 'text-[10.5px] tracking-tight px-0.5'
+                          : 'text-xs px-1'
+                      }`}
                     />
                     <button
                       type="button"
                       onClick={() => handleItemChange(item.id, 'quantity', (Number(item.quantity) || 0) + 1)}
-                      className="px-1.5 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs"
+                      className="px-1 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 font-bold text-xs shrink-0 select-none"
                     >
                       +
                     </button>
@@ -704,7 +738,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 </div>
 
                 {/* Price */}
-                <div className="col-span-4 sm:col-span-4">
+                <div className="col-span-5 sm:col-span-4">
                   <label className="block text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold mb-0.5 truncate">
                     Price ({currency})
                   </label>
@@ -718,16 +752,40 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                       handleItemChange(item.id, 'unitPrice', parseFloat(e.target.value) || 0)
                     }
                     placeholder="0"
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    title={String(item.unitPrice || '')}
+                    className={`w-full min-w-0 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-1.5 ${
+                      String(item.unitPrice || '').length >= 13
+                        ? 'text-[8px] tracking-tighter px-0.5'
+                        : String(item.unitPrice || '').length >= 10
+                        ? 'text-[9px] tracking-tighter px-1'
+                        : String(item.unitPrice || '').length >= 8
+                        ? 'text-[10px] tracking-tight px-1'
+                        : String(item.unitPrice || '').length >= 6
+                        ? 'text-[11px] tracking-tight px-1.5'
+                        : 'text-xs sm:text-sm px-2'
+                    }`}
                   />
                 </div>
 
                 {/* Subtotal */}
-                <div className="col-span-5 sm:col-span-5">
+                <div className="col-span-4 sm:col-span-5">
                   <label className="block text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold mb-0.5 text-right">
                     Subtotal
                   </label>
-                  <div className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white text-right overflow-x-auto whitespace-nowrap no-scrollbar shadow-2xs">
+                  <div
+                    className={`min-w-0 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-bold font-mono text-slate-900 dark:text-white text-right overflow-hidden whitespace-nowrap shadow-2xs transition-all ${
+                      formatCurrency(item.subtotal || 0, currency).length >= 18
+                        ? 'text-[8px] tracking-tighter px-0.5'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 15
+                        ? 'text-[9px] tracking-tighter px-1'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 12
+                        ? 'text-[10px] tracking-tight px-1'
+                        : formatCurrency(item.subtotal || 0, currency).length >= 9
+                        ? 'text-[11px] tracking-tight px-1.5'
+                        : 'text-xs sm:text-sm px-2'
+                    }`}
+                    title={formatCurrency(item.subtotal || 0, currency)}
+                  >
                     {formatCurrency(item.subtotal || 0, currency)}
                   </div>
                 </div>
@@ -823,7 +881,16 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 value={amountPaidInput}
                 onChange={(e) => setAmountPaidInput(e.target.value)}
                 placeholder={`e.g. ${total}`}
-                className="w-full pl-3 pr-12 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                title={amountPaidInput}
+                className={`w-full min-w-0 pl-3 pr-12 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  String(amountPaidInput || '').length >= 13
+                    ? 'text-[8.5px] tracking-tighter'
+                    : String(amountPaidInput || '').length >= 10
+                    ? 'text-[9.5px] tracking-tighter'
+                    : String(amountPaidInput || '').length >= 8
+                    ? 'text-[11px] tracking-tight'
+                    : 'text-xs'
+                }`}
               />
               <span className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400">
                 {currency}
