@@ -15,6 +15,10 @@ workflows:
           npm run build
       - name: Capacitor Sync
         script: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            rm -rf android
+            npx cap add android
+          fi
           npx cap sync android
       - name: Build Android Debug APK
         script: |
@@ -41,6 +45,10 @@ workflows:
           npm run build
       - name: Capacitor Sync
         script: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            rm -rf android
+            npx cap add android
+          fi
           npx cap sync android
       - name: Build Android Release APK & Bundle
         script: |
