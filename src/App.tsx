@@ -239,21 +239,8 @@ export function App() {
     };
   }, []);
 
-  // Initialize Push Notifications and handle notification click navigation
+  // Handle notification click navigation
   useEffect(() => {
-    const notifSettings = PushNotificationService.getSettings();
-    let timer: any = null;
-    if (notifSettings.pushEnabled !== false) {
-      if (PushNotificationService.isNative()) {
-        // Defer native registration slightly so app UI mounts and renders smoothly first
-        timer = setTimeout(() => {
-          PushNotificationService.registerPushToken().catch((err) => {
-            console.warn('[App] Native push initialization deferred:', err);
-          });
-        }, 1500);
-      }
-    }
-
     const handleAlertNavigate = (e: Event) => {
       try {
         const customEvent = e as CustomEvent<string>;
@@ -278,7 +265,6 @@ export function App() {
 
     window.addEventListener('brivu_navigate_alert', handleAlertNavigate);
     return () => {
-      if (timer) clearTimeout(timer);
       window.removeEventListener('brivu_navigate_alert', handleAlertNavigate);
     };
   }, []);
