@@ -13,6 +13,12 @@ import {
   Crown,
   Sparkles,
   Cloud,
+  Eye,
+  Shield,
+  CheckCircle2,
+  AlertCircle,
+  Ban,
+  Lock,
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings } from '../types';
 import { StorageService } from '../services/storage';
@@ -300,7 +306,109 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 5. Google AdMob Monetization & Test Center */}
+      {/* 5. App Transparency & Ad-Free Subscription Status */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3.5">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <Eye className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                App Transparency
+              </h2>
+              <p className="text-[10px] text-slate-400 font-medium">
+                Privacy, Data Sovereignty & Ad Status
+              </p>
+            </div>
+          </div>
+
+          {/* Clearly Labeled Ad-Free Subscription Badge */}
+          {subscription && subscription.status === 'active' ? (
+            <span
+              id="badge-ad-free-subscription"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500 text-white shadow-xs"
+            >
+              <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
+              <span>Ad-Free Subscription: Active</span>
+            </span>
+          ) : (
+            <span
+              id="badge-ad-free-subscription"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+            >
+              <AlertCircle className="w-3 h-3 stroke-[2]" />
+              <span>Ad-Free Subscription: Inactive</span>
+            </span>
+          )}
+        </div>
+
+        {/* Status Breakdown */}
+        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+              <Ban className="w-3.5 h-3.5 text-rose-500" />
+              <span>Ad Visibility:</span>
+            </span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">
+              {subscription && subscription.status === 'active' ? (
+                <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                  100% Ad-Free (All Ads Suppressed)
+                </span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">
+                  Ads Active (Free Tier)
+                </span>
+              )}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+              <Crown className="w-3.5 h-3.5 text-amber-500" />
+              <span>Plan Tier:</span>
+            </span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">
+              {subscription && subscription.status === 'active'
+                ? `${subscription.planName} (${subscription.formattedPrice})`
+                : 'Free Standard Plan'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Data Protection:</span>
+            </span>
+            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+              Zero 3rd-Party Tracking / Local First
+            </span>
+          </div>
+
+          {subscription && subscription.status === 'active' && subscription.expiresAt && (
+            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800 text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400">Renewal / Expiry Date:</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {new Date(subscription.expiresAt).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Action button if not subscribed */}
+        {(!subscription || subscription.status !== 'active') && (
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate('upgrade')}
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Crown className="w-3.5 h-3.5 fill-white" />
+            <span>Upgrade to Remove All Ads & Unlock Pro</span>
+          </button>
+        )}
+      </div>
+
+      {/* 6. Google AdMob Monetization & Test Center */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
           <div className="flex items-center gap-2">

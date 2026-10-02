@@ -18,6 +18,7 @@ import {
   Lock,
   KeyRound,
   ShieldCheck,
+  Gem,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, AppLockConfig } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -214,11 +215,23 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Typography with clean visual hierarchy */}
             <div className="flex flex-col min-w-0">
-              <span className="text-base font-bold text-slate-900 dark:text-white tracking-tight leading-none">
-                Brivu
-              </span>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                <span>Business Manager</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-base font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[240px]">
+                  {business.name || 'Brivu'}
+                </span>
+                {currentSubscription && currentSubscription.status === 'active' && (
+                  <span
+                    id="header-pro-badge"
+                    title={`Brivu Pro Account (${currentSubscription.planName})`}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 text-slate-950 shadow-xs shrink-0 ring-1 ring-amber-400/50"
+                  >
+                    <Gem className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+                    <span>PRO</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate max-w-[150px] xs:max-w-[200px]">
+                <span>{business.name ? 'Business Manager' : 'Receipts & Manager'}</span>
               </div>
             </div>
           </button>
@@ -296,8 +309,9 @@ export const Header: React.FC<HeaderProps> = ({
                   Apps Menu
                 </span>
                 {currentSubscription && currentSubscription.status === 'active' && (
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white leading-none shadow-xs">
-                    PRO ACTIVE
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white leading-none shadow-xs">
+                    <Gem className="w-2.5 h-2.5 fill-white text-white" />
+                    <span>PRO ACTIVE</span>
                   </span>
                 )}
               </div>
