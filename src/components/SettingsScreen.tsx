@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings } from '../types';
 import { StorageService } from '../services/storage';
-import { AdMobService, ADMOB_TEST_UNITS } from '../services/admobService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { BluetoothPrinterSettings } from './BluetoothPrinterSettings';
 
@@ -406,38 +405,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <span>Upgrade to Remove All Ads & Unlock Pro</span>
           </button>
         )}
-      </div>
-
-      {/* 6. Google AdMob Monetization & Test Center */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-sm bg-amber-400 text-slate-950">
-              AdMob
-            </span>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              Monetization & Test Ads
-            </h2>
-          </div>
-          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/20">
-            Active
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Google AdMob test ads are enabled for Android APK builds. Banner ads appear in content and overview screens, and interstitial ads trigger on save/export.
-        </p>
-
-        {/* Action Test Buttons */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={() => AdMobService.showInterstitial('settings_test_button')}
-            className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span>Test Interstitial Ad Trigger</span>
-          </button>
-        </div>
       </div>
 
       {/* 6. About & Privacy links */}
