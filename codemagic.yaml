@@ -1,55 +1,4 @@
 workflows:
-  android-debug:
-    name: Build Android Debug APK
-    max_build_duration: 30
-    instance_type: mac_mini_m1
-    environment:
-      node: 22
-      java: 21
-    scripts:
-      - name: Install dependencies
-        script: |
-          npm install --legacy-peer-deps
-      - name: Build Web Production Bundle
-        script: |
-          npm run build
-      - name: Generate App Icons
-        script: |
-          # Create assets directory if it doesn't exist
-          mkdir -p assets
-          
-          # Check if icon.png was uploaded to root, copy to assets directory
-          if [ -f "icon.png" ]; then
-            echo "Found icon.png in repository root, copying it to assets/icon.png"
-            cp icon.png assets/icon.png
-          elif [ -f "public/icon.png" ]; then
-            echo "Found public/icon.png, copying it to assets/icon.png"
-            cp public/icon.png assets/icon.png
-          fi
-          
-          # Generate icons if the source file is present
-          if [ -f "assets/icon.png" ] || [ -f "assets/logo.png" ]; then
-            echo "Generating Android adaptive and launcher icons..."
-            npx @capacitor/assets generate --android
-          else
-            echo "No icon.png found in root or assets directory. Skipping automatic icon generation."
-          fi
-      - name: Capacitor Sync
-        script: |
-          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
-            rm -rf android
-            npx cap add android
-          fi
-          npx cap sync android
-      - name: Build Android Debug APK
-        script: |
-          cd android
-          chmod +x gradlew || true
-          ./gradlew assembleDebug
-    artifacts:
-      - android/app/build/outputs/**/*.apk
-      - android/app/build/outputs/**/*.aab
-
   android-release:
     name: Build Android Release APK & AAB
     max_build_duration: 30
@@ -115,7 +64,58 @@ workflows:
         script: |
           cd android
           chmod +x gradlew || true
-          ./gradlew assembleRelease || ./gradlew assembleDebug
+          ./gradlew assembleRelease bundleRelease
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/**/*.aab
+
+  android-debug:
+    name: Build Android Debug APK
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      node: 22
+      java: 21
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install --legacy-peer-deps
+      - name: Build Web Production Bundle
+        script: |
+          npm run build
+      - name: Generate App Icons
+        script: |
+          # Create assets directory if it doesn't exist
+          mkdir -p assets
+          
+          # Check if icon.png was uploaded to root, copy to assets directory
+          if [ -f "icon.png" ]; then
+            echo "Found icon.png in repository root, copying it to assets/icon.png"
+            cp icon.png assets/icon.png
+          elif [ -f "public/icon.png" ]; then
+            echo "Found public/icon.png, copying it to assets/icon.png"
+            cp public/icon.png assets/icon.png
+          fi
+          
+          # Generate icons if the source file is present
+          if [ -f "assets/icon.png" ] || [ -f "assets/logo.png" ]; then
+            echo "Generating Android adaptive and launcher icons..."
+            npx @capacitor/assets generate --android
+          else
+            echo "No icon.png found in root or assets directory. Skipping automatic icon generation."
+          fi
+      - name: Capacitor Sync
+        script: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            rm -rf android
+            npx cap add android
+          fi
+          npx cap sync android
+      - name: Build Android Debug APK
+        script: |
+          cd android
+          chmod +x gradlew || true
+          ./gradlew assembleDebug
     artifacts:
       - android/app/build/outputs/**/*.apk
       - android/app/build/outputs/**/*.aab
