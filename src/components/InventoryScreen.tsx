@@ -64,6 +64,8 @@ import {
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { AdMobService, ADMOB_TEST_UNITS } from '../services/admobService';
+import { AdMobBanner } from './AdMobBanner';
 import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
@@ -76,6 +78,7 @@ interface InventoryScreenProps {
   initialTab?: InventoryTab;
   initialShowAddInline?: boolean;
   onNavigateHome: () => void;
+  onCategoryChange?: (category: 'products' | 'money' | 'people' | null) => void;
   onCreateReceiptWithItem?: (item: { name: string; unitPrice: number; quantity: number }) => void;
   onCreateInvoiceWithItem?: (item: { name: string; unitPrice: number; quantity: number }) => void;
 }
@@ -87,6 +90,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   initialTab = 'stock',
   initialShowAddInline = false,
   onNavigateHome,
+  onCategoryChange,
   onCreateReceiptWithItem,
   onCreateInvoiceWithItem,
 }) => {
@@ -99,6 +103,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     if (initialTab === 'sales' || initialTab === 'shoppingList') return 'products';
     return null;
   });
+
+  useEffect(() => {
+    onCategoryChange?.(currentCategory);
+  }, [currentCategory, onCategoryChange]);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+    let cat: 'products' | 'money' | 'people' | null = null;
+    if (initialTab === 'expense' || initialTab === 'debts' || initialTab === 'report') cat = 'money';
+    else if (initialTab === 'customers' || initialTab === 'agents' || initialTab === 'workers') cat = 'people';
+    else if (initialTab === 'sales' || initialTab === 'shoppingList') cat = 'products';
+    setCurrentCategory(cat);
+  }, [initialTab]);
 
   // Data states
   const [products, setProducts] = useState<InventoryProduct[]>(() => StorageService.getInventoryProducts());
@@ -380,6 +397,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
       showToast('Client added to directory & saved to Cloud Storage!');
     }
+    AdMobService.showInterstitial('customer_saved');
 
     setEditingCustomerId(null);
     setCustDirectoryName('');
@@ -469,6 +487,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
       showToast('Agent added to directory & saved to Cloud Storage!');
     }
+    AdMobService.showInterstitial('agent_saved');
 
     setEditingAgentId(null);
     setAgentNameInput('');
@@ -576,6 +595,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
       showToast('Staff member added & saved to Cloud Storage!');
     }
+    AdMobService.showInterstitial('staff_saved');
 
     setEditingWorkerId(null);
     setWorkerNameInput('');
@@ -809,6 +829,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     if (saved) {
       showToast(editingProductId ? 'Product updated & saved to Cloud Storage!' : 'Product saved to Cloud Storage & inventory!');
+      AdMobService.showInterstitial('product_saved');
     } else {
       showToast(`Could not save: Product with ID "${targetItemId}" already exists.`);
       return;
@@ -1140,6 +1161,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     } else {
       showToast('Sale recorded & saved to Cloud Storage!');
     }
+    AdMobService.showInterstitial('sale_recorded');
 
     // Reset sale form
     setSelectedProductForSale(null);
@@ -1173,6 +1195,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
     refreshData();
     showToast('Expense recorded & saved to Cloud Storage!');
+    AdMobService.showInterstitial('expense_recorded');
 
     setExpenseTitle('');
     setExpenseAmount('');
@@ -1327,6 +1350,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       showToast(`Debt for ${debtCustomerName} recorded & saved to Cloud Storage!`);
       setShowDebtForm(false);
     }
+    AdMobService.showInterstitial('debt_recorded');
 
     // Reset form
     setDebtCustomerName('');
@@ -1708,6 +1732,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
       showToast('Item added to shopping list & saved to Cloud Storage!');
     }
+    AdMobService.showInterstitial('shopping_item_saved');
 
     cancelEditShoppingItem();
     refreshData();
@@ -3841,7 +3866,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   };
 
   return (
-    <div className={`min-h-screen ${currentCategory === null ? 'bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100' : 'bg-[#0284c7] text-slate-900 dark:text-slate-100'} flex flex-col transition-colors pb-24`}>
+    <div className={`min-h-screen ${currentCategory === null ? 'bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 pb-36 sm:pb-40' : 'bg-[#0284c7] text-slate-900 dark:text-slate-100 pb-24'} flex flex-col transition-colors`}>
       {/* Toast alert (Centered prominently in screen) */}
       {toastMessage && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
@@ -4919,69 +4944,78 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {filteredSalesList.map((sale) => (
-                    <div
-                      key={sale.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                          {sale.itemId && (
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] font-bold">
-                              ID: #{sale.itemId}
-                            </span>
-                          )}
-                          <span>{sale.productName}</span>
-                          {sale.categoryId && (() => {
-                            const cat = productCategories.find((c) => c.id === sale.categoryId);
-                            return cat ? (
-                              <span
-                                className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                                style={{
-                                  backgroundColor: `${cat.color || '#0284c7'}18`,
-                                  color: cat.color || '#0284c7',
-                                }}
-                              >
-                                {cat.name}
+                  {filteredSalesList.map((sale, index) => (
+                    <React.Fragment key={sale.id}>
+                      <div
+                        className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                            {sale.itemId && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] font-bold">
+                                ID: #{sale.itemId}
                               </span>
-                            ) : null;
-                          })()}
-                          {(sale as any).isStaffSale ? (
-                            <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-extrabold text-[10px] flex items-center gap-1">
-                              <User className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                              <span>Staff Sale ({(sale as any).workerName})</span>
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 font-extrabold text-[10px]">
-                              Qty: {sale.quantity} sold
-                            </span>
-                          )}
-                          {sale.remainingStock !== undefined && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-[10px]">
-                              Balance left: {sale.remainingStock}
-                            </span>
-                          )}
+                            )}
+                            <span>{sale.productName}</span>
+                            {sale.categoryId && (() => {
+                              const cat = productCategories.find((c) => c.id === sale.categoryId);
+                              return cat ? (
+                                <span
+                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
+                                  style={{
+                                    backgroundColor: `${cat.color || '#0284c7'}18`,
+                                    color: cat.color || '#0284c7',
+                                  }}
+                                >
+                                  {cat.name}
+                                </span>
+                              ) : null;
+                            })()}
+                            {(sale as any).isStaffSale ? (
+                              <span className="px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-extrabold text-[10px] flex items-center gap-1">
+                                <User className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                <span>Staff Sale ({(sale as any).workerName})</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 font-extrabold text-[10px]">
+                                Qty: {sale.quantity} sold
+                              </span>
+                            )}
+                            {sale.remainingStock !== undefined && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-[10px]">
+                                Balance left: {sale.remainingStock}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            {sale.customerName && <span>Client: <strong className="text-slate-600 dark:text-slate-300">{sale.customerName}</strong></span>}
+                            {sale.customerName && sale.quantity > 1 && <span>•</span>}
+                            {sale.quantity > 1 && <span>({currency} {sale.sellingPrice.toLocaleString()} each)</span>}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                          {sale.customerName && <span>Client: <strong className="text-slate-600 dark:text-slate-300">{sale.customerName}</strong></span>}
-                          {sale.customerName && sale.quantity > 1 && <span>•</span>}
-                          {sale.quantity > 1 && <span>({currency} {sale.sellingPrice.toLocaleString()} each)</span>}
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm font-mono text-slate-900 dark:text-white">
+                            {currency} {sale.totalPrice.toLocaleString()}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSale(sale.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 transition rounded-lg"
+                            title="Delete sale"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm font-mono text-slate-900 dark:text-white">
-                          {currency} {sale.totalPrice.toLocaleString()}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSale(sale.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 transition rounded-lg"
-                          title="Delete sale"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
+                      {(index + 1) % 8 === 0 && (
+                        <div key={`inline-admob-sale-${sale.id}`} className="py-1">
+                          <AdMobBanner
+                            placement="inline"
+                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
                   ))}
                 </div>
               )}
@@ -5325,16 +5359,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                 {/* Compact Products List Items (fits ~5 items on mobile without scrolling) */}
                 <div className="space-y-1.5">
-                  {filteredProducts.map((prod) => {
+                  {filteredProducts.map((prod, index) => {
                     const isOutOfStock = prod.quantity === 0;
                     const isLowStock = prod.quantity > 0 && prod.quantity < 5;
                     const catObj = productCategories.find((c) => c.id === prod.categoryId);
 
                     return (
-                      <div
-                        key={prod.id}
-                        className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 transition hover:border-sky-300"
-                      >
+                      <React.Fragment key={prod.id}>
+                        <div
+                          className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 transition hover:border-sky-300"
+                        >
                         {/* Top Row: Thumbnail + Item info + Stock Badge */}
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -5477,8 +5511,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           </div>
                         </div>
                       </div>
-                    );
-                  })}
+                      {(index + 1) % 8 === 0 && (
+                        <div key={`inline-admob-prod-${prod.id}`} className="py-1">
+                          <AdMobBanner
+                            placement="inline"
+                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 </div>
               </div>
             )}
@@ -5710,37 +5753,46 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {filteredExpenses.map((exp) => (
-                        <div
-                          key={exp.id}
-                          className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-between"
-                        >
-                          <div className="min-w-0 flex-1 pr-2">
-                            <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                              <span>{exp.title}</span>
+                      {filteredExpenses.map((exp, index) => (
+                        <React.Fragment key={exp.id}>
+                          <div
+                            className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-between"
+                          >
+                            <div className="min-w-0 flex-1 pr-2">
+                              <div className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                                <span>{exp.title}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                <span>{new Date(exp.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                {exp.notes && (
+                                  <span>• <span className="text-slate-500 italic">{exp.notes}</span></span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                              <span>{new Date(exp.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                              {exp.notes && (
-                                <span>• <span className="text-slate-500 italic">{exp.notes}</span></span>
-                              )}
-                            </div>
-                          </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-extrabold text-sm font-mono text-rose-600 dark:text-rose-400">
-                              - {currency} {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteExpense(exp.id, exp.title)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500 transition rounded-lg"
-                              title="Delete expense"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-extrabold text-sm font-mono text-rose-600 dark:text-rose-400">
+                                - {currency} {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExpense(exp.id, exp.title)}
+                                className="p-1.5 text-slate-400 hover:text-rose-500 transition rounded-lg"
+                                title="Delete expense"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                          {(index + 1) % 8 === 0 && (
+                            <div key={`inline-admob-exp-${exp.id}`} className="py-1">
+                              <AdMobBanner
+                                placement="inline"
+                                unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
                       ))}
                     </div>
                   )}
@@ -6259,7 +6311,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {filteredDebts.map((debt) => {
+                  {filteredDebts.map((debt, index) => {
                     const isPaid = debt.status === 'paid';
                     const isOverdue =
                       !isPaid &&
@@ -6267,9 +6319,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       new Date(debt.dueDate) < new Date(new Date().toISOString().split('T')[0]);
 
                     return (
-                      <div
-                        key={debt.id}
-                        className={`bg-white dark:bg-slate-900 rounded-xl px-3 py-2 sm:py-2.5 shadow-xs border transition hover:shadow-sm ${
+                      <React.Fragment key={debt.id}>
+                        <div
+                          className={`bg-white dark:bg-slate-900 rounded-xl px-3 py-2 sm:py-2.5 shadow-xs border transition hover:shadow-sm ${
                           isPaid
                             ? 'border-emerald-200 dark:border-emerald-950/60 bg-emerald-50/20'
                             : isOverdue
@@ -6502,8 +6554,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           </div>
                         )}
                       </div>
-                    );
-                  })}
+                      {(index + 1) % 8 === 0 && (
+                        <div key={`inline-admob-debt-${debt.id}`} className="py-1">
+                          <AdMobBanner
+                            placement="inline"
+                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 </div>
               )}
             </div>
@@ -7130,16 +7191,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {filteredShoppingList.map((item) => {
+                    {filteredShoppingList.map((item, index) => {
                       const priceNum = item.estimatedPrice || 0;
                       const qtyVal = parseFloat(item.quantity) || 1;
                       const totalCost = priceNum * qtyVal;
                       const catObj = shoppingCategories.find((c) => c.id === item.categoryId);
 
                       return (
-                        <div
-                          key={item.id}
-                          className={`bg-white dark:bg-slate-900 rounded-xl p-2.5 sm:p-3 border transition flex items-center justify-between gap-3 ${
+                        <React.Fragment key={item.id}>
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-xl p-2.5 sm:p-3 border transition flex items-center justify-between gap-3 ${
                             item.checked
                               ? 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/20 dark:bg-emerald-950/5 opacity-75'
                               : 'border-slate-100 dark:border-slate-800'
@@ -7231,8 +7292,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             </div>
                           </div>
                         </div>
-                      );
-                    })}
+                        {(index + 1) % 8 === 0 && (
+                          <div key={`inline-admob-shop-${item.id}`} className="py-1">
+                            <AdMobBanner
+                              placement="inline"
+                              unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                            />
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                   </div>
                 )}
               </div>
@@ -8032,7 +8102,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-2.5">
-                {filteredAgents.map((agent) => {
+                {filteredAgents.map((agent, index) => {
                   const initials =
                     agent.agentName
                       .split(' ')
@@ -8045,10 +8115,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   const cleanPhone = agent.contact.replace(/[^\d+]/g, '');
 
                   return (
-                    <div
-                      key={agent.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-sky-300 dark:hover:border-slate-700 transition"
-                    >
+                    <React.Fragment key={agent.id}>
+                      <div
+                        className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-sky-300 dark:hover:border-slate-700 transition"
+                      >
                       <div className="flex items-start sm:items-center gap-3">
                         {agent.profilePic ? (
                           <img
@@ -8166,8 +8236,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </button>
                       </div>
                     </div>
-                  );
-                })}
+                    {(index + 1) % 8 === 0 && (
+                      <div key={`inline-admob-agent-${agent.id}`} className="py-1">
+                        <AdMobBanner
+                          placement="inline"
+                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               </div>
             )}
           </div>
@@ -8643,7 +8722,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </div>
             ) : (
               <div className="space-y-2.5">
-                {filteredWorkers.map((worker) => {
+                {filteredWorkers.map((worker, index) => {
                   const cleanPhone = worker.phone ? worker.phone.replace(/[^0-9+]/g, '') : '';
                   const initials = worker.name
                     .split(' ')
@@ -8662,10 +8741,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   const isExpanded = !!expandedWorkerIds[worker.id];
 
                   return (
-                    <div
-                      key={worker.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800 hover:border-sky-200 dark:hover:border-slate-700 transition space-y-2.5"
-                    >
+                    <React.Fragment key={worker.id}>
+                      <div
+                        className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm border border-slate-100 dark:border-slate-800 hover:border-sky-200 dark:hover:border-slate-700 transition space-y-2.5"
+                      >
                       {/* Top Row: Avatar, Name, Role, Actions */}
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -8884,8 +8963,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                    {(index + 1) % 8 === 0 && (
+                      <div key={`inline-admob-worker-${worker.id}`} className="py-1">
+                        <AdMobBanner
+                          placement="inline"
+                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               </div>
             )}
           </div>
@@ -9189,7 +9277,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-2.5">
-                {filteredCustomers.map((cust) => {
+                {filteredCustomers.map((cust, index) => {
                   const initials =
                     cust.name
                       .split(' ')
@@ -9202,10 +9290,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   const cleanPhone = cust.contact.replace(/[^\d+]/g, '');
 
                   return (
-                    <div
-                      key={cust.id}
-                      className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-sky-300 dark:hover:border-slate-700 transition"
-                    >
+                    <React.Fragment key={cust.id}>
+                      <div
+                        className="bg-white dark:bg-slate-900 rounded-2xl p-3.5 shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-sky-300 dark:hover:border-slate-700 transition"
+                      >
                       <div className="flex items-start sm:items-center gap-3">
                         {cust.profilePic ? (
                           <img
@@ -9303,8 +9391,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </button>
                       </div>
                     </div>
-                  );
-                })}
+                    {(index + 1) % 8 === 0 && (
+                      <div key={`inline-admob-cust-${cust.id}`} className="py-1">
+                        <AdMobBanner
+                          placement="inline"
+                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               </div>
             )}
           </div>

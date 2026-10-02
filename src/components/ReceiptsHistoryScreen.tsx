@@ -37,6 +37,8 @@ import { PdfGenerator } from '../services/pdfGenerator';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StorageService } from '../services/storage';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
+import { AdMobBanner } from './AdMobBanner';
+import { ADMOB_TEST_UNITS } from '../services/admobService';
 
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
@@ -669,7 +671,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         </div>
       ) : (
         <div className="space-y-2">
-          {filteredReceipts.map((receipt) => {
+          {filteredReceipts.map((receipt, index) => {
             const isPaid = (receipt.paymentStatus || 'paid') === 'paid';
             const isPartial = receipt.paymentStatus === 'partial';
             const isExpanded = expandedReceiptId === receipt.id;
@@ -682,9 +684,9 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
             const safeBalance = typeof receipt.balance === 'number' ? receipt.balance : (safeTotal - safeAmountPaid);
 
             return (
-              <div
-                key={receipt.id}
-                className={`${theme.cardBg} rounded-2xl border ${
+              <React.Fragment key={receipt.id}>
+                <div
+                  className={`${theme.cardBg} rounded-2xl border ${
                   isExpanded ? theme.expandedRing : theme.cardBorder
                 } ${theme.cardHover} transition-all duration-200 overflow-hidden shadow-2xs`}
               >
@@ -999,8 +1001,17 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                   </div>
                 )}
               </div>
-            );
-          })}
+              {(index + 1) % 10 === 0 && (
+                <div key={`inline-admob-${receipt.id}`} className="py-1">
+                  <AdMobBanner
+                    placement="inline"
+                    unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                  />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
         </div>
       )}
 

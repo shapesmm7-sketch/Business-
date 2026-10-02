@@ -41,7 +41,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const lang = business?.language;
 
   return (
-    <div className="space-y-6 pt-2 pb-24 animate-fadeIn max-w-2xl mx-auto">
+    <div className="space-y-6 pt-2 pb-36 sm:pb-40 animate-fadeIn max-w-2xl mx-auto">
       {/* SECTION: CHOOSE ACTION (RECEIPTS & INVOICES, INVENTORY, OR QR HOSTING) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">

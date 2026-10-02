@@ -18,6 +18,9 @@ import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
+import { AdMobBanner } from './components/AdMobBanner';
+import { AdMobModalOverlay } from './components/AdMobModalOverlay';
+import { AdMobService, ADMOB_TEST_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
 import { CloudflareService } from './services/cloudflareService';
 import { PdfGenerator } from './services/pdfGenerator';
@@ -68,6 +71,7 @@ export function App() {
   const [appLockInitialMode, setAppLockInitialMode] = useState<'view' | 'form'>('view');
   const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>('stock');
   const [inventoryShowAddInline, setInventoryShowAddInline] = useState<boolean>(false);
+  const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(null);
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -551,6 +555,7 @@ export function App() {
     if (screen === 'inventory') {
       setInventoryInitialTab('stock');
       setInventoryShowAddInline(false);
+      setInventoryCategory(null);
     }
     setActiveScreen(screen);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -561,6 +566,15 @@ export function App() {
     setInventoryShowAddInline(showAddInline);
     setSelectedReceipt(null);
     setDuplicateSeed(null);
+    if (tab === 'expense' || tab === 'debts' || tab === 'report') {
+      setInventoryCategory('money');
+    } else if (tab === 'customers' || tab === 'agents' || tab === 'workers') {
+      setInventoryCategory('people');
+    } else if (tab === 'sales' || tab === 'shoppingList') {
+      setInventoryCategory('products');
+    } else {
+      setInventoryCategory(null);
+    }
     setActiveScreen('inventory');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -571,6 +585,8 @@ export function App() {
     setSelectedReceipt(savedReceipt);
     setDuplicateSeed(null);
     setActiveScreen('preview-receipt');
+    // Pop up AdMob Interstitial Ad immediately after save
+    AdMobService.showInterstitial('receipt_or_invoice_saved');
   };
 
   // Handler to open an existing receipt/invoice in preview
@@ -621,6 +637,8 @@ export function App() {
         documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
         documentNumber: receipt.receiptNumber,
       });
+      // Pop up AdMob Interstitial Ad immediately on download
+      AdMobService.showInterstitial('receipt_downloaded');
     } catch (err) {
       console.error('Download error:', err);
     }
@@ -918,6 +936,7 @@ export function App() {
             initialTab={inventoryInitialTab}
             initialShowAddInline={inventoryShowAddInline}
             onNavigateHome={() => handleNavigate('home')}
+            onCategoryChange={setInventoryCategory}
             onCreateReceiptWithItem={(item) => {
               const draftReceipt: Partial<Receipt> = {
                 items: [
@@ -1079,6 +1098,18 @@ export function App() {
           />
         )}
       </main>
+
+      {/* Google AdMob Bottom Banner Placeholder - Only displayed on bottom of home page and the main inventory overview screen */}
+      {(activeScreen === 'home' || (activeScreen === 'inventory' && inventoryCategory === null)) && (
+        <AdMobBanner
+          placement="bottom_sticky"
+          hasBottomNav={true}
+          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+        />
+      )}
+
+      {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
+      <AdMobModalOverlay />
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view */}
       {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen) && (

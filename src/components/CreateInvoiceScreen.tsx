@@ -40,6 +40,7 @@ import {
 import { formatCurrency, roundMoney } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { PdfGenerator } from '../services/pdfGenerator';
+import { AdMobService } from '../services/admobService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
@@ -500,6 +501,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     showToast(
       `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
     );
+    AdMobService.showInterstitial('invoice_saved');
     if (onSaveOnly) {
       onSaveOnly(invoice);
     } else {
@@ -520,6 +522,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     showToast(
       `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
     );
+    AdMobService.showInterstitial('invoice_saved');
     onSaveAndPreview(invoice);
   };
 
@@ -535,6 +538,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     try {
       const res = await PdfGenerator.downloadPdf(invoice);
       showToast(res.message);
+      AdMobService.showInterstitial('invoice_downloaded');
       setDownloadModalData({
         isOpen: true,
         fileName: res.filename,

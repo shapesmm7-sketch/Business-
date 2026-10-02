@@ -20,6 +20,7 @@ import { PdfGenerator, resolveEffectiveBusinessProfile } from '../services/pdfGe
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
+import { AdMobService } from '../services/admobService';
 import { BRAND_COLOR_PRESETS, isValidHex, normalizeHex, getContrastTextHex } from '../utils/colors';
 
 interface ReceiptPreviewScreenProps {
@@ -95,6 +96,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       setIsGenerating(true);
       const res = await PdfGenerator.downloadPdf(receipt);
       showToast(res.message);
+      AdMobService.showInterstitial('preview_pdf_download');
       setDownloadModalData({
         isOpen: true,
         fileName: res.filename,
@@ -115,6 +117,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       setIsGenerating(true);
       const res = await PdfGenerator.shareReceiptPdf(receipt);
       showToast(res.message);
+      AdMobService.showInterstitial('preview_pdf_share');
     } catch (err) {
       console.error('Share error:', err);
       showToast('Sharing cancelled or failed');

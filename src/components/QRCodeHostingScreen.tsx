@@ -44,6 +44,7 @@ import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
+import { AdMobService } from '../services/admobService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
@@ -858,6 +859,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
     setShowPhotoModal(false);
     showToast(editingPhoto ? 'Photo updated & saved!' : 'Photo added & saved!');
+    AdMobService.showInterstitial('qr_photo_saved');
     setEditingPhoto(null);
   };
 
@@ -1003,6 +1005,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
     setShowAddItemModal(false);
     showToast(editingItem ? 'Item updated & saved!' : 'Item added & saved!');
+    AdMobService.showInterstitial('qr_item_saved');
   };
 
   const handleDeleteMenuItem = (id: string) => {

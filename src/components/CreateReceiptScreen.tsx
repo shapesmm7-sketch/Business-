@@ -34,6 +34,7 @@ import { formatCurrency, roundMoney } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { PdfGenerator } from '../services/pdfGenerator';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
+import { AdMobService } from '../services/admobService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
@@ -468,12 +469,14 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         showToast(
           `Receipt ${receipt.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
         );
+        AdMobService.showInterstitial('receipt_saved');
         if (onSaveOnly) {
           onSaveOnly(receipt);
         } else {
           onSaveAndPreview(receipt);
         }
       } else if (action === 'download') {
+        AdMobService.showInterstitial('receipt_downloaded');
         if (onQuickDownload) {
           await onQuickDownload(receipt);
         } else {

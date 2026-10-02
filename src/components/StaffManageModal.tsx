@@ -52,6 +52,7 @@ import {
   BusinessProfile,
 } from '../types';
 import { StorageService } from '../services/storage';
+import { AdMobService } from '../services/admobService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
 
 interface StaffManageModalProps {
@@ -883,6 +884,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
       });
       showToast('Attendance recorded');
     }
+    AdMobService.showInterstitial('staff_attendance_recorded');
 
     setEditingAttId(null);
     setShowAddAttendance(false);
@@ -987,6 +989,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
       });
       showToast(`Logged sale: ${currency} ${parsedAmount.toLocaleString()}`);
     }
+    AdMobService.showInterstitial('staff_sale_recorded');
 
     setEditingSaleId(null);
     setShowAddSale(false);
@@ -1050,6 +1053,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
       });
       showToast(`Recorded loss of ${currency} ${parsedAmount.toLocaleString()}`);
     }
+    AdMobService.showInterstitial('staff_loss_recorded');
 
     setEditingLossId(null);
     setShowAddLoss(false);
@@ -1128,6 +1132,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
       });
       showToast('Incident / Mistake logged successfully');
     }
+    AdMobService.showInterstitial('staff_incident_recorded');
 
     setEditingIncId(null);
     setShowAddIncident(false);

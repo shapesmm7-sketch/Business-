@@ -26,6 +26,7 @@ import { BusinessProfile } from '../types';
 import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { AdMobService } from '../services/admobService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { PhoneInputField } from './PhoneInputField';
 import { getLanguageByCode } from '../data/languages';
@@ -311,6 +312,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
       await StorageService.saveProfileAsync(profile);
       onSave(profile);
       setSavedToast(true);
+      AdMobService.showInterstitial('profile_saved');
       setTimeout(() => setSavedToast(false), 3000);
     } finally {
       setIsSaving(false);

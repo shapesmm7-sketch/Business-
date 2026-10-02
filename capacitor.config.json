@@ -2,5 +2,11 @@
   "appId": "com.brivu.myapp",
   "appName": "Brivu",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "AdMob": {
+      "appId": "ca-app-pub-3940256099942544~3347511713",
+      "initializeForTesting": true
+    }
+  }
 }
