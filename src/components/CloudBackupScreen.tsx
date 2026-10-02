@@ -306,7 +306,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           <div>
             <h2 className="text-lg font-black tracking-tight">Cloud Backup & Storage</h2>
             <p className="text-xs text-orange-100 mt-1 leading-relaxed">
-              Your business records and inventory sync securely to cloud database, and your exported receipt PDFs, reports, and photos save to cloud storage.
+              Your business records and inventory sync securely to cloud database, and your logo, signature, and product photos save to cloud storage.
             </p>
           </div>
 
@@ -396,11 +396,11 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           {/* Toggle: Auto-save files */}
           <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-save Files, Photos & PDFs
+              <span className="text-xs font-bold text-slate-800 dark:text-white block">
+                Auto-save Photos & Images
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically upload receipts, product photos & downloaded PDFs to cloud storage
+                Automatically upload business logos, signatures, and product photos to cloud storage
               </span>
             </div>
             <button

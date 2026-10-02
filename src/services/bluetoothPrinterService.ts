@@ -39,7 +39,7 @@ export class BluetoothPrinterService {
         if (!available) {
           return {
             success: false,
-            message: 'Bluetooth is turned off on this device. Please turn on your phone Bluetooth in Settings and try again.',
+            message: 'Bluetooth is turned off or not available on this device. Please turn on your phone Bluetooth in Settings and try again.',
           };
         }
 
@@ -50,21 +50,32 @@ export class BluetoothPrinterService {
         });
 
         if (device) {
-          cachedBluetoothDevice = device;
+          // Actively verify connection capability to make sure it's a real, responding thermal printer
+          try {
+            const server = await device.gatt.connect();
+            await server.disconnect(); // Disconnect to release connection slot
 
-          const printerConfig: ThermalPrinterDevice = {
-            id: device.id,
-            name: device.name || `Bluetooth Printer (${device.id.slice(-4)})`,
-            paperWidth,
-            autoPrintOnSave: true,
-            connectedAt: new Date().toISOString(),
-          };
+            cachedBluetoothDevice = device;
 
-          return {
-            success: true,
-            printer: printerConfig,
-            message: `Connected & saved default printer "${printerConfig.name}"!`,
-          };
+            const printerConfig: ThermalPrinterDevice = {
+              id: device.id,
+              name: device.name || `Bluetooth Printer (${device.id.slice(-4)})`,
+              paperWidth,
+              autoPrintOnSave: true,
+              connectedAt: new Date().toISOString(),
+            };
+
+            return {
+              success: true,
+              printer: printerConfig,
+              message: `Connected & saved default printer "${printerConfig.name}" successfully!`,
+            };
+          } catch (connErr: any) {
+            return {
+              success: false,
+              message: `Could not connect to "${device.name || 'selected device'}": ${connErr.message || 'Signal too weak or not a responding printer.'} Please ensure your physical thermal printer is powered on and close to your phone.`,
+            };
+          }
         } else {
           return {
             success: false,
@@ -78,7 +89,7 @@ export class BluetoothPrinterService {
         }
         return {
           success: false,
-          message: `Could not connect to printer: Bluetooth is turned off or no active printer was detected.`,
+          message: `Could not detect printer: Please ensure Bluetooth is enabled, the physical printer is turned on and ready to pair.`,
         };
       }
     }
@@ -97,20 +108,43 @@ export class BluetoothPrinterService {
     printer: ThermalPrinterDevice,
     receipt: Receipt
   ): Promise<{ success: boolean; message: string }> {
-    // 1. Try Direct Web Bluetooth GATT Print if active cached device exists
-    if (this.isSupported() && cachedBluetoothDevice) {
+    // If user explicitly configured system-default, print via system spooler
+    if (printer.id === 'system-default') {
+      return this.triggerThermalSystemPrint(receipt, printer);
+    }
+
+    // Otherwise, it's a real Bluetooth printer. We must try to connect to it and print.
+    if (this.isSupported()) {
       try {
-        const btResult = await this.sendEscPosViaGatt(cachedBluetoothDevice, receipt, printer.paperWidth);
-        if (btResult.success) {
-          return btResult;
+        let device = cachedBluetoothDevice;
+        const navBluetooth = typeof navigator !== 'undefined' ? (navigator as any).bluetooth : null;
+        if (!device && navBluetooth && typeof navBluetooth.getDevices === 'function') {
+          const devices = await navBluetooth.getDevices().catch(() => []);
+          device = (devices || []).find((d: any) => d.id === printer.id);
         }
-      } catch (err) {
-        console.warn('Bluetooth GATT write failed, falling back to Thermal Print Spooler:', err);
+
+        if (device) {
+          cachedBluetoothDevice = device;
+          return await this.sendEscPosViaGatt(device, receipt, printer.paperWidth);
+        } else {
+          return {
+            success: false,
+            message: `Could not print: No active Bluetooth connection to printer "${printer.name}". Please ensure your physical printer is powered on, has Bluetooth enabled, and is close to your phone.`,
+          };
+        }
+      } catch (err: any) {
+        console.warn('Bluetooth print GATT error:', err);
+        return {
+          success: false,
+          message: `Connection failed to printer "${printer.name}": ${err.message || 'Device is offline or out of range.'} Please verify your printer is powered on.`,
+        };
       }
     }
 
-    // 2. Seamless Fallback: Thermal System Print Spooler formatted for 58mm/80mm roll width
-    return this.triggerThermalSystemPrint(receipt, printer);
+    return {
+      success: false,
+      message: `Bluetooth printing is not supported on this browser or platform. Please use the "System Default" printer fallback.`,
+    };
   }
 
   /**

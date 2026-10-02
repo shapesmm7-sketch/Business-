@@ -54,6 +54,7 @@ const STORAGE_KEYS = {
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
+  INSTALL_DATE: 'quickreceipt_install_date_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -2276,6 +2277,13 @@ export const StorageService = {
 
   syncReceiptToCloudflare(receipt: Receipt): void {
     try {
+      // If user's trial is expired and they don't have active subscription, completely skip saving to cloud!
+      const status = this.getTrialStatus();
+      if (status.isExpired && !this.isSubscribed()) {
+        console.info('Skip background Cloudflare receipt sync: Trial expired without subscription.');
+        return;
+      }
+
       const config = this.getCloudflareConfig();
       if (!config.workerUrl || config.autoSyncData === false) return;
       const url = config.workerUrl.replace(/\/$/, '');
@@ -2293,6 +2301,121 @@ export const StorageService = {
       });
     } catch {
       // Non-blocking
+    }
+  },
+
+  // --- FREE TRIAL, GRACE PERIOD, AND PURGE LIFE CYCLE ---
+  getInstallDate(): string {
+    let date = localStorage.getItem(STORAGE_KEYS.INSTALL_DATE);
+    if (!date) {
+      date = new Date().toISOString();
+      localStorage.setItem(STORAGE_KEYS.INSTALL_DATE, date);
+    }
+    return date;
+  },
+
+  getDaysSinceInstall(): number {
+    const installDate = this.getInstallDate();
+    const diffTime = Date.now() - new Date(installDate).getTime();
+    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  },
+
+  isSubscribed(): boolean {
+    const sub = this.getSubscription();
+    return Boolean(sub && sub.status === 'active');
+  },
+
+  getTrialStatus() {
+    const daysSinceInstall = this.getDaysSinceInstall();
+    const subscribed = this.isSubscribed();
+
+    // Free trial lasts for exactly 30 days
+    const isFreeTrial = daysSinceInstall <= 30;
+    // Grace period lasts for exactly 30 days after free trial (day 31 to 60)
+    const isGracePeriod = !isFreeTrial && daysSinceInstall <= 60 && !subscribed;
+    // Expired without subscription (above 30 days since install and not subscribed)
+    const isExpired = daysSinceInstall > 30 && !subscribed;
+    // Grace period expired without subscription (above 60 days)
+    const isGracePeriodExpired = daysSinceInstall > 60 && !subscribed;
+
+    const remainingTrialDays = Math.max(0, 30 - daysSinceInstall);
+    const remainingGraceDays = Math.max(0, 60 - daysSinceInstall);
+
+    return {
+      daysSinceInstall,
+      isFreeTrial,
+      isGracePeriod,
+      isExpired,
+      isGracePeriodExpired,
+      remainingTrialDays,
+      remainingGraceDays,
+      subscribed,
+    };
+  },
+
+  async purgeAllCloudData(): Promise<{ success: boolean; message: string }> {
+    try {
+      const config = this.getCloudflareConfig();
+      if (!config.workerUrl) {
+        return { success: false, message: 'Cloudflare Worker is not configured' };
+      }
+      
+      const cleanUrl = config.workerUrl.replace(/\/$/, '');
+      const headers: Record<string, string> = {};
+      if (config.apiKey && config.apiKey.trim() !== '') {
+        headers['X-Sync-Key'] = config.apiKey.trim();
+        headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
+      }
+
+      // 1. Wipe bulk D1 backup by pushing an empty backup
+      const emptyBackup = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        profile: { name: '', currency: 'UGX' },
+        settings: { currency: 'UGX' },
+        receipts: [],
+        deletedReceiptIds: [],
+        inventoryProducts: [],
+        inventorySales: [],
+        inventoryExpenses: [],
+        inventoryDebts: [],
+        shoppingListItems: [],
+        shoppingCategories: [],
+        productCategories: [],
+        customers: [],
+        agents: [],
+        workers: [],
+        staffAttendance: [],
+        staffLosses: [],
+        staffSales: [],
+        staffIncidents: [],
+        qrHostedPages: [],
+      };
+      
+      await fetch(`${cleanUrl}/api/sync/push`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ backupData: emptyBackup }),
+      }).catch(() => {});
+
+      // 2. Clear hosted QR pages individually from D1
+      const localPages = this.getHostedQRPages();
+      for (const p of localPages) {
+        await fetch(`${cleanUrl}/api/qr/${encodeURIComponent(p.id)}`, {
+          method: 'DELETE',
+          headers,
+        }).catch(() => {});
+      }
+
+      // Mark that cloud has been wiped/purged
+      localStorage.setItem('quickreceipt_cloud_wiped_v1', 'true');
+      return { success: true, message: 'All cloud files and backups permanently purged from Cloudflare' };
+    } catch (err: any) {
+      console.warn('Wipe all cloud data error:', err);
+      return { success: false, message: err.message || 'Purge failed' };
     }
   },
 };

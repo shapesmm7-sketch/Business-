@@ -1,5 +1,5 @@
 {
-	"appId": "com.brivu.receiptapp",
+	"appId": "com.brivu.myapp",
 	"appName": "Brivu",
 	"webDir": "dist",
 	"bundledWebRuntime": false

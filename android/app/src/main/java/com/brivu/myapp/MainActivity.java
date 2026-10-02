@@ -1,4 +1,4 @@
-package com.brivu.receiptapp;
+package com.brivu.myapp;
 
 import com.getcapacitor.BridgeActivity;
 

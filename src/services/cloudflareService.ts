@@ -143,11 +143,19 @@ export const CloudflareService = {
   },
 
   shouldAutoSaveFiles(): boolean {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return false; // Stop saving files to cloud after trial expires unless subscribed
+    }
     const config = this.getConfig();
     return this.isConfigured() && config.autoSaveFiles !== false;
   },
 
   shouldAutoSyncData(): boolean {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return false; // Stop syncing database to cloud after trial expires unless subscribed
+    }
     const config = this.getConfig();
     return this.isConfigured() && config.autoSyncData !== false;
   },
@@ -318,6 +326,13 @@ export const CloudflareService = {
     size?: number;
     message: string;
   }> {
+    if (!this.shouldAutoSaveFiles()) {
+      return {
+        success: false,
+        message: 'Cloudflare auto-save files is disabled (trial expired or not subscribed)',
+      };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return {
@@ -411,6 +426,13 @@ export const CloudflareService = {
    * Syncs all application data (profile, settings, receipts, inventory, staff) to Cloudflare D1
    */
   async syncAllToCloudflare(customBackup?: AppBackupData): Promise<CloudflareSyncResponse> {
+    if (!this.shouldAutoSyncData()) {
+      return {
+        success: false,
+        message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)',
+      };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return {
@@ -491,6 +513,10 @@ export const CloudflareService = {
    * Directly saves a single receipt or invoice to Cloudflare D1
    */
   async saveReceipt(receipt: Receipt): Promise<{ success: boolean; message: string }> {
+    if (!this.shouldAutoSyncData()) {
+      return { success: false, message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)' };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };
@@ -778,6 +804,10 @@ export const CloudflareService = {
    * Saves or updates a hosted QR page directly in Cloudflare D1
    */
   async saveSingleQrPage(page: any): Promise<{ success: boolean; message: string }> {
+    if (!this.shouldAutoSyncData()) {
+      return { success: false, message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)' };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };

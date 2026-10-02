@@ -23,6 +23,7 @@ import { CloudflareService } from './services/cloudflareService';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
+import { AlertCircle } from 'lucide-react';
 import {
   ActiveScreen,
   AppSettings,
@@ -117,6 +118,11 @@ export function App() {
     }
     return false;
   });
+  const [lifecycleAlert, setLifecycleAlert] = useState<{
+    title: string;
+    message: string;
+    type: 'trial' | 'grace' | 'expired';
+  } | null>(null);
   const [business, setBusiness] = useState<BusinessProfile>(() => StorageService.getProfile());
   const [settings, setSettings] = useState<AppSettings>(() => StorageService.getSettings());
   const [receipts, setReceipts] = useState<Receipt[]>(() => StorageService.getReceipts());
@@ -245,6 +251,101 @@ export function App() {
       isCancelled = true;
       clearTimeout(timer);
     };
+  }, []);
+
+  // Free Trial and Grace Period lifecycle management
+  useEffect(() => {
+    const handleSubscriptionLifecycle = async () => {
+      try {
+        const status = StorageService.getTrialStatus();
+        
+        // 1. If subscribed, nothing to restrict or alert about
+        if (status.subscribed) return;
+
+        // 2. Handle Grace Period Expiry (wipe cloud completely)
+        if (status.isGracePeriodExpired) {
+          const alreadyWiped = localStorage.getItem('quickreceipt_cloud_wiped_v1') === 'true';
+          if (!alreadyWiped) {
+            console.warn('Grace Period Expired! Purging all Cloudflare database records and backups...');
+            await StorageService.purgeAllCloudData();
+            
+            // Trigger a business alert notification
+            PushNotificationService.triggerBusinessAlert({
+              title: '⚠️ Grace Period Expired: Files Deleted',
+              body: 'Your grace period is over. All files have been safely wiped from Cloud but remain secure on your phone local storage!',
+              type: 'debt_reminder',
+            }).catch(() => {});
+
+            // Set state to display the warning modal
+            setLifecycleAlert({
+              title: 'Grace Period Expired!',
+              message: 'Your 1-month grace period has ended. All your backups and hosted pages have been permanently deleted from the cloud. However, they remain 100% safe in your phone\'s local storage inside the app. Please subscribe to restore cloud features.',
+              type: 'expired',
+            });
+          }
+          return;
+        }
+
+        // 3. Handle 3-day reminder triggers for active free trial or grace period
+        const daysSinceInstall = status.daysSinceInstall;
+        // Trigger reminder on day 0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30 (Trial)
+        // and day 33, 36, 39, 42, 45, 48, 51, 54, 57, 60 (Grace Period)
+        if (daysSinceInstall % 3 === 0) {
+          const lastAlertDay = localStorage.getItem('quickreceipt_last_alert_day_v1');
+          if (lastAlertDay !== String(daysSinceInstall)) {
+            // Mark alert shown for this day
+            localStorage.setItem('quickreceipt_last_alert_day_v1', String(daysSinceInstall));
+
+            if (status.isFreeTrial) {
+              const remaining = status.remainingTrialDays;
+              const title = 'Free Trial Remaining';
+              const message = `Your Brivu Free Trial is remaining with ${remaining} days! Subscribe to a paid plan to keep your automatic cloud backup and keep qr code and business info hosting working.`;
+
+              // Send native local notification alert
+              PushNotificationService.triggerBusinessAlert({
+                title: `🎁 ${title}: ${remaining} Days Left`,
+                body: message,
+                type: 'sale',
+              }).catch(() => {});
+
+              // Show beautiful in-app warning modal
+              setLifecycleAlert({
+                title,
+                message,
+                type: 'trial',
+              });
+            } else if (status.isGracePeriod) {
+              const remaining = status.remainingGraceDays;
+              const title = 'Grace Period Warning';
+              const message = `You have ${remaining} remaining days for your grace period. If you don't subscribe, all your files will be deleted from the cloud, but they will stay perfectly safe in your local storage in the app.`;
+
+              // Send native local notification alert
+              PushNotificationService.triggerBusinessAlert({
+                title: `⚠️ ${title}: ${remaining} Days Left`,
+                body: message,
+                type: 'debt_reminder',
+              }).catch(() => {});
+
+              // Show beautiful in-app warning modal
+              setLifecycleAlert({
+                title,
+                message,
+                type: 'grace',
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Subscription lifecycle handler error:', err);
+      }
+    };
+
+    // Delay checking slightly to ensure smooth main UI load
+    const timer = setTimeout(() => {
+      handleSubscriptionLifecycle();
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Handle notification click navigation
@@ -998,6 +1099,46 @@ export function App() {
         documentType={appDownloadModal.documentType}
         documentNumber={appDownloadModal.documentNumber}
       />
+
+      {/* Subscription / Lifecycle warning alert modal */}
+      {lifecycleAlert && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-scaleUp">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${
+              lifecycleAlert.type === 'trial' 
+                ? 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'
+                : 'bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400'
+            }`}>
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+              {lifecycleAlert.title}
+            </h3>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              {lifecycleAlert.message}
+            </p>
+            <div className="mt-5 flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setLifecycleAlert(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLifecycleAlert(null);
+                  handleNavigate('upgrade');
+                }}
+                className="flex-1.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-extrabold shadow-md shadow-amber-500/10 transition active:scale-95 cursor-pointer"
+              >
+                Upgrade Plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
