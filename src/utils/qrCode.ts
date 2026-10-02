@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { Receipt, BusinessProfile } from '../types';
 import { formatCurrency, formatDateTime } from './currencies';
+import { StorageService } from '../services/storage';
 
 export interface ReceiptDataForQr {
   id?: string;
@@ -100,6 +101,18 @@ export function buildQrReceiptPayload(input: ReceiptDataForQr | Receipt): string
   const hash = generateVerificationHash(rec);
 
   const lines: string[] = [];
+
+  // Inject online web verification link at the top of QR payload if Cloudflare is configured
+  try {
+    const config = StorageService.getCloudflareConfig();
+    if (config && config.workerUrl) {
+      const cleanUrl = config.workerUrl.trim().replace(/\/$/, '');
+      lines.push(`${cleanUrl}/api/receipts/${encodeURIComponent(rec.id)}`);
+      lines.push(``); // Spacer line for scanner separation
+    }
+  } catch (err) {
+    console.warn('Could not inject Cloudflare web verification link:', err);
+  }
 
   lines.push(`================================`);
   lines.push(`${rec.businessSnapshot.name.toUpperCase()}`);

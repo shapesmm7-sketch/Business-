@@ -39,7 +39,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setLocalSettings(settings);
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [showAboutModal, setShowAboutModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const subscription = StorageService.getSubscription();
@@ -303,18 +302,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* 6. About & Privacy links */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-700/60">
         <button
-          id="btn-show-about"
-          onClick={() => setShowAboutModal(true)}
-          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition"
-        >
-          <div className="flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-            <Info className="w-4 h-4 text-slate-400" />
-            <span>About Brivu</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-400" />
-        </button>
-
-        <button
           id="btn-show-privacy"
           onClick={() => setShowPrivacyModal(true)}
           className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition cursor-pointer"
@@ -326,36 +313,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
       </div>
-
-      {/* ABOUT MODAL */}
-      {showAboutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-scaleUp">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center mb-3">
-              <FileText className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Brivu v1.0
-            </h3>
-            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Brivu is a fast digital receipt and business management platform designed for small businesses, shops, salons, restaurants, and freelancers.
-            </p>
-            <ul className="mt-3 text-xs text-slate-500 dark:text-slate-400 space-y-1">
-              <li>• Real vector PDF generation with selectable text</li>
-              <li>• 5 professional receipt templates</li>
-              <li>• Direct WhatsApp & Android share sheet support</li>
-              <li>• Offline-first local storage with automatic Cloud Backup</li>
-              <li>• Instant backup and data restoration</li>
-            </ul>
-            <button
-              onClick={() => setShowAboutModal(false)}
-              className="mt-5 w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold hover:opacity-90 transition cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* COMPREHENSIVE PRIVACY POLICY MODAL */}
       <PrivacyPolicyModal

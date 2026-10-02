@@ -35,6 +35,14 @@ export class BluetoothPrinterService {
     // 1. Try Web Bluetooth API discovery if available in current browser session
     if (typeof navigator !== 'undefined' && 'bluetooth' in navigator) {
       try {
+        const available = await (navigator.bluetooth as any).getAvailability().catch(() => false);
+        if (!available) {
+          return {
+            success: false,
+            message: 'Bluetooth is turned off on this device. Please turn on your phone Bluetooth in Settings and try again.',
+          };
+        }
+
         // @ts-ignore - Web Bluetooth API Navigator extensions
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
@@ -57,32 +65,28 @@ export class BluetoothPrinterService {
             printer: printerConfig,
             message: `Connected & saved default printer "${printerConfig.name}"!`,
           };
+        } else {
+          return {
+            success: false,
+            message: 'No Bluetooth printer was selected or detected.',
+          };
         }
       } catch (err: any) {
         console.warn('Web Bluetooth discovery note:', err);
         if (err.name === 'NotFoundError') {
-          return { success: false, message: 'Bluetooth search cancelled.' };
+          return { success: false, message: 'Bluetooth search cancelled. No printer selected.' };
         }
+        return {
+          success: false,
+          message: `Could not connect to printer: Bluetooth is turned off or no active printer was detected.`,
+        };
       }
     }
 
-    // 2. Android Native / Fallback Thermal Print Setup
-    const defaultPrinterName = isNative
-      ? 'Android Bluetooth Thermal Printer'
-      : 'Bluetooth ESC/POS Thermal Printer';
-
-    const printerConfig: ThermalPrinterDevice = {
-      id: isNative ? 'android-bluetooth-printer' : `bt-printer-${Date.now()}`,
-      name: defaultPrinterName,
-      paperWidth,
-      autoPrintOnSave: true,
-      connectedAt: new Date().toISOString(),
-    };
-
+    // 2. Android Native WebView / Unsupported Browser truth report
     return {
-      success: true,
-      printer: printerConfig,
-      message: `Bluetooth Thermal Printer paired & configured for 1-tap printing (${paperWidth})!`,
+      success: false,
+      message: 'No Bluetooth printer detected. Bluetooth scanning is not supported in this WebView/browser. Please ensure your physical ESC/POS printer is powered on, Bluetooth is enabled, and try opening the app in Google Chrome to connect.',
     };
   }
 

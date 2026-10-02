@@ -90,6 +90,11 @@ export async function tryUploadToCloudflare(
   mimeType = 'application/octet-stream',
   folder = 'receipts'
 ): Promise<{ url?: string; key?: string } | null> {
+  // Completely skip uploading generated PDF files to Cloudflare R2 to save storage space
+  if (mimeType === 'application/pdf' || (filename && filename.toLowerCase().endsWith('.pdf'))) {
+    console.info('Skipping automatic PDF upload to Cloudflare R2:', filename);
+    return null;
+  }
   try {
     const config = CloudflareService.getConfig();
     if (!config.workerUrl || config.autoSaveFiles === false) return null;

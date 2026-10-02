@@ -459,21 +459,6 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             <Printer className={`w-4 h-4 ${isThermalPrinting ? 'animate-bounce' : ''}`} />
             <span>{isThermalPrinting ? 'Printing...' : savedPrinter ? 'Print (BT)' : 'Print'}</span>
           </button>
-
-          {/* Cloud Direct Save (Auto configured) */}
-          {isCfConfigured && (
-            <button
-              id="btn-preview-save-cf"
-              type="button"
-              onClick={handleSaveToCloudflare}
-              disabled={isGenerating || isUploadingCf}
-              title="Save to Cloud Storage"
-              className="py-3.5 px-3.5 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
-            >
-              <Cloud className={`w-4 h-4 ${isUploadingCf ? 'animate-bounce' : ''}`} />
-              <span>{isUploadingCf ? 'Saving...' : 'Cloud Save'}</span>
-            </button>
-          )}
         </div>
       </div>
 
