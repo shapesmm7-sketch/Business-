@@ -1112,6 +1112,7 @@ export function App() {
         <AdMobBanner
           placement="bottom_sticky"
           hasBottomNav={true}
+          bottomMargin={84}
           unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
         />
       )}

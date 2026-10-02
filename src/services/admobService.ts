@@ -98,11 +98,13 @@ class AdMobManager {
   /**
    * Show Native Banner ad on Android if running natively
    */
-  async showNativeBanner(position: 'bottom' | 'top' = 'bottom', hasBottomNav = true) {
+  async showNativeBanner(position: 'bottom' | 'top' = 'bottom', hasBottomNav = true, customMargin?: number) {
     if (!this.shouldShowAds()) return;
     if (Capacitor.isNativePlatform()) {
       try {
         await this.initNativeAdMob();
+
+        const calculatedMargin = customMargin !== undefined ? customMargin : (hasBottomNav ? 84 : 16);
 
         // If the banner is already initialized in Android, resume it
         if (this.isBannerCreated) {
@@ -119,7 +121,7 @@ class AdMobManager {
           adId: ADMOB_TEST_UNITS.ADAPTIVE_BANNER,
           adSize: BannerAdSize.ADAPTIVE_BANNER,
           position: position === 'bottom' ? BannerAdPosition.BOTTOM_CENTER : BannerAdPosition.TOP_CENTER,
-          margin: hasBottomNav ? 64 : 0,
+          margin: calculatedMargin,
           isTesting: true,
         };
 
