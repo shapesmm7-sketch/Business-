@@ -33,7 +33,9 @@ class AdMobManager {
   private isInitialized = false;
   private listeners: Set<AdListener> = new Set();
   private lastInterstitialTime = 0;
-  private nativeBannerActive = false;
+  private isBannerCreated = false;
+  private isBannerVisible = false;
+  private userTapCount = 0;
   private currentAdState: {
     activeAd: 'interstitial' | null;
     interstitialConfig?: InterstitialAdConfig;
@@ -43,6 +45,27 @@ class AdMobManager {
 
   constructor() {
     this.initNativeAdMob();
+  }
+
+  /**
+   * Record a user click or tap interaction.
+   * Pops up an interstitial ad every 25 user clicks/taps.
+   */
+  recordInteraction() {
+    if (!this.shouldShowAds()) return;
+    this.userTapCount++;
+    if (this.userTapCount >= 25) {
+      this.userTapCount = 0;
+      console.info('[AdMob] 25 user interactions reached, triggering Interstitial Ad.');
+      this.showInterstitial('25_taps_milestone');
+    }
+  }
+
+  /**
+   * Current tap count
+   */
+  getTapCount(): number {
+    return this.userTapCount;
   }
 
   /**
@@ -80,6 +103,18 @@ class AdMobManager {
     if (Capacitor.isNativePlatform()) {
       try {
         await this.initNativeAdMob();
+
+        // If the banner is already initialized in Android, resume it
+        if (this.isBannerCreated) {
+          try {
+            await AdMob.resumeBanner();
+            this.isBannerVisible = true;
+            return;
+          } catch (resumeErr) {
+            console.warn('[AdMob Native] resumeBanner error, will fallback to showBanner:', resumeErr);
+          }
+        }
+
         const options: BannerAdOptions = {
           adId: ADMOB_TEST_UNITS.ADAPTIVE_BANNER,
           adSize: BannerAdSize.ADAPTIVE_BANNER,
@@ -87,10 +122,20 @@ class AdMobManager {
           margin: hasBottomNav ? 64 : 0,
           isTesting: true,
         };
+
         await AdMob.showBanner(options);
-        this.nativeBannerActive = true;
-      } catch (err) {
+        this.isBannerCreated = true;
+        this.isBannerVisible = true;
+      } catch (err: any) {
         console.warn('[AdMob Native] showBanner error:', err);
+        // If showBanner failed because the adView is already created on Android, call resumeBanner
+        try {
+          await AdMob.resumeBanner();
+          this.isBannerCreated = true;
+          this.isBannerVisible = true;
+        } catch (resumeErr) {
+          console.warn('[AdMob Native] Fallback resumeBanner error:', resumeErr);
+        }
       }
     }
   }
@@ -99,10 +144,10 @@ class AdMobManager {
    * Hide Native Banner ad
    */
   async hideNativeBanner() {
-    if (Capacitor.isNativePlatform() && this.nativeBannerActive) {
+    if (Capacitor.isNativePlatform() && this.isBannerCreated && this.isBannerVisible) {
       try {
         await AdMob.hideBanner();
-        this.nativeBannerActive = false;
+        this.isBannerVisible = false;
       } catch (err) {
         console.warn('[AdMob Native] hideBanner error:', err);
       }

@@ -331,14 +331,14 @@ export const Header: React.FC<HeaderProps> = ({
                         </span>
                         {(!currentSubscription || currentSubscription.status !== 'active') && (
                           <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 leading-none">
-                            Save 28%
+                            Save 26%
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
                         {currentSubscription && currentSubscription.status === 'active'
                           ? `Active Tier: ${currentSubscription.planName}`
-                          : '1 Mo $4.6 • 6 Mos $23.9 • 1 Yr $39.9'}
+                          : '1 Mo $3.6 • 6 Mos $19.2 • 1 Yr $31.9'}
                       </p>
                     </div>
                   </div>

@@ -155,14 +155,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </span>
               ) : (
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
-                  From $4.6/mo
+                  From $3.6/mo
                 </span>
               )}
             </div>
             <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
               {subscription && subscription.status === 'active'
                 ? `Expires on ${new Date(subscription.expiresAt).toLocaleDateString()}`
-                : '1 Month $4.6 • 6 Months $23.9 • 1 Year $39.9'}
+                : '1 Month $3.6 • 6 Months $19.2 • 1 Year $31.9'}
             </p>
           </div>
         </div>

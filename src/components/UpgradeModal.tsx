@@ -16,8 +16,12 @@ import {
   Infinity as InfinityIcon,
   Layers,
   Lock,
+  RotateCcw,
+  Smartphone,
+  ExternalLink,
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
+import { PlayBillingService, GOOGLE_PLAY_PRODUCTS } from '../services/playBillingService';
 import { SubscriptionPlanId, UserSubscription } from '../types';
 
 interface UpgradeModalProps {
@@ -39,6 +43,7 @@ interface PlanOption {
   badgeColor?: string;
   description: string;
   monthsCount: number;
+  googlePlayProductId: string;
 }
 
 export const SUBSCRIPTION_PLANS: PlanOption[] = [
@@ -46,38 +51,41 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     id: '1-month',
     name: '1 Month',
     durationLabel: 'Monthly',
-    price: 4.6,
-    formattedPrice: '$4.6',
+    price: 3.6,
+    formattedPrice: '$3.6',
     periodLabel: '/ month',
-    monthlyEquivalent: '$4.60/mo',
+    monthlyEquivalent: '$3.60/mo',
     description: 'Flexible monthly billing with zero lock-in. Cancel anytime.',
     monthsCount: 1,
+    googlePlayProductId: 'brivu_pro_monthly',
   },
   {
     id: '6-months',
     name: '6 Months',
     durationLabel: '6 Months',
-    price: 23.9,
-    formattedPrice: '$23.9',
+    price: 19.2,
+    formattedPrice: '$19.2',
     periodLabel: '/ 6 months',
-    monthlyEquivalent: '$3.98/mo',
-    badge: 'SAVE 13%',
+    monthlyEquivalent: '$3.20/mo',
+    badge: 'SAVE 11%',
     badgeColor: 'bg-emerald-500 text-white',
-    description: 'Billed $23.90 every 6 months. Great balance of savings & flexibility.',
+    description: 'Billed $19.20 every 6 months. Great balance of savings & flexibility.',
     monthsCount: 6,
+    googlePlayProductId: 'brivu_pro_6months',
   },
   {
     id: '1-year',
     name: '1 Year',
     durationLabel: '1 Year',
-    price: 39.9,
-    formattedPrice: '$39.9',
+    price: 31.9,
+    formattedPrice: '$31.9',
     periodLabel: '/ year',
-    monthlyEquivalent: '$3.33/mo',
-    badge: 'BEST VALUE • SAVE 28%',
+    monthlyEquivalent: '$2.66/mo',
+    badge: 'BEST VALUE • SAVE 26%',
     badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black',
-    description: 'Billed $39.90 annually. Maximum savings and full premium access.',
+    description: 'Billed $31.90 annually. Maximum savings and full premium access.',
     monthsCount: 12,
+    googlePlayProductId: 'brivu_pro_yearly',
   },
 ];
 
@@ -89,40 +97,52 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 }) => {
   const [selectedPlanId, setSelectedPlanId] = useState<SubscriptionPlanId>('1-year');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [paymentStep, setPaymentStep] = useState<'select' | 'confirm' | 'success'>('select');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'card' | 'gpay' | 'momo'>('card');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'google_play' | 'card' | 'gpay' | 'momo'>('google_play');
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string>('');
+  const [restoreFeedback, setRestoreFeedback] = useState<{ msg: string; success: boolean } | null>(null);
 
   if (!isOpen) return null;
 
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
   const isCurrentlyActive = currentSubscription && currentSubscription.status === 'active';
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
     setIsProcessing(true);
+    setRestoreFeedback(null);
 
-    setTimeout(() => {
-      const now = new Date();
-      const expires = new Date();
-      expires.setMonth(expires.getMonth() + selectedPlan.monthsCount);
+    const result = await PlayBillingService.purchaseSubscription(
+      selectedPlan.id,
+      selectedPaymentMethod
+    );
 
-      const newSub: UserSubscription = {
-        planId: selectedPlan.id,
-        planName: selectedPlan.name,
-        status: 'active',
-        price: selectedPlan.price,
-        formattedPrice: selectedPlan.formattedPrice,
-        startDate: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        paymentMethod: selectedPaymentMethod === 'card' ? 'Credit / Debit Card' : selectedPaymentMethod === 'gpay' ? 'Google Pay' : 'Mobile Money',
-      };
-
-      StorageService.saveSubscription(newSub);
-      onSubscriptionChange(newSub);
-      setIsProcessing(false);
-      setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlan.formattedPrice}!`);
+    setIsProcessing(false);
+    if (result.success && result.subscription) {
+      onSubscriptionChange(result.subscription);
+      setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlan.formattedPrice} via Google Play Billing!`);
       setPaymentStep('success');
-    }, 900);
+    } else {
+      setRestoreFeedback({
+        msg: result.error || 'Subscription checkout could not be completed.',
+        success: false,
+      });
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    setIsRestoring(true);
+    setRestoreFeedback(null);
+
+    const res = await PlayBillingService.restorePurchases();
+    setIsRestoring(false);
+
+    if (res.restored && res.subscription) {
+      onSubscriptionChange(res.subscription);
+      setRestoreFeedback({ msg: res.message, success: true });
+    } else {
+      setRestoreFeedback({ msg: res.message, success: false });
+    }
   };
 
   const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
@@ -265,16 +285,19 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 space-y-2 text-xs">
                 <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-black">
                   <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span>Important Notice: Cloud Sync & Hosting</span>
+                  <span>Pro Membership Benefits & Notice</span>
                 </div>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-                  ⚠️ <strong>Without subscription:</strong> All your receipts and data are kept <strong>only in local device storage</strong>. If you uninstall the app or clear browser data, <span className="font-bold text-rose-600 dark:text-rose-400">you can lose your information</span>.
+                  ⚠️ <strong>Without subscription:</strong> All receipts, inventory, and ledger records remain <strong>only on your local phone storage</strong> and can be lost if browser cache or apps are cleared.
                 </p>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-                  ☁️ <strong>Subscribe to unlock Cloud Sync</strong> so all your information is safely backed up and preserved in the cloud.
+                  ☁️ <strong>Cloud Sync & Backup:</strong> Safe real-time backup to the cloud with instant restoration on any phone.
                 </p>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-                  🌐 <strong>QR Code & Business Link Hosting:</strong> If you need your QR code and business link hosting to work online, you need to subscribe.
+                  🌐 <strong>Live QR Hosting:</strong> Enables 24/7 public online hosting for your business catalog & QR flyers.
+                </p>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                  🚫 <strong>100% Ad-Free:</strong> All AdMob banners, interstitial popups, and ads disappear completely.
                 </p>
               </div>
 
@@ -388,30 +411,35 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
               {/* Payment Methods Selection */}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2">
-                  Preferred Payment Option
-                </span>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Payment System (Play Billing & Web)
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                    Google Play v9 Ready
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedPaymentMethod('card')}
-                    className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold ${
-                      selectedPaymentMethod === 'card'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300'
-                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                    onClick={() => setSelectedPaymentMethod('google_play')}
+                    className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold cursor-pointer ${
+                      selectedPaymentMethod === 'google_play'
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-900 dark:text-indigo-300 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                     }`}
                   >
-                    <CreditCard className="w-4 h-4" />
-                    <span>Card</span>
+                    <Smartphone className="w-4 h-4 text-indigo-500" />
+                    <span>Play Billing</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSelectedPaymentMethod('gpay')}
-                    className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold ${
+                    className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold cursor-pointer ${
                       selectedPaymentMethod === 'gpay'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300'
-                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                     }`}
                   >
                     <Zap className="w-4 h-4 text-amber-500" />
@@ -420,21 +448,48 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setSelectedPaymentMethod('momo')}
-                    className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold ${
-                      selectedPaymentMethod === 'momo'
-                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300'
-                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                    onClick={() => setSelectedPaymentMethod('card')}
+                    className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold cursor-pointer ${
+                      selectedPaymentMethod === 'card'
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
                     }`}
                   >
-                    <ShieldCheck className="w-4 h-4 text-indigo-500" />
+                    <CreditCard className="w-4 h-4 text-blue-500" />
+                    <span>Card</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaymentMethod('momo')}
+                    className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center gap-1 text-[11px] font-bold cursor-pointer ${
+                      selectedPaymentMethod === 'momo'
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 text-teal-500" />
                     <span>Mobile Money</span>
                   </button>
                 </div>
               </div>
 
+              {/* Restore Purchases / Error Feedback */}
+              {restoreFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    restoreFeedback.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-50 dark:bg-amber-950/50 border border-amber-300 text-amber-800 dark:text-amber-300'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{restoreFeedback.msg}</span>
+                </div>
+              )}
+
               {/* Action Buttons */}
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
                 <button
                   id="btn-confirm-subscription"
                   type="button"
@@ -445,18 +500,39 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                   {isProcessing ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Activating {selectedPlan.name}...</span>
+                      <span>Processing Google Play Billing...</span>
                     </>
                   ) : (
                     <>
                       <Crown className="w-4 h-4 fill-white" />
                       <span>
-                        {isCurrentlyActive ? 'Switch Plan' : 'Subscribe Now'} — {selectedPlan.formattedPrice}
+                        {isCurrentlyActive ? 'Switch Plan' : 'Subscribe with Google Play'} — {selectedPlan.formattedPrice}
                       </span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleRestorePurchases}
+                    disabled={isRestoring}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold flex items-center gap-1.5 py-1 px-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition cursor-pointer"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
+                    <span>{isRestoring ? 'Checking Play Store...' : 'Restore Google Play Purchases'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => PlayBillingService.openManageSubscriptions()}
+                    className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 font-medium flex items-center gap-1 py-1 px-2 hover:underline transition cursor-pointer"
+                  >
+                    <span>Manage Subscriptions</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
 
                 {isCurrentlyActive && (
                   <button

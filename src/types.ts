@@ -512,6 +512,12 @@ export interface UserSubscription {
   startDate: string;
   expiresAt: string;
   paymentMethod?: string;
+  productId?: string;
+  orderId?: string;
+  purchaseToken?: string;
+  isGooglePlay?: boolean;
+  autoRenewing?: boolean;
+  acknowledged?: boolean;
 }
 
 export interface AppLockConfig {

@@ -51,10 +51,10 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     id: '1-month',
     name: '1 Month',
     durationLabel: 'Monthly Billing',
-    price: 4.6,
-    formattedPrice: '$4.6',
+    price: 3.6,
+    formattedPrice: '$3.6',
     periodLabel: '/ month',
-    monthlyEquivalent: '$4.60/mo',
+    monthlyEquivalent: '$3.60/mo',
     description: 'Cloud sync & live QR hosting for 1 month. Flexible with zero lock-in.',
     monthsCount: 1,
   },
@@ -62,26 +62,26 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     id: '6-months',
     name: '6 Months',
     durationLabel: '6-Month Plan',
-    price: 23.9,
-    formattedPrice: '$23.9',
+    price: 19.2,
+    formattedPrice: '$19.2',
     periodLabel: '/ 6 months',
-    monthlyEquivalent: '$3.98/mo',
-    badge: 'SAVE 13%',
+    monthlyEquivalent: '$3.20/mo',
+    badge: 'SAVE 11%',
     badgeColor: 'bg-emerald-500 text-white',
-    description: 'Billed $23.90 every 6 months. Continuous cloud sync & QR link hosting.',
+    description: 'Billed $19.20 every 6 months. Continuous cloud sync & QR link hosting.',
     monthsCount: 6,
   },
   {
     id: '1-year',
     name: '1 Year',
     durationLabel: 'Annual Billing',
-    price: 39.9,
-    formattedPrice: '$39.9',
+    price: 31.9,
+    formattedPrice: '$31.9',
     periodLabel: '/ year',
-    monthlyEquivalent: '$3.33/mo',
-    badge: 'BEST VALUE • SAVE 28%',
+    monthlyEquivalent: '$2.66/mo',
+    badge: 'BEST VALUE • SAVE 26%',
     badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs',
-    description: 'Billed $39.90 annually. 365 days of guaranteed cloud sync, backup & live QR hosting.',
+    description: 'Billed $31.90 annually. 365 days of guaranteed cloud sync, backup & live QR hosting.',
     monthsCount: 12,
     popular: true,
   },
@@ -267,7 +267,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               Starting From
             </span>
             <div className="flex items-baseline justify-center sm:justify-end gap-1">
-              <span className="text-2xl font-black text-amber-400">$4.6</span>
+              <span className="text-2xl font-black text-amber-400">$3.6</span>
               <span className="text-xs text-indigo-200">/ mo</span>
             </div>
             <span className="text-[10px] text-emerald-400 font-bold block mt-0.5">
@@ -350,6 +350,28 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             </div>
           </div>
         </div>
+
+        {/* 3. 100% AD-FREE BENEFIT */}
+        <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/40 dark:to-pink-950/30 border-2 border-purple-300 dark:border-purple-800/80 shadow-sm relative overflow-hidden">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-500/20 mt-0.5">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-black text-purple-950 dark:text-purple-200 uppercase tracking-tight">
+                  100% Ad-Free Experience
+                </h3>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-600 text-white leading-none">
+                  Zero Ads
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                🚫 <strong>All ads removed completely:</strong> Subscribing instantly removes all banner ads, popup interstitial ads, and interactions ads throughout the entire app. Enjoy a smooth, uninterrupted, and ultra-fast workflow.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Subscription Plans Selection Section */}
@@ -360,7 +382,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               Select Your Subscription Plan
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Unlocks Cloud Sync & Live QR Hosting immediately
+              Unlocks Cloud Sync, Live QR Hosting & 100% Ad-Free access immediately
             </p>
           </div>
           <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-lg">
@@ -416,7 +438,11 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
                       {plan.description}
                     </p>
-                    <div className="flex items-center gap-3 mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <div className="flex items-center gap-2 sm:gap-3 mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-purple-500" /> 100% Ad-Free
+                      </span>
+                      <span>•</span>
                       <span className="flex items-center gap-1">
                         <Cloud className="w-3 h-3" /> Full Cloud Sync
                       </span>

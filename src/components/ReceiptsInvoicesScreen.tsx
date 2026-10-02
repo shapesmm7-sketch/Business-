@@ -32,7 +32,7 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
   const lang = business?.language;
 
   return (
-    <div className="space-y-6 pt-2 pb-24 animate-fadeIn max-w-2xl mx-auto">
+    <div className="space-y-6 pt-2 pb-36 sm:pb-40 animate-fadeIn max-w-2xl mx-auto">
       {/* Top Header Row with Back Button */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2.5">

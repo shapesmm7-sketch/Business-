@@ -251,9 +251,17 @@ export function App() {
       autoRestoreFromCloud();
     }, 600);
 
+    // Track user clicks / taps to trigger an ad popup every 25 interactions
+    const handleGlobalInteraction = () => {
+      AdMobService.recordInteraction();
+    };
+
+    window.addEventListener('click', handleGlobalInteraction, { passive: true });
+
     return () => {
       isCancelled = true;
       clearTimeout(timer);
+      window.removeEventListener('click', handleGlobalInteraction);
     };
   }, []);
 
@@ -1099,8 +1107,8 @@ export function App() {
         )}
       </main>
 
-      {/* Google AdMob Bottom Banner Placeholder - Only displayed on bottom of home page and the main inventory overview screen */}
-      {(activeScreen === 'home' || (activeScreen === 'inventory' && inventoryCategory === null)) && (
+      {/* Google AdMob Bottom Banner - Displayed on home page, receipts-invoices overview, and inventory main overview */}
+      {(activeScreen === 'home' || activeScreen === 'receipts-invoices' || (activeScreen === 'inventory' && inventoryCategory === null)) && (
         <AdMobBanner
           placement="bottom_sticky"
           hasBottomNav={true}
