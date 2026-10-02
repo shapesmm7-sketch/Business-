@@ -92,6 +92,25 @@ workflows:
             npx cap add android
           fi
           npx cap sync android
+      - name: Generate and Setup Release Keystore
+        script: |
+          cd android/app
+          if [ ! -f "brivu.keystore" ]; then
+            echo "Release keystore brivu.keystore not found. Generating a new one dynamically..."
+            keytool -genkeypair \
+              -v \
+              -keystore brivu.keystore \
+              -alias brivu \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "Burubi23re%" \
+              -keypass "Burubi23re%" \
+              -dname "CN=Brivu, O=Brivu, C=UG"
+            echo "Successfully generated a new release keystore!"
+          else
+            echo "Using existing brivu.keystore found in the repository."
+          fi
       - name: Build Android Release APK & Bundle
         script: |
           cd android
