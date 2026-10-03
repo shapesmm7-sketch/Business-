@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
   MapPin,
@@ -20,50 +20,38 @@ import {
   Camera,
   Upload,
   Loader2,
+  Palette,
+  Phone,
+  MessageCircle,
+  Mail,
+  Layers,
 } from 'lucide-react';
-import { BusinessProfile } from '../types';
+import { BusinessProfile, EventQrItem } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { saveFile, shareContent, saveJsPdf } from '../services/fileSaver';
 import { compressImageFile } from '../utils/imageCompressor';
 import { jsPDF } from 'jspdf';
+import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
+import { PhoneInputField } from './PhoneInputField';
+import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 
-export interface EventQrItem {
-  id: string;
-  title: string;
-  eventDate?: string;
-  startDate?: string;
-  endDate?: string;
-  startTime?: string;
-  endTime?: string;
-  location: string;
-  rsvpUrl: string;
-  description?: string;
-  ctaText: string;
-  photos?: string[];
-  darkColor: string;
-  lightColor: string;
-  eyeColor?: string;
-  createdAt: string;
-}
-
-const STORAGE_KEY = 'quickreceipt_events_qr_v1';
+export type { EventQrItem };
 
 interface EventsQrSectionProps {
   business: BusinessProfile;
+  hostedPageId?: string;
   showToast: (msg: string) => void;
 }
 
 export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   business,
+  hostedPageId,
   showToast,
 }) => {
   const [items, setItems] = useState<EventQrItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.error(e);
-    }
+    const stored = StorageService.getEventsQrItems();
+    if (stored && stored.length > 0) return stored;
 
     const defaultContact = business.whatsapp || business.phone || business.website || 'https://brivu.app';
     return [
@@ -86,7 +74,6 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     ];
   });
 
-  const [selectedItemId, setSelectedItemId] = useState<string>(() => items[0]?.id || '');
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<EventQrItem | null>(null);
@@ -98,40 +85,113 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [formStartTime, setFormStartTime] = useState<string>('');
   const [formEndTime, setFormEndTime] = useState<string>('');
   const [formLocation, setFormLocation] = useState<string>('');
-  const [formRsvp, setFormRsvp] = useState<string>('');
+  const [rsvpMode, setRsvpMode] = useState<'phone' | 'url'>('phone');
+  const [formRsvpPhone, setFormRsvpPhone] = useState<string>('');
+  const [formRsvpUrl, setFormRsvpUrl] = useState<string>('https://');
+  const [formContactPhone, setFormContactPhone] = useState<string>('');
+  const [formContactEmail, setFormContactEmail] = useState<string>('');
   const [formCta, setFormCta] = useState<string>('Scan to RSVP & Join Event');
   const [formDesc, setFormDesc] = useState<string>('');
   const [formPhotos, setFormPhotos] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
+  const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
 
-  // Persistence
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (err) {
-      console.error(err);
+  const [selectedItemId, setSelectedItemId] = useState<string>('all');
+  const [allQrColors, setAllQrColors] = useState<{
+    darkColor: string;
+    eyeColor: string;
+    lightColor: string;
+    boxBgColor: string;
+    boxBorderColor: string;
+  }>({
+    darkColor: '#7c3aed',
+    eyeColor: '#6d28d9',
+    lightColor: '#ffffff',
+    boxBgColor: '#ffffff',
+    boxBorderColor: '#cbd5e1',
+  });
+
+  const isAllSelected = selectedItemId === 'all';
+  const activeItem = items.find((i) => i.id === selectedItemId) || null;
+
+  const pageIdToUse = hostedPageId || StorageService.getHostedQRPages()[0]?.id || 'brivu_default_hub';
+
+  const allHubUrl = useMemo(() => {
+    return QRHostingService.getCustomerPageUrl(pageIdToUse, 'events');
+  }, [pageIdToUse]);
+
+  const activeUrl = isAllSelected ? allHubUrl : (activeItem ? `${allHubUrl}&event=${encodeURIComponent(activeItem.id)}` : allHubUrl);
+  const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#7c3aed');
+  const activeLightColor = isAllSelected ? allQrColors.lightColor : (activeItem?.lightColor || '#ffffff');
+  const activeEyeColor = isAllSelected ? allQrColors.eyeColor : (activeItem?.eyeColor || activeDarkColor);
+  const activeBoxBgColor = isAllSelected ? allQrColors.boxBgColor : (activeItem?.boxBgColor || '#ffffff');
+  const activeBoxBorderColor = isAllSelected ? allQrColors.boxBorderColor : (activeItem?.boxBorderColor || '#cbd5e1');
+
+  const handleUpdateItemColors = (
+    itemId: string,
+    updates: {
+      qrDarkColor: string;
+      qrEyeColor: string;
+      qrLightColor: string;
+      qrBoxBgColor: string;
+      qrBoxBorderColor: string;
     }
+  ) => {
+    if (itemId === 'all') {
+      setAllQrColors({
+        darkColor: updates.qrDarkColor,
+        eyeColor: updates.qrEyeColor,
+        lightColor: updates.qrLightColor,
+        boxBgColor: updates.qrBoxBgColor,
+        boxBorderColor: updates.qrBoxBorderColor,
+      });
+      return;
+    }
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === itemId
+          ? {
+              ...it,
+              darkColor: updates.qrDarkColor,
+              eyeColor: updates.qrEyeColor,
+              lightColor: updates.qrLightColor,
+              boxBgColor: updates.qrBoxBgColor,
+              boxBorderColor: updates.qrBoxBorderColor,
+            }
+          : it
+      )
+    );
+  };
+
+  // Persistence & Cloudflare Sync
+  useEffect(() => {
+    StorageService.saveEventsQrItems(items);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
   }, [items]);
 
-  const activeItem = items.find((i) => i.id === selectedItemId) || items[0];
+  // Cloudflare sync on mount
+  useEffect(() => {
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+  }, []);
 
   // Generate QR
   useEffect(() => {
-    if (!activeItem || !activeItem.rsvpUrl) return;
-    QRHostingService.generateQrCodeDataUrl(activeItem.rsvpUrl, {
+    if (!activeUrl) return;
+    QRHostingService.generateQrCodeDataUrl(activeUrl, {
       width: 600,
       margin: 1.5,
       color: {
-        dark: activeItem.darkColor || '#7c3aed',
-        light: activeItem.lightColor || '#ffffff',
-        eyeColor: activeItem.eyeColor || '#6d28d9',
+        dark: activeDarkColor,
+        light: activeLightColor,
+        eyeColor: activeEyeColor,
       },
     })
       .then((data) => setActiveQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activeItem]);
+  }, [activeUrl, activeDarkColor, activeLightColor, activeEyeColor]);
 
   const handleOpenCreateModal = () => {
     setEditingItem(null);
@@ -141,7 +201,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     setFormStartTime('');
     setFormEndTime('');
     setFormLocation(business.address || '');
-    setFormRsvp(business.whatsapp || business.phone || business.website || '');
+    const defaultPhone = (business.whatsapp || business.phone || '').trim();
+    setFormRsvpPhone(defaultPhone);
+    setFormRsvpUrl(business.website || 'https://');
+    setRsvpMode(defaultPhone ? 'phone' : 'url');
+    setFormContactPhone(defaultPhone);
+    setFormContactEmail(business.email || '');
     setFormCta('Scan to RSVP & Join Event');
     setFormDesc('');
     setFormPhotos([]);
@@ -156,7 +221,22 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     setFormStartTime(item.startTime || (item.eventDate && item.eventDate.includes('T') ? item.eventDate.split('T')[1] : ''));
     setFormEndTime(item.endTime || '');
     setFormLocation(item.location);
-    setFormRsvp(item.rsvpUrl);
+    if (item.rsvpUrl && (item.rsvpUrl.includes('wa.me') || /^\+?[0-9\s-]+$/.test(item.rsvpUrl))) {
+      setRsvpMode('phone');
+      let phoneMatch = item.rsvpUrl;
+      const waMatch = item.rsvpUrl.match(/wa\.me\/([0-9]+)/);
+      if (waMatch) {
+        phoneMatch = waMatch[1];
+      }
+      setFormRsvpPhone(phoneMatch);
+      setFormRsvpUrl('https://');
+    } else {
+      setRsvpMode('url');
+      setFormRsvpUrl(item.rsvpUrl || 'https://');
+      setFormRsvpPhone(item.contactPhone || '');
+    }
+    setFormContactPhone(item.contactPhone || '');
+    setFormContactEmail(item.contactEmail || '');
     setFormCta(item.ctaText);
     setFormDesc(item.description || '');
     setFormPhotos(item.photos || []);
@@ -179,13 +259,29 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       const newPhotoUrls: string[] = [];
       for (const file of filesToProcess) {
         const compressed = await compressImageFile(file, {
-          maxDimension: 800,
-          quality: 0.8,
+          maxDimension: 1200,
+          quality: 0.85,
         });
-        newPhotoUrls.push(compressed);
+        if (compressed) {
+          let photoUrl = compressed;
+          try {
+            const uploadRes = await CloudflareService.uploadFile({
+              data: compressed,
+              filename: `event_photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`,
+              mimeType: 'image/jpeg',
+              folder: 'photos',
+            });
+            if (uploadRes.success && uploadRes.url) {
+              photoUrl = uploadRes.url;
+            }
+          } catch (cfErr) {
+            console.warn('Cloudflare event photo upload note:', cfErr);
+          }
+          newPhotoUrls.push(photoUrl);
+        }
       }
       setFormPhotos((prev) => [...prev, ...newPhotoUrls].slice(0, 3));
-      showToast(`${newPhotoUrls.length} photo(s) added!`);
+      showToast(`${newPhotoUrls.length} photo(s) saved to Cloudflare!`);
     } catch (err) {
       console.error(err);
       showToast('Failed to process image.');
@@ -201,17 +297,28 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim() || !formRsvp.trim()) {
-      showToast('Please fill in Event Title and RSVP / Location info');
+    if (!formTitle.trim()) {
+      showToast('Please enter an Event Title');
       return;
     }
 
-    let cleanRsvp = formRsvp.trim();
-    if (!/^https?:\/\//i.test(cleanRsvp) && !/^\+?[0-9]+$/i.test(cleanRsvp)) {
-      cleanRsvp = `https://${cleanRsvp}`;
-    } else if (/^\+?[0-9]+$/i.test(cleanRsvp)) {
-      const cleanPhone = cleanRsvp.replace(/[^0-9]/g, '');
+    let cleanRsvp = '';
+    if (rsvpMode === 'phone') {
+      if (!formRsvpPhone.trim()) {
+        showToast('Please enter an RSVP phone number');
+        return;
+      }
+      const cleanPhone = formRsvpPhone.replace(/[^0-9]/g, '');
       cleanRsvp = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Hello, I would like to RSVP for ${formTitle.trim()}!`)}`;
+    } else {
+      if (!formRsvpUrl.trim()) {
+        showToast('Please enter an RSVP or registration URL');
+        return;
+      }
+      cleanRsvp = formRsvpUrl.trim();
+      if (!/^https?:\/\//i.test(cleanRsvp)) {
+        cleanRsvp = `https://${cleanRsvp}`;
+      }
     }
 
     if (editingItem) {
@@ -228,6 +335,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 eventDate: formStartDate || i.eventDate || '',
                 location: formLocation.trim() || 'Venue Location',
                 rsvpUrl: cleanRsvp,
+                contactPhone: formContactPhone.trim() || undefined,
+                contactEmail: formContactEmail.trim() || undefined,
                 ctaText: formCta.trim() || 'Scan to RSVP',
                 description: formDesc.trim(),
                 photos: formPhotos,
@@ -247,6 +356,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         eventDate: formStartDate || '',
         location: formLocation.trim() || 'Venue Location',
         rsvpUrl: cleanRsvp,
+        contactPhone: formContactPhone.trim() || undefined,
+        contactEmail: formContactEmail.trim() || undefined,
         ctaText: formCta.trim() || 'Scan to RSVP',
         description: formDesc.trim(),
         photos: formPhotos,
@@ -277,13 +388,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   };
 
   const handleCopyLink = async () => {
-    if (!activeItem) return;
+    if (!activeUrl) return;
     try {
       if (navigator.clipboard) {
-        await navigator.clipboard.writeText(activeItem.rsvpUrl);
+        await navigator.clipboard.writeText(activeUrl);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-        showToast('RSVP link copied to clipboard!');
+        showToast(isAllSelected ? 'ALL Events Hub link copied!' : 'Event page link copied to clipboard!');
       }
     } catch {
       showToast('Failed to copy link.');
@@ -291,27 +402,14 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   };
 
   const handleShare = async () => {
-    if (!activeItem) return;
+    if (!activeUrl) return;
+    const title = isAllSelected ? `${business.name || 'Business'} Events Hub` : (activeItem?.title || 'Event Page');
     await shareContent({
-      title: activeItem.title,
-      text: `${activeItem.title} - ${activeItem.location}: ${activeItem.rsvpUrl}`,
-      url: activeItem.rsvpUrl,
-      dialogTitle: 'Share Event QR',
+      title,
+      text: `${title}: ${activeUrl}`,
+      url: activeUrl,
+      dialogTitle: `Share ${title}`,
     });
-  };
-
-  const handleDownloadPng = async () => {
-    if (!activeQrDataUrl || !activeItem) return;
-    const safeName = activeItem.title.replace(/[^a-zA-Z0-9]/g, '_');
-    await saveFile({
-      data: activeQrDataUrl,
-      filename: `${safeName}_EventQR.png`,
-      mimeType: 'image/png',
-      title: `${activeItem.title} Event QR Code`,
-      destination: 'photos',
-      folder: 'qr_codes',
-    });
-    showToast('Event QR code image saved!');
   };
 
   const formatEventDateTime = (item: EventQrItem) => {
@@ -367,82 +465,108 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     return parts.length > 0 ? parts.join(' • ') : null;
   };
 
-  const handleDownloadFlyerPdf = async () => {
-    if (!activeQrDataUrl || !activeItem) return;
+  const handleDownloadPng = async () => {
+    if (!activeQrDataUrl) return;
+    const defaultTitle = isAllSelected ? `${business.name || 'Business'} ALL Events Hub` : (activeItem?.title || 'Event QR');
+    const qrName = tableNumberForPrint
+      ? `${defaultTitle} - ${tableNumberForPrint}`
+      : defaultTitle;
+    const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
+    const subtitle = isAllSelected
+      ? `Connect to All ${items.length} Upcoming Events & Schedules`
+      : (dtFormatted
+        ? `${dtFormatted}${activeItem?.location ? ` • ${activeItem.location}` : ''}`
+        : (activeItem?.location || activeItem?.ctaText || 'Scan to RSVP'));
+
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl: activeQrDataUrl,
+      name: qrName,
+      subtitle: subtitle || 'Scan to RSVP & Join Event',
+      tag: tableNumberForPrint || (isAllSelected ? 'ALL EVENTS HUB' : 'EVENT INVITATION'),
+      urlOrHandle: activeUrl,
+      boxBgColor: activeBoxBgColor,
+      boxBorderColor: activeBoxBorderColor,
+      darkColor: activeDarkColor,
+      lightColor: activeLightColor,
+      accentColor: activeDarkColor,
+    });
+
+    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
+    await saveFile({
+      data: finalPngUrl,
+      filename: `${safeName}_Event_QRCode.png`,
+      mimeType: 'image/png',
+      title: `${qrName} QR Code`,
+      destination: 'photos',
+      folder: 'qr_codes',
+    });
+    showToast('Event QR code image with name saved!');
+  };
+
+  const handleDownloadTableStandPdf = async () => {
+    if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pageWidth = 210;
-
-      // Header Banner
-      doc.setFillColor(124, 58, 237);
-      doc.rect(0, 0, pageWidth, 48, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text(business.name || 'Official Event', pageWidth / 2, 22, { align: 'center' });
-
-      doc.setFontSize(13);
-      doc.setFont('helvetica', 'normal');
-      doc.text(activeItem.title, pageWidth / 2, 36, { align: 'center' });
-
-      // Call to action title
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.text(activeItem.ctaText || 'Scan to Join Event', pageWidth / 2, 68, { align: 'center' });
-
-      const dtFormatted = formatEventDateTime(activeItem);
-      if (dtFormatted) {
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Date & Time: ${dtFormatted}`, pageWidth / 2, 78, { align: 'center' });
+      const headline = isAllSelected ? `${business.name || 'Business'} Events Hub` : (activeItem?.title || 'Event Pass');
+      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
+      const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
+      const sublineParts: string[] = [];
+      if (isAllSelected) {
+        sublineParts.push(`All ${items.length} Upcoming Events & Passes`);
+      } else {
+        if (dtFormatted) sublineParts.push(dtFormatted);
+        if (activeItem?.location) sublineParts.push(`📍 ${activeItem.location}`);
       }
+      const subline = sublineParts.length > 0 ? sublineParts.join(' • ') : 'Scan to RSVP and view event details';
 
-      if (activeItem.location) {
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Venue: ${activeItem.location}`, pageWidth / 2, 86, { align: 'center' });
-      }
-
-      // QR Frame box
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(1);
-      doc.roundedRect(45, 96, 120, 120, 8, 8, 'S');
-
-      // Add QR Code
-      doc.addImage(activeQrDataUrl, 'PNG', 50, 101, 110, 110);
-
-      // Handle or Link below QR
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(15, 23, 42);
-      doc.text(activeItem.rsvpUrl, pageWidth / 2, 232, { align: 'center' });
-
-      doc.setFontSize(9);
-      doc.setTextColor(148, 163, 184);
-      doc.text(`Powered by Brivu • ${new Date().toLocaleDateString()}`, pageWidth / 2, 275, { align: 'center' });
-
-      const safeName = activeItem.title.replace(/[^a-zA-Z0-9]/g, '_');
-      await saveJsPdf(doc, `${safeName}_Event_Flyer.pdf`, `${activeItem.title} Event Stand`, {
-        folder: 'qr_codes',
+      const res = await QRHostingService.downloadGenericTableStand({
+        businessName: business.name || 'Official Events',
+        headline,
+        subline,
+        qrNameOrTableNumber: tableNumberForPrint || undefined,
+        qrDataUrl: activeQrDataUrl,
+        calloutText: isAllSelected ? 'SCAN FOR ALL EVENTS & RSVP' : (activeItem?.ctaText || 'SCAN FOR EVENT PASS & RSVP'),
+        urlOrHandleText: activeUrl,
+        description: isAllSelected
+          ? `Access all upcoming schedule, ticket RSVP, venue locations & calendar passes in 1 scan`
+          : (activeItem?.description || (activeItem?.location ? `Venue: ${activeItem.location}` : undefined)),
+        accentColor: activeDarkColor,
+        filename: `${safeName}_Table_Wall_Poster.pdf`,
+        documentTitle: `${headline} Poster`,
       });
-      showToast('Event Flyer PDF downloaded!');
+      if (res.success) {
+        showToast('Table & Wall QR Code Poster (PDF) downloaded!');
+      } else {
+        showToast('Saved Table & Wall QR Code Poster.');
+      }
     } catch (err) {
       console.error(err);
-      showToast('Failed to generate PDF flyer.');
+      showToast('Failed to generate poster PDF.');
     } finally {
       setIsGeneratingPdf(false);
     }
   };
+
+  if (isEditingQrColors) {
+    const editorTitle = isAllSelected ? `${business.name || 'Business'} ALL Events Hub` : (activeItem?.title || 'Event QR');
+    return (
+      <QRCodeColorEditorScreen
+        title={editorTitle}
+        url={activeUrl}
+        initialDarkColor={activeDarkColor}
+        initialEyeColor={activeEyeColor}
+        initialLightColor={activeLightColor}
+        initialBoxBgColor={activeBoxBgColor}
+        initialBoxBorderColor={activeBoxBorderColor}
+        accentColor={activeDarkColor}
+        onSave={(updates) => {
+          handleUpdateItemColors(isAllSelected ? 'all' : (activeItem?.id || ''), updates);
+          showToast('QR Code & Box colors saved!');
+        }}
+        onBack={() => setIsEditingQrColors(false)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -477,98 +601,159 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         </div>
       </div>
 
-      {/* Active Events Cards Grid */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Your Active Event QR Codes ({items.length})
+      {/* QR Generation Mode Selector (ALL vs SINGLE) */}
+      <div className="p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80">
+        <button
+          type="button"
+          onClick={() => setSelectedItemId('all')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
+            isAllSelected
+              ? 'bg-purple-700 text-white shadow-sm ring-2 ring-purple-500/20'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>ALL Events & Invitations (1 Code)</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+            {items.length}
           </span>
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Event</span>
-          </button>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {items.map((item) => {
-            const isSelected = item.id === (activeItem?.id || '');
-            return (
-              <div
-                key={item.id}
-                onClick={() => setSelectedItemId(item.id)}
-                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                  isSelected
-                    ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20 shadow-md'
-                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {item.photos && item.photos[0] ? (
-                    <img
-                      src={item.photos[0]}
-                      alt={item.title}
-                      className="w-10 h-10 rounded-xl object-cover shrink-0 border border-purple-200 dark:border-purple-800"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 shadow-xs font-bold">
-                      <Ticket className="w-5 h-5" />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
-                        {item.title}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-purple-500 shrink-0" />
-                      <span>{item.location}</span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditModal(item)}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                    title="Edit"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteItem(item.id, e)}
-                    className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (isAllSelected && items.length > 0) {
+              setSelectedItemId(items[0].id);
+            }
+          }}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
+            !isAllSelected
+              ? 'bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-400 shadow-sm border border-slate-200 dark:border-slate-700'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+          }`}
+        >
+          <Ticket className="w-4 h-4" />
+          <span>Single Event QR Code</span>
+        </button>
       </div>
 
+      {/* Single Event Selector Bar when Single mode is active */}
+      {!isAllSelected && (
+        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Select Active Event ({items.length})
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenCreateModal}
+              className="text-xs font-extrabold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Event</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedItemId}
+              onChange={(e) => setSelectedItemId(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+            >
+              {items.map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.title} ({it.startDate || 'Upcoming'})
+                </option>
+              ))}
+            </select>
+
+            {activeItem && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditModal(activeItem)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                  title="Edit Event"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteItem(activeItem.id, e)}
+                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                  title="Delete Event"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Active Event Showcase Card */}
-      {activeItem ? (
-        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+      {(activeItem || isAllSelected) ? (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row items-center gap-6 justify-between">
             {/* Live QR Image Box */}
-            <div className="flex flex-col items-center gap-2.5 shrink-0">
+            <div className="flex flex-col items-center gap-2.5 shrink-0 w-full sm:w-auto">
+              {/* QR Code Name Input on Top */}
+              <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                  <span>QR Code Name</span>
+                  {tableNumberForPrint && (
+                    <span className="text-[9px] text-purple-600 dark:text-purple-400 font-medium">Included on PNG</span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="e.g. Main Gate, Event Poster, Reception, Entrance"
+                    value={tableNumberForPrint}
+                    onChange={(e) => setTableNumberForPrint(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  />
+                  {tableNumberForPrint && (
+                    <button
+                      type="button"
+                      onClick={() => setTableNumberForPrint('')}
+                      className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div
-                className="p-3.5 rounded-2xl shadow-xl border-2 transition-all flex items-center justify-center bg-white border-purple-200 dark:border-purple-800"
+                className="p-3.5 rounded-2xl shadow-xl transition-all flex flex-col items-center justify-center"
+                style={{
+                  backgroundColor: activeBoxBgColor,
+                  borderColor:
+                    activeBoxBorderColor && activeBoxBorderColor !== 'transparent'
+                      ? activeBoxBorderColor
+                      : `${activeDarkColor}40`,
+                  borderWidth: activeBoxBorderColor === 'transparent' ? '0px' : '4px',
+                  borderStyle: 'solid',
+                }}
               >
+                {tableNumberForPrint && (
+                  <span className="mb-2 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-purple-600 text-white shadow-2xs">
+                    {tableNumberForPrint}
+                  </span>
+                )}
                 {activeQrDataUrl ? (
                   <img
                     src={activeQrDataUrl}
-                    alt={activeItem.title}
+                    alt={isAllSelected ? 'ALL Events QR Code' : (activeItem?.title || 'Event QR')}
                     className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-lg"
+                    style={{
+                      backgroundColor: activeLightColor,
+                      padding: '4px',
+                      borderRadius: '12px',
+                    }}
                   />
                 ) : (
                   <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400">
@@ -576,8 +761,21 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Dedicated QR Code & Box Editor Button Near QR Code */}
+              <div className="mt-1 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingQrColors(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800 text-xs font-bold transition active:scale-95 shadow-xs cursor-pointer"
+                >
+                  <Palette className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>QR Code & Box Editor</span>
+                </button>
+              </div>
+
               <span className="text-[11px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800/60">
-                {activeItem.ctaText}
+                {isAllSelected ? `Scan for All ${items.length} Upcoming Events` : activeItem?.ctaText}
               </span>
             </div>
 
@@ -586,53 +784,114 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               <div>
                 <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
                   <Calendar className="w-3 h-3" />
-                  Event Invitation
+                  {isAllSelected ? `UNIFIED EVENTS HUB (${items.length} EVENTS)` : 'Event Invitation'}
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                  {activeItem.title}
+                  {isAllSelected ? `${business.name || 'Official'} Events & Schedule Hub` : activeItem?.title}
                 </h2>
 
-                {/* Event Photos Showcase Gallery */}
-                {activeItem.photos && activeItem.photos.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2 my-3">
-                    {activeItem.photos.map((photo, pIdx) => (
-                      <div key={pIdx} className="aspect-video sm:aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-900">
-                        <img src={photo} alt={`Event Photo ${pIdx + 1}`} className="w-full h-full object-cover" />
-                      </div>
-                    ))}
+                {/* Interactive Connected Host Events Preview when ALL is selected */}
+                {isAllSelected ? (
+                  <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                      Upcoming Events in this 1 QR Code ({items.length}):
+                    </span>
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {items.map((it) => (
+                        <div
+                          key={it.id}
+                          className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0 flex items-center gap-2">
+                            {it.photos && it.photos[0] ? (
+                              <img src={it.photos[0]} alt={it.title} className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 font-bold flex items-center justify-center shrink-0 text-xs">
+                                <Ticket className="w-4 h-4" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{it.title}</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-purple-500 shrink-0" />
+                                <span>{it.location || 'Location TBD'}</span>
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={it.rsvpUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] shrink-0 transition flex items-center gap-1"
+                          >
+                            <span>RSVP</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {/* Event Photos Showcase Gallery */}
+                    {activeItem?.photos && activeItem.photos.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2 my-3">
+                        {activeItem.photos.map((photo, pIdx) => (
+                          <div key={pIdx} className="aspect-video sm:aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-xs bg-slate-100 dark:bg-slate-900">
+                            <img src={photo} alt={`Event Photo ${pIdx + 1}`} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                <div className="mt-2.5 space-y-1.5">
-                  {formatEventDateTime(activeItem) && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                      <Clock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                      <span>{formatEventDateTime(activeItem)}</span>
+                    <div className="mt-2.5 space-y-1.5">
+                      {activeItem && formatEventDateTime(activeItem) && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                          <Clock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span>{formatEventDateTime(activeItem)}</span>
+                        </div>
+                      )}
+
+                      {activeItem?.location && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                          <MapPin className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span>{activeItem.location}</span>
+                        </div>
+                      )}
+
+                      {activeItem?.contactPhone && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                          <Phone className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span>Inquiries: {activeItem.contactPhone}</span>
+                        </div>
+                      )}
+
+                      {activeItem?.contactEmail && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                          <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <a href={`mailto:${activeItem.contactEmail}`} className="hover:underline text-purple-600 dark:text-purple-400">
+                            Email: {activeItem.contactEmail}
+                          </a>
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  {activeItem.location && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                      <MapPin className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                      <span>{activeItem.location}</span>
-                    </div>
-                  )}
-                </div>
+                    <a
+                      href={activeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-medium mt-2 break-all"
+                    >
+                      <span>RSVP / Link: {activeUrl}</span>
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
 
-                <a
-                  href={activeItem.rsvpUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-medium mt-2 break-all"
-                >
-                  <span>RSVP / Link: {activeItem.rsvpUrl}</span>
-                  <ExternalLink className="w-3 h-3 shrink-0" />
-                </a>
-
-                {activeItem.description && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                    {activeItem.description}
-                  </p>
+                    {activeItem?.description && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                        {activeItem.description}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -641,20 +900,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 <button
                   type="button"
                   onClick={handleDownloadPng}
-                  className="p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download PNG</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isGeneratingPdf}
-                  onClick={handleDownloadFlyerPdf}
-                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-70"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>{isGeneratingPdf ? 'Generating...' : 'Print Stand PDF'}</span>
                 </button>
 
                 <button
@@ -676,22 +925,69 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 </button>
 
                 <a
-                  href={activeItem.rsvpUrl}
+                  href={activeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open RSVP</span>
+                  <span>Open Hub</span>
                 </a>
 
+                {!isAllSelected && activeItem && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(activeItem)}
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit Event</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+          {/* Printable Table Stand / Wall Poster Generator Card */}
+          <div className="bg-purple-50/70 dark:bg-purple-950/30 rounded-3xl p-5 border border-purple-200 dark:border-purple-800/80 space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Printer className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-purple-950 dark:text-purple-200">
+                  Print Table & Wall QR Code Poster (PDF)
+                </h3>
+                <p className="text-xs text-purple-700 dark:text-purple-400">
+                  Download a high-resolution A4 poster with your business name & QR code.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                  QR Code Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Main Gate, Event Poster, Reception, Entrance"
+                  value={tableNumberForPrint}
+                  onChange={(e) => setTableNumberForPrint(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-800 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-end">
                 <button
                   type="button"
-                  onClick={() => handleOpenEditModal(activeItem)}
-                  className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={handleDownloadTableStandPdf}
+                  disabled={isGeneratingPdf}
+                  className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit Event</span>
+                  <Download className="w-4 h-4" />
+                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
                 </button>
               </div>
             </div>
@@ -874,19 +1170,95 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 />
               </div>
 
-              {/* RSVP Link / Phone */}
+              {/* RSVP Mode Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                  RSVP & Ticket Registration *
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setRsvpMode('phone')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      rsvpMode === 'phone'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp / Phone RSVP</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRsvpMode('url')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      rsvpMode === 'url'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Online Link / Tickets</span>
+                  </button>
+                </div>
+
+                {rsvpMode === 'phone' ? (
+                  <PhoneInputField
+                    id="event-rsvp-phone"
+                    label="RSVP WhatsApp or Mobile Phone *"
+                    icon={MessageCircle}
+                    value={formRsvpPhone}
+                    onChange={(val) => setFormRsvpPhone(val)}
+                    placeholder="700 123 456"
+                    required
+                    defaultCountryCode="+256"
+                    helpText="Select your country flag & code, then enter phone number for direct WhatsApp RSVP"
+                  />
+                ) : (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                      Event Website, Registration or Tickets URL *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="https://event.com/rsvp or https://forms.gle/..."
+                      value={formRsvpUrl}
+                      onChange={(e) => setFormRsvpUrl(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Event Inquiries / Organizer Contact Phone */}
+              <PhoneInputField
+                id="event-contact-phone"
+                label="Organizer Inquiries / Support Phone (Optional)"
+                icon={Phone}
+                value={formContactPhone}
+                onChange={(val) => setFormContactPhone(val)}
+                placeholder="700 123 456"
+                defaultCountryCode="+256"
+                helpText="Direct phone with country flag for attendees to call or message with event inquiries"
+              />
+
+              {/* Event Inquiries / Organizer Contact Email */}
               <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  RSVP Phone, WhatsApp, or Registration URL *
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span>Organizer Contact Email (Optional)</span>
                 </label>
                 <input
-                  type="text"
-                  required
-                  placeholder="e.g. +256700000000 or https://event.com/rsvp"
-                  value={formRsvp}
-                  onChange={(e) => setFormRsvp(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                  type="email"
+                  placeholder="e.g. events@yourbrand.com or info@domain.com"
+                  value={formContactEmail}
+                  onChange={(e) => setFormContactEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-hidden text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                 />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                  Email address for attendee inquiries, RSVP questions, or partnership details
+                </p>
               </div>
 
               {/* Call-To-Action Text */}

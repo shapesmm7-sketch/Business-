@@ -20,6 +20,9 @@ import {
   StaffSaleRecord,
   StaffIncidentRecord,
   QRCodeHostedPage,
+  WebsiteAppQrItem,
+  SocialQrItem,
+  EventQrItem,
   UserSubscription,
   AppLockConfig,
   CloudflareConfig,
@@ -49,6 +52,9 @@ const STORAGE_KEYS = {
   STAFF_SALES: 'quickreceipt_staff_sales_v1',
   STAFF_INCIDENTS: 'quickreceipt_staff_incidents_v1',
   QR_HOSTED_PAGES: 'quickreceipt_qr_hosted_pages_v1',
+  WEBSITES_QR: 'quickreceipt_websites_apps_qr_v1',
+  SOCIALS_QR: 'quickreceipt_socials_qr_v1',
+  EVENTS_QR: 'quickreceipt_events_qr_v1',
   SUBSCRIPTION: 'quickreceipt_subscription_v1',
   APP_LOCK: 'quickreceipt_app_lock_config_v1',
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
@@ -846,6 +852,9 @@ export const StorageService = {
       staffSales: this.getStaffSales(),
       staffIncidents: this.getStaffIncidents(),
       qrHostedPages: this.getHostedQRPages(),
+      websitesQrItems: this.getWebsitesQrItems(),
+      socialsQrItems: this.getSocialsQrItems(),
+      eventsQrItems: this.getEventsQrItems(),
     };
   },
 
@@ -949,6 +958,15 @@ export const StorageService = {
       }
       if (Array.isArray(backupData.qrHostedPages)) {
         writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
+      }
+      if (Array.isArray(backupData.websitesQrItems)) {
+        writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
+      }
+      if (Array.isArray(backupData.socialsQrItems)) {
+        writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
+      }
+      if (Array.isArray(backupData.eventsQrItems)) {
+        writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
       }
       return {
         success: true,
@@ -2191,6 +2209,45 @@ export const StorageService = {
     const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, filtered);
     if (success) {
       CloudflareService.deleteHostedQrPage(id).catch(() => {});
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
+  },
+
+  // --- WEBSITES / APPS QR ITEMS ---
+  getWebsitesQrItems(): WebsiteAppQrItem[] {
+    return readFromStorage<WebsiteAppQrItem[]>(STORAGE_KEYS.WEBSITES_QR, []);
+  },
+
+  saveWebsitesQrItems(items: WebsiteAppQrItem[]): boolean {
+    const success = writeToStorage(STORAGE_KEYS.WEBSITES_QR, items);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
+  },
+
+  // --- SOCIALS QR ITEMS ---
+  getSocialsQrItems(): SocialQrItem[] {
+    return readFromStorage<SocialQrItem[]>(STORAGE_KEYS.SOCIALS_QR, []);
+  },
+
+  saveSocialsQrItems(items: SocialQrItem[]): boolean {
+    const success = writeToStorage(STORAGE_KEYS.SOCIALS_QR, items);
+    if (success) {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return success;
+  },
+
+  // --- EVENTS QR ITEMS ---
+  getEventsQrItems(): EventQrItem[] {
+    return readFromStorage<EventQrItem[]>(STORAGE_KEYS.EVENTS_QR, []);
+  },
+
+  saveEventsQrItems(items: EventQrItem[]): boolean {
+    const success = writeToStorage(STORAGE_KEYS.EVENTS_QR, items);
+    if (success) {
       CloudflareService.syncAllToCloudflare().catch(() => {});
     }
     return success;

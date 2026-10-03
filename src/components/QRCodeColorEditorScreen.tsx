@@ -11,7 +11,15 @@ import { QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 
 interface QRCodeColorEditorScreenProps {
-  page: QRCodeHostedPage;
+  page?: QRCodeHostedPage;
+  title?: string;
+  url?: string;
+  initialDarkColor?: string;
+  initialEyeColor?: string;
+  initialLightColor?: string;
+  initialBoxBgColor?: string;
+  initialBoxBorderColor?: string;
+  accentColor?: string;
   onSave: (updates: {
     qrDarkColor: string;
     qrEyeColor: string;
@@ -83,20 +91,31 @@ const BOX_BORDER_PRESETS = [
 
 export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = ({
   page,
+  title,
+  url,
+  initialDarkColor,
+  initialEyeColor,
+  initialLightColor,
+  initialBoxBgColor,
+  initialBoxBorderColor,
+  accentColor = '#059669',
   onSave,
   onBack,
 }) => {
-  const [darkColor, setDarkColor] = useState<string>(page.qrDarkColor || '#000000');
-  const [eyeColor, setEyeColor] = useState<string>(page.qrEyeColor || page.qrDarkColor || '#000000');
-  const [lightColor, setLightColor] = useState<string>(page.qrLightColor || '#ffffff');
-  const [boxBgColor, setBoxBgColor] = useState<string>(page.qrBoxBgColor || '#ffffff');
-  const [boxBorderColor, setBoxBorderColor] = useState<string>(page.qrBoxBorderColor || '#e2e8f0');
+  const displayTitle = title || page?.title || 'QR Code';
+  const targetUrl = url || (page ? QRHostingService.getCustomerPageUrl(page.id) : '');
+
+  const [darkColor, setDarkColor] = useState<string>(initialDarkColor || page?.qrDarkColor || '#000000');
+  const [eyeColor, setEyeColor] = useState<string>(initialEyeColor || page?.qrEyeColor || initialDarkColor || page?.qrDarkColor || '#000000');
+  const [lightColor, setLightColor] = useState<string>(initialLightColor || page?.qrLightColor || '#ffffff');
+  const [boxBgColor, setBoxBgColor] = useState<string>(initialBoxBgColor || page?.qrBoxBgColor || '#ffffff');
+  const [boxBorderColor, setBoxBorderColor] = useState<string>(initialBoxBorderColor || page?.qrBoxBorderColor || '#e2e8f0');
   const [previewQrUrl, setPreviewQrUrl] = useState<string>('');
   const [savedNotice, setSavedNotice] = useState<boolean>(false);
 
   useEffect(() => {
-    const url = QRHostingService.getCustomerPageUrl(page.id);
-    QRHostingService.generateQrCodeDataUrl(url, {
+    if (!targetUrl) return;
+    QRHostingService.generateQrCodeDataUrl(targetUrl, {
       width: 600,
       margin: 1.5,
       color: {
@@ -107,7 +126,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
     })
       .then((data) => setPreviewQrUrl(data))
       .catch((err) => console.error(err));
-  }, [page.id, darkColor, lightColor, eyeColor]);
+  }, [targetUrl, darkColor, lightColor, eyeColor]);
 
   const handleResetDefaults = () => {
     setDarkColor('#000000');
@@ -141,7 +160,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to QR Stand</span>
+          <span>Back</span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -162,7 +181,8 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
           <button
             type="button"
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs hover:opacity-95 active:scale-95 transition"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-white text-xs font-bold shadow-xs hover:opacity-95 active:scale-95 transition"
+            style={{ backgroundColor: accentColor }}
           >
             <Check className="w-3.5 h-3.5" />
             <span>Save Changes</span>
@@ -171,14 +191,19 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
       </div>
 
       {/* Hero Header */}
-      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 p-5 sm:p-6 text-white shadow-md">
+      <div
+        className="relative rounded-2xl sm:rounded-3xl overflow-hidden p-5 sm:p-6 text-white shadow-md"
+        style={{
+          background: `linear-gradient(135deg, ${accentColor} 0%, #0f172a 100%)`,
+        }}
+      >
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
             <Palette className="w-6 h-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-emerald-200">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-white/80">
                 Visual Customizer
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white">
@@ -186,9 +211,9 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">QR Code & Box Editor</h1>
-            <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-0.5 leading-snug">
+            <p className="text-xs sm:text-sm text-white/90 font-medium mt-0.5 leading-snug">
               Customize scannable pattern dots, 3 corner square boxes, background, and stand frame for{' '}
-              <span className="text-white font-bold">{page.title}</span>.
+              <span className="text-white font-bold">{displayTitle}</span>.
             </p>
           </div>
         </div>
@@ -531,7 +556,8 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-md shadow-emerald-600/30"
+            className="flex-1 sm:flex-initial px-6 py-2.5 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-md hover:opacity-95"
+            style={{ backgroundColor: accentColor }}
           >
             <Check className="w-4 h-4" />
             <span>Save Colors</span>

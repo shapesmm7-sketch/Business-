@@ -51,15 +51,20 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
 
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const lastEmittedValueRef = useRef<string>(value || '');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync internal state when prop value changes externally
+  // Sync internal state when prop value changes externally (not from user typing in this component)
   useEffect(() => {
+    if (value === lastEmittedValueRef.current) {
+      return;
+    }
     const { country, nationalNumber } = splitPhoneNumber(value, defaultCountryCode);
     setSelectedCountry(country);
     setLocalNumber(nationalNumber);
+    lastEmittedValueRef.current = value || '';
   }, [value, defaultCountryCode]);
 
   // Focus search input when dropdown opens
@@ -104,6 +109,7 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
     setSelectedCountry(country);
     setIsOpen(false);
     const combined = combinePhoneNumber(country.dialCode, localNumber);
+    lastEmittedValueRef.current = combined;
     onChange(combined);
   };
 
@@ -112,17 +118,19 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
 
     // Check if user pasted a full international number with +
     if (inputVal.trim().startsWith('+')) {
-      const { country, nationalNumber } = splitPhoneNumber(inputVal, defaultCountryCode);
+      const { country, nationalNumber } = splitPhoneNumber(inputVal, selectedCountry.dialCode);
       setSelectedCountry(country);
       setLocalNumber(nationalNumber);
       const combined = combinePhoneNumber(country.dialCode, nationalNumber);
+      lastEmittedValueRef.current = combined;
       onChange(combined);
       return;
     }
 
-    // Standard local number update
+    // Standard local number update - keep selectedCountry intact and update number
     setLocalNumber(inputVal);
     const combined = combinePhoneNumber(selectedCountry.dialCode, inputVal);
+    lastEmittedValueRef.current = combined;
     onChange(combined);
   };
 
@@ -190,6 +198,7 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
             type="button"
             onClick={() => {
               setLocalNumber('');
+              lastEmittedValueRef.current = '';
               onChange('');
             }}
             className="pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"

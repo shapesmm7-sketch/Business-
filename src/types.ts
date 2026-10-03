@@ -414,6 +414,89 @@ export interface AppBackupData {
   staffSales?: StaffSaleRecord[];
   staffIncidents?: StaffIncidentRecord[];
   qrHostedPages?: QRCodeHostedPage[];
+  websitesQrItems?: WebsiteAppQrItem[];
+  socialsQrItems?: SocialQrItem[];
+  eventsQrItems?: EventQrItem[];
+}
+
+export type SocialPlatform =
+  | 'whatsapp'
+  | 'instagram'
+  | 'facebook'
+  | 'tiktok'
+  | 'x_twitter'
+  | 'youtube'
+  | 'linkedin'
+  | 'snapchat'
+  | 'telegram'
+  | 'pinterest'
+  | 'google_maps'
+  | 'threads'
+  | 'discord'
+  | 'twitch'
+  | 'reddit'
+  | 'wechat'
+  | 'spotify'
+  | 'yelp'
+  | 'patreon'
+  | 'github'
+  | 'custom';
+
+export interface WebsiteAppQrItem {
+  id: string;
+  title: string;
+  url: string;
+  type: 'website' | 'android_app' | 'ios_app' | 'web_app' | 'custom' | 'phone_link';
+  phone?: string;
+  phoneAction?: 'whatsapp' | 'tel';
+  description?: string;
+  ctaText: string;
+  darkColor: string;
+  lightColor: string;
+  eyeColor?: string;
+  boxBgColor?: string;
+  boxBorderColor?: string;
+  createdAt: string;
+}
+
+export interface SocialQrItem {
+  id: string;
+  platform: SocialPlatform;
+  customPlatformName?: string;
+  title: string;
+  usernameOrPhone: string;
+  fullUrl: string;
+  prefilledMessage?: string;
+  ctaText: string;
+  darkColor: string;
+  lightColor: string;
+  eyeColor?: string;
+  boxBgColor?: string;
+  boxBorderColor?: string;
+  createdAt: string;
+}
+
+export interface EventQrItem {
+  id: string;
+  title: string;
+  eventDate?: string;
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  location: string;
+  rsvpUrl: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  description?: string;
+  ctaText: string;
+  photos?: string[];
+  darkColor: string;
+  lightColor: string;
+  eyeColor?: string;
+  boxBgColor?: string;
+  boxBorderColor?: string;
+  createdAt: string;
 }
 
 export interface QRMenuItem {

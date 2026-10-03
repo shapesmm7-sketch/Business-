@@ -481,13 +481,33 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
-    const scopeLabel = qrScope === 'all' ? 'All_Pages' : qrScope === 'menu' ? 'Items' : qrScope === 'about' ? 'Info' : 'Photos';
-    const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
+    const scopeLabel = qrScope === 'all' ? 'All Pages' : qrScope === 'menu' ? 'Menu & Catalog' : qrScope === 'about' ? 'About & Profile' : 'Photos Gallery';
+    const qrName = tableNumberForPrint
+      ? `${activePage.title} - ${tableNumberForPrint}`
+      : `${activePage.title}`;
+    const subtitle = qrScope === 'all'
+      ? 'Point camera here for direct navigation to All Pages'
+      : `Point camera here to open ${scopeLabel}`;
+
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl,
+      name: qrName,
+      subtitle,
+      tag: tableNumberForPrint || scopeLabel,
+      urlOrHandle: customerPageUrl,
+      boxBgColor: activePage.qrBoxBgColor,
+      boxBorderColor: activePage.qrBoxBorderColor,
+      darkColor: activePage.qrDarkColor,
+      lightColor: activePage.qrLightColor,
+      accentColor: activePage.accentColor || '#059669',
+    });
+
+    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_${qrScope}_QRCode.png`;
     const res = await saveFile({
-      data: qrDataUrl,
+      data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${activePage.title} QR Code`,
+      title: `${qrName} QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -498,13 +518,29 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
-    const scopeLabel = quickQrScope === 'all' ? 'All_Pages' : quickQrScope === 'menu' ? 'Items' : quickQrScope === 'about' ? 'Info' : 'Photos';
-    const filename = `${activePage.title.replace(/[^a-zA-Z0-9]/g, '_')}_${scopeLabel}_QRCode.png`;
+    const scopeLabel = quickQrScope === 'all' ? 'All Pages' : quickQrScope === 'menu' ? 'Menu' : quickQrScope === 'about' ? 'About' : 'Photos';
+    const qrName = quickQrTableNumber
+      ? `${activePage.title} - ${scopeLabel} (${quickQrTableNumber})`
+      : `${activePage.title} - ${scopeLabel}`;
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl: quickQrDataUrl,
+      name: qrName,
+      subtitle: `Quick Scan QR Code (${scopeLabel})`,
+      tag: quickQrTableNumber || scopeLabel,
+      urlOrHandle: QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope),
+      boxBgColor: activePage.qrBoxBgColor,
+      boxBorderColor: activePage.qrBoxBorderColor,
+      darkColor: activePage.qrDarkColor,
+      lightColor: activePage.qrLightColor,
+      accentColor: activePage.accentColor || '#059669',
+    });
+
+    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
     const res = await saveFile({
-      data: quickQrDataUrl,
+      data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${activePage.title} Quick QR Code`,
+      title: `${qrName} Quick QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -602,14 +638,30 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleDownloadItemPng = async () => {
-    if (!itemQrDataUrl || !itemQrModalItem) return;
-    const safeName = itemQrModalItem.name.replace(/[^a-zA-Z0-9]/g, '_');
+    if (!itemQrDataUrl || !itemQrModalItem || !activePage) return;
+    const qrName = itemQrTableNumber
+      ? `${itemQrModalItem.name} (${itemQrTableNumber})`
+      : itemQrModalItem.name;
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl: itemQrDataUrl,
+      name: qrName,
+      subtitle: `${activePage.title} • ${activePage.currency} ${itemQrModalItem.price.toLocaleString()}`,
+      tag: itemQrModalItem.category || 'Menu Item',
+      urlOrHandle: QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id),
+      boxBgColor: activePage.qrBoxBgColor,
+      boxBorderColor: activePage.qrBoxBorderColor,
+      darkColor: activePage.qrDarkColor,
+      lightColor: activePage.qrLightColor,
+      accentColor: activePage.accentColor || '#059669',
+    });
+
+    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Item_QRCode.png`;
     const res = await saveFile({
-      data: itemQrDataUrl,
+      data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${itemQrModalItem.name} QR Code`,
+      title: `${qrName} QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -666,14 +718,31 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleDownloadPhotoPng = async () => {
-    if (!photoQrDataUrl || !photoQrModalPhoto) return;
-    const safeName = (photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
+    if (!photoQrDataUrl || !photoQrModalPhoto || !activePage) return;
+    const photoTitle = photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo';
+    const qrName = photoQrTableNumber
+      ? `${photoTitle} (${photoQrTableNumber})`
+      : `${activePage.title} - ${photoTitle}`;
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl: photoQrDataUrl,
+      name: qrName,
+      subtitle: 'Scan with phone camera to view full photo',
+      tag: photoQrTableNumber || 'Gallery Photo',
+      urlOrHandle: QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id),
+      boxBgColor: activePage.qrBoxBgColor,
+      boxBorderColor: activePage.qrBoxBorderColor,
+      darkColor: activePage.qrDarkColor,
+      lightColor: activePage.qrLightColor,
+      accentColor: activePage.accentColor || '#059669',
+    });
+
+    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Photo_QRCode.png`;
     const res = await saveFile({
-      data: photoQrDataUrl,
+      data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo'} QR Code`,
+      title: `${qrName} QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -1354,17 +1423,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* WEBSITES / APPS QR SECTION */}
       {qrCategory === 'websites' && (
-        <WebsitesAppsQrSection business={business} showToast={showToast} />
+        <WebsitesAppsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
       )}
 
       {/* SOCIALS QR SECTION */}
       {qrCategory === 'socials' && (
-        <SocialsQrSection business={business} showToast={showToast} />
+        <SocialsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
       )}
 
       {/* EVENTS QR SECTION */}
       {qrCategory === 'events' && (
-        <EventsQrSection business={business} showToast={showToast} />
+        <EventsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
       )}
 
       {/* BUSINESS QR SECTIONS (All existing sections fully preserved under Business QR) */}
@@ -1523,9 +1592,40 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               Point phone camera here to test direct navigation to All Pages (Full Hub)
             </p>
 
+            {/* QR Code Name Input Field On Top of QR Code Box */}
+            <div className="max-w-xs sm:max-w-sm mx-auto mt-4 mb-3 text-left">
+              <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                <span>QR Code Name</span>
+                {tableNumberForPrint && (
+                  <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                    Included on Downloads
+                  </span>
+                )}
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  placeholder="e.g. Main Office, Reception, Entrance, Display Poster"
+                  value={tableNumberForPrint}
+                  onChange={(e) => setTableNumberForPrint(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                />
+                {tableNumberForPrint && (
+                  <button
+                    type="button"
+                    onClick={() => setTableNumberForPrint('')}
+                    className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    title="Clear"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* QR Code Container with Custom Box & Border Colors */}
             <div
-              className="mt-5 inline-block p-4 sm:p-5 rounded-3xl shadow-xl transition-all duration-300 relative"
+              className="inline-block p-4 sm:p-5 rounded-3xl shadow-xl transition-all duration-300 relative"
               style={{
                 backgroundColor: activeBoxBgColor,
                 borderColor: activeBoxBorderColor === 'transparent' ? 'transparent' : activeBoxBorderColor,
@@ -1533,6 +1633,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 borderStyle: 'solid',
               }}
             >
+              {tableNumberForPrint && (
+                <div className="mb-2.5 text-center">
+                  <span className="inline-block px-3 py-1 rounded-full bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 text-xs font-black uppercase tracking-wider shadow-xs">
+                    {tableNumberForPrint}
+                  </span>
+                </div>
+              )}
               {qrDataUrl ? (
                 <img
                   src={qrDataUrl}
@@ -1628,7 +1735,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Table 5, Bar 1, VIP Room"
+                  placeholder="e.g. Main Office, Reception, Entrance, Display Poster"
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -3062,6 +3169,37 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
               </div>
 
+              {/* QR Code Name Input Field On Top of QR Code Box */}
+              <div className="text-left mb-1">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                  <span>QR Code Name</span>
+                  {quickQrTableNumber && (
+                    <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                      Included on Downloads
+                    </span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="e.g. Main Office, Reception, Entrance, Display Poster"
+                    value={quickQrTableNumber}
+                    onChange={(e) => setQuickQrTableNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  />
+                  {quickQrTableNumber && (
+                    <button
+                      type="button"
+                      onClick={() => setQuickQrTableNumber('')}
+                      className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Scannable QR Code Frame */}
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 text-center">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold mb-2">
@@ -3069,7 +3207,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
 
                 <div
-                  className="inline-block p-3 rounded-2xl shadow-md transition-all"
+                  className="inline-block p-3 rounded-2xl shadow-md transition-all relative"
                   style={{
                     backgroundColor: activeBoxBgColor,
                     borderColor: activeBoxBorderColor === 'transparent' ? 'transparent' : activeBoxBorderColor,
@@ -3077,6 +3215,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                     borderStyle: 'solid',
                   }}
                 >
+                  {quickQrTableNumber && (
+                    <div className="mb-2 text-center">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-900/90 dark:bg-white/90 text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-wider shadow-xs">
+                        {quickQrTableNumber}
+                      </span>
+                    </div>
+                  )}
                   {quickQrDataUrl ? (
                     <img
                       src={quickQrDataUrl}
@@ -3115,30 +3260,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </button>
               </div>
 
-              {/* Printable Table Stand Settings */}
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
-                <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  QR Code Name
-                </label>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. Table 12, Bar, Lobby"
-                    value={quickQrTableNumber}
-                    onChange={(e) => setQuickQrTableNumber(e.target.value)}
-                    className="w-full sm:flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleDownloadQuickQrPdf}
-                    disabled={quickQrPdfLoading}
-                    className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 shrink-0 whitespace-nowrap"
-                  >
-                    <Printer className="w-3.5 h-3.5 shrink-0" />
-                    <span>{quickQrPdfLoading ? 'Generating...' : 'Print QR Code PDF'}</span>
-                  </button>
-                </div>
-              </div>
+              {/* Printable Table Stand PDF Action Button */}
+              <button
+                type="button"
+                onClick={handleDownloadQuickQrPdf}
+                disabled={quickQrPdfLoading}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>{quickQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}
@@ -3256,13 +3387,51 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
               </div>
 
+              {/* QR Code Name Input Field On Top of QR Code Box */}
+              <div className="text-left mb-1">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                  <span>QR Code Name</span>
+                  {itemQrTableNumber && (
+                    <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                      Included on Downloads
+                    </span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="e.g. Front Desk, Counter, Display Stand, Section A"
+                    value={itemQrTableNumber}
+                    onChange={(e) => setItemQrTableNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  />
+                  {itemQrTableNumber && (
+                    <button
+                      type="button"
+                      onClick={() => setItemQrTableNumber('')}
+                      className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Scannable Item QR Code Frame */}
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 text-center">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold mb-2">
                   <span>Direct Item Ordering QR</span>
                 </div>
 
-                <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100">
+                <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100 relative">
+                  {itemQrTableNumber && (
+                    <div className="mb-2 text-center">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider shadow-xs">
+                        {itemQrTableNumber}
+                      </span>
+                    </div>
+                  )}
                   {itemQrDataUrl ? (
                     <img
                       src={itemQrDataUrl}
@@ -3296,30 +3465,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </button>
               </div>
 
-              {/* Printable Table Stand / Tent Card Settings */}
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
-                <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  QR Code Name
-                </label>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. Table 4, Bar, Counter"
-                    value={itemQrTableNumber}
-                    onChange={(e) => setItemQrTableNumber(e.target.value)}
-                    className="w-full sm:flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleDownloadItemPdf}
-                    disabled={itemQrPdfLoading}
-                    className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 shrink-0 whitespace-nowrap"
-                  >
-                    <Printer className="w-3.5 h-3.5 shrink-0" />
-                    <span>{itemQrPdfLoading ? 'Generating...' : 'Print QR Code PDF'}</span>
-                  </button>
-                </div>
-              </div>
+              {/* Printable Table Stand Action Button */}
+              <button
+                type="button"
+                onClick={handleDownloadItemPdf}
+                disabled={itemQrPdfLoading}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>{itemQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}
@@ -3417,13 +3572,51 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
               </div>
 
+              {/* QR Code Name Input Field On Top of QR Code Box */}
+              <div className="text-left mb-1">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                  <span>QR Code Name</span>
+                  {photoQrTableNumber && (
+                    <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                      Included on Downloads
+                    </span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="e.g. Gallery Wall, Reception, Entrance, Spotlight"
+                    value={photoQrTableNumber}
+                    onChange={(e) => setPhotoQrTableNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  />
+                  {photoQrTableNumber && (
+                    <button
+                      type="button"
+                      onClick={() => setPhotoQrTableNumber('')}
+                      className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Scannable Photo QR Code Frame */}
               <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 text-center">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold mb-2">
                   <span>Photo QR Code</span>
                 </div>
 
-                <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100">
+                <div className="inline-block p-3 bg-white rounded-2xl shadow-md border-2 border-slate-100 relative">
+                  {photoQrTableNumber && (
+                    <div className="mb-2 text-center">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider shadow-xs">
+                        {photoQrTableNumber}
+                      </span>
+                    </div>
+                  )}
                   {photoQrDataUrl ? (
                     <img
                       src={photoQrDataUrl}
@@ -3457,30 +3650,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </button>
               </div>
 
-              {/* Printable Table Stand / Poster Settings */}
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/60 space-y-2">
-                <label className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300 uppercase block">
-                  QR Code Name
-                </label>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. Table 8, Reception, Room 101"
-                    value={photoQrTableNumber}
-                    onChange={(e) => setPhotoQrTableNumber(e.target.value)}
-                    className="w-full sm:flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleDownloadPhotoPdf}
-                    disabled={photoQrPdfLoading}
-                    className="w-full sm:w-auto justify-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 shrink-0 whitespace-nowrap"
-                  >
-                    <Printer className="w-3.5 h-3.5 shrink-0" />
-                    <span>{photoQrPdfLoading ? 'Generating...' : 'Print QR Code PDF'}</span>
-                  </button>
-                </div>
-              </div>
+              {/* Printable Table Stand Action Button */}
+              <button
+                type="button"
+                onClick={handleDownloadPhotoPdf}
+                disabled={photoQrPdfLoading}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>{photoQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}

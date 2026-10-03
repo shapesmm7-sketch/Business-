@@ -115,6 +115,12 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
         photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
       })),
     })),
+    eventsQrItems: (data.eventsQrItems || []).map((evt) => ({
+      ...evt,
+      photos: (evt.photos || []).filter((p) => Boolean(p)),
+    })),
+    websitesQrItems: data.websitesQrItems || [],
+    socialsQrItems: data.socialsQrItems || [],
   };
 }
 

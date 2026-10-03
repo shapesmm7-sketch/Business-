@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   MessageCircle,
   Share2,
@@ -22,50 +22,18 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
-import { BusinessProfile } from '../types';
+import { BusinessProfile, SocialQrItem, SocialPlatform } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { saveFile, shareContent, saveJsPdf } from '../services/fileSaver';
 import { jsPDF } from 'jspdf';
+import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
+import { PhoneInputField } from './PhoneInputField';
+import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 
-export type SocialPlatformType =
-  | 'whatsapp'
-  | 'instagram'
-  | 'tiktok'
-  | 'facebook'
-  | 'youtube'
-  | 'telegram'
-  | 'twitter'
-  | 'linkedin'
-  | 'snapchat'
-  | 'pinterest'
-  | 'google_maps'
-  | 'threads'
-  | 'discord'
-  | 'twitch'
-  | 'reddit'
-  | 'wechat'
-  | 'spotify'
-  | 'yelp'
-  | 'patreon'
-  | 'github'
-  | 'custom';
+export type SocialPlatformType = SocialPlatform;
 
-export interface SocialQrItem {
-  id: string;
-  platform: SocialPlatformType;
-  customPlatformName?: string;
-  title: string;
-  usernameOrPhone: string;
-  prefilledMessage?: string;
-  fullUrl: string;
-  ctaText: string;
-  darkColor: string;
-  lightColor: string;
-  eyeColor?: string;
-  createdAt: string;
-}
-
-const STORAGE_KEY = 'quickreceipt_socials_qr_v1';
+export type { SocialQrItem };
 
 export const PLATFORMS_CONFIG: Record<
   SocialPlatformType,
@@ -159,7 +127,7 @@ export const PLATFORMS_CONFIG: Record<
       return clean.startsWith('http') ? clean : `https://t.me/${clean}`;
     },
   },
-  twitter: {
+  x_twitter: {
     name: 'X (Twitter)',
     brandColor: '#0f172a',
     lightColor: '#ffffff',
@@ -369,20 +337,18 @@ const COLOR_PRESETS = [
 
 interface SocialsQrSectionProps {
   business: BusinessProfile;
+  hostedPageId?: string;
   showToast: (msg: string) => void;
 }
 
 export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   business,
+  hostedPageId,
   showToast,
 }) => {
   const [items, setItems] = useState<SocialQrItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.error(e);
-    }
+    const stored = StorageService.getSocialsQrItems();
+    if (stored && stored.length > 0) return stored;
 
     // Seed initial items with WhatsApp or business phone
     const defaultPhone = business.whatsapp || business.phone || '256700000000';
@@ -418,10 +384,19 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     ];
   });
 
-  const [selectedItemId, setSelectedItemId] = useState<string>(() => items[0]?.id || '');
+  const [selectedItemId, setSelectedItemId] = useState<string>('all');
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<SocialQrItem | null>(null);
+
+  // Colors for ALL Socials Hub QR
+  const [allQrColors, setAllQrColors] = useState({
+    darkColor: '#059669',
+    eyeColor: '#047857',
+    lightColor: '#ffffff',
+    boxBgColor: '#ffffff',
+    boxBorderColor: '#cbd5e1',
+  });
 
   // Form State
   const [formPlatform, setFormPlatform] = useState<SocialPlatformType>('whatsapp');
@@ -435,33 +410,87 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const [formEyeColor, setFormEyeColor] = useState<string>('#047857');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
+  const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
 
-  // Save to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (err) {
-      console.error(err);
+  const isAllSelected = selectedItemId === 'all';
+  const activeItem = items.find((i) => i.id === selectedItemId) || null;
+
+  const pageIdToUse = hostedPageId || StorageService.getHostedQRPages()[0]?.id || 'brivu_default_hub';
+
+  const allHubUrl = useMemo(() => {
+    return QRHostingService.getCustomerPageUrl(pageIdToUse, 'socials');
+  }, [pageIdToUse]);
+
+  const activeUrl = isAllSelected ? allHubUrl : (activeItem?.fullUrl || '');
+  const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#059669');
+  const activeLightColor = isAllSelected ? allQrColors.lightColor : (activeItem?.lightColor || '#ffffff');
+  const activeEyeColor = isAllSelected ? allQrColors.eyeColor : (activeItem?.eyeColor || activeDarkColor);
+  const activeBoxBgColor = isAllSelected ? allQrColors.boxBgColor : (activeItem?.boxBgColor || '#ffffff');
+  const activeBoxBorderColor = isAllSelected ? allQrColors.boxBorderColor : (activeItem?.boxBorderColor || '#cbd5e1');
+
+  const handleUpdateItemColors = (
+    itemId: string,
+    updates: {
+      qrDarkColor: string;
+      qrEyeColor: string;
+      qrLightColor: string;
+      qrBoxBgColor: string;
+      qrBoxBorderColor: string;
     }
+  ) => {
+    if (itemId === 'all') {
+      setAllQrColors({
+        darkColor: updates.qrDarkColor,
+        eyeColor: updates.qrEyeColor,
+        lightColor: updates.qrLightColor,
+        boxBgColor: updates.qrBoxBgColor,
+        boxBorderColor: updates.qrBoxBorderColor,
+      });
+      return;
+    }
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === itemId
+          ? {
+              ...it,
+              darkColor: updates.qrDarkColor,
+              eyeColor: updates.qrEyeColor,
+              lightColor: updates.qrLightColor,
+              boxBgColor: updates.qrBoxBgColor,
+              boxBorderColor: updates.qrBoxBorderColor,
+            }
+          : it
+      )
+    );
+  };
+
+  // Save to storage & Cloudflare
+  useEffect(() => {
+    StorageService.saveSocialsQrItems(items);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
   }, [items]);
 
-  const activeItem = items.find((i) => i.id === selectedItemId) || items[0];
-
-  // Generate QR for active item
+  // Cloudflare sync on mount
   useEffect(() => {
-    if (!activeItem || !activeItem.fullUrl) return;
-    QRHostingService.generateQrCodeDataUrl(activeItem.fullUrl, {
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+  }, []);
+
+  // Generate QR for active item or ALL hub
+  useEffect(() => {
+    if (!activeUrl) return;
+    QRHostingService.generateQrCodeDataUrl(activeUrl, {
       width: 600,
       margin: 1.5,
       color: {
-        dark: activeItem.darkColor || '#000000',
-        light: activeItem.lightColor || '#ffffff',
-        eyeColor: activeItem.eyeColor || activeItem.darkColor || '#000000',
+        dark: activeDarkColor,
+        light: activeLightColor,
+        eyeColor: activeEyeColor,
       },
     })
       .then((data) => setActiveQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activeItem]);
+  }, [activeUrl, activeDarkColor, activeLightColor, activeEyeColor]);
 
   const handleOpenCreateModal = (platform: SocialPlatformType = 'whatsapp', defaultCustomName?: string) => {
     setEditingItem(null);
@@ -470,7 +499,8 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     const customName = defaultCustomName || (platform === 'custom' ? 'Custom Platform' : cfg.name);
     setFormCustomName(customName);
     setFormTitle(`${business.name || 'Our'} ${platform === 'custom' ? customName : cfg.name}`);
-    setFormInputVal(platform === 'whatsapp' ? (business.whatsapp || business.phone || '') : '');
+    const defaultPhone = (business.whatsapp || business.phone || '').trim();
+    setFormInputVal(platform === 'whatsapp' ? defaultPhone : '');
     setFormMessage(
       platform === 'whatsapp'
         ? `Hello ${business.name || 'there'}, I would like to inquire about your services!`
@@ -489,7 +519,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     setFormPlatform(item.platform);
     setFormCustomName(item.customPlatformName || PLATFORMS_CONFIG[item.platform]?.name || 'Platform');
     setFormTitle(item.title);
-    setFormInputVal(item.usernameOrPhone);
+    setFormInputVal(item.usernameOrPhone || '');
     setFormMessage(item.prefilledMessage || '');
     setFormCta(item.ctaText);
     setFormDarkColor(item.darkColor);
@@ -567,13 +597,13 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   };
 
   const handleCopyLink = async () => {
-    if (!activeItem) return;
+    if (!activeUrl) return;
     try {
       if (navigator.clipboard) {
-        await navigator.clipboard.writeText(activeItem.fullUrl);
+        await navigator.clipboard.writeText(activeUrl);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-        showToast('Social link copied to clipboard!');
+        showToast(isAllSelected ? 'ALL Socials Hub link copied!' : 'Social link copied to clipboard!');
       }
     } catch {
       showToast('Failed to copy link.');
@@ -581,110 +611,131 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   };
 
   const handleShare = async () => {
-    if (!activeItem) return;
+    if (!activeUrl) return;
+    const shareTitle = isAllSelected
+      ? `${business.name || 'Business'} Social Media Hub`
+      : (activeItem?.title || 'Social QR');
+    const shareText = isAllSelected
+      ? `Connect with ${business.name || 'us'} on all social media channels: ${activeUrl}`
+      : `${activeItem?.ctaText || 'Connect'}: ${activeUrl}`;
     await shareContent({
-      title: activeItem.title,
-      text: `${activeItem.ctaText}: ${activeItem.fullUrl}`,
-      url: activeItem.fullUrl,
-      dialogTitle: `Share ${activeItem.title}`,
+      title: shareTitle,
+      text: shareText,
+      url: activeUrl,
+      dialogTitle: `Share ${shareTitle}`,
     });
   };
 
   const handleDownloadPng = async () => {
-    if (!activeQrDataUrl || !activeItem) return;
-    const safeName = activeItem.title.replace(/[^a-zA-Z0-9]/g, '_');
+    if (!activeQrDataUrl) return;
+    const defaultTitle = isAllSelected
+      ? `${business.name || 'Business'} Social Media Hub`
+      : (activeItem?.title || 'Social QR');
+    const qrName = tableNumberForPrint
+      ? `${defaultTitle} - ${tableNumberForPrint}`
+      : defaultTitle;
+    const defaultSubtitle = isAllSelected
+      ? `Connect on All ${items.length} Social Channels & Messaging Apps`
+      : (activeItem?.usernameOrPhone || activeItem?.ctaText || 'Scan to Connect');
+    const defaultTag = tableNumberForPrint || (isAllSelected ? 'ALL SOCIAL CHANNELS' : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'SOCIAL').toUpperCase());
+
+    const finalPngUrl = await QRHostingService.generateNamedQrPng({
+      qrDataUrl: activeQrDataUrl,
+      name: qrName,
+      subtitle: defaultSubtitle,
+      tag: defaultTag,
+      urlOrHandle: activeUrl,
+      boxBgColor: activeBoxBgColor,
+      boxBorderColor: activeBoxBorderColor,
+      darkColor: activeDarkColor,
+      lightColor: activeLightColor,
+      accentColor: activeDarkColor,
+    });
+
+    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
     await saveFile({
-      data: activeQrDataUrl,
-      filename: `${safeName}_QRCode.png`,
+      data: finalPngUrl,
+      filename: `${safeName}_Social_QRCode.png`,
       mimeType: 'image/png',
-      title: `${activeItem.title} QR Code`,
+      title: `${qrName} QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
-    showToast('Social QR code image saved!');
+    showToast('Social QR code image with name saved!');
   };
 
-  const handleDownloadFlyerPdf = async () => {
-    if (!activeQrDataUrl || !activeItem) return;
+  const handleDownloadTableStandPdf = async () => {
+    if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const cfg = PLATFORMS_CONFIG[activeItem.platform] || PLATFORMS_CONFIG.custom;
-      const platformTitle = activeItem.customPlatformName || cfg.name;
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
+      const headline = isAllSelected
+        ? `${business.name || 'Official'} Social Media Hub`
+        : (activeItem?.title || 'Official Socials');
+      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
+      const subline = isAllSelected
+        ? `Scan to follow and chat with us on all ${items.length} social channels`
+        : (activeItem?.usernameOrPhone ? `${activeItem.usernameOrPhone}` : 'Scan to follow and connect with us online');
+      const calloutText = isAllSelected
+        ? 'SCAN TO CONNECT ON SOCIAL MEDIA'
+        : (activeItem?.ctaText || 'SCAN TO CONNECT ONLINE');
+
+      const res = await QRHostingService.downloadGenericTableStand({
+        businessName: business.name || 'Official Socials',
+        headline,
+        subline,
+        qrNameOrTableNumber: tableNumberForPrint || undefined,
+        qrDataUrl: activeQrDataUrl,
+        calloutText,
+        urlOrHandleText: activeUrl,
+        description: isAllSelected
+          ? `Connected Channels: ${items.map((it) => it.customPlatformName || PLATFORMS_CONFIG[it.platform]?.name || it.title).join(' • ')}`
+          : (activeItem?.prefilledMessage || 'Follow our official channel for updates, inquiries & offers.'),
+        accentColor: activeDarkColor,
+        filename: `${safeName}_Table_Wall_Poster.pdf`,
+        documentTitle: `${headline} Poster`,
       });
-
-      const pageWidth = 210;
-      const primaryHex = activeItem.darkColor || cfg.brandColor || '#059669';
-
-      // Header Banner
-      doc.setFillColor(primaryHex);
-      doc.rect(0, 0, pageWidth, 45, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text(business.name || 'Welcome', pageWidth / 2, 22, { align: 'center' });
-
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Official ${platformTitle} Channel`, pageWidth / 2, 34, { align: 'center' });
-
-      // Call to action title
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.text(activeItem.ctaText || `Connect on ${platformTitle}`, pageWidth / 2, 70, { align: 'center' });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(12);
-      doc.setTextColor(100, 116, 139);
-      doc.text('Scan with your smartphone camera to connect instantly', pageWidth / 2, 80, { align: 'center' });
-
-      // QR Frame box
-      doc.setDrawColor(226, 232, 240);
-      doc.setLineWidth(1);
-      doc.roundedRect(45, 95, 120, 120, 8, 8, 'S');
-
-      // Add QR Code
-      doc.addImage(activeQrDataUrl, 'PNG', 50, 100, 110, 110);
-
-      // Handle or Link below QR
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.setTextColor(15, 23, 42);
-      doc.text(activeItem.title, pageWidth / 2, 235, { align: 'center' });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(71, 85, 105);
-      doc.text(activeItem.fullUrl, pageWidth / 2, 245, { align: 'center' });
-
-      doc.setFontSize(9);
-      doc.setTextColor(148, 163, 184);
-      doc.text(`Powered by Brivu • ${new Date().toLocaleDateString()}`, pageWidth / 2, 275, { align: 'center' });
-
-      const safeName = activeItem.title.replace(/[^a-zA-Z0-9]/g, '_');
-      await saveJsPdf(doc, `${safeName}_Social_Stand.pdf`, `${activeItem.title} Social Stand`, {
-        folder: 'qr_codes',
-      });
-      showToast('Social Stand Flyer PDF downloaded!');
+      if (res.success) {
+        showToast('Table & Wall QR Code Poster (PDF) downloaded!');
+      } else {
+        showToast('Saved Table & Wall QR Code Poster.');
+      }
     } catch (err) {
       console.error(err);
-      showToast('Failed to generate PDF flyer.');
+      showToast('Failed to generate poster PDF.');
     } finally {
       setIsGeneratingPdf(false);
     }
   };
 
   const getPlatformDisplay = (item: SocialQrItem) => {
-    const cfg = PLATFORMS_CONFIG[item.platform];
+    const cfg = PLATFORMS_CONFIG[item.platform] || PLATFORMS_CONFIG.custom;
     const name = item.customPlatformName || cfg?.name || 'Platform';
     const color = item.darkColor || cfg?.brandColor || '#059669';
     return { name, color };
   };
+
+  if (isEditingQrColors) {
+    const editorTitle = isAllSelected
+      ? `${business.name || 'Business'} ALL Socials Hub`
+      : (activeItem?.title || 'Social QR');
+    return (
+      <QRCodeColorEditorScreen
+        title={editorTitle}
+        url={activeUrl}
+        initialDarkColor={activeDarkColor}
+        initialEyeColor={activeEyeColor}
+        initialLightColor={activeLightColor}
+        initialBoxBgColor={activeBoxBgColor}
+        initialBoxBorderColor={activeBoxBorderColor}
+        accentColor={activeDarkColor}
+        onSave={(updates) => {
+          handleUpdateItemColors(selectedItemId, updates);
+          showToast('QR Code & Box colors saved!');
+        }}
+        onBack={() => setIsEditingQrColors(false)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -735,14 +786,14 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               'facebook',
               'youtube',
               'telegram',
-              'twitter',
+              'x_twitter',
               'linkedin',
               'snapchat',
               'pinterest',
               'google_maps',
             ] as SocialPlatformType[]
           ).map((pKey) => {
-            const cfg = PLATFORMS_CONFIG[pKey];
+            const cfg = PLATFORMS_CONFIG[pKey] || PLATFORMS_CONFIG.custom;
             return (
               <button
                 key={pKey}
@@ -761,89 +812,162 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         </div>
       </div>
 
-      {/* Social QR Cards Grid */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Your Active Social QR Codes ({items.length})
+      {/* QR Generation Mode Selector (ALL vs SINGLE) */}
+      <div className="p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl flex items-center gap-1.5 border border-slate-200/80 dark:border-slate-700/80">
+        <button
+          type="button"
+          onClick={() => setSelectedItemId('all')}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
+            isAllSelected
+              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/20'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>ALL Social Accounts (1 Code)</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+            {items.length}
           </span>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          {items.map((item) => {
-            const isSelected = item.id === (activeItem?.id || '');
-            const { name, color } = getPlatformDisplay(item);
-            return (
-              <div
-                key={item.id}
-                onClick={() => setSelectedItemId(item.id)}
-                className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                  isSelected
-                    ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
-                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs font-black text-white text-xs"
-                    style={{ backgroundColor: color }}
-                  >
-                    {name.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
-                        {item.title}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">
-                      {item.usernameOrPhone}
-                    </p>
-                  </div>
-                </div>
-
-                 <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditModal(item)}
-                    className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
-                    title="Edit"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteItem(item.id, e)}
-                    className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-600 dark:text-rose-400 transition"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (isAllSelected && items.length > 0) {
+              setSelectedItemId(items[0].id);
+            }
+          }}
+          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
+            !isAllSelected
+              ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm border border-slate-200 dark:border-slate-700'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+          }`}
+        >
+          <Share2 className="w-4 h-4" />
+          <span>Single Platform QR Code</span>
+        </button>
       </div>
 
+      {/* Single Social Platform Selector Bar when Single mode is active */}
+      {!isAllSelected && (
+        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Select Active Channel ({items.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => handleOpenCreateModal('whatsapp')}
+              className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Add Social Channel</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedItemId}
+              onChange={(e) => setSelectedItemId(e.target.value)}
+              className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+            >
+              {items.map((it) => {
+                const { name } = getPlatformDisplay(it);
+                return (
+                  <option key={it.id} value={it.id}>
+                    {it.title} ({name}) - {it.usernameOrPhone}
+                  </option>
+                );
+              })}
+            </select>
+
+            {activeItem && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditModal(activeItem)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                  title="Edit Channel"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteItem(activeItem.id, e)}
+                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                  title="Delete Channel"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Active Social Showcase */}
-      {activeItem ? (
-        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+      {(activeItem || isAllSelected) ? (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row items-center gap-6 justify-between">
             {/* Live QR Image Box */}
-            <div className="flex flex-col items-center gap-2.5 shrink-0">
+            <div className="flex flex-col items-center gap-2.5 shrink-0 w-full sm:w-auto">
+              {/* QR Code Name Input on Top */}
+              <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
+                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
+                  <span>QR Code Name</span>
+                  {tableNumberForPrint && (
+                    <span className="text-[9px] text-pink-600 dark:text-pink-400 font-medium">Included on PNG</span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="e.g. Front Desk, Social Poster, Reception, Entrance"
+                    value={tableNumberForPrint}
+                    onChange={(e) => setTableNumberForPrint(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-pink-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  />
+                  {tableNumberForPrint && (
+                    <button
+                      type="button"
+                      onClick={() => setTableNumberForPrint('')}
+                      className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div
-                className="p-3.5 rounded-2xl shadow-xl border-2 transition-all flex items-center justify-center"
+                className="p-3.5 rounded-2xl shadow-xl transition-all flex flex-col items-center justify-center"
                 style={{
-                  backgroundColor: activeItem.lightColor || '#ffffff',
-                  borderColor: `${activeItem.darkColor}40`,
+                  backgroundColor: activeBoxBgColor,
+                  borderColor:
+                    activeBoxBorderColor && activeBoxBorderColor !== 'transparent'
+                      ? activeBoxBorderColor
+                      : `${activeDarkColor}40`,
+                  borderWidth: activeBoxBorderColor === 'transparent' ? '0px' : '4px',
+                  borderStyle: 'solid',
                 }}
               >
+                {tableNumberForPrint && (
+                  <span className="mb-2 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
+                    {tableNumberForPrint}
+                  </span>
+                )}
                 {activeQrDataUrl ? (
                   <img
                     src={activeQrDataUrl}
-                    alt={activeItem.title}
+                    alt={isAllSelected ? 'ALL Socials QR Code' : (activeItem?.title || 'Social QR')}
                     className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-lg"
+                    style={{
+                      backgroundColor: activeLightColor,
+                      padding: '4px',
+                      borderRadius: '12px',
+                    }}
                   />
                 ) : (
                   <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400">
@@ -851,8 +975,21 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Dedicated QR Code & Box Editor Button Near QR Code */}
+              <div className="mt-1 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingQrColors(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-xs cursor-pointer"
+                >
+                  <Palette className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>QR Code & Box Editor</span>
+                </button>
+              </div>
+
               <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {activeItem.ctaText}
+                {isAllSelected ? `Scan to Connect on All ${items.length} Socials` : activeItem?.ctaText}
               </span>
             </div>
 
@@ -861,24 +998,49 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               <div>
                 <span
                   className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full text-white mb-1.5 shadow-2xs"
-                  style={{ backgroundColor: activeItem.darkColor || '#059669' }}
+                  style={{ backgroundColor: activeDarkColor }}
                 >
-                  {activeItem.customPlatformName || PLATFORMS_CONFIG[activeItem.platform]?.name || 'Social'}
+                  {isAllSelected ? `UNIFIED HUB (${items.length} CHANNELS)` : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                  {activeItem.title}
+                  {isAllSelected ? `${business.name || 'Official'} Social Media & Messaging Hub` : activeItem?.title}
                 </h2>
                 <a
-                  href={activeItem.fullUrl}
+                  href={activeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-medium mt-1 break-all"
                 >
-                  <span>{activeItem.fullUrl}</span>
+                  <span>{activeUrl}</span>
                   <ExternalLink className="w-3 h-3 shrink-0" />
                 </a>
 
-                {activeItem.prefilledMessage && (
+                {/* Interactive Connected Social Accounts Preview when ALL is selected */}
+                {isAllSelected ? (
+                  <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+                      Connected Channels in this 1 QR Code ({items.length}):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                      {items.map((it) => {
+                        const { name, color } = getPlatformDisplay(it);
+                        return (
+                          <a
+                            key={it.id}
+                            href={it.fullUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 hover:border-emerald-500 transition cursor-pointer shadow-2xs"
+                          >
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                            <span>{it.title || name}</span>
+                            <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : activeItem?.prefilledMessage ? (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 text-xs">
                     <span className="font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
                       Prefilled Greeting Message:
@@ -887,7 +1049,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                       "{activeItem.prefilledMessage}"
                     </p>
                   </div>
-                )}
+                ) : null}
               </div>
 
               {/* Action Buttons Grid */}
@@ -895,20 +1057,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 <button
                   type="button"
                   onClick={handleDownloadPng}
-                  className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download PNG</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isGeneratingPdf}
-                  onClick={handleDownloadFlyerPdf}
-                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-70"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>{isGeneratingPdf ? 'Generating...' : 'Print Stand PDF'}</span>
                 </button>
 
                 <button
@@ -930,22 +1082,69 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 </button>
 
                 <a
-                  href={activeItem.fullUrl}
+                  href={activeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Link</span>
+                  <span>Open Hub</span>
                 </a>
 
+                {!isAllSelected && activeItem && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(activeItem)}
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit QR</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+          {/* Printable Table Stand / Wall Poster Generator Card */}
+          <div className="bg-pink-50/70 dark:bg-pink-950/30 rounded-3xl p-5 border border-pink-200 dark:border-pink-800/80 space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-pink-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Printer className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-pink-950 dark:text-pink-200">
+                  Print Table & Wall QR Code Poster (PDF)
+                </h3>
+                <p className="text-xs text-pink-700 dark:text-pink-400">
+                  Download a high-resolution A4 poster with your business name & QR code.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                  QR Code Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Front Desk, Social Poster, Reception, Entrance"
+                  value={tableNumberForPrint}
+                  onChange={(e) => setTableNumberForPrint(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-pink-300 dark:border-pink-800 text-xs font-semibold focus:ring-2 focus:ring-pink-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-end">
                 <button
                   type="button"
-                  onClick={() => handleOpenEditModal(activeItem)}
-                  className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={handleDownloadTableStandPdf}
+                  disabled={isGeneratingPdf}
+                  className="w-full py-2.5 px-4 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit QR</span>
+                  <Download className="w-4 h-4" />
+                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
                 </button>
               </div>
             </div>
@@ -1008,7 +1207,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
                   {(Object.keys(PLATFORMS_CONFIG) as SocialPlatformType[]).map((pKey) => {
-                    const cfg = PLATFORMS_CONFIG[pKey];
+                    const cfg = PLATFORMS_CONFIG[pKey] || PLATFORMS_CONFIG.custom;
                     const isSelected = formPlatform === pKey;
                     return (
                       <button
@@ -1084,26 +1283,40 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               </div>
 
               {/* Username / Phone / Link */}
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  {formPlatform === 'whatsapp'
-                    ? 'Phone Number (with Country Code) *'
-                    : formPlatform === 'custom'
-                    ? 'Profile URL, Server Link or Username *'
-                    : 'Username Handle / Link *'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={PLATFORMS_CONFIG[formPlatform]?.placeholder || 'https://...'}
-                  value={formInputVal}
-                  onChange={(e) => setFormInputVal(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {PLATFORMS_CONFIG[formPlatform]?.helperText || 'Enter full URL or profile link'}
-                </p>
-              </div>
+              {formPlatform === 'whatsapp' ? (
+                <div>
+                  <PhoneInputField
+                    id="social-whatsapp-phone"
+                    label="WhatsApp Phone Number *"
+                    icon={MessageCircle}
+                    value={formInputVal}
+                    onChange={(val) => setFormInputVal(val)}
+                    placeholder="700 123 456"
+                    required
+                    defaultCountryCode="+256"
+                    helpText="Select your country flag & code, then enter your WhatsApp phone number"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
+                    {formPlatform === 'custom'
+                      ? 'Profile URL, Server Link or Username *'
+                      : 'Username Handle / Link *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={PLATFORMS_CONFIG[formPlatform]?.placeholder || 'https://...'}
+                    value={formInputVal}
+                    onChange={(e) => setFormInputVal(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {PLATFORMS_CONFIG[formPlatform]?.helperText || 'Enter full URL or profile link'}
+                  </p>
+                </div>
+              )}
 
               {/* Prefilled message for WhatsApp */}
               {formPlatform === 'whatsapp' && (

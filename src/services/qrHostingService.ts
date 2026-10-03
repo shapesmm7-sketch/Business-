@@ -400,6 +400,167 @@ export class QRHostingService {
   }
 
   /**
+   * Universal Table Stand & Wall Poster PDF Generator for all QR Types
+   * (Business QR, Websites QR, Socials QR, Events QR)
+   */
+  static async downloadGenericTableStand(options: {
+    businessName: string;
+    headline: string;
+    subline?: string;
+    qrNameOrTableNumber?: string;
+    qrDataUrl: string;
+    calloutText: string;
+    urlOrHandleText?: string;
+    description?: string;
+    accentColor: string;
+    filename: string;
+    documentTitle: string;
+  }): Promise<SaveFileResult> {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Background styling
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    // Outer decorative border
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(1.5);
+    doc.roundedRect(12, 12, pageWidth - 24, pageHeight - 24, 6, 6, 'S');
+
+    // Inner card
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 4, 4, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(18, 18, pageWidth - 36, pageHeight - 36, 4, 4, 'S');
+
+    // Header banner bar (Accent color)
+    const accent = options.accentColor || '#059669';
+    const r = parseInt(accent.slice(1, 3), 16) || 5;
+    const g = parseInt(accent.slice(3, 5), 16) || 150;
+    const b = parseInt(accent.slice(5, 7), 16) || 105;
+
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(24, 24, pageWidth - 48, 28, 3, 3, 'F');
+
+    // Header text
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    const titleText = (options.businessName || 'Official QR Hub').toUpperCase();
+    doc.text(titleText, pageWidth / 2, 38, { align: 'center', maxWidth: pageWidth - 60 });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
+    doc.setTextColor(240, 253, 244);
+    const subText = options.headline || options.subline || 'Scan with your smartphone camera to connect';
+    doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
+
+    let currentY = 58;
+
+    // High-Visibility QR Code Name / Table Tag
+    if (options.qrNameOrTableNumber && options.qrNameOrTableNumber.trim()) {
+      const badgeText = options.qrNameOrTableNumber.trim();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      const textWidth = doc.getTextWidth(badgeText);
+      const boxWidth = Math.min(pageWidth - 48, Math.max(70, textWidth + 30));
+      const boxHeight = 13.5;
+      const boxX = pageWidth / 2 - boxWidth / 2;
+      const boxY = currentY;
+
+      // Tag Background (Warm golden amber tag for high visibility)
+      doc.setFillColor(254, 243, 199);
+      doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'F');
+
+      // Tag Border
+      doc.setDrawColor(217, 119, 6);
+      doc.setLineWidth(1.2);
+      doc.roundedRect(boxX, boxY, boxWidth, boxHeight, 3.5, 3.5, 'S');
+
+      // Tag eyelet / hole circle
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(217, 119, 6);
+      doc.setLineWidth(0.8);
+      doc.circle(boxX + 6.5, boxY + boxHeight / 2, 2, 'FD');
+
+      // Tag text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(146, 64, 14);
+      doc.text(badgeText, boxX + (boxWidth + 6.5) / 2, boxY + 9.2, {
+        align: 'center',
+        maxWidth: boxWidth - 18,
+      });
+
+      currentY += boxHeight + 5;
+    } else {
+      currentY += 2;
+    }
+
+    // Callout text
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text((options.calloutText || 'SCAN WITH YOUR PHONE CAMERA').toUpperCase(), pageWidth / 2, currentY, { align: 'center' });
+
+    currentY += 8;
+
+    // QR Code Frame Box
+    const qrSize = 120;
+    const qrX = (pageWidth - qrSize) / 2;
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(1.2);
+    doc.roundedRect(qrX - 5, currentY - 5, qrSize + 10, qrSize + 10, 4, 4, 'FD');
+    doc.addImage(options.qrDataUrl, 'PNG', qrX, currentY, qrSize, qrSize);
+
+    currentY += qrSize + 10;
+
+    // Instruction pill
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(pageWidth / 2 - 42, currentY, 84, 8, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text('POINT CAMERA AT CODE TO SCAN', pageWidth / 2, currentY + 5.5, { align: 'center' });
+
+    currentY += 13;
+
+    // URL or Handle text
+    if (options.urlOrHandleText) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text(options.urlOrHandleText, pageWidth / 2, currentY, { align: 'center', maxWidth: pageWidth - 60 });
+      currentY += 6;
+    }
+
+    if (options.description) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(options.description, pageWidth / 2, currentY, { align: 'center', maxWidth: pageWidth - 60 });
+      currentY += 5;
+    }
+
+    // Footer branding
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Powered by Brivu • ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: 'center' });
+
+    return await saveJsPdf(doc, options.filename, options.documentTitle, { folder: 'qr_stands' });
+  }
+
+  /**
    * Helper to copy Item URL to clipboard
    */
   static async copyItemUrl(pageId: string, itemId: string): Promise<boolean> {
@@ -794,5 +955,247 @@ export class QRHostingService {
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safePhotoName}_Photo_QR_Poster.pdf`;
     return await saveJsPdf(doc, pdfFilename, 'Photo QR Poster', { folder: 'qr_stands' });
+  }
+
+  /**
+   * Generates a high-resolution PNG image with the QR Code and its Name prominently displayed on top
+   */
+  static async generateNamedQrPng(options: {
+    qrDataUrl: string;
+    name: string;
+    subtitle?: string;
+    tag?: string;
+    urlOrHandle?: string;
+    boxBgColor?: string;
+    boxBorderColor?: string;
+    darkColor?: string;
+    lightColor?: string;
+    accentColor?: string;
+  }): Promise<string> {
+    if (typeof document === 'undefined') {
+      return options.qrDataUrl;
+    }
+
+    try {
+      // 1. Load QR image
+      const qrImg = new Image();
+      await new Promise<void>((resolve, reject) => {
+        qrImg.onload = () => resolve();
+        qrImg.onerror = (e) => reject(e);
+        qrImg.src = options.qrDataUrl;
+      });
+
+      const canvasWidth = 1080;
+      const primaryColor = options.darkColor || '#0f172a';
+      const accent = options.accentColor || '#059669';
+      const lightBg = options.lightColor || '#ffffff';
+      const boxBg = options.boxBgColor || lightBg;
+      const boxBorder = options.boxBorderColor && options.boxBorderColor !== 'transparent'
+        ? options.boxBorderColor
+        : null;
+
+      // Create measurement canvas
+      const testCanvas = document.createElement('canvas');
+      testCanvas.width = canvasWidth;
+      testCanvas.height = 1200;
+      const testCtx = testCanvas.getContext('2d');
+      if (!testCtx) return options.qrDataUrl;
+
+      // Word wrapping helper for title
+      const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+        const words = text.split(/\s+/);
+        const lines: string[] = [];
+        let cur = '';
+        for (const w of words) {
+          const test = cur ? `${cur} ${w}` : w;
+          if (ctx.measureText(test).width > maxWidth && cur) {
+            lines.push(cur);
+            cur = w;
+          } else {
+            cur = test;
+          }
+        }
+        if (cur) lines.push(cur);
+        return lines.length > 0 ? lines : [text];
+      };
+
+      // Measure Title Lines
+      testCtx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      const titleLines = wrapText(testCtx, options.name || 'QR Code', 900);
+      const titleLineHeight = 56;
+      const titleBlockHeight = titleLines.length * titleLineHeight;
+
+      // Layout coordinates
+      let curY = 60;
+
+      // Optional Tag Badge
+      const hasTag = Boolean(options.tag && options.tag.trim());
+      const tagHeight = hasTag ? 46 : 0;
+      if (hasTag) {
+        curY += tagHeight + 16;
+      }
+
+      const titleY = curY;
+      curY += titleBlockHeight + 12;
+
+      // Subtitle
+      const hasSubtitle = Boolean(options.subtitle && options.subtitle.trim());
+      const subY = curY;
+      if (hasSubtitle) {
+        curY += 34 + 32;
+      } else {
+        curY += 24;
+      }
+
+      // QR Box Dimensions
+      const qrSize = 720;
+      const boxPadding = 30;
+      const boxSize = qrSize + boxPadding * 2; // 780
+      const boxX = (canvasWidth - boxSize) / 2; // 150
+      const boxY = curY;
+      curY += boxSize + 36;
+
+      // Bottom URL / Note
+      const hasUrl = Boolean(options.urlOrHandle && options.urlOrHandle.trim());
+      const urlY = curY;
+      if (hasUrl) {
+        curY += 30 + 16;
+      }
+
+      // Footer brand
+      const footerY = curY;
+      curY += 40 + 40; // bottom padding
+
+      const canvasHeight = Math.max(1260, Math.ceil(curY));
+
+      // 2. Render Main Canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return options.qrDataUrl;
+
+      // Canvas background (pure white for crisp print & digital share)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      // Rounded rectangle drawing helper
+      const drawRoundRect = (
+        c: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        r: number
+      ) => {
+        c.beginPath();
+        c.moveTo(x + r, y);
+        c.lineTo(x + w - r, y);
+        c.quadraticCurveTo(x + w, y, x + w, y + r);
+        c.lineTo(x + w, y + h - r);
+        c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        c.lineTo(x + r, y + h);
+        c.quadraticCurveTo(x, y + h, x, y + h - r);
+        c.lineTo(x, y + r);
+        c.quadraticCurveTo(x, y, x + r, y);
+        c.closePath();
+      };
+
+      // Draw Top Tag Badge if present
+      if (hasTag && options.tag) {
+        testCtx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        const tagText = options.tag.toUpperCase();
+        const tagTextWidth = testCtx.measureText(tagText).width;
+        const tagW = Math.max(140, tagTextWidth + 36);
+        const tagX = (canvasWidth - tagW) / 2;
+        const tagBadgeY = 56;
+
+        ctx.fillStyle = `${accent}14`;
+        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
+        ctx.fill();
+
+        ctx.strokeStyle = `${accent}40`;
+        ctx.lineWidth = 2;
+        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
+        ctx.stroke();
+
+        ctx.fillStyle = accent;
+        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tagText, canvasWidth / 2, tagBadgeY + 20);
+      }
+
+      // Draw QR Code Name on Top (Primary Title)
+      ctx.fillStyle = primaryColor;
+      ctx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      titleLines.forEach((line, idx) => {
+        ctx.fillText(line, canvasWidth / 2, titleY + idx * titleLineHeight);
+      });
+
+      // Draw Subtitle / Description if present
+      if (hasSubtitle && options.subtitle) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(options.subtitle, canvasWidth / 2, subY);
+      }
+
+      // Draw QR Code Outer Frame Box
+      // Soft shadow
+      ctx.save();
+      ctx.shadowColor = 'rgba(15, 23, 42, 0.08)';
+      ctx.shadowBlur = 32;
+      ctx.shadowOffsetY = 12;
+
+      ctx.fillStyle = boxBg;
+      drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+      ctx.fill();
+      ctx.restore();
+
+      // Box Border
+      if (boxBorder) {
+        ctx.strokeStyle = boxBorder;
+        ctx.lineWidth = 6;
+        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.8)';
+        ctx.lineWidth = 2;
+        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        ctx.stroke();
+      }
+
+      // Draw QR Code Image inside Box
+      ctx.drawImage(qrImg, boxX + boxPadding, boxY + boxPadding, qrSize, qrSize);
+
+      // Draw Bottom URL / Note
+      if (hasUrl && options.urlOrHandle) {
+        ctx.fillStyle = '#475569';
+        ctx.font = '600 22px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const displayUrl = options.urlOrHandle.length > 55
+          ? options.urlOrHandle.slice(0, 52) + '...'
+          : options.urlOrHandle;
+        ctx.fillText(displayUrl, canvasWidth / 2, urlY);
+      }
+
+      // Subtle Footer instruction
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Point camera at code to scan • Brivu', canvasWidth / 2, footerY);
+
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to generate named QR PNG:', err);
+      return options.qrDataUrl;
+    }
   }
 }

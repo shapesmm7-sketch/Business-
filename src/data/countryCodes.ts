@@ -195,7 +195,7 @@ export const COUNTRY_CODES: CountryCodeItem[] = [
  * Finds the country item that matches a given raw phone string or dial code
  */
 export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): CountryCodeItem {
-  if (!rawPhone) {
+  if (!rawPhone || !rawPhone.trim()) {
     return COUNTRY_CODES.find((c) => c.dialCode === fallbackCode) || COUNTRY_CODES[0];
   }
 
@@ -204,7 +204,7 @@ export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): Cou
   // If starts with +, match the longest dial code
   if (clean.startsWith('+')) {
     const digitsOnly = clean.replace(/[^0-9+]/g, '');
-    // Sort by dial code length descending so +1809 matches before +1
+    // Sort by dial code length descending so +1809, +256 match before +1 or +7
     const sorted = [...COUNTRY_CODES].sort((a, b) => b.dialCode.length - a.dialCode.length);
     for (const c of sorted) {
       if (digitsOnly.startsWith(c.dialCode)) {
@@ -213,16 +213,21 @@ export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): Cou
     }
   }
 
-  // Check if starts with dial code without plus (e.g. 256755...)
+  // Check if starts with a known multi-digit country code without plus (e.g. 256755..., 254712..., 255712...)
   const numOnly = clean.replace(/[^0-9]/g, '');
-  const sorted = [...COUNTRY_CODES].sort((a, b) => b.dialCode.length - a.dialCode.length);
-  for (const c of sorted) {
+  const multiDigitCountries = [...COUNTRY_CODES]
+    .filter((c) => c.dialCode.length >= 3)
+    .sort((a, b) => b.dialCode.length - a.dialCode.length);
+
+  for (const c of multiDigitCountries) {
     const dialDigits = c.dialCode.replace('+', '');
-    if (numOnly.startsWith(dialDigits) && numOnly.length > dialDigits.length + 5) {
+    // Must start with dial code and have full international length (10 to 14 digits)
+    if (numOnly.startsWith(dialDigits) && numOnly.length >= dialDigits.length + 8 && numOnly.length <= dialDigits.length + 11) {
       return c;
     }
   }
 
+  // Unprefixed or local numbers belong to fallbackCode (default Uganda +256)
   return COUNTRY_CODES.find((c) => c.dialCode === fallbackCode) || COUNTRY_CODES[0];
 }
 
@@ -230,33 +235,35 @@ export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): Cou
  * Splits a full raw phone number into dial code and national number
  */
 export function splitPhoneNumber(rawPhone: string, defaultDialCode = '+256'): { dialCode: string; nationalNumber: string; country: CountryCodeItem } {
-  const country = findCountryByPhone(rawPhone, defaultDialCode);
   if (!rawPhone || !rawPhone.trim()) {
+    const country = findCountryByPhone('', defaultDialCode);
     return { dialCode: country.dialCode, nationalNumber: '', country };
   }
 
-  let clean = rawPhone.trim();
+  const clean = rawPhone.trim();
+  const country = findCountryByPhone(clean, defaultDialCode);
+
+  let nationalNumber = clean;
 
   // If starts with +, strip dial code
   if (clean.startsWith('+')) {
-    const dial = country.dialCode;
-    if (clean.startsWith(dial)) {
-      clean = clean.slice(dial.length).trim();
+    if (clean.startsWith(country.dialCode)) {
+      nationalNumber = clean.slice(country.dialCode.length).trim();
     }
   } else {
     // If starts with country dial without + (e.g. 256700...)
     const dialDigits = country.dialCode.replace('+', '');
-    if (clean.startsWith(dialDigits) && clean.length > dialDigits.length + 5) {
-      clean = clean.slice(dialDigits.length).trim();
-    } else if (clean.startsWith('0')) {
-      // e.g. 0755341098 -> keep or strip leading 0
-      clean = clean.replace(/^0+/, '');
+    if (clean.startsWith(dialDigits) && clean.length >= dialDigits.length + 8) {
+      nationalNumber = clean.slice(dialDigits.length).trim();
     }
   }
 
+  // Clean any leading +
+  nationalNumber = nationalNumber.replace(/^\+/, '').trim();
+
   return {
     dialCode: country.dialCode,
-    nationalNumber: clean,
+    nationalNumber,
     country,
   };
 }
