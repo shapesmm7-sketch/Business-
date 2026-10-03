@@ -142,6 +142,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setShowLightWarning(false);
     
     try {
+      // Explicitly request video permission first to trigger OS/Browser permission dialog
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          // Stop stream tracks so Html5Qrcode can bind to camera
+          stream.getTracks().forEach((t) => t.stop());
+        } catch (permErr) {
+          console.warn('Camera permission check note:', permErr);
+        }
+      }
+
       if (scannerRef.current) {
         try {
           await scannerRef.current.stop();
