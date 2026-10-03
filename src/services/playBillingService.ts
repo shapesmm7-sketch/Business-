@@ -4,7 +4,7 @@ import { SubscriptionPlanId, UserSubscription } from '../types';
 
 /**
  * Google Play Console Product & Base Plan Definitions
- * Configured according to Google Play Billing Library Version 7+ / 9 specs
+ * Configured according to Google Play Billing Library Version 8+ / 9 specs
  */
 export interface GooglePlaySubscriptionProduct {
   productId: string;

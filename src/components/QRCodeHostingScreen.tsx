@@ -39,6 +39,10 @@ import {
   RotateCcw,
   Cloud,
   Loader2,
+  Globe,
+  Smartphone,
+  Store,
+  ArrowUpRight,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -48,6 +52,9 @@ import { AdMobService } from '../services/admobService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
+import { WebsitesAppsQrSection } from './WebsitesAppsQrSection';
+import { SocialsQrSection } from './SocialsQrSection';
+import { EventsQrSection } from './EventsQrSection';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
@@ -160,6 +167,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   onNavigateHome,
   onOpenCustomerView,
 }) => {
+  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | null (null shows 4 category buttons)
+  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | null>(null);
+
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
   const [activePageId, setActivePageId] = useState<string>(() => {
     const list = StorageService.getHostedQRPages();
@@ -1171,49 +1181,195 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between">
         <button
-          onClick={onNavigateHome}
-          className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition"
+          onClick={() => {
+            if (qrCategory !== null) {
+              setQrCategory(null);
+            } else {
+              onNavigateHome();
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Home</span>
+          <span>{qrCategory !== null ? 'Back to QR Categories' : 'Home'}</span>
         </button>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const freshPages = StorageService.getHostedQRPages();
-              setPages(freshPages);
-              if (activePage) {
-                CloudflareService.saveSingleQrPage(activePage).catch(() => {});
-              }
-              CloudflareService.syncAllToCloudflare().catch(() => {});
-              showToast('Data synced & saved!');
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95"
-            title="Save and sync all QR code files, stand PDFs, photos, and items"
-          >
-            <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Cloud Sync</span>
-          </button>
+        {qrCategory === 'business' && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const freshPages = StorageService.getHostedQRPages();
+                setPages(freshPages);
+                if (activePage) {
+                  CloudflareService.saveSingleQrPage(activePage).catch(() => {});
+                }
+                CloudflareService.syncAllToCloudflare().catch(() => {});
+                showToast('Data synced & saved!');
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95"
+              title="Save and sync all QR code files, stand PDFs, photos, and items"
+            >
+              <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Cloud Sync</span>
+            </button>
 
-          {isSaved && (
-            <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Saved!
-            </span>
-          )}
+            {isSaved && (
+              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Saved!
+              </span>
+            )}
 
-          <button
-            onClick={() => onOpenCustomerView(activePage)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>Customer View</span>
-          </button>
-        </div>
+            <button
+              onClick={() => onOpenCustomerView(activePage)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Customer View</span>
+            </button>
+          </div>
+        )}
       </div>
 
+      {/* OVERVIEW SCREEN: When user first opens QR Host, show only the 3 main category cards */}
+      {qrCategory === null && (
+        <div className="space-y-4 pt-1 animate-fadeIn">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              {t('quick_actions', business?.language) || 'QUICK ACTIONS'}
+            </h2>
+            <span className="text-[11px] font-medium text-slate-400">
+              {t('select_option', business?.language) || 'Select an option below'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+            {/* 1. BUSINESS QR BUTTON */}
+            <button
+              id="btn-main-qr-business"
+              type="button"
+              onClick={() => setQrCategory('business')}
+              className="group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-bold shadow-xs active:scale-[0.98] transition-all overflow-hidden border border-emerald-500/40 text-left min-h-[72px] sm:min-h-[84px] cursor-pointer"
+            >
+              <div className="flex items-start justify-between w-full mb-1">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                  <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] text-white" />
+                </div>
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/20 text-[9px] sm:text-[10px] font-semibold text-white group-hover:bg-white/30 transition">
+                  <span>Hub</span>
+                  <ArrowUpRight className="w-2.5 h-2.5 text-white" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Business QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-emerald-100/90 font-normal mt-0.5 leading-tight line-clamp-2">
+                  Host catalog, menu, photos, WiFi & info
+                </p>
+              </div>
+            </button>
+
+            {/* 2. WEBSITES / APPS QR BUTTON */}
+            <button
+              id="btn-main-qr-websites"
+              type="button"
+              onClick={() => setQrCategory('websites')}
+              className="group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-slate-900 hover:from-blue-500 hover:to-indigo-500 text-white font-bold shadow-xs active:scale-[0.98] transition-all overflow-hidden border border-blue-500/40 text-left min-h-[72px] sm:min-h-[84px] cursor-pointer"
+            >
+              <div className="flex items-start justify-between w-full mb-1">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                  <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] text-white" />
+                </div>
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/20 text-[9px] sm:text-[10px] font-semibold text-white group-hover:bg-white/30 transition">
+                  <span>Links</span>
+                  <ArrowUpRight className="w-2.5 h-2.5 text-white" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Websites / Apps QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-blue-100/90 font-normal mt-0.5 leading-tight line-clamp-2">
+                  Websites, Google Play, App Store & links
+                </p>
+              </div>
+            </button>
+
+            {/* 3. SOCIALS QR BUTTON */}
+            <button
+              id="btn-main-qr-socials"
+              type="button"
+              onClick={() => setQrCategory('socials')}
+              className="group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-teal-600 via-teal-700 to-emerald-800 hover:from-teal-500 hover:to-emerald-700 text-white font-bold shadow-xs active:scale-[0.98] transition-all overflow-hidden border border-teal-500/40 text-left min-h-[72px] sm:min-h-[84px] cursor-pointer"
+            >
+              <div className="flex items-start justify-between w-full mb-1">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                  <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] text-white" />
+                </div>
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/20 text-[9px] sm:text-[10px] font-semibold text-white group-hover:bg-white/30 transition">
+                  <span>Socials</span>
+                  <ArrowUpRight className="w-2.5 h-2.5 text-white" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Socials QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-teal-100/90 font-normal mt-0.5 leading-tight line-clamp-2">
+                  WhatsApp, Instagram, TikTok & Facebook
+                </p>
+              </div>
+            </button>
+
+            {/* 4. HOST EVENTS QR BUTTON */}
+            <button
+              id="btn-main-qr-events"
+              type="button"
+              onClick={() => setQrCategory('events')}
+              className="group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-800 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-xs active:scale-[0.98] transition-all overflow-hidden border border-purple-500/40 text-left min-h-[72px] sm:min-h-[84px] cursor-pointer"
+            >
+              <div className="flex items-start justify-between w-full mb-1">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
+                  <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] text-white" />
+                </div>
+                <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/20 text-[9px] sm:text-[10px] font-semibold text-white group-hover:bg-white/30 transition">
+                  <span>Events</span>
+                  <ArrowUpRight className="w-2.5 h-2.5 text-white" />
+                </div>
+              </div>
+              <div>
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Host Events
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-purple-100/90 font-normal mt-0.5 leading-tight line-clamp-2">
+                  Conferences, parties & invitations
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* WEBSITES / APPS QR SECTION */}
+      {qrCategory === 'websites' && (
+        <WebsitesAppsQrSection business={business} showToast={showToast} />
+      )}
+
+      {/* SOCIALS QR SECTION */}
+      {qrCategory === 'socials' && (
+        <SocialsQrSection business={business} showToast={showToast} />
+      )}
+
+      {/* EVENTS QR SECTION */}
+      {qrCategory === 'events' && (
+        <EventsQrSection business={business} showToast={showToast} />
+      )}
+
+      {/* BUSINESS QR SECTIONS (All existing sections fully preserved under Business QR) */}
+      {qrCategory === 'business' && (
+        <>
       {/* Hero Banner Section */}
       <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 p-5 sm:p-6 text-white shadow-md">
         {activePage.coverImage && (
@@ -3413,6 +3569,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
