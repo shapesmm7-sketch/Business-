@@ -65,12 +65,16 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'socials' | 'websites' | 'events' | 'about'>(() => {
     if (initialPhotoId) return 'photos';
+    if (initialItemId) return 'menu';
+    if (page?.id?.startsWith('event-') || (page as any)?.pageType === 'event') return 'events';
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const photoIdParam = params.get('photo') || params.get('photoId');
       if (photoIdParam) return 'photos';
       const itemIdParam = params.get('item') || params.get('itemId');
       if (itemIdParam) return 'menu';
+      const eventIdParam = params.get('event') || params.get('eventId');
+      if (eventIdParam) return 'events';
       const tabParam = params.get('tab');
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
@@ -79,7 +83,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
       if (tabParam === 'websites' || tabParam === 'links') return 'websites';
       if (tabParam === 'events' || tabParam === 'event') return 'events';
     }
-    if (initialItemId) return 'menu';
     if (initialTab) return initialTab as any;
     return 'menu';
   });
@@ -178,7 +181,30 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
   const socialsQrItems = useMemo(() => StorageService.getSocialsQrItems(), []);
   const websitesQrItems = useMemo(() => StorageService.getWebsitesQrItems(), []);
-  const eventsQrItems = useMemo(() => StorageService.getEventsQrItems(), []);
+  const eventsQrItems = useMemo(() => {
+    const list = StorageService.getEventsQrItems();
+    if (page?.id && (page.id.startsWith('event-') || (page as any).pageType === 'event') && !list.some((e) => e.id === page.id)) {
+      return [
+        {
+          id: page.id,
+          title: page.title,
+          location: page.address || 'Venue Location',
+          description: page.description,
+          rsvpUrl: page.whatsapp ? `https://wa.me/${page.whatsapp.replace(/[^0-9]/g, '')}` : (page.phone ? `tel:${page.phone}` : ''),
+          contactPhone: page.phone,
+          contactEmail: page.email,
+          ctaText: page.tagline || 'Scan to RSVP',
+          photos: (page.photos || []).map((p) => p.url),
+          darkColor: page.qrDarkColor || '#7c3aed',
+          lightColor: page.qrLightColor || '#ffffff',
+          eyeColor: page.qrEyeColor,
+          createdAt: page.createdAt,
+        },
+        ...list,
+      ];
+    }
+    return list;
+  }, [page]);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedWifi, setCopiedWifi] = useState<boolean>(false);
   const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
@@ -1107,7 +1133,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             <div className="space-y-3">
               {(() => {
                 const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-                const targetEventId = urlParams ? (urlParams.get('event') || urlParams.get('eventId')) : null;
+                const targetEventId = urlParams
+                  ? (urlParams.get('event') || urlParams.get('eventId') || (page?.id?.startsWith('event-') ? page.id : null))
+                  : (page?.id?.startsWith('event-') ? page.id : null);
                 const displayEvents = targetEventId
                   ? [
                       ...eventsQrItems.filter((e) => e.id === targetEventId),

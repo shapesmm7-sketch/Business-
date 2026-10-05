@@ -1,8 +1,9 @@
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
-import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
+import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, EventQrItem, BusinessProfile } from '../types';
 import { saveJsPdf, SaveFileResult } from './fileSaver';
 import { CloudflareService } from './cloudflareService';
+import { StorageService } from './storage';
 
 export class QRHostingService {
   /**
@@ -44,6 +45,220 @@ export class QRHostingService {
   static getCustomerPhotoUrl(pageId: string, photoId: string): string {
     const base = this.getWorkerBaseUrl();
     return `${base}/qr/${encodeURIComponent(pageId)}?tab=photos&photoId=${encodeURIComponent(photoId)}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for an Event's own dedicated page (independent of Business QR)
+   */
+  static getCustomerEventUrl(eventId: string): string {
+    const base = this.getWorkerBaseUrl();
+    return `${base}/qr/${encodeURIComponent(eventId)}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Events Hub page
+   */
+  static getCustomerEventsHubUrl(businessName?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `events-hub-${cleanName}`;
+    return `${base}/qr/${encodeURIComponent(hubId)}`;
+  }
+
+  /**
+   * Converts an EventQrItem into its own dedicated QRCodeHostedPage for standalone Cloudflare hosting
+   */
+  static convertEventToHostedPage(event: EventQrItem, business: BusinessProfile): QRCodeHostedPage {
+    const cleanPhone = (event.contactPhone || business.phone || '').replace(/[^0-9+]/g, '');
+    let cleanWa = '';
+    if (event.rsvpUrl && event.rsvpUrl.includes('wa.me/')) {
+      const match = event.rsvpUrl.match(/wa\.me\/([0-9]+)/);
+      if (match && match[1]) {
+        cleanWa = match[1];
+      }
+    }
+    if (!cleanWa) {
+      cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+    }
+
+    const dateParts: string[] = [];
+    if (event.startDate) {
+      dateParts.push(event.startDate + (event.endDate && event.endDate !== event.startDate ? ` to ${event.endDate}` : ''));
+    } else if (event.eventDate) {
+      dateParts.push(event.eventDate);
+    }
+    if (event.startTime) {
+      dateParts.push(event.startTime + (event.endTime ? ` - ${event.endTime}` : ''));
+    }
+
+    const dateScheduleText = dateParts.length > 0 ? dateParts.join(' • ') : '';
+    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}`;
+
+    const photos: QRBusinessPhoto[] = (event.photos || []).map((url, idx) => ({
+      id: `${event.id}-photo-${idx}`,
+      url,
+      title: event.title,
+      description: event.location,
+      badge: 'Event Photo',
+      caption: event.title,
+    }));
+
+    const menuItems: QRMenuItem[] = [
+      {
+        id: `rsvp-${event.id}`,
+        name: `${event.title} - Entry & RSVP Pass`,
+        category: 'Event Pass & RSVP',
+        price: 0,
+        description: `${event.description ? event.description + ' • ' : ''}Venue: ${event.location}. Click to RSVP!`,
+        tags: ['RSVP', 'Invitation', 'Entry Pass'],
+        isSpecial: true,
+        isAvailable: true,
+        photoUrl: event.photos?.[0] || undefined,
+      },
+    ];
+
+    return {
+      id: event.id,
+      title: event.title,
+      tagline: event.ctaText || 'Scan to RSVP & Join Event',
+      description: event.description || `Event Venue: ${event.location}`,
+      pageType: 'business_showcase',
+      accentColor: event.darkColor || '#7c3aed',
+      theme: 'indigo',
+      phone: event.contactPhone || business.phone || '',
+      whatsapp: cleanWa,
+      email: event.contactEmail || business.email || '',
+      address: event.location,
+      googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`,
+      currency: business.currency || 'UGX',
+      announcement: announcementText,
+      allowWhatsAppOrdering: true,
+      photos,
+      menuCategories: ['Event Pass & RSVP'],
+      menuItems,
+      qrDarkColor: event.darkColor || '#7c3aed',
+      qrLightColor: event.lightColor || '#ffffff',
+      qrEyeColor: event.eyeColor || event.darkColor || '#6d28d9',
+      qrBoxBgColor: event.boxBgColor || '#ffffff',
+      qrBoxBorderColor: event.boxBorderColor || '#cbd5e1',
+      createdAt: event.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Converts all EventQrItems into an Events Hub QRCodeHostedPage
+   */
+  static convertEventsHubToHostedPage(events: EventQrItem[], business: BusinessProfile): QRCodeHostedPage {
+    const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `events-hub-${cleanName}`;
+    const cleanPhone = (business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+
+    const photos: QRBusinessPhoto[] = events.flatMap((evt) =>
+      (evt.photos || []).map((url, idx) => ({
+        id: `${evt.id}-photo-${idx}`,
+        url,
+        title: evt.title,
+        description: evt.location,
+        badge: 'Event Photo',
+        caption: evt.title,
+      }))
+    );
+
+    const menuItems: QRMenuItem[] = events.map((evt) => ({
+      id: `rsvp-${evt.id}`,
+      name: evt.title,
+      category: 'Upcoming Events',
+      price: 0,
+      description: `${evt.startDate ? '📅 ' + evt.startDate + ' • ' : ''}📍 ${evt.location}. ${evt.description || ''}`,
+      photoUrl: evt.photos?.[0] || undefined,
+      tags: ['RSVP', 'Invitation', 'Entry Pass'],
+      isSpecial: true,
+      isAvailable: true,
+    }));
+
+    return {
+      id: hubId,
+      title: `${business.name || 'Business'} Events Hub`,
+      tagline: 'All Upcoming Events & Passes',
+      description: `Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`,
+      pageType: 'business_showcase',
+      accentColor: '#7c3aed',
+      theme: 'indigo',
+      phone: business.phone || '',
+      whatsapp: cleanWa,
+      email: business.email || '',
+      address: business.address || '',
+      googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
+      currency: business.currency || 'UGX',
+      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+      allowWhatsAppOrdering: true,
+      photos,
+      menuCategories: ['Upcoming Events'],
+      menuItems,
+      qrDarkColor: '#7c3aed',
+      qrLightColor: '#ffffff',
+      qrEyeColor: '#6d28d9',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#cbd5e1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Syncs an individual event page to local storage and Cloudflare D1
+   */
+  static async syncEventPage(event: EventQrItem, business: BusinessProfile): Promise<void> {
+    try {
+      const page = this.convertEventToHostedPage(event, business);
+      StorageService.saveHostedQRPage(page);
+      // Also update the Events Hub page
+      const allEvents = StorageService.getEventsQrItems();
+      const updatedList = [event, ...allEvents.filter((e) => e.id !== event.id)];
+      const hubPage = this.convertEventsHubToHostedPage(updatedList, business);
+      StorageService.saveHostedQRPage(hubPage);
+      // Trigger Cloudflare D1 full backup sync
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync event page to Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Syncs all events and events hub to local storage and Cloudflare D1
+   */
+  static async syncAllEventsPages(events: EventQrItem[], business: BusinessProfile): Promise<void> {
+    try {
+      for (const evt of events) {
+        const page = this.convertEventToHostedPage(evt, business);
+        StorageService.saveHostedQRPage(page);
+      }
+      const hubPage = this.convertEventsHubToHostedPage(events, business);
+      StorageService.saveHostedQRPage(hubPage);
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync all event pages to Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Removes an event's dedicated page when deleted
+   */
+  static async removeEventPage(eventId: string, business: BusinessProfile): Promise<void> {
+    try {
+      const allPages = StorageService.getHostedQRPages();
+      const remainingPages = allPages.filter((p) => p.id !== eventId);
+      StorageService.saveHostedQRPages(remainingPages);
+      // Update Hub page
+      const remainingEvents = StorageService.getEventsQrItems().filter((e) => e.id !== eventId);
+      const hubPage = this.convertEventsHubToHostedPage(remainingEvents, business);
+      StorageService.saveHostedQRPage(hubPage);
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to remove event page from Cloudflare:', err);
+    }
   }
 
   /**

@@ -117,13 +117,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const isAllSelected = selectedItemId === 'all';
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
 
-  const pageIdToUse = hostedPageId || StorageService.getHostedQRPages()[0]?.id || 'brivu_default_hub';
+  const eventsHubUrl = useMemo(() => {
+    return QRHostingService.getCustomerEventsHubUrl(business.name);
+  }, [business.name]);
 
-  const allHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerPageUrl(pageIdToUse, 'events');
-  }, [pageIdToUse]);
-
-  const activeUrl = isAllSelected ? allHubUrl : (activeItem ? `${allHubUrl}&event=${encodeURIComponent(activeItem.id)}` : allHubUrl);
+  const activeUrl = isAllSelected
+    ? eventsHubUrl
+    : (activeItem ? QRHostingService.getCustomerEventUrl(activeItem.id) : eventsHubUrl);
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#7c3aed');
   const activeLightColor = isAllSelected ? allQrColors.lightColor : (activeItem?.lightColor || '#ffffff');
   const activeEyeColor = isAllSelected ? allQrColors.eyeColor : (activeItem?.eyeColor || activeDarkColor);
@@ -169,12 +169,20 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   // Persistence & Cloudflare Sync
   useEffect(() => {
     StorageService.saveEventsQrItems(items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
-  }, [items]);
+    if (items.length > 0) {
+      QRHostingService.syncAllEventsPages(items, business);
+    } else {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+  }, [items, business]);
 
   // Cloudflare sync on mount
   useEffect(() => {
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    if (items.length > 0) {
+      QRHostingService.syncAllEventsPages(items, business);
+    } else {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
   }, []);
 
   // Generate QR
@@ -322,29 +330,27 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     }
 
     if (editingItem) {
+      const updatedItem: EventQrItem = {
+        ...editingItem,
+        title: formTitle.trim(),
+        startDate: formStartDate,
+        endDate: formEndDate,
+        startTime: formStartTime,
+        endTime: formEndTime,
+        eventDate: formStartDate || editingItem.eventDate || '',
+        location: formLocation.trim() || 'Venue Location',
+        rsvpUrl: cleanRsvp,
+        contactPhone: formContactPhone.trim() || undefined,
+        contactEmail: formContactEmail.trim() || undefined,
+        ctaText: formCta.trim() || 'Scan to RSVP',
+        description: formDesc.trim(),
+        photos: formPhotos,
+      };
       setItems((prev) =>
-        prev.map((i) =>
-          i.id === editingItem.id
-            ? {
-                ...i,
-                title: formTitle.trim(),
-                startDate: formStartDate,
-                endDate: formEndDate,
-                startTime: formStartTime,
-                endTime: formEndTime,
-                eventDate: formStartDate || i.eventDate || '',
-                location: formLocation.trim() || 'Venue Location',
-                rsvpUrl: cleanRsvp,
-                contactPhone: formContactPhone.trim() || undefined,
-                contactEmail: formContactEmail.trim() || undefined,
-                ctaText: formCta.trim() || 'Scan to RSVP',
-                description: formDesc.trim(),
-                photos: formPhotos,
-              }
-            : i
-        )
+        prev.map((i) => (i.id === editingItem.id ? updatedItem : i))
       );
-      showToast('Event QR updated!');
+      QRHostingService.syncEventPage(updatedItem, business);
+      showToast('Event QR updated & hosted on Cloudflare!');
     } else {
       const newItem: EventQrItem = {
         id: `event-qr-${Date.now()}`,
@@ -368,7 +374,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       };
       setItems((prev) => [newItem, ...prev]);
       setSelectedItemId(newItem.id);
-      showToast('New Event QR created!');
+      QRHostingService.syncEventPage(newItem, business);
+      showToast('New Event QR created & hosted on Cloudflare!');
     }
     setShowModal(false);
   };
@@ -377,6 +384,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     e.stopPropagation();
     const remaining = items.filter((i) => i.id !== id);
     setItems(remaining);
+    QRHostingService.removeEventPage(id, business);
     if (selectedItemId === id) {
       if (remaining[0]) {
         setSelectedItemId(remaining[0].id);
@@ -882,7 +890,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                       rel="noopener noreferrer"
                       className="text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-medium mt-2 break-all"
                     >
-                      <span>RSVP / Link: {activeUrl}</span>
+                      <span>Event Page Link: {activeUrl}</span>
                       <ExternalLink className="w-3 h-3 shrink-0" />
                     </a>
 
@@ -931,7 +939,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Hub</span>
+                  <span>{isAllSelected ? 'Open Events Hub' : 'Open Event Page'}</span>
                 </a>
 
                 {!isAllSelected && activeItem && (

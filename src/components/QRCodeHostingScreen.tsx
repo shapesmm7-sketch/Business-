@@ -1190,7 +1190,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   }
 
   return (
-    <div className="space-y-5 pt-2 pb-24 animate-fadeIn max-w-2xl mx-auto">
+    <div className="space-y-5 pt-2 pb-36 sm:pb-40 animate-fadeIn max-w-2xl mx-auto">
       {/* Hidden file inputs */}
       <input
         ref={photoInputRef}
