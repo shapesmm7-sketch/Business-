@@ -231,7 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate max-w-[150px] xs:max-w-[200px]">
-                <span>{business.name ? 'Business Manager' : 'Receipts & Manager'}</span>
+                <span>Business Manager</span>
               </div>
             </div>
           </button>
