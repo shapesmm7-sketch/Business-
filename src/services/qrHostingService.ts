@@ -136,13 +136,15 @@ export class QRHostingService {
       },
     ];
 
+    const injectedAccentColor = (event.darkColor || '#7c3aed') + '; } ' + cssStyle + ' /*';
+
     return {
       id: event.id,
       title: event.title,
       tagline: event.ctaText || 'Official Event Invitation & RSVP Pass',
       description: event.description || `Event Venue: ${event.location}`,
       pageType: 'event',
-      accentColor: event.darkColor || '#7c3aed',
+      accentColor: injectedAccentColor,
       theme: 'indigo',
       coverImage: event.photos?.[0] || undefined,
       logo: event.photos?.[0] || business.logo || undefined,
@@ -218,13 +220,15 @@ export class QRHostingService {
       #tab-content-menu p { font-size: 13px !important; margin-top: 8px !important; color: #475569 !important; line-height: 1.5 !important; }
     `.replace(/\s+/g, ' ');
 
+    const injectedAccentColor = '#7c3aed; } ' + cssStyle + ' /*';
+
     return {
       id: hubId,
       title: `${business.name || 'Business'} Events Hub`,
       tagline: 'All Upcoming Events & Passes',
       description: `Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`,
       pageType: 'events_hub',
-      accentColor: '#7c3aed',
+      accentColor: injectedAccentColor,
       theme: 'indigo',
       coverImage: photos[0]?.url || undefined,
       logo: business.logo || photos[0]?.url || undefined,
