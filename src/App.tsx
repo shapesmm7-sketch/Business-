@@ -230,34 +230,8 @@ export function App() {
     };
   }, []);
 
-  // Auto-restore receipts, invoices, profile & data from Cloudflare D1 on launch (especially after reinstall)
+  // Setup global interaction tracking on mount
   useEffect(() => {
-    let isCancelled = false;
-    const autoRestoreFromCloud = async () => {
-      try {
-        const config = StorageService.getCloudflareConfig();
-        if (!config.workerUrl) return;
-
-        // Pull full database state from Cloudflare D1
-        const res = await CloudflareService.pullFromCloudflare();
-        if (!isCancelled && res.success && res.data) {
-          const freshReceipts = StorageService.getReceipts();
-          setReceipts(freshReceipts);
-          setBusiness(StorageService.getProfile());
-          setSettings(StorageService.getSettings());
-          setStats(StorageService.getStats());
-          setInventoryCount(StorageService.getInventoryProducts().length);
-        }
-      } catch (err) {
-        console.warn('Startup Cloudflare sync note:', err);
-      }
-    };
-
-    // Slight delay so the initial frame mounts immediately
-    const timer = setTimeout(() => {
-      autoRestoreFromCloud();
-    }, 600);
-
     // Track user clicks / taps to trigger an ad popup every 25 interactions
     const handleGlobalInteraction = () => {
       AdMobService.recordInteraction();
@@ -266,8 +240,6 @@ export function App() {
     window.addEventListener('click', handleGlobalInteraction, { passive: true });
 
     return () => {
-      isCancelled = true;
-      clearTimeout(timer);
       window.removeEventListener('click', handleGlobalInteraction);
     };
   }, []);

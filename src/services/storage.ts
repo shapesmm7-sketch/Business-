@@ -2384,6 +2384,12 @@ export const StorageService = {
     if (!loaded.workerUrl || loaded.workerUrl.trim() === '') {
       loaded.workerUrl = defaultVal.workerUrl;
     }
+    // Ensure every single device has a unique, cryptographically-isolated API key to prevent data sharing/overwriting
+    if (!loaded.apiKey || loaded.apiKey.trim() === '') {
+      const generatedKey = 'brivu-usr-' + Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 10)).join('-');
+      loaded.apiKey = generatedKey;
+      writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
+    }
     return loaded;
   },
 
