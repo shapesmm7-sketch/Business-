@@ -531,7 +531,7 @@ export interface QRCodeHostedPage {
   title: string;
   tagline?: string;
   description?: string;
-  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog';
+  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog' | 'event' | 'events_hub' | 'website' | 'social' | string;
   logo?: string;
   coverImage?: string;
   accentColor?: string;

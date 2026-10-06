@@ -158,7 +158,7 @@ export function App() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const qrPageId = params.get('qr');
+      const qrPageId = params.get('qr') || params.get('event') || params.get('eventId') || (params.get('events') ? 'events-hub-all' : null);
       const photoIdParam = params.get('photo') || params.get('photoId');
       const itemIdParam = params.get('item') || params.get('itemId');
       const tabParam = params.get('tab');
@@ -184,7 +184,7 @@ export function App() {
         if (qrPageId) {
           found = StorageService.getHostedQRPage(qrPageId);
         }
-        if (!found) {
+        if (!found && !qrPageId?.startsWith('event-') && !qrPageId?.startsWith('events-hub-')) {
           const pages = StorageService.getHostedQRPages();
           found = pages[0];
         }

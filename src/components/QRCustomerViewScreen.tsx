@@ -31,6 +31,7 @@ import {
   Mail,
   Copy,
   Globe,
+  Ticket,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
@@ -421,6 +422,434 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     });
     return Array.from(set);
   }, [page.menuCategories, page.menuItems]);
+
+  const isEventPage =
+    page.pageType === 'event' ||
+    page.pageType === 'events_hub' ||
+    page.id.startsWith('event-') ||
+    page.id.startsWith('events-hub-');
+  const isEventsHub = page.pageType === 'events_hub' || page.id.startsWith('events-hub-');
+
+  // Dedicated Standalone Event Customer View
+  if (isEventPage) {
+    const cleanWaNumber = (page.whatsapp || page.phone || '').replace(/[^0-9]/g, '');
+    const defaultRsvpMsg = encodeURIComponent(
+      `👋 Hello *${page.title}*,\nI would like to RSVP and confirm my attendance for this event!\n📍 *Venue:* ${page.address || 'Event Location'}\n\nPlease share any additional entrance passes or details. Thank you!`
+    );
+    const waRsvpUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${defaultRsvpMsg}` : '';
+
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-purple-500 selection:text-white pb-24">
+        {/* Merchant preview top bar */}
+        {isMerchantPreview && (
+          <div className="bg-purple-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-300 animate-pulse" />
+              <span>Event View Mode (Live Preview)</span>
+            </div>
+            {onBackToApp && (
+              <button
+                onClick={onBackToApp}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-white font-bold transition flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back to Editor</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Hero Header */}
+        <div className="relative w-full overflow-hidden bg-slate-900 text-white">
+          {page.coverImage ? (
+            <div className="absolute inset-0 z-0">
+              <img
+                src={page.coverImage}
+                alt={page.title}
+                className="w-full h-full object-cover opacity-35 filter blur-[1px] scale-105"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/70 to-transparent" />
+            </div>
+          ) : (
+            <div className="absolute inset-0 z-0 bg-gradient-to-br from-purple-950 via-slate-900 to-indigo-950 opacity-95">
+              <div className="absolute inset-0 bg-[radial-gradient(#8b5cf6_1px,transparent_1px)] [background-size:16px_16px] opacity-20" />
+            </div>
+          )}
+
+          <div className="relative z-10 max-w-2xl mx-auto px-4 pt-6 pb-6 sm:pt-8 sm:pb-8">
+            {/* Top Actions: Share & Back */}
+            <div className="flex items-center justify-between mb-4">
+              {onBackToApp ? (
+                <button
+                  onClick={onBackToApp}
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center text-white transition active:scale-95"
+                  title="Back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/30 text-purple-200 text-xs font-bold backdrop-blur-md border border-purple-400/40">
+                  <Ticket className="w-3.5 h-3.5 text-purple-300" />
+                  <span>{isEventsHub ? 'All Events Directory' : 'Official Event Invitation'}</span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleShareMenu}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/15 transition active:scale-95 shadow-xs"
+              >
+                <Share2 className="w-3.5 h-3.5 text-purple-300" />
+                <span>{copiedLink ? 'Link Copied!' : 'Share Event'}</span>
+              </button>
+            </div>
+
+            {/* Event Logo & Main Title */}
+            <div className="flex items-start gap-3.5 sm:gap-4">
+              {page.logo ? (
+                <img
+                  src={page.logo}
+                  alt={page.title}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-400/30 shadow-xl bg-slate-800 shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center text-white text-2xl font-black shadow-xl border-2 border-white/20 shrink-0">
+                  <Ticket className="w-8 h-8" />
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold tracking-wide uppercase border border-purple-500/30 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                  <span>{isEventsHub ? 'Upcoming Events Hub' : 'RSVP Open'}</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
+                  {page.title}
+                </h1>
+                {page.tagline && (
+                  <p className="text-xs sm:text-sm text-purple-200/90 font-medium mt-1 leading-snug">
+                    {page.tagline}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-white/10">
+              {waRsvpUrl ? (
+                <a
+                  href={waRsvpUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-emerald-600/30"
+                >
+                  <MessageCircle className="w-4 h-4 mb-1" />
+                  <span className="truncate w-full text-[11px]">RSVP WhatsApp</span>
+                </a>
+              ) : null}
+
+              {page.phone ? (
+                <a
+                  href={`tel:${page.phone}`}
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <Phone className="w-4 h-4 mb-1 text-purple-300" />
+                  <span className="truncate w-full text-[11px]">Call Host</span>
+                </a>
+              ) : null}
+
+              {page.address ? (
+                <a
+                  href={page.googleMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(page.address)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <MapPin className="w-4 h-4 mb-1 text-purple-300" />
+                  <span className="truncate w-full text-[11px]">Venue Map</span>
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Announcement Banner */}
+        {page.announcement && (
+          <div className="bg-purple-50 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-900/60 px-4 py-2.5 text-xs text-purple-900 dark:text-purple-200 font-semibold flex items-center gap-2 shadow-2xs">
+            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+            <p className="flex-1">{page.announcement}</p>
+          </div>
+        )}
+
+        {/* Main Event Content */}
+        <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-5">
+          {/* SINGLE EVENT PASS CARD */}
+          {!isEventsHub && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-purple-200/90 dark:border-purple-900/60 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold">
+                    <Ticket className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      Official Event Pass
+                    </h2>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Scan or RSVP to secure your entry
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+                  Confirmed Pass
+                </span>
+              </div>
+
+              {/* Event Details Grid */}
+              <div className="space-y-3">
+                {page.address && (
+                  <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                    <MapPin className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Event Venue</span>
+                      <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
+                        {page.address}
+                      </p>
+                      {page.googleMapsUrl && (
+                        <a
+                          href={page.googleMapsUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-purple-600 dark:text-purple-400 font-bold hover:underline inline-flex items-center gap-1 mt-1"
+                        >
+                          <span>Get Directions on Google Maps</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {page.description && (
+                  <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40">
+                    <span className="text-[10px] font-bold text-purple-700 dark:text-purple-400 uppercase block mb-1">
+                      Event Details & Instructions
+                    </span>
+                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                      {page.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Big RSVP Button */}
+              {waRsvpUrl && (
+                <div className="pt-2">
+                  <a
+                    href={waRsvpUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-600/30 active:scale-98 transition text-center cursor-pointer"
+                  >
+                    <MessageCircle className="w-5 h-5" />
+                    <span>Confirm RSVP on WhatsApp</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* EVENTS HUB: LIST OF ALL UPCOMING EVENTS */}
+          {isEventsHub && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1">
+                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>Upcoming Events & Passes</span>
+                </h2>
+                <span className="text-xs font-bold text-slate-500">
+                  {page.menuItems.length} Event{page.menuItems.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {page.menuItems.map((evtItem) => {
+                  const evtRsvpMsg = encodeURIComponent(
+                    `👋 Hello,\nI would like to RSVP for *${evtItem.name}*!\n\nPlease confirm availability and pass details. Thank you!`
+                  );
+                  const evtWaUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${evtRsvpMsg}` : '';
+
+                  return (
+                    <div
+                      key={evtItem.id}
+                      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 shadow-xs flex flex-col justify-between space-y-3"
+                    >
+                      <div className="space-y-2">
+                        {evtItem.photoUrl && (
+                          <div className="aspect-video w-full rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800">
+                            <img
+                              src={evtItem.photoUrl}
+                              alt={evtItem.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          <div className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1">
+                            <Ticket className="w-2.5 h-2.5" />
+                            <span>Event Pass</span>
+                          </div>
+                          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug">
+                            {evtItem.name}
+                          </h3>
+                          {evtItem.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                              {evtItem.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {evtWaUrl && (
+                        <a
+                          href={evtWaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 text-center shadow-xs"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>RSVP for Event</span>
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* EVENT PHOTOS GALLERY */}
+          {page.photos && page.photos.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>Event Photos & Highlights</span>
+                </h3>
+                <span className="text-[11px] text-slate-400 font-medium">Tap to enlarge</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {page.photos.map((photo, pIdx) => (
+                  <div
+                    key={photo.id || pIdx}
+                    onClick={() => {
+                      setSelectedPhoto(photo);
+                      setLightboxImage({
+                        url: photo.url,
+                        title: photo.title || page.title,
+                        description: photo.description || photo.caption,
+                        category: photo.category,
+                        badge: photo.badge,
+                        photoIndex: pIdx,
+                      });
+                    }}
+                    className="aspect-square rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 relative group cursor-pointer border border-slate-200 dark:border-slate-700/60 shadow-xs"
+                  >
+                    <img
+                      src={photo.url}
+                      alt={photo.title || 'Event photo'}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                      <Maximize2 className="w-5 h-5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ORGANIZER & VENUE INFO */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+              <Info className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span>Organizer & Venue Information</span>
+            </h3>
+
+            <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
+              {page.address && (
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span>{page.address}</span>
+                </div>
+              )}
+              {page.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <a href={`tel:${page.phone}`} className="hover:underline">
+                    {page.phone}
+                  </a>
+                </div>
+              )}
+              {page.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <a href={`mailto:${page.email}`} className="hover:underline">
+                    {page.email}
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+
+        {/* Lightbox Modal */}
+        {lightboxImage && (
+          <TouchZoomLightbox
+            image={{
+              ...lightboxImage,
+              totalPhotos: page.photos.length,
+            }}
+            onClose={() => setLightboxImage(null)}
+            onNext={
+              page.photos.length > 1 && lightboxImage.photoIndex !== undefined
+                ? () => {
+                    const nextIdx = (lightboxImage.photoIndex! + 1) % page.photos.length;
+                    const p = page.photos[nextIdx];
+                    setLightboxImage({
+                      url: p.url,
+                      title: p.title || page.title,
+                      description: p.description || p.caption,
+                      category: p.category,
+                      badge: p.badge,
+                      photoIndex: nextIdx,
+                    });
+                  }
+                : undefined
+            }
+            onPrev={
+              page.photos.length > 1 && lightboxImage.photoIndex !== undefined
+                ? () => {
+                    const prevIdx = (lightboxImage.photoIndex! - 1 + page.photos.length) % page.photos.length;
+                    const p = page.photos[prevIdx];
+                    setLightboxImage({
+                      url: p.url,
+                      title: p.title || page.title,
+                      description: p.description || p.caption,
+                      category: p.category,
+                      badge: p.badge,
+                      photoIndex: prevIdx,
+                    });
+                  }
+                : undefined
+            }
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white pb-24">

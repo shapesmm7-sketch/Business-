@@ -30,6 +30,7 @@ import {
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 import { CloudflareService } from './cloudflareService';
+import { QRHostingService } from './qrHostingService';
 
 const STORAGE_KEYS = {
   PROFILE: 'quickreceipt_business_profile_v1',
@@ -851,7 +852,7 @@ export const StorageService = {
       staffLosses: this.getStaffLosses(),
       staffSales: this.getStaffSales(),
       staffIncidents: this.getStaffIncidents(),
-      qrHostedPages: this.getHostedQRPages(),
+      qrHostedPages: this.getAllHostedPagesForSync(),
       websitesQrItems: this.getWebsitesQrItems(),
       socialsQrItems: this.getSocialsQrItems(),
       eventsQrItems: this.getEventsQrItems(),
@@ -2074,7 +2075,34 @@ export const StorageService = {
 
   getHostedQRPage(id: string): QRCodeHostedPage | undefined {
     const pages = this.getHostedQRPages();
-    return pages.find((p) => p.id === id);
+    const found = pages.find((p) => p.id === id);
+    if (found) return found;
+
+    try {
+      const events = this.getEventsQrItems();
+      const business = this.getProfile();
+      if (id.startsWith('events-hub-')) {
+        return QRHostingService.convertEventsHubToHostedPage(events, business);
+      }
+      const foundEvt = events.find((e) => e.id === id);
+      if (foundEvt) {
+        return QRHostingService.convertEventToHostedPage(foundEvt, business);
+      }
+    } catch {}
+    return undefined;
+  },
+
+  getAllHostedPagesForSync(): QRCodeHostedPage[] {
+    const businessPages = this.getHostedQRPages();
+    try {
+      const events = this.getEventsQrItems();
+      const business = this.getProfile();
+      const eventPages = events.map((e) => QRHostingService.convertEventToHostedPage(e, business));
+      const hubPage = QRHostingService.convertEventsHubToHostedPage(events, business);
+      return [...businessPages, ...eventPages, hubPage];
+    } catch {
+      return businessPages;
+    }
   },
 
   saveHostedQRPages(pages: QRCodeHostedPage[]): boolean {
