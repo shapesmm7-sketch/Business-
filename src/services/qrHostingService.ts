@@ -92,7 +92,21 @@ export class QRHostingService {
     }
 
     const dateScheduleText = dateParts.length > 0 ? dateParts.join(' • ') : '';
-    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}`;
+    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}<style>
+      #tab-btn-photos, #tab-btn-about { display: none !important; }
+      #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
+      #tab-btn-menu span { font-size: 0 !important; }
+      #tab-btn-menu span::before { content: "Events"; font-size: 16px !important; font-weight: 800; color: #1e293b; }
+      #tab-btn-menu svg { display: none !important; }
+      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child { display: none !important; }
+      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; }
+      #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
+      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 420px !important; }
+      #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+      #tab-content-menu .p-3 { padding: 16px !important; }
+      #tab-content-menu h3 { font-size: 16px !important; font-weight: 800 !important; color: #0f172a !important; }
+      #tab-content-menu p { font-size: 13px !important; margin-top: 6px !important; color: #475569 !important; }
+    </style>`;
 
     const photos: QRBusinessPhoto[] = (event.photos || []).map((url, idx) => ({
       id: `${event.id}-photo-${idx}`,
@@ -196,7 +210,21 @@ export class QRHostingService {
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'UGX',
-      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available<style>
+        #tab-btn-photos, #tab-btn-about { display: none !important; }
+        #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
+        #tab-btn-menu span { font-size: 0 !important; }
+        #tab-btn-menu span::before { content: "Events"; font-size: 16px !important; font-weight: 800; color: #1e293b; }
+        #tab-btn-menu svg { display: none !important; }
+        #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child { display: none !important; }
+        #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; }
+        #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
+        #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 420px !important; }
+        #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+        #tab-content-menu .p-3 { padding: 16px !important; }
+        #tab-content-menu h3 { font-size: 16px !important; font-weight: 800 !important; color: #0f172a !important; }
+        #tab-content-menu p { font-size: 13px !important; margin-top: 6px !important; color: #475569 !important; }
+      </style>`,
       allowWhatsAppOrdering: true,
       photos,
       menuCategories: ['Upcoming Events'],
