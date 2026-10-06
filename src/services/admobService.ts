@@ -9,14 +9,17 @@ import {
 import { StorageService } from './storage';
 
 /**
- * Required Google AdMob Test Unit IDs for our App
- * Source: Google AdMob Documentation (developers.google.com/admob/android/test-ads)
+ * Production Google AdMob Unit IDs
  */
-export const ADMOB_TEST_UNITS = {
-  ADAPTIVE_BANNER: 'ca-app-pub-3940256099942544/9214589741',
-  INTERSTITIAL: 'ca-app-pub-3940256099942544/1033173712',
-  APP_ID: 'ca-app-pub-3940256099942544~3347511713',
+export const ADMOB_UNITS = {
+  APP_ID: 'ca-app-pub-8582659585800553~8957324812',
+  BANNER: 'ca-app-pub-8582659585800553/3301762743',
+  ADAPTIVE_BANNER: 'ca-app-pub-8582659585800553/3301762743',
+  INTERSTITIAL: 'ca-app-pub-8582659585800553/1482159477',
+  NATIVE_ADVANCED: 'ca-app-pub-8582659585800553/9630358215',
 } as const;
+
+export const ADMOB_TEST_UNITS = ADMOB_UNITS;
 
 export interface InterstitialAdConfig {
   unitId: string;
@@ -76,10 +79,10 @@ class AdMobManager {
     if (Capacitor.isNativePlatform()) {
       try {
         await AdMob.initialize({
-          initializeForTesting: true,
+          initializeForTesting: false,
         });
         this.isInitialized = true;
-        console.info('[AdMob Native] Initialized successfully with Google AdMob test configuration.');
+        console.info('[AdMob Native] Initialized successfully with Google AdMob production configuration.');
       } catch (err) {
         console.warn('[AdMob Native] Initialization note (normal in web preview):', err);
       }
@@ -118,11 +121,11 @@ class AdMobManager {
         }
 
         const options: BannerAdOptions = {
-          adId: ADMOB_TEST_UNITS.ADAPTIVE_BANNER,
+          adId: ADMOB_UNITS.BANNER,
           adSize: BannerAdSize.ADAPTIVE_BANNER,
           position: position === 'bottom' ? BannerAdPosition.BOTTOM_CENTER : BannerAdPosition.TOP_CENTER,
           margin: calculatedMargin,
-          isTesting: true,
+          isTesting: false,
         };
 
         await AdMob.showBanner(options);
@@ -195,15 +198,15 @@ class AdMobManager {
     }
     this.lastInterstitialTime = now;
 
-    console.info(`[AdMob] Showing Interstitial Ad for action: ${actionSource} (Live Test Unit: ${ADMOB_TEST_UNITS.INTERSTITIAL})`);
+    console.info(`[AdMob] Showing Interstitial Ad for action: ${actionSource} (Live Unit: ${ADMOB_UNITS.INTERSTITIAL})`);
 
     // If native Android platform, invoke native AdMob
     if (Capacitor.isNativePlatform()) {
       try {
         await this.initNativeAdMob();
         const options: AdOptions = {
-          adId: ADMOB_TEST_UNITS.INTERSTITIAL,
-          isTesting: true,
+          adId: ADMOB_UNITS.INTERSTITIAL,
+          isTesting: false,
         };
         await AdMob.prepareInterstitial(options);
         await AdMob.showInterstitial();

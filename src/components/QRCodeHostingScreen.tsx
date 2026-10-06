@@ -48,7 +48,8 @@ import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
-import { AdMobService } from '../services/admobService';
+import { AdMobService, ADMOB_UNITS } from '../services/admobService';
+import { AdMobNativeAd } from './AdMobNativeAd';
 import { compressImageFile } from '../utils/imageCompressor';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
@@ -1260,7 +1261,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>{qrCategory !== null ? 'Back to QR Categories' : 'Home'}</span>
+          <span>{qrCategory !== null ? 'Home' : 'Home'}</span>
         </button>
 
         {qrCategory === 'business' && (
@@ -1301,7 +1302,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         )}
       </div>
 
-      {/* OVERVIEW SCREEN: When user first opens QR Host, show only the 3 main category cards */}
+      {/* OVERVIEW SCREEN: When user first opens QR Host, show the 4 main category cards */}
       {qrCategory === null && (
         <div className="space-y-4 pt-1 animate-fadeIn">
           <div className="flex items-center justify-between px-1">
@@ -1418,6 +1419,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </button>
           </div>
+
+          {/* Native Advanced Ad in Quick Actions */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       )}
 
@@ -1436,7 +1444,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         <EventsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
       )}
 
-      {/* BUSINESS QR SECTIONS (All existing sections fully preserved under Business QR) */}
+      {/* BUSINESS QR SECTIONS */}
       {qrCategory === 'business' && (
         <>
       {/* Hero Banner Section */}
@@ -1754,6 +1762,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Native Advanced Ad in QR Stand */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       )}
 
@@ -2085,6 +2100,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             )}
           </div>
+
+          {/* Native Advanced Ad in Business Info */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       )}
 
@@ -2350,6 +2372,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               ))}
             </div>
           )}
+
+          {/* Native Advanced Ad in Digital Items */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       )}
 
@@ -2490,6 +2519,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               ))}
             </div>
           )}
+
+          {/* Native Advanced Ad in Business Photos */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       )}
 

@@ -43,7 +43,7 @@ interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
   onBackToApp?: () => void;
   isMerchantPreview?: boolean;
-  initialTab?: 'menu' | 'photos' | 'socials' | 'websites' | 'events' | 'about';
+  initialTab?: 'menu' | 'photos' | 'about';
   initialItemId?: string;
   initialPhotoId?: string;
 }
@@ -63,27 +63,21 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'socials' | 'websites' | 'events' | 'about'>(() => {
+  const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'about'>(() => {
     if (initialPhotoId) return 'photos';
     if (initialItemId) return 'menu';
-    if (page?.id?.startsWith('event-') || (page as any)?.pageType === 'event') return 'events';
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const photoIdParam = params.get('photo') || params.get('photoId');
       if (photoIdParam) return 'photos';
       const itemIdParam = params.get('item') || params.get('itemId');
       if (itemIdParam) return 'menu';
-      const eventIdParam = params.get('event') || params.get('eventId');
-      if (eventIdParam) return 'events';
       const tabParam = params.get('tab');
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
       if (tabParam === 'menu' || tabParam === 'items') return 'menu';
-      if (tabParam === 'socials' || tabParam === 'social') return 'socials';
-      if (tabParam === 'websites' || tabParam === 'links') return 'websites';
-      if (tabParam === 'events' || tabParam === 'event') return 'events';
     }
-    if (initialTab) return initialTab as any;
+    if (initialTab) return initialTab;
     return 'menu';
   });
 
@@ -114,7 +108,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   useEffect(() => {
     let targetPhotoId = initialPhotoId;
     let targetItemId = initialItemId;
-    let targetTab: 'menu' | 'photos' | 'socials' | 'websites' | 'events' | 'about' | undefined = initialTab;
+    let targetTab: 'menu' | 'photos' | 'about' | undefined = initialTab;
 
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -134,9 +128,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         if (tabParam === 'photos' || tabParam === 'gallery') targetTab = 'photos';
         else if (tabParam === 'about' || tabParam === 'info') targetTab = 'about';
         else if (tabParam === 'menu' || tabParam === 'items') targetTab = 'menu';
-        else if (tabParam === 'socials' || tabParam === 'social') targetTab = 'socials';
-        else if (tabParam === 'websites' || tabParam === 'links') targetTab = 'websites';
-        else if (tabParam === 'events' || tabParam === 'event') targetTab = 'events';
       }
     }
 
@@ -179,32 +170,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   const [orderNotes, setOrderNotes] = useState<string>('');
   const [trayItems, setTrayItems] = useState<Record<string, TrayItem>>({});
 
-  const socialsQrItems = useMemo(() => StorageService.getSocialsQrItems(), []);
-  const websitesQrItems = useMemo(() => StorageService.getWebsitesQrItems(), []);
-  const eventsQrItems = useMemo(() => {
-    const list = StorageService.getEventsQrItems();
-    if (page?.id && (page.id.startsWith('event-') || (page as any).pageType === 'event') && !list.some((e) => e.id === page.id)) {
-      return [
-        {
-          id: page.id,
-          title: page.title,
-          location: page.address || 'Venue Location',
-          description: page.description,
-          rsvpUrl: page.whatsapp ? `https://wa.me/${page.whatsapp.replace(/[^0-9]/g, '')}` : (page.phone ? `tel:${page.phone}` : ''),
-          contactPhone: page.phone,
-          contactEmail: page.email,
-          ctaText: page.tagline || 'Scan to RSVP',
-          photos: (page.photos || []).map((p) => p.url),
-          darkColor: page.qrDarkColor || '#7c3aed',
-          lightColor: page.qrLightColor || '#ffffff',
-          eyeColor: page.qrEyeColor,
-          createdAt: page.createdAt,
-        },
-        ...list,
-      ];
-    }
-    return list;
-  }, [page]);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [copiedWifi, setCopiedWifi] = useState<boolean>(false);
   const [copiedPhone, setCopiedPhone] = useState<boolean>(false);
@@ -624,7 +589,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         </div>
       )}
 
-      {/* Nav Tabs: Menu | Photos & Ambience | Socials | Websites | Events | About & Info */}
+      {/* Nav Tabs: Menu | Photos | About & Venue */}
       <div className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs overflow-x-auto scrollbar-none">
         <div className="max-w-2xl mx-auto px-4 flex items-center justify-between min-w-max gap-3">
           <div className="flex gap-3 sm:gap-6">
@@ -646,57 +611,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 {page.menuItems.length}
               </span>
             </button>
-
-            {(socialsQrItems.length > 0 || activeTab === 'socials') && (
-              <button
-                onClick={() => setActiveTab('socials')}
-                className={`py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
-                  activeTab === 'socials'
-                    ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                }`}
-              >
-                <MessageCircle className="w-4 h-4" />
-                <span>Socials</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  {socialsQrItems.length}
-                </span>
-              </button>
-            )}
-
-            {(websitesQrItems.length > 0 || activeTab === 'websites') && (
-              <button
-                onClick={() => setActiveTab('websites')}
-                className={`py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
-                  activeTab === 'websites'
-                    ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                }`}
-              >
-                <Globe className="w-4 h-4" />
-                <span>Websites</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  {websitesQrItems.length}
-                </span>
-              </button>
-            )}
-
-            {(eventsQrItems.length > 0 || activeTab === 'events') && (
-              <button
-                onClick={() => setActiveTab('events')}
-                className={`py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
-                  activeTab === 'events'
-                    ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                <span>Events</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                  {eventsQrItems.length}
-                </span>
-              </button>
-            )}
 
             <button
               onClick={() => setActiveTab('photos')}
@@ -1032,259 +946,6 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB: SOCIAL CHANNELS */}
-        {activeTab === 'socials' && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-md space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20">
-                Official Social Channels
-              </span>
-              <h3 className="text-lg font-black">{page.title || 'Connect With Us'}</h3>
-              <p className="text-xs text-emerald-100">Tap any platform below to open profile or chat directly.</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {socialsQrItems.map((soc) => (
-                <a
-                  key={soc.id}
-                  href={soc.fullUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 shadow-2xs transition flex items-center justify-between gap-3 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-black text-xs shadow-xs"
-                      style={{ backgroundColor: soc.darkColor || '#059669' }}
-                    >
-                      {(soc.customPlatformName || soc.title || 'SO').slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{soc.title}</h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{soc.usernameOrPhone || soc.ctaText}</p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs group-hover:bg-emerald-600 group-hover:text-white transition flex items-center gap-1 shrink-0">
-                    <span>{soc.ctaText || 'Connect'}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB: WEBSITES & APPS */}
-        {activeTab === 'websites' && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-md space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20">
-                Websites & Online Apps
-              </span>
-              <h3 className="text-lg font-black">{page.title || 'Official Links'}</h3>
-              <p className="text-xs text-blue-100">Tap below to open official portals, booking pages, and websites.</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {websitesQrItems.map((web) => (
-                <a
-                  key={web.id}
-                  href={web.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500 shadow-2xs transition flex items-center justify-between gap-3 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white font-black text-xs shadow-xs"
-                      style={{ backgroundColor: web.darkColor || '#2563eb' }}
-                    >
-                      <Globe className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">{web.title}</h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{web.url}</p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs group-hover:bg-blue-600 group-hover:text-white transition flex items-center gap-1 shrink-0">
-                    <span>{web.ctaText || 'Open'}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB: HOST EVENTS */}
-        {activeTab === 'events' && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-700 to-indigo-800 text-white shadow-md space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20">
-                Upcoming Events & Passes
-              </span>
-              <h3 className="text-lg font-black">{page.title || 'Host Events'}</h3>
-              <p className="text-xs text-purple-100">Scan passes, RSVP, check venue dates & get full details online.</p>
-            </div>
-
-            <div className="space-y-3">
-              {(() => {
-                const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-                const targetEventId = urlParams
-                  ? (urlParams.get('event') || urlParams.get('eventId') || (page?.id?.startsWith('event-') ? page.id : null))
-                  : (page?.id?.startsWith('event-') ? page.id : null);
-                const displayEvents = targetEventId
-                  ? [
-                      ...eventsQrItems.filter((e) => e.id === targetEventId),
-                      ...eventsQrItems.filter((e) => e.id !== targetEventId),
-                    ]
-                  : eventsQrItems;
-
-                return displayEvents.map((evt) => {
-                  const isHighlighted = targetEventId === evt.id;
-                  const dateParts: string[] = [];
-                if (evt.startDate) {
-                  try {
-                    const startStr = new Date(evt.startDate).toLocaleDateString([], {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    });
-                    if (evt.endDate && evt.endDate !== evt.startDate) {
-                      const endStr = new Date(evt.endDate).toLocaleDateString([], {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      });
-                      dateParts.push(`${startStr} - ${endStr}`);
-                    } else {
-                      dateParts.push(startStr);
-                    }
-                  } catch {
-                    dateParts.push(evt.startDate);
-                  }
-                } else if (evt.eventDate) {
-                  try {
-                    dateParts.push(new Date(evt.eventDate).toLocaleDateString([], {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    }));
-                  } catch {
-                    dateParts.push(evt.eventDate);
-                  }
-                }
-                if (evt.startTime) {
-                  if (evt.endTime) dateParts.push(`${evt.startTime} - ${evt.endTime}`);
-                  else dateParts.push(`Starts ${evt.startTime}`);
-                }
-                const formattedDateTime = dateParts.join(' • ');
-
-                return (
-                  <div
-                    key={evt.id}
-                    className="p-4.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        {evt.photos && evt.photos[0] ? (
-                          <img src={evt.photos[0]} alt={evt.title} className="w-14 h-14 rounded-2xl object-cover shrink-0 border border-purple-200 dark:border-purple-800 shadow-xs" />
-                        ) : (
-                          <div className="w-14 h-14 rounded-2xl bg-purple-100 text-purple-700 font-bold flex items-center justify-center shrink-0 shadow-xs">
-                            <Calendar className="w-7 h-7" />
-                          </div>
-                        )}
-                        <div className="min-w-0 space-y-1">
-                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                            Host Event
-                          </span>
-                          <h4 className="text-base font-black text-slate-900 dark:text-white leading-snug">{evt.title}</h4>
-                          
-                          {formattedDateTime && (
-                            <p className="text-xs font-bold text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 shrink-0" />
-                              <span>{formattedDateTime}</span>
-                            </p>
-                          )}
-
-                          {evt.location && (
-                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                              <MapPin className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                              <span>{evt.location}</span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <a
-                        href={evt.rsvpUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-md active:scale-95 text-center"
-                      >
-                        <span>{evt.ctaText || 'RSVP / Register'}</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-
-                    {/* Photos Gallery */}
-                    {evt.photos && evt.photos.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2 pt-1">
-                        {evt.photos.map((ph, pIdx) => (
-                          <div key={pIdx} className="aspect-video rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800">
-                            <img src={ph} alt={`Event Photo ${pIdx + 1}`} className="w-full h-full object-cover" />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Helplines & Description */}
-                    {(evt.description || evt.contactPhone || evt.contactEmail || evt.location) && (
-                      <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2 text-xs">
-                        {evt.description && (
-                          <p className="text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                            {evt.description}
-                          </p>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-3 text-slate-500 dark:text-slate-400 pt-1">
-                          {evt.contactPhone && (
-                            <a href={`tel:${evt.contactPhone}`} className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300 hover:text-purple-600">
-                              <Phone className="w-3.5 h-3.5 text-purple-500" />
-                              <span>{evt.contactPhone}</span>
-                            </a>
-                          )}
-                          {evt.contactEmail && (
-                            <a href={`mailto:${evt.contactEmail}`} className="inline-flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300 hover:text-purple-600">
-                              <Mail className="w-3.5 h-3.5 text-purple-500" />
-                              <span>{evt.contactEmail}</span>
-                            </a>
-                          )}
-                          {evt.location && (
-                            <a
-                              href={`https://maps.google.com/?q=${encodeURIComponent(evt.location)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 font-bold text-purple-600 dark:text-purple-400 hover:underline"
-                            >
-                              <MapPin className="w-3.5 h-3.5" />
-                              <span>Map Venue</span>
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              });
-            })()}
-            </div>
           </div>
         )}
 

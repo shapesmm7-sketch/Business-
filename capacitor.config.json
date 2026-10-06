@@ -5,8 +5,8 @@
   "bundledWebRuntime": false,
   "plugins": {
     "AdMob": {
-      "appId": "ca-app-pub-3940256099942544~3347511713",
-      "initializeForTesting": true
+      "appId": "ca-app-pub-8582659585800553~8957324812",
+      "initializeForTesting": false
     }
   }
 }

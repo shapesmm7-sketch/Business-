@@ -33,6 +33,8 @@ import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { AdMobNativeAd } from './AdMobNativeAd';
+import { ADMOB_UNITS } from '../services/admobService';
 
 export type { WebsiteAppQrItem };
 
@@ -843,6 +845,13 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           </div>
         </div>
       )}
+
+      {/* Native Advanced Ad */}
+      <AdMobNativeAd
+        context="qr"
+        variant="card"
+        unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+      />
 
       {/* CREATE / EDIT MODAL */}
       {showModal && (

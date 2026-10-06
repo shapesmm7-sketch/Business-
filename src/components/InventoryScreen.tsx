@@ -64,8 +64,9 @@ import {
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
-import { AdMobService, ADMOB_TEST_UNITS } from '../services/admobService';
+import { AdMobService, ADMOB_UNITS } from '../services/admobService';
 import { AdMobBanner } from './AdMobBanner';
+import { AdMobNativeAd } from './AdMobNativeAd';
 import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
@@ -5007,11 +5008,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           </button>
                         </div>
                       </div>
-                      {(index + 1) % 8 === 0 && (
+                      {(index + 1) % 6 === 0 && (
                         <div key={`inline-admob-sale-${sale.id}`} className="py-1">
-                          <AdMobBanner
-                            placement="inline"
-                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          <AdMobNativeAd
+                            context="inventory"
+                            variant="in-feed"
+                            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                           />
                         </div>
                       )}
@@ -5511,11 +5513,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           </div>
                         </div>
                       </div>
-                      {(index + 1) % 8 === 0 && (
+                      {(index + 1) % 6 === 0 && (
                         <div key={`inline-admob-prod-${prod.id}`} className="py-1">
-                          <AdMobBanner
-                            placement="inline"
-                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          <AdMobNativeAd
+                            context="inventory"
+                            variant="in-feed"
+                            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                           />
                         </div>
                       )}
@@ -5784,11 +5787,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                               </button>
                             </div>
                           </div>
-                          {(index + 1) % 8 === 0 && (
+                          {(index + 1) % 6 === 0 && (
                             <div key={`inline-admob-exp-${exp.id}`} className="py-1">
-                              <AdMobBanner
-                                placement="inline"
-                                unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                              <AdMobNativeAd
+                                context="inventory"
+                                variant="in-feed"
+                                unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                               />
                             </div>
                           )}
@@ -6554,11 +6558,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           </div>
                         )}
                       </div>
-                      {(index + 1) % 8 === 0 && (
+                      {(index + 1) % 6 === 0 && (
                         <div key={`inline-admob-debt-${debt.id}`} className="py-1">
-                          <AdMobBanner
-                            placement="inline"
-                            unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                          <AdMobNativeAd
+                            context="inventory"
+                            variant="in-feed"
+                            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                           />
                         </div>
                       )}
@@ -7292,11 +7297,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             </div>
                           </div>
                         </div>
-                        {(index + 1) % 8 === 0 && (
+                        {(index + 1) % 6 === 0 && (
                           <div key={`inline-admob-shop-${item.id}`} className="py-1">
-                            <AdMobBanner
-                              placement="inline"
-                              unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                            <AdMobNativeAd
+                              context="inventory"
+                              variant="in-feed"
+                              unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                             />
                           </div>
                         )}
@@ -8236,11 +8242,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </button>
                       </div>
                     </div>
-                    {(index + 1) % 8 === 0 && (
+                    {(index + 1) % 6 === 0 && (
                       <div key={`inline-admob-agent-${agent.id}`} className="py-1">
-                        <AdMobBanner
-                          placement="inline"
-                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        <AdMobNativeAd
+                          context="inventory"
+                          variant="in-feed"
+                          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                         />
                       </div>
                     )}
@@ -8963,11 +8970,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </div>
                       )}
                     </div>
-                    {(index + 1) % 8 === 0 && (
+                    {(index + 1) % 6 === 0 && (
                       <div key={`inline-admob-worker-${worker.id}`} className="py-1">
-                        <AdMobBanner
-                          placement="inline"
-                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        <AdMobNativeAd
+                          context="inventory"
+                          variant="in-feed"
+                          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                         />
                       </div>
                     )}
@@ -9391,11 +9399,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         </button>
                       </div>
                     </div>
-                    {(index + 1) % 8 === 0 && (
+                    {(index + 1) % 6 === 0 && (
                       <div key={`inline-admob-cust-${cust.id}`} className="py-1">
-                        <AdMobBanner
-                          placement="inline"
-                          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                        <AdMobNativeAd
+                          context="inventory"
+                          variant="in-feed"
+                          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                         />
                       </div>
                     )}

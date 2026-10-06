@@ -2052,7 +2052,21 @@ export const StorageService = {
       if (!Array.isArray(parsed) || parsed.length === 0) {
         return [];
       }
-      return parsed;
+      // Business QR Pages only: strictly filter out any event, website, social or hub pages so business QR is never displaced or contaminated
+      const businessPages = parsed.filter(
+        (p) =>
+          !p.id.startsWith('event-') &&
+          !p.id.startsWith('events-hub-') &&
+          !p.id.startsWith('test-event-') &&
+          !p.id.startsWith('web-') &&
+          !p.id.startsWith('social-')
+      );
+      if (businessPages.length !== parsed.length && businessPages.length > 0) {
+        try {
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, businessPages);
+        } catch {}
+      }
+      return businessPages.length > 0 ? businessPages : parsed;
     } catch {
       return [];
     }
@@ -2064,7 +2078,15 @@ export const StorageService = {
   },
 
   saveHostedQRPages(pages: QRCodeHostedPage[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, pages);
+    const businessPages = pages.filter(
+      (p) =>
+        !p.id.startsWith('event-') &&
+        !p.id.startsWith('events-hub-') &&
+        !p.id.startsWith('test-event-') &&
+        !p.id.startsWith('web-') &&
+        !p.id.startsWith('social-')
+    );
+    const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, businessPages);
     if (success) {
       CloudflareService.syncAllToCloudflare().catch(() => {});
     }
@@ -2072,6 +2094,16 @@ export const StorageService = {
   },
 
   saveHostedQRPage(page: QRCodeHostedPage): boolean {
+    if (
+      page.id.startsWith('event-') ||
+      page.id.startsWith('events-hub-') ||
+      page.id.startsWith('test-event-') ||
+      page.id.startsWith('web-') ||
+      page.id.startsWith('social-')
+    ) {
+      // Do not pollute business QR pages with other pages
+      return false;
+    }
     const pages = this.getHostedQRPages();
     const index = pages.findIndex((p) => p.id === page.id);
     let updatedPage = { ...page, updatedAt: new Date().toISOString() };
@@ -2079,7 +2111,7 @@ export const StorageService = {
       pages[index] = updatedPage;
     } else {
       updatedPage.createdAt = updatedPage.createdAt || new Date().toISOString();
-      pages.unshift(updatedPage);
+      pages.push(updatedPage);
     }
     const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, pages);
 

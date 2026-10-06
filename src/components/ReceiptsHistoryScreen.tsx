@@ -38,7 +38,8 @@ import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StorageService } from '../services/storage';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
 import { AdMobBanner } from './AdMobBanner';
-import { ADMOB_TEST_UNITS } from '../services/admobService';
+import { AdMobNativeAd } from './AdMobNativeAd';
+import { ADMOB_UNITS } from '../services/admobService';
 
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
@@ -1001,11 +1002,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                   </div>
                 )}
               </div>
-              {(index + 1) % 10 === 0 && (
+              {(index + 1) % 5 === 0 && (
                 <div key={`inline-admob-${receipt.id}`} className="py-1">
-                  <AdMobBanner
-                    placement="inline"
-                    unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+                  <AdMobNativeAd
+                    context={isInvoiceMode ? 'invoices' : 'receipts'}
+                    variant="in-feed"
+                    unitId={ADMOB_UNITS.NATIVE_ADVANCED}
                   />
                 </div>
               )}

@@ -30,6 +30,8 @@ import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { AdMobNativeAd } from './AdMobNativeAd';
+import { ADMOB_UNITS } from '../services/admobService';
 
 export type SocialPlatformType = SocialPlatform;
 
@@ -1165,6 +1167,13 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           </div>
         </div>
       )}
+
+      {/* Native Advanced Ad */}
+      <AdMobNativeAd
+        context="qr"
+        variant="card"
+        unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+      />
 
       {/* CREATE / EDIT SOCIAL MODAL */}
       {showModal && (

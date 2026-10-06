@@ -20,7 +20,7 @@ import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { AdMobBanner } from './components/AdMobBanner';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
-import { AdMobService, ADMOB_TEST_UNITS } from './services/admobService';
+import { AdMobService, ADMOB_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
 import { CloudflareService } from './services/cloudflareService';
 import { QRHostingService } from './services/qrHostingService';
@@ -88,17 +88,12 @@ export function App() {
     }
     return null;
   });
-  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about' | 'events' | 'socials' | 'websites'>(() => {
+  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('photo') || params.get('photoId')) return 'photos';
       if (params.get('item') || params.get('itemId')) return 'menu';
-      const qrParam = params.get('qr');
-      if (qrParam?.startsWith('event-') || params.get('event') || params.get('eventId')) return 'events';
       const tabParam = params.get('tab');
-      if (tabParam === 'events' || tabParam === 'event') return 'events';
-      if (tabParam === 'socials' || tabParam === 'social') return 'socials';
-      if (tabParam === 'websites' || tabParam === 'links') return 'websites';
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
       if (tabParam === 'menu' || tabParam === 'items') return 'menu';
@@ -127,10 +122,7 @@ export function App() {
         params.get('photoId') ||
         params.get('photo') ||
         params.get('itemId') ||
-        params.get('item') ||
-        params.get('event') ||
-        params.get('eventId') ||
-        params.get('tab')
+        params.get('item')
       ) {
         return true;
       }
@@ -169,10 +161,9 @@ export function App() {
       const qrPageId = params.get('qr');
       const photoIdParam = params.get('photo') || params.get('photoId');
       const itemIdParam = params.get('item') || params.get('itemId');
-      const eventIdParam = params.get('event') || params.get('eventId');
       const tabParam = params.get('tab');
 
-      const hasCustomerParam = qrPageId || photoIdParam || itemIdParam || eventIdParam || tabParam;
+      const hasCustomerParam = qrPageId || photoIdParam || itemIdParam || tabParam;
 
       if (hasCustomerParam) {
         if (photoIdParam) {
@@ -181,33 +172,19 @@ export function App() {
         } else if (itemIdParam) {
           setCustomerInitialItemId(itemIdParam);
           setCustomerInitialTab('menu');
-        } else if (eventIdParam || qrPageId?.startsWith('event-') || tabParam === 'events' || tabParam === 'event') {
-          setCustomerInitialTab('events');
-        } else if (tabParam === 'socials' || tabParam === 'social') {
-          setCustomerInitialTab('socials');
-        } else if (tabParam === 'websites' || tabParam === 'links') {
-          setCustomerInitialTab('websites');
         } else if (tabParam === 'photos' || tabParam === 'gallery') {
           setCustomerInitialTab('photos');
         } else if (tabParam === 'about' || tabParam === 'info') {
           setCustomerInitialTab('about');
-        } else if (tabParam === 'menu' || tabParam === 'items') {
+        } else {
           setCustomerInitialTab('menu');
         }
 
         let found: QRCodeHostedPage | undefined;
         if (qrPageId) {
           found = StorageService.getHostedQRPage(qrPageId);
-          if (!found && qrPageId.startsWith('event-')) {
-            const currentProfile = StorageService.getProfile();
-            const eventItem = StorageService.getEventsQrItems().find((e) => e.id === qrPageId);
-            if (eventItem) {
-              found = QRHostingService.convertEventToHostedPage(eventItem, currentProfile);
-              StorageService.saveHostedQRPage(found);
-            }
-          }
         }
-        if (!found && (!qrPageId || !qrPageId.startsWith('event-'))) {
+        if (!found) {
           const pages = StorageService.getHostedQRPages();
           found = pages[0];
         }
@@ -1143,7 +1120,7 @@ export function App() {
           placement="bottom_sticky"
           hasBottomNav={true}
           bottomMargin={84}
-          unitId={ADMOB_TEST_UNITS.ADAPTIVE_BANNER}
+          unitId={ADMOB_UNITS.ADAPTIVE_BANNER}
         />
       )}
 
