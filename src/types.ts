@@ -395,6 +395,7 @@ export type InventoryTab = 'add' | 'sales' | 'stock' | 'expense' | 'debts' | 'sh
 export interface AppBackupData {
   version: number;
   exportedAt: string;
+  brivuUserId?: string;
   profile: BusinessProfile;
   settings: AppSettings;
   receipts: Receipt[];

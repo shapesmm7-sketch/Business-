@@ -62,6 +62,7 @@ const STORAGE_KEYS = {
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
+  BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -830,10 +831,11 @@ export const StorageService = {
     };
   },
 
-  exportBackup(): AppBackupData {
+  exportBackup(): AppBackupData & { brivuUserId?: string } {
     return {
       version: 1,
       exportedAt: new Date().toISOString(),
+      brivuUserId: this.getBrivuUserId(),
       profile: this.getProfile(),
       settings: this.getSettings(),
       receipts: this.getReceipts(),
@@ -2371,6 +2373,16 @@ export const StorageService = {
   },
 
   // --- CLOUDFLARE WORKER SYNC & STORAGE ---
+  getBrivuUserId(): string {
+    let id = readFromStorage<string | null>(STORAGE_KEYS.BRIVU_USER_ID, null);
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      // Create a secure, non-guessable, unique random ID starting with brivu_usr_
+      id = 'brivu-usr-' + Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 10)).join('-');
+      writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, id);
+    }
+    return id;
+  },
+
   getCloudflareConfig(): CloudflareConfig {
     const defaultVal: CloudflareConfig = {
       workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || 'https://brivu.shapesmm7.workers.dev',
@@ -2384,10 +2396,11 @@ export const StorageService = {
     if (!loaded.workerUrl || loaded.workerUrl.trim() === '') {
       loaded.workerUrl = defaultVal.workerUrl;
     }
+    // Get the unique, secure, persistent Brivu User ID
+    const brivuId = this.getBrivuUserId();
     // Ensure every single device has a unique, cryptographically-isolated API key to prevent data sharing/overwriting
     if (!loaded.apiKey || loaded.apiKey.trim() === '') {
-      const generatedKey = 'brivu-usr-' + Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 10)).join('-');
-      loaded.apiKey = generatedKey;
+      loaded.apiKey = brivuId;
       writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
     }
     return loaded;
