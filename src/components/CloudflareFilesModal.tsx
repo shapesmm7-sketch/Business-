@@ -236,7 +236,12 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
               </button>
             </div>
           ) : (
-            files.map((file) => (
+            files
+              .filter((file) => {
+                const name = (file.filename || '').toLowerCase();
+                return !name.endsWith('.pem') && !name.includes('certificate');
+              })
+              .map((file) => (
               <div
                 key={file.key}
                 className="p-3 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 hover:border-orange-300 dark:hover:border-orange-500/40 transition flex items-center justify-between gap-3 shadow-xs"
