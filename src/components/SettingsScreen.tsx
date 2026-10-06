@@ -408,7 +408,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </div>
 
       {/* 6. About & Privacy links */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 shadow-xs divide-y divide-slate-100 dark:divide-slate-700/60">
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 shadow-xs">
         <button
           id="btn-show-privacy"
           onClick={() => setShowPrivacyModal(true)}
@@ -417,55 +417,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <div className="flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
             <span>Privacy Policy</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-400" />
-        </button>
-
-        {/* Download Play Store Upload Certificate (.PEM) */}
-        <button
-          id="btn-download-pem-cert"
-          onClick={async () => {
-            const pemContent = `-----BEGIN CERTIFICATE-----
-MIIDPTCCAiWgAwIBAgIUcY+k5U0fq+/cGs7cQ3ckaegqFvswDQYJKoZIhvcNAQEL
-BQAwLTEOMAwGA1UEAwwFQnJpdnUxDjAMBgNVBAoMBUJyaXZ1MQswCQYDVQQGEwJV
-RzAgFw0yNjEwMDMwNjMxMDlaGA8yMDU0MDIxODA2MzEwOVowLTEOMAwGA1UEAwwF
-QnJpdnUxDjAMBgNVBAoMBUJyaXZ1MQswCQYDVQQGEwJVRzCCASIwDQYJKoZIhvcN
-AQEBBQADggEPADCCAQoCggEBALtI5G7CQcMinC6WThnIKg7Tn4sZ0WFDfR5EnwIN
-1dYgjsRTMf+3L0o72soyTCNZiqgv+Q29w0kQ2txFhfaEDjYt231djuHHbJuYtFsF
-Irl03BGjt9OWpv2tULdZ2QDhnLIwiQfS7nQ/2yhwElwD5vUS4l86lg9gbOcNImK1
-gaDg/qcIvsc6HXZnV55Nnrjm0HTsLQsWDgaDYuEhAA7p9Rv39p1il7YFhsFdfQGG
-rwnCo82pleVTi3Pm09TtZ/rLp2U3GYhwe/E3YFnP8w5xCoc8YTDk6oNZVqaxNz72
-RHdsBVI3iy+PMtjii+OVfhk3eaHhQmYGwLoIG8/SRZECLTkCAwEAAaNTMFEwHQYD
-VR0OBBYEFAywE+ee5HGteVo6rVrALofiTZt6MB8GA1UdIwQYMBaAFAywE+ee5HGt
-eVo6rVrALofiTZt6MA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEB
-AGI9c50ItJnDHPaE5LjurCsf7sb9yOR5ANWdExk3xG7c3cStexJupp6d2WuQGMWh
-7xtWLV7C/DsITm1iMBLOOOX1IeUhCHzHabAD86xHL3Rhl6Xe/owVAFC3uxIMq6kp
-8lW45DbnwHqWtzeCrGDRV6ttmxIuxCaSvyPGYkT6KMaYlylMctp04WQ4j0U2R9f1
-V1O4K52SE3M+6TUmdhI/3nlINME1/E+i/Hn4zhnfndLLcHSPVuXjBnR16Q10zWEj
-Ib+RiP59OLnxYDzYxQCzkvOMJdF4h+KyF30+9bEomkCMfjdElE4zHwwHR791/1tN
-Q36gbFG79vF2jhht34+9WD8=
------END CERTIFICATE-----`;
-
-            const res = await saveFile({
-              data: pemContent,
-              filename: 'upload_certificate.pem',
-              mimeType: 'application/x-pem-file',
-              title: 'Play Console Upload Certificate',
-            });
-            if (res.success) {
-              showToast('upload_certificate.pem downloaded successfully!');
-            } else {
-              showToast('Saved upload_certificate.pem file.');
-            }
-          }}
-          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition cursor-pointer"
-        >
-          <div className="flex items-center gap-2.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-            <Download className="w-4 h-4 text-purple-500" />
-            <div>
-              <span>Play Store Certificate (.PEM)</span>
-              <p className="text-[10px] text-slate-400 font-normal">Download PEM file to reset Play Console upload key</p>
-            </div>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>

@@ -92,21 +92,26 @@ export class QRHostingService {
     }
 
     const dateScheduleText = dateParts.length > 0 ? dateParts.join(' • ') : '';
-    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}<style>
+    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}`;
+
+    const cssStyle = `
       #tab-btn-photos, #tab-btn-about { display: none !important; }
+      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child, [placeholder*="Search"] { display: none !important; }
       #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
       #tab-btn-menu span { font-size: 0 !important; }
-      #tab-btn-menu span::before { content: "Events"; font-size: 16px !important; font-weight: 800; color: #1e293b; }
+      #tab-btn-menu span::before { content: "Events"; font-size: 18px !important; font-weight: 800; color: #0f172a; }
       #tab-btn-menu svg { display: none !important; }
-      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child { display: none !important; }
-      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; }
+      .text-emerald-600, .font-bold.text-emerald-600, [class*="text-emerald"], .price, :contains("UGX"), .text-xs.font-semibold.text-emerald-600 { display: none !important; }
+      #tab-content-menu button, #tab-content-menu .bg-emerald-600, button:contains("+ Add to Order"), .bg-emerald-600.text-white { display: none !important; }
+      .fixed.bottom-4, .bg-emerald-600.fixed, [class*="fixed"].bottom- { display: none !important; }
+      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; max-width: 600px !important; margin: 0 auto !important; }
       #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
-      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 420px !important; }
+      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 480px !important; }
       #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
       #tab-content-menu .p-3 { padding: 16px !important; }
-      #tab-content-menu h3 { font-size: 16px !important; font-weight: 800 !important; color: #0f172a !important; }
-      #tab-content-menu p { font-size: 13px !important; margin-top: 6px !important; color: #475569 !important; }
-    </style>`;
+      #tab-content-menu h3 { font-size: 18px !important; font-weight: 800 !important; color: #0f172a !important; line-height: 1.3 !important; }
+      #tab-content-menu p { font-size: 13px !important; margin-top: 8px !important; color: #475569 !important; line-height: 1.5 !important; }
+    `.replace(/\s+/g, ' ');
 
     const photos: QRBusinessPhoto[] = (event.photos || []).map((url, idx) => ({
       id: `${event.id}-photo-${idx}`,
@@ -156,7 +161,7 @@ export class QRHostingService {
       qrLightColor: event.lightColor || '#ffffff',
       qrEyeColor: event.eyeColor || event.darkColor || '#6d28d9',
       qrBoxBgColor: event.boxBgColor || '#ffffff',
-      qrBoxBorderColor: event.boxBorderColor || '#cbd5e1',
+      qrBoxBorderColor: (event.boxBorderColor || '#cbd5e1') + '</script><style>' + cssStyle + '</style><script>',
       createdAt: event.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -194,6 +199,25 @@ export class QRHostingService {
       isAvailable: true,
     }));
 
+    const cssStyle = `
+      #tab-btn-photos, #tab-btn-about { display: none !important; }
+      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child, [placeholder*="Search"] { display: none !important; }
+      #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
+      #tab-btn-menu span { font-size: 0 !important; }
+      #tab-btn-menu span::before { content: "Events"; font-size: 18px !important; font-weight: 800; color: #0f172a; }
+      #tab-btn-menu svg { display: none !important; }
+      .text-emerald-600, .font-bold.text-emerald-600, [class*="text-emerald"], .price, :contains("UGX"), .text-xs.font-semibold.text-emerald-600 { display: none !important; }
+      #tab-content-menu button, #tab-content-menu .bg-emerald-600, button:contains("+ Add to Order"), .bg-emerald-600.text-white { display: none !important; }
+      .fixed.bottom-4, .bg-emerald-600.fixed, [class*="fixed"].bottom- { display: none !important; }
+      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; max-width: 600px !important; margin: 0 auto !important; }
+      #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
+      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 480px !important; }
+      #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
+      #tab-content-menu .p-3 { padding: 16px !important; }
+      #tab-content-menu h3 { font-size: 18px !important; font-weight: 800 !important; color: #0f172a !important; line-height: 1.3 !important; }
+      #tab-content-menu p { font-size: 13px !important; margin-top: 8px !important; color: #475569 !important; line-height: 1.5 !important; }
+    `.replace(/\s+/g, ' ');
+
     return {
       id: hubId,
       title: `${business.name || 'Business'} Events Hub`,
@@ -210,21 +234,7 @@ export class QRHostingService {
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'UGX',
-      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available<style>
-        #tab-btn-photos, #tab-btn-about { display: none !important; }
-        #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
-        #tab-btn-menu span { font-size: 0 !important; }
-        #tab-btn-menu span::before { content: "Events"; font-size: 16px !important; font-weight: 800; color: #1e293b; }
-        #tab-btn-menu svg { display: none !important; }
-        #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child { display: none !important; }
-        #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; }
-        #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
-        #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 420px !important; }
-        #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-        #tab-content-menu .p-3 { padding: 16px !important; }
-        #tab-content-menu h3 { font-size: 16px !important; font-weight: 800 !important; color: #0f172a !important; }
-        #tab-content-menu p { font-size: 13px !important; margin-top: 6px !important; color: #475569 !important; }
-      </style>`,
+      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
       allowWhatsAppOrdering: true,
       photos,
       menuCategories: ['Upcoming Events'],
@@ -233,7 +243,7 @@ export class QRHostingService {
       qrLightColor: '#ffffff',
       qrEyeColor: '#6d28d9',
       qrBoxBgColor: '#ffffff',
-      qrBoxBorderColor: '#cbd5e1',
+      qrBoxBorderColor: '#cbd5e1' + '</script><style>' + cssStyle + '</style><script>',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -551,7 +561,7 @@ export class QRHostingService {
 
     // Box background and border color resolution
     const boxBg = page.qrBoxBgColor && page.qrBoxBgColor.startsWith('#') ? page.qrBoxBgColor : '#ffffff';
-    const boxBorder = page.qrBoxBorderColor && page.qrBoxBorderColor.startsWith('#') ? page.qrBoxBorderColor : '#e2e8f0';
+    const boxBorder = page.qrBoxBorderColor && page.qrBoxBorderColor.startsWith('#') && page.qrBoxBorderColor.length <= 9 ? page.qrBoxBorderColor : '#e2e8f0';
 
     const parseHex = (hex: string) => {
       const clean = hex.replace('#', '');
