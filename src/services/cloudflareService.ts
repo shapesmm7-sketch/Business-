@@ -974,7 +974,10 @@ export const CloudflareService = {
    */
   async getWorkOSConfig(): Promise<WorkOSAuthConfig> {
     const config = this.getConfig();
-    const cleanUrl = normalizeUrl(config.workerUrl);
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
+      ? normalizeUrl(currentOrigin)
+      : normalizeUrl(config.workerUrl);
     try {
       const headers = this.getAuthHeaders();
       const res = await fetch(`${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`, {
@@ -1004,7 +1007,10 @@ export const CloudflareService = {
    */
   async authenticateWorkOSCode(code: string, redirectUri?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     const config = this.getConfig();
-    const cleanUrl = normalizeUrl(config.workerUrl);
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
+      ? normalizeUrl(currentOrigin)
+      : normalizeUrl(config.workerUrl);
     try {
       const headers = this.getAuthHeaders();
       headers['Content-Type'] = 'application/json';

@@ -71,30 +71,6 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         } finally {
           setIsSubmitting(false);
         }
-      } else if (event.data?.type === 'SIMULATED_GOOGLE_SIGNIN_SUCCESS') {
-        const { email, name } = event.data;
-        setIsSubmitting(true);
-        setStatusMsg({ type: 'info', text: 'Signing in with Google Account...' });
-        try {
-          const res = await WorkOSAuthService.signInWithGoogle(email, name);
-          if (res.success && res.user) {
-            setCurrentUser(res.user);
-            if (onUserChange) onUserChange(res.user);
-            setStatusMsg({
-              type: 'success',
-              text: 'Google Sign-In successful! Profile, email & data saved to Cloud.',
-            });
-            setTimeout(() => {
-              onClose();
-            }, 1500);
-          } else {
-            setStatusMsg({ type: 'error', text: res.message || 'Google Sign-In failed' });
-          }
-        } catch (err: any) {
-          setStatusMsg({ type: 'error', text: err?.message || 'Authentication error' });
-        } finally {
-          setIsSubmitting(false);
-        }
       }
     };
 
@@ -136,22 +112,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         return;
       }
 
-      // Open unconfigured simulated Google Sign-In popup
-      setStatusMsg({ type: 'info', text: 'Opening Google Sign-In...' });
-      
-      const simulateUrl = `${window.location.origin}${window.location.pathname}?simulate-google-signin=true`;
-      const popup = window.open(
-        simulateUrl,
-        'google_signin_popup',
-        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
-      );
-
-      if (!popup) {
-        setStatusMsg({
-          type: 'error',
-          text: 'Popup blocked! Please allow popups for this site to sign in with Google.',
-        });
-      }
+      // If configuration is missing, guide the user directly on screen
+      setStatusMsg({
+        type: 'error',
+        text: 'Live Google Sign-In setup is pending. Please configure WORKOS_CLIENT_ID and WORKOS_API_KEY environment variables in your Cloudflare dashboard.',
+      });
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });
     } finally {

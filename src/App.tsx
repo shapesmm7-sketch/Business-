@@ -767,11 +767,10 @@ export function App() {
     StorageService.saveSettings(updated);
   };
 
-  // Check if we are inside an OAuth popup window or simulated sign-in popup
-  const isSimulatedGoogleSignIn = typeof window !== 'undefined' && window.location.search.includes('simulate-google-signin=true');
-  const isOauthPopup = typeof window !== 'undefined' && window.opener && (window.location.search.includes('code=') || window.location.pathname.includes('/auth/callback'));
+  // Check if we are inside an OAuth popup window or callback
+  const isOauthPopup = typeof window !== 'undefined' && window.opener && (window.location.search.includes('code=') || window.location.search.includes('error=') || window.location.pathname.includes('/auth/callback'));
 
-  if (isSimulatedGoogleSignIn || isOauthPopup) {
+  if (isOauthPopup) {
     return <GoogleAuthPopupPage />;
   }
 
