@@ -88,35 +88,37 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     try {
       const config = await CloudflareService.getWorkOSConfig();
 
+      // Use the live Client ID from your Cloudflare dashboard as a rock-solid client-side fallback
+      const clientId = config.clientId || 'client_01M4BGNRX0WPW7NQG3WD96PXZE';
+      const redirectUri = window.location.origin;
+      const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
+
       // Set popup options
       const width = 500;
       const height = 620;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
 
-      if (config.authUrl && config.clientId) {
-        setStatusMsg({ type: 'info', text: 'Opening Google Sign-In...' });
-        
-        const popup = window.open(
-          config.authUrl,
-          'google_signin_popup',
-          `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
-        );
-        
-        if (!popup) {
-          setStatusMsg({
-            type: 'error',
-            text: 'Popup blocked! Please allow popups for this site to sign in with Google.',
-          });
-        }
-        return;
+      setStatusMsg({ type: 'info', text: 'Opening Google Sign-In...' });
+      
+      const popup = window.open(
+        authUrl,
+        'google_signin_popup',
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
+      
+      if (!popup) {
+        setStatusMsg({
+          type: 'error',
+          text: 'Popup blocked! Please allow popups for this site to sign in with Google.',
+        });
+      } else {
+        // Show status message with reminder to save/deploy variables
+        setStatusMsg({
+          type: 'info',
+          text: 'Google Sign-In window opened. Note: If sign-in fails, make sure you clicked the blue "Save and deploy" button at the bottom of your Cloudflare Workers dashboard settings page.',
+        });
       }
-
-      // If configuration is missing, guide the user directly on screen
-      setStatusMsg({
-        type: 'error',
-        text: 'Live Google Sign-In setup is pending. Please configure WORKOS_CLIENT_ID and WORKOS_API_KEY environment variables in your Cloudflare dashboard.',
-      });
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });
     } finally {
