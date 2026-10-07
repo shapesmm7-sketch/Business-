@@ -27,7 +27,7 @@ import { QRHostingService } from './services/qrHostingService';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Ticket } from 'lucide-react';
 import {
   ActiveScreen,
   AppSettings,
@@ -39,32 +39,65 @@ import {
   AppLockConfig,
 } from './types';
 
+export function getQrPageIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  // 1. Check query parameters
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery =
+    params.get('qr') ||
+    params.get('event') ||
+    params.get('eventId') ||
+    (params.get('events') ? 'events-hub-all' : null);
+  if (fromQuery) return fromQuery;
+
+  // 2. Check pathname: /qr/:pageId
+  const pathname = window.location.pathname || '';
+  if (pathname.includes('/qr/')) {
+    const afterQr = pathname.split('/qr/')[1];
+    if (afterQr) {
+      const pageId = afterQr.split('/')[0].split('?')[0].split('#')[0].trim();
+      if (pageId) return decodeURIComponent(pageId);
+    }
+  }
+
+  return null;
+}
+
+export function isCustomerPathFromUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  if (
+    params.get('qr') ||
+    params.get('photoId') ||
+    params.get('photo') ||
+    params.get('itemId') ||
+    params.get('item') ||
+    params.get('tab') ||
+    params.get('event') ||
+    params.get('eventId') ||
+    params.get('events')
+  ) {
+    return true;
+  }
+  const pathname = window.location.pathname || '';
+  return Boolean(pathname.includes('/qr/'));
+}
+
 export function App() {
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
   );
   const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (
-        params.get('qr') ||
-        params.get('photoId') ||
-        params.get('photo') ||
-        params.get('itemId') ||
-        params.get('item')
-      ) {
-        return false;
-      }
+    if (isCustomerPathFromUrl()) {
+      return false;
     }
     return StorageService.isAppLocked();
   });
 
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('qr') || params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
-        return 'qr-customer-view';
-      }
+    if (isCustomerPathFromUrl()) {
+      return 'qr-customer-view';
     }
     return 'home';
   });
@@ -75,12 +108,12 @@ export function App() {
   const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(null);
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const qrPageId = params.get('qr');
+      const qrPageId = getQrPageIdFromUrl();
       if (qrPageId) {
         const found = StorageService.getHostedQRPage(qrPageId);
         if (found) return found;
       }
+      const params = new URLSearchParams(window.location.search);
       if (params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
         const pages = StorageService.getHostedQRPages();
         if (pages[0]) return pages[0];
@@ -115,19 +148,7 @@ export function App() {
     return undefined;
   });
   const [isCustomerViewMode, setIsCustomerViewMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (
-        params.get('qr') ||
-        params.get('photoId') ||
-        params.get('photo') ||
-        params.get('itemId') ||
-        params.get('item')
-      ) {
-        return true;
-      }
-    }
-    return false;
+    return isCustomerPathFromUrl();
   });
   const [lifecycleAlert, setLifecycleAlert] = useState<{
     title: string;
@@ -158,12 +179,12 @@ export function App() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const qrPageId = params.get('qr') || params.get('event') || params.get('eventId') || (params.get('events') ? 'events-hub-all' : null);
+      const qrPageId = getQrPageIdFromUrl();
       const photoIdParam = params.get('photo') || params.get('photoId');
       const itemIdParam = params.get('item') || params.get('itemId');
       const tabParam = params.get('tab');
 
-      const hasCustomerParam = qrPageId || photoIdParam || itemIdParam || tabParam;
+      const hasCustomerParam = Boolean(qrPageId || photoIdParam || itemIdParam || tabParam || isCustomerPathFromUrl());
 
       if (hasCustomerParam) {
         if (photoIdParam) {
@@ -397,16 +418,7 @@ export function App() {
       setLockConfig(currentCfg);
 
       // Check if the customer QR public view is active
-      const isPublic = typeof window !== 'undefined' && (() => {
-        const params = new URLSearchParams(window.location.search);
-        return Boolean(
-          params.get('qr') ||
-          params.get('photoId') ||
-          params.get('photo') ||
-          params.get('itemId') ||
-          params.get('item')
-        );
-      })();
+      const isPublic = isCustomerPathFromUrl();
 
       if (isPublic) return;
 
@@ -674,16 +686,7 @@ export function App() {
     StorageService.saveSettings(updated);
   };
 
-  const isPublicCustomerView = typeof window !== 'undefined' && (() => {
-    const params = new URLSearchParams(window.location.search);
-    return Boolean(
-      params.get('qr') ||
-      params.get('photoId') ||
-      params.get('photo') ||
-      params.get('itemId') ||
-      params.get('item')
-    );
-  })();
+  const isPublicCustomerView = isCustomerPathFromUrl();
 
   // If App PIN is active and app is locked, lock the WHOLE APP completely
   if (!isPublicCustomerView && isAppLocked && lockConfig && lockConfig.isEnabled) {
@@ -1000,24 +1003,36 @@ export function App() {
         )}
 
         {activeScreen === 'qr-customer-view' && (
-          <QRCustomerViewScreen
-            page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
-            initialTab={customerInitialTab}
-            initialItemId={customerInitialItemId}
-            initialPhotoId={customerInitialPhotoId}
-            onBackToApp={() => {
-              if (isCustomerViewMode) {
-                if (typeof window !== 'undefined' && window.history) {
-                  window.history.replaceState({}, document.title, window.location.pathname);
+          (activeCustomerPage || StorageService.getHostedQRPages()[0]) ? (
+            <QRCustomerViewScreen
+              page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
+              initialTab={customerInitialTab}
+              initialItemId={customerInitialItemId}
+              initialPhotoId={customerInitialPhotoId}
+              onBackToApp={() => {
+                if (isCustomerViewMode) {
+                  if (typeof window !== 'undefined' && window.history) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }
+                  setIsCustomerViewMode(false);
+                  handleNavigate('home');
+                } else {
+                  handleNavigate('qr-hosting');
                 }
-                setIsCustomerViewMode(false);
-                handleNavigate('home');
-              } else {
-                handleNavigate('qr-hosting');
-              }
-            }}
-            isMerchantPreview={!isCustomerViewMode}
-          />
+              }}
+              isMerchantPreview={!isCustomerViewMode}
+            />
+          ) : (
+            <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4 font-sans">
+              <div className="w-14 h-14 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center animate-pulse border border-purple-500/30 shadow-xl">
+                <Ticket className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black tracking-tight">Loading Page & Event Details...</h3>
+                <p className="text-xs text-slate-400">Fetching live page from Cloudflare</p>
+              </div>
+            </div>
+          )
         )}
 
         {activeScreen === 'upgrade' && (
