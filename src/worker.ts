@@ -94,7 +94,14 @@ export default {
         let user: any = null;
 
         // If WORKOS_API_KEY and WORKOS_CLIENT_ID exist, exchange code with WorkOS API
-        if (env.WORKOS_API_KEY && env.WORKOS_CLIENT_ID && code) {
+        if (env.WORKOS_API_KEY && env.WORKOS_CLIENT_ID) {
+          if (!code) {
+            return new Response(
+              JSON.stringify({ ok: false, success: false, error: 'No authorization code provided' }),
+              { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+
           const workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -105,6 +112,7 @@ export default {
               grant_type: 'authorization_code',
             }),
           });
+
           if (workosRes.ok) {
             const wData: any = await workosRes.json();
             user = {
@@ -119,7 +127,33 @@ export default {
               updatedAt: new Date().toISOString(),
               syncedToCloudflare: true,
             };
+          } else {
+            const errData: any = await workosRes.json().catch(() => null);
+            const errMsg = errData?.error_description || errData?.message || `WorkOS exchange failed (HTTP ${workosRes.status})`;
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                success: false,
+                error: `WorkOS Error: ${errMsg}. Check that your WORKOS_CLIENT_ID and WORKOS_API_KEY variables in Cloudflare settings match exactly.`
+              }),
+              {
+                status: 400,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+              }
+            );
           }
+        } else {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              error: 'WORKOS_CLIENT_ID or WORKOS_API_KEY environment variables are missing from your Cloudflare Worker configuration.'
+            }),
+            {
+              status: 400,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            }
+          );
         }
 
         // If user obtained or provided via payload, store user in Cloudflare R2
