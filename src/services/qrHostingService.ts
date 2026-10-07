@@ -244,8 +244,8 @@ export class QRHostingService {
 
     return {
       id: hubId,
-      title: `${business.name || 'Business'} Events Hub`,
-      tagline: 'All Upcoming Events & Passes',
+      title: 'Our Events',
+      tagline: undefined,
       description: `Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`,
       pageType: 'events_hub',
       accentColor: injectedAccentColor,
@@ -300,8 +300,8 @@ export class QRHostingService {
 
     return {
       id: hubId,
-      title: `${business.name || 'Official'} Websites & Apps`,
-      tagline: 'Verified Official Websites, Portals & Mobile Apps',
+      title: 'Our Sites',
+      tagline: undefined,
       description: `Official web links and verified online apps directory for ${business.name || 'our company'}.`,
       pageType: 'websites_hub',
       accentColor: '#2563eb',
@@ -368,7 +368,7 @@ export class QRHostingService {
 
     return {
       id: hubId,
-      title: `${business.name || 'Official'} Social Media Hub`,
+      title: 'our social media platforms',
       tagline: 'Connect Across All Official Social Channels & Messaging Apps',
       description: `Official verified social media profiles, chat channels, and community links for ${business.name || 'our brand'}.`,
       pageType: 'socials_hub',

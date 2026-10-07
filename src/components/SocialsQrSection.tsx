@@ -593,10 +593,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const handleShare = async () => {
     if (!activeUrl) return;
     const shareTitle = isAllSelected
-      ? `${business.name || 'Business'} Social Media Hub`
+      ? 'our social media platforms'
       : (activeItem?.title || 'Social QR');
     const shareText = isAllSelected
-      ? `Connect with ${business.name || 'us'} on all social media channels: ${activeUrl}`
+      ? `Connect with ${business.name || 'us'} on our social media platforms: ${activeUrl}`
       : `${activeItem?.ctaText || 'Connect'}: ${activeUrl}`;
     await shareContent({
       title: shareTitle,
@@ -609,13 +609,13 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
     const defaultTitle = isAllSelected
-      ? `${business.name || 'Business'} Social Media Hub`
+      ? 'our social media platforms'
       : (activeItem?.title || 'Social QR');
     const qrName = tableNumberForPrint
       ? `${defaultTitle} - ${tableNumberForPrint}`
       : defaultTitle;
     const defaultSubtitle = isAllSelected
-      ? `Connect on All ${items.length} Social Channels & Messaging Apps`
+      ? `Connect on all ${items.length} social channels`
       : (activeItem?.usernameOrPhone || activeItem?.ctaText || 'Scan to Connect');
     const defaultTag = tableNumberForPrint || (isAllSelected ? 'ALL SOCIAL CHANNELS' : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'SOCIAL').toUpperCase());
 
@@ -649,7 +649,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     setIsGeneratingPdf(true);
     try {
       const headline = isAllSelected
-        ? `${business.name || 'Official'} Social Media Hub`
+        ? 'our social media platforms'
         : (activeItem?.title || 'Official Socials');
       const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
       const subline = isAllSelected
@@ -793,7 +793,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Social Accounts (1 Code)</span>
+          <span>ALL Social Accounts</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -975,7 +975,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full text-white mb-1.5 shadow-2xs"
                   style={{ backgroundColor: activeDarkColor }}
                 >
-                  {isAllSelected ? `UNIFIED HUB (${items.length} CHANNELS)` : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
+                  {isAllSelected ? `SOCIALS HUB (${items.length} CHANNELS)` : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                   {isAllSelected ? `${business.name || 'Official'} Social Media & Messaging Hub` : activeItem?.title}
@@ -994,7 +994,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 {isAllSelected ? (
                   <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2">
                     <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Connected Channels in this 1 QR Code ({items.length}):
+                      Connected Channels ({items.length}):
                     </span>
                     <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
                       {items.map((it) => {
@@ -1066,19 +1066,21 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Customer View</span>
+                    <span>Preview</span>
                   </button>
                 )}
 
-                <a
-                  href={activeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>{isAllSelected ? 'Open Live Hub' : 'Open Link'}</span>
-                </a>
+                {!isAllSelected && activeUrl && (
+                  <a
+                    href={activeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Link</span>
+                  </a>
+                )}
 
                 {!isAllSelected && activeItem && (
                   <button

@@ -199,8 +199,8 @@ export default {
 
               const page = {
                 id: pageId,
-                title: `${profile.name || 'Official'} Websites & Apps`,
-                tagline: 'Verified Official Websites, Portals & Mobile Apps',
+                title: 'Our Sites',
+                tagline: undefined,
                 description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
                 pageType: 'websites_hub',
                 accentColor: '#2563eb',
@@ -262,7 +262,7 @@ export default {
 
               const page = {
                 id: pageId,
-                title: `${profile.name || 'Official'} Social Media Hub`,
+                title: 'our social media platforms',
                 tagline: 'Connect Across All Official Social Channels & Messaging Apps',
                 description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
                 pageType: 'socials_hub',
@@ -323,8 +323,8 @@ export default {
 
               const page = {
                 id: pageId,
-                title: `${profile.name || 'Official'} Events & Invitations`,
-                tagline: 'Upcoming Conferences, Galas, Workshops & Special Events',
+                title: 'Our Events',
+                tagline: undefined,
                 description: `Browse upcoming events and get access passes for ${profile.name || 'our organization'}.`,
                 pageType: 'events_hub',
                 accentColor: '#7c3aed',
@@ -478,8 +478,8 @@ export default {
 
             const webHubPage = {
               id: hubId,
-              title: `${profile.name || 'Official'} Websites & Apps`,
-              tagline: 'Verified Official Websites, Portals & Mobile Apps',
+              title: 'Our Sites',
+              tagline: undefined,
               description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
               pageType: 'websites_hub',
               accentColor: '#2563eb',
@@ -535,7 +535,7 @@ export default {
 
             const socialHubPage = {
               id: hubId,
-              title: `${profile.name || 'Official'} Social Media Hub`,
+              title: 'our social media platforms',
               tagline: 'Connect Across All Official Social Channels & Messaging Apps',
               description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
               pageType: 'socials_hub',
@@ -590,8 +590,8 @@ export default {
 
             const eventsHubPage = {
               id: hubId,
-              title: `${profile.name || 'Official'} Events & Invitations`,
-              tagline: 'Upcoming Conferences, Galas, Workshops & Special Events',
+              title: 'Our Events',
+              tagline: undefined,
               description: `Browse upcoming events and get access passes for ${profile.name || 'our organization'}.`,
               pageType: 'events_hub',
               accentColor: '#7c3aed',

@@ -17,11 +17,14 @@ import {
   Shield,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  RefreshCw,
   Ban,
   Lock,
 } from 'lucide-react';
-import { ActiveScreen, AppBackupData, AppSettings } from '../types';
+import { ActiveScreen, AppBackupData, AppSettings, CloudflareConfig } from '../types';
 import { StorageService } from '../services/storage';
+import { CloudflareService } from '../services/cloudflareService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { BluetoothPrinterSettings } from './BluetoothPrinterSettings';
 
@@ -40,9 +43,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onDataRestored,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+  const [cfConfig, setCfConfig] = useState<CloudflareConfig>(() => CloudflareService.getConfig());
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     setLocalSettings(settings);
+    setCfConfig(CloudflareService.getConfig());
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
@@ -54,6 +60,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  const handleBackupNow = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await CloudflareService.syncAllToCloudflare();
+      const updatedCf = CloudflareService.getConfig();
+      setCfConfig(updatedCf);
+      if (res.success) {
+        showToast('Backup completed! Cloudflare sync successful.');
+      } else {
+        showToast(`Backup note: ${res.message || 'Synced locally'}`);
+      }
+    } catch (err) {
+      showToast('Failed to complete Cloudflare backup');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const lastSyncAt = cfConfig?.lastSyncAt;
+  const daysSinceSync = lastSyncAt
+    ? Math.floor((Date.now() - new Date(lastSyncAt).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const needsBackupReminder = lastSyncAt === undefined || daysSinceSync === null || daysSinceSync >= 7;
 
   const handleFieldChange = <K extends keyof AppSettings>(
     field: K,
@@ -257,6 +287,66 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-500" />
           </div>
         </button>
+      </div>
+
+      {/* Cloudflare Sync Backup Reminder Card */}
+      <div
+        id="card-cloudflare-backup-reminder"
+        className={`rounded-2xl p-4 border shadow-xs transition-all ${
+          needsBackupReminder
+            ? 'bg-amber-500/10 dark:bg-amber-950/40 border-amber-500/30 text-amber-950 dark:text-amber-100'
+            : 'bg-emerald-500/10 dark:bg-emerald-950/30 border-emerald-500/30 text-emerald-950 dark:text-emerald-100'
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                needsBackupReminder
+                  ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              {needsBackupReminder ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black uppercase tracking-wider">
+                  {needsBackupReminder ? 'Cloud Backup Reminder' : 'Cloud Backup Up to Date'}
+                </span>
+                {needsBackupReminder && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500 text-slate-950">
+                    {daysSinceSync === null ? 'Sync Needed' : `${daysSinceSync} Days Since Sync`}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs mt-0.5 text-slate-600 dark:text-slate-300 leading-snug">
+                {needsBackupReminder
+                  ? `It has been ${
+                      daysSinceSync === null ? 'more than 7 days' : `${daysSinceSync} days`
+                    } since your last successful Cloudflare sync. Tap 'Backup Now' to sync database & receipts.`
+                  : `Last successful Cloudflare sync was ${
+                      daysSinceSync === 0 ? 'today' : `${daysSinceSync} day${daysSinceSync === 1 ? '' : 's'} ago`
+                    }.`}
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="btn-settings-backup-now"
+            type="button"
+            disabled={isSyncing}
+            onClick={handleBackupNow}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer ${
+              needsBackupReminder
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            } ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Syncing...' : 'Backup Now'}</span>
+          </button>
+        </div>
       </div>
 
       {/* 4. Data Backup & Restore */}

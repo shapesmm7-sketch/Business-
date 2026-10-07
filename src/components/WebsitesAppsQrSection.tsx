@@ -479,7 +479,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Websites & Apps (1 Code)</span>
+          <span>ALL Websites & Apps</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -657,13 +657,13 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                 <div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 mb-1.5">
                     <Layers className="w-3 h-3" />
-                    ALL WEBSITES & APPS HUB ({items.length})
+                    OUR SITES HUB ({items.length})
                   </span>
                   <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                    {business.name || 'Official'} Websites & Apps Hub
+                    Our Sites
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    A single unified QR code that opens an online directory with all your official websites, mobile app downloads & direct booking portals.
+                    A QR code that opens an online directory with all your official websites, mobile app downloads & direct booking portals.
                   </p>
 
                   {/* Quick Directory Preview of Included Links */}
@@ -760,11 +760,11 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Customer View</span>
+                    <span>Preview</span>
                   </button>
                 )}
 
-                {activeUrl && (
+                {!isAllSelected && activeUrl && (
                   <a
                     href={activeUrl}
                     target="_blank"
@@ -772,7 +772,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>{isAllSelected ? 'Open Live Hub' : 'Open Link'}</span>
+                    <span>Open Link</span>
                   </a>
                 )}
 

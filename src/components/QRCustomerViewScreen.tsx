@@ -590,14 +590,16 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               )}
 
               <div className="flex-1 min-w-0">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold tracking-wide uppercase border border-purple-500/30 mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                  <span>{isEventsHub ? 'Upcoming Events Hub' : 'RSVP Open'}</span>
-                </div>
+                {!isEventsHub && (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold tracking-wide uppercase border border-purple-500/30 mb-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                    <span>RSVP Open</span>
+                  </div>
+                )}
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {page.title}
+                  {isEventsHub || (page.title && page.title.toLowerCase().includes('events')) ? 'Our Events' : page.title}
                 </h1>
-                {page.tagline && (
+                {page.tagline && !isEventsHub && !page.tagline.toLowerCase().includes('upcoming events') && !page.tagline.toLowerCase().includes('passes') && (
                   <p className="text-xs sm:text-sm text-purple-200/90 font-medium mt-1 leading-snug">
                     {page.tagline}
                   </p>
@@ -645,7 +647,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         </div>
 
         {/* Announcement Banner */}
-        {page.announcement && (
+        {page.announcement && !page.announcement.includes('0 Upcoming Events') && (
           <div className="bg-purple-50 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-900/60 px-4 py-2.5 text-xs text-purple-900 dark:text-purple-200 font-semibold flex items-center gap-2 shadow-2xs">
             <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
             <p className="flex-1">{page.announcement}</p>
@@ -915,6 +917,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               </div>
             </div>
           )}
+
+          {/* Footer */}
+          <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800">
+            <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
+          </div>
         </main>
 
         {/* Lightbox Modal */}
@@ -1140,16 +1147,14 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               )}
 
               <div className="flex-1 min-w-0">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[11px] font-bold tracking-wide uppercase border border-blue-500/30 mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span>Verified Online Portals</span>
-                </div>
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {page.title}
+                  {page.title && !page.title.toLowerCase().includes('official websites & apps') ? page.title : 'Our Sites'}
                 </h1>
-                <p className="text-xs sm:text-sm text-blue-200/90 font-medium mt-1 leading-snug">
-                  {page.tagline || 'Official Websites, Mobile Apps & Online Portals'}
-                </p>
+                {page.tagline && !page.tagline.toLowerCase().includes('verified official websites') && !page.tagline.toLowerCase().includes('portals & mobile apps') && (
+                  <p className="text-xs sm:text-sm text-blue-200/90 font-medium mt-1 leading-snug">
+                    {page.tagline}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1342,15 +1347,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             </div>
           )}
 
-          {/* Verified Directory Footer */}
-          <div className="pt-6 pb-4 text-center space-y-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
-              <span>Verified Directory • Protected by Cloudflare & Brivu</span>
-            </div>
-            {page.address && (
-              <p className="text-[11px] text-slate-400">{page.address}</p>
-            )}
+          {/* Footer */}
+          <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800">
+            <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
           </div>
         </main>
       </div>
@@ -1409,7 +1408,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
     const cleanWaNumber = (page.whatsapp || page.phone || '').replace(/[^0-9]/g, '');
     const defaultDirectoryMsg = encodeURIComponent(
-      `👋 Hello *${page.title}*,\nI found your official social media hub and would like to connect. Thank you!`
+      `👋 Hello *${page.title}*,\nI found your social media platforms and would like to connect. Thank you!`
     );
     const waDirectoryUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${defaultDirectoryMsg}` : '';
 
@@ -1517,12 +1516,8 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               )}
 
               <div className="flex-1 min-w-0">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold tracking-wide uppercase border border-emerald-500/30 mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Verified Official Channels</span>
-                </div>
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {page.title}
+                  {page.title && page.title.toLowerCase().includes('social media hub') ? 'our social media platforms' : page.title}
                 </h1>
                 <p className="text-xs sm:text-sm text-emerald-200/90 font-medium mt-1 leading-snug">
                   {page.tagline || 'Connect Across All Official Social Channels & Messaging Apps'}
@@ -1701,15 +1696,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             </div>
           )}
 
-          {/* Verified Directory Footer */}
-          <div className="pt-6 pb-4 text-center space-y-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Official Social Hub • Protected by Cloudflare & Brivu</span>
-            </div>
-            {page.address && (
-              <p className="text-[11px] text-slate-400">{page.address}</p>
-            )}
+          {/* Footer */}
+          <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800">
+            <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
           </div>
         </main>
       </div>
@@ -1723,7 +1712,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         <div className="bg-emerald-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
-            <span>Customer View Mode (Live Preview)</span>
+            <span>Preview Mode</span>
           </div>
           {onBackToApp && (
             <button

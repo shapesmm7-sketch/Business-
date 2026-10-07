@@ -389,7 +389,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         await navigator.clipboard.writeText(activeUrl);
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
-        showToast(isAllSelected ? 'ALL Events Hub link copied!' : 'Event page link copied to clipboard!');
+        showToast(isAllSelected ? 'Our Events link copied!' : 'Event page link copied to clipboard!');
       }
     } catch {
       showToast('Failed to copy link.');
@@ -398,7 +398,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const handleShare = async () => {
     if (!activeUrl) return;
-    const title = isAllSelected ? `${business.name || 'Business'} Events Hub` : (activeItem?.title || 'Event Page');
+    const title = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event Page');
     await shareContent({
       title,
       text: `${title}: ${activeUrl}`,
@@ -462,13 +462,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
-    const defaultTitle = isAllSelected ? `${business.name || 'Business'} ALL Events Hub` : (activeItem?.title || 'Event QR');
+    const defaultTitle = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event QR');
     const qrName = tableNumberForPrint
       ? `${defaultTitle} - ${tableNumberForPrint}`
       : defaultTitle;
     const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
     const subtitle = isAllSelected
-      ? `Connect to All ${items.length} Upcoming Events & Schedules`
+      ? `Our Events (${items.length})`
       : (dtFormatted
         ? `${dtFormatted}${activeItem?.location ? ` • ${activeItem.location}` : ''}`
         : (activeItem?.location || activeItem?.ctaText || 'Scan to RSVP'));
@@ -477,7 +477,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
       subtitle: subtitle || 'Scan to RSVP & Join Event',
-      tag: tableNumberForPrint || (isAllSelected ? 'ALL EVENTS HUB' : 'EVENT INVITATION'),
+      tag: tableNumberForPrint || (isAllSelected ? 'OUR EVENTS' : 'EVENT INVITATION'),
       urlOrHandle: activeUrl,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
@@ -502,12 +502,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const headline = isAllSelected ? `${business.name || 'Business'} Events Hub` : (activeItem?.title || 'Event Pass');
+      const headline = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event Pass');
       const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
       const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
       const sublineParts: string[] = [];
       if (isAllSelected) {
-        sublineParts.push(`All ${items.length} Upcoming Events & Passes`);
+        sublineParts.push(`Our Events (${items.length})`);
       } else {
         if (dtFormatted) sublineParts.push(dtFormatted);
         if (activeItem?.location) sublineParts.push(`📍 ${activeItem.location}`);
@@ -520,10 +520,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         subline,
         qrNameOrTableNumber: tableNumberForPrint || undefined,
         qrDataUrl: activeQrDataUrl,
-        calloutText: isAllSelected ? 'SCAN FOR ALL EVENTS & RSVP' : (activeItem?.ctaText || 'SCAN FOR EVENT PASS & RSVP'),
+        calloutText: isAllSelected ? 'SCAN FOR OUR EVENTS & RSVP' : (activeItem?.ctaText || 'SCAN FOR EVENT PASS & RSVP'),
         urlOrHandleText: activeUrl,
         description: isAllSelected
-          ? `Access all upcoming schedule, ticket RSVP, venue locations & calendar passes in 1 scan`
+          ? `Access event schedule, ticket RSVP, venue locations & calendar passes`
           : (activeItem?.description || (activeItem?.location ? `Venue: ${activeItem.location}` : undefined)),
         accentColor: activeDarkColor,
         filename: `${safeName}_Table_Wall_Poster.pdf`,
@@ -543,7 +543,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   };
 
   if (isEditingQrColors) {
-    const editorTitle = isAllSelected ? `${business.name || 'Business'} ALL Events Hub` : (activeItem?.title || 'Event QR');
+    const editorTitle = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event QR');
     return (
       <QRCodeColorEditorScreen
         title={editorTitle}
@@ -599,7 +599,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Events & Invitations (1 Code)</span>
+          <span>ALL Events & Invitations</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -766,66 +766,59 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 </button>
               </div>
 
-              <span className="text-[11px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800/60">
-                {isAllSelected ? `Scan for All ${items.length} Upcoming Events` : activeItem?.ctaText}
-              </span>
+              {!isAllSelected && activeItem?.ctaText && (
+                <span className="text-[11px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-3 py-1 rounded-full border border-purple-200 dark:border-purple-800/60">
+                  {activeItem.ctaText}
+                </span>
+              )}
             </div>
 
             {/* Info & Action Controls */}
             <div className="flex-1 min-w-0 space-y-4 w-full text-left">
-              <div>
-                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
-                  <Calendar className="w-3 h-3" />
-                  {isAllSelected ? `UNIFIED EVENTS HUB (${items.length} EVENTS)` : 'Event Invitation'}
-                </span>
-                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                  {isAllSelected ? `${business.name || 'Official'} Events & Schedule Hub` : activeItem?.title}
-                </h2>
+              {isAllSelected ? (
+                <div>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
+                    <Layers className="w-3 h-3" />
+                    OUR EVENTS HUB {items.length > 0 ? `(${items.length})` : ''}
+                  </span>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                    Our Events
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                    A directory displaying your upcoming events, schedules, and ticket RSVP links.
+                  </p>
 
-                {/* Interactive Connected Host Events Preview when ALL is selected */}
-                {isAllSelected ? (
-                  <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2">
-                    <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Upcoming Events in this 1 QR Code ({items.length}):
-                    </span>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {items.map((it) => (
-                        <div
-                          key={it.id}
-                          className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs"
-                        >
-                          <div className="min-w-0 flex items-center gap-2">
-                            {it.photos && it.photos[0] ? (
-                              <img src={it.photos[0]} alt={it.title} className="w-8 h-8 rounded-lg object-cover shrink-0" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 font-bold flex items-center justify-center shrink-0 text-xs">
-                                <Ticket className="w-4 h-4" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{it.title}</p>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                                <MapPin className="w-3 h-3 text-purple-500 shrink-0" />
-                                <span>{it.location || 'Location TBD'}</span>
-                              </p>
-                            </div>
+                  {items.length > 0 && (
+                    <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Upcoming Events ({items.length})
+                      </span>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        {items.map((it) => (
+                          <div key={it.id} className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs">
+                            <span className="font-bold truncate text-slate-800 dark:text-slate-200">{it.title}</span>
+                            <span className="text-[10px] text-purple-600 dark:text-purple-400 font-semibold shrink-0">{it.startDate || 'Upcoming'}</span>
                           </div>
-                          <a
-                            href={it.rsvpUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-[10px] shrink-0 transition flex items-center gap-1"
-                          >
-                            <span>RSVP</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Event Photos Showcase Gallery */}
+                  )}
+                </div>
+              ) : activeItem ? (
+                <div>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
+                    <Calendar className="w-3 h-3" />
+                    Event Invitation
+                  </span>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                    {activeItem.title}
+                  </h2>
+                </div>
+              ) : null}
+
+              {!isAllSelected && (
+                <>
+                  {/* Event Photos Showcase Gallery */}
                     {activeItem?.photos && activeItem.photos.length > 0 && (
                       <div className="grid grid-cols-3 gap-2 my-3">
                         {activeItem.photos.map((photo, pIdx) => (
@@ -928,19 +921,21 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Customer View</span>
+                    <span>Preview</span>
                   </button>
                 )}
 
-                <a
-                  href={activeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>{isAllSelected ? 'Open Live Hub' : 'Open Event Page'}</span>
-                </a>
+                {!isAllSelected && activeUrl && (
+                  <a
+                    href={activeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Event Page</span>
+                  </a>
+                )}
 
                 {!isAllSelected && activeItem && (
                   <button
@@ -955,7 +950,6 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               </div>
             </div>
           </div>
-        </div>
 
           {/* Printable Table Stand / Wall Poster Generator Card */}
           <div className="bg-purple-50/70 dark:bg-purple-950/30 rounded-3xl p-5 border border-purple-200 dark:border-purple-800/80 space-y-3">
