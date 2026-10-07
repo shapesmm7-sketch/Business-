@@ -10,7 +10,7 @@ workflows:
       - name: Install dependencies
         script: |
           npm install --legacy-peer-deps
-          npm install @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 --no-save --legacy-peer-deps || true
+          npm install @tailwindcss/oxide-darwin-arm64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @esbuild/darwin-arm64 --no-save --legacy-peer-deps || true
       - name: Build Web Production Bundle
         script: |
           npm run build
@@ -81,7 +81,7 @@ workflows:
       - name: Install dependencies
         script: |
           npm install --legacy-peer-deps
-          npm install @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 --no-save --legacy-peer-deps || true
+          npm install @tailwindcss/oxide-darwin-arm64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @esbuild/darwin-arm64 --no-save --legacy-peer-deps || true
       - name: Build Web Production Bundle
         script: |
           npm run build
