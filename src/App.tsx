@@ -18,6 +18,7 @@ import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
+import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
 import { AdMobBanner } from './components/AdMobBanner';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
@@ -765,6 +766,14 @@ export function App() {
     setSettings(updated);
     StorageService.saveSettings(updated);
   };
+
+  // Check if we are inside an OAuth popup window or simulated sign-in popup
+  const isSimulatedGoogleSignIn = typeof window !== 'undefined' && window.location.search.includes('simulate-google-signin=true');
+  const isOauthPopup = typeof window !== 'undefined' && window.opener && (window.location.search.includes('code=') || window.location.pathname.includes('/auth/callback'));
+
+  if (isSimulatedGoogleSignIn || isOauthPopup) {
+    return <GoogleAuthPopupPage />;
+  }
 
   const isPublicCustomerView = isCustomerPathFromUrl();
 

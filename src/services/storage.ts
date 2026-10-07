@@ -27,6 +27,7 @@ import {
   AppLockConfig,
   CloudflareConfig,
   ThermalPrinterDevice,
+  WorkOSUser,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 import { CloudflareService } from './cloudflareService';
@@ -63,6 +64,7 @@ const STORAGE_KEYS = {
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
+  WORKOS_USER: 'quickreceipt_workos_user_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -2641,5 +2643,32 @@ export const StorageService = {
       console.warn('Wipe all cloud data error:', err);
       return { success: false, message: err.message || 'Purge failed' };
     }
+  },
+
+  getWorkOSUser(): WorkOSUser | null {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.WORKOS_USER);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  saveWorkOSUser(user: WorkOSUser | null): void {
+    try {
+      if (!user) {
+        localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+      } else {
+        localStorage.setItem(STORAGE_KEYS.WORKOS_USER, JSON.stringify(user));
+      }
+    } catch (err) {
+      console.warn('Failed to save WorkOS user to localStorage:', err);
+    }
+  },
+
+  clearWorkOSUser(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+    } catch {}
   },
 };

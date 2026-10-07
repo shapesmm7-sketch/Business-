@@ -664,3 +664,33 @@ export interface CloudflareSyncResponse {
   receiptsSaved?: number;
   data?: any;
 }
+
+export interface WorkOSUser {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  profilePictureUrl?: string;
+  emailVerified?: boolean;
+  provider?: 'google' | 'workos' | string;
+  updatedAt?: string;
+  syncedToCloudflare?: boolean;
+  cloudflareStoredAt?: string;
+}
+
+export interface WorkOSAuthConfig {
+  clientId?: string;
+  apiKeyConfigured?: boolean;
+  redirectUri?: string;
+  authUrl?: string;
+}
+
+export interface WorkOSAuthState {
+  user: WorkOSUser | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  lastSyncedAt?: string;
+  authProvider?: string;
+}
+

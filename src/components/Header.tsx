@@ -19,12 +19,18 @@ import {
   KeyRound,
   ShieldCheck,
   Gem,
+  Cloud,
+  LogIn,
+  LogOut,
+  User as UserIcon,
 } from 'lucide-react';
-import { ActiveScreen, BusinessProfile, AppLockConfig } from '../types';
+import { ActiveScreen, BusinessProfile, AppLockConfig, WorkOSUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NotificationModal } from './NotificationModal';
 import { RateUsModal } from './RateUsModal';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
+import { WorkOSGoogleAuthModal } from './WorkOSGoogleAuthModal';
+import { WorkOSAuthService } from '../services/workosAuthService';
 import { getLanguageByCode } from '../data/languages';
 import { t } from '../utils/i18n';
 import { StorageService } from '../services/storage';
@@ -61,9 +67,24 @@ export const Header: React.FC<HeaderProps> = ({
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isRateUsOpen, setIsRateUsOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const [isWorkosModalOpen, setIsWorkosModalOpen] = useState(false);
+  const [workosUser, setWorkosUser] = useState<WorkOSUser | null>(() =>
+    WorkOSAuthService.getCurrentUser()
+  );
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
   );
+
+  // Process OAuth redirect callback if returning from Google / WorkOS
+  useEffect(() => {
+    WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
+      if (usr) {
+        setWorkosUser(usr);
+        setToastMsg(`Welcome back, ${usr.name || usr.email}! Saved in Cloudflare.`);
+        setTimeout(() => setToastMsg(null), 4000);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (isMenuOpen) {
@@ -236,9 +257,44 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </button>
 
-          {/* Right Action Tools: PWA, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
+          {/* Right Action Tools: PWA, Google Sign-In, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton />
+
+            {/* Google Sign-In Button in Header Bar */}
+            <button
+              id="btn-header-google-auth"
+              type="button"
+              onClick={() => setIsWorkosModalOpen(true)}
+              className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-bold cursor-pointer ${
+                workosUser
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+              aria-label="Google Sign-In via WorkOS"
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span className="hidden xs:inline sm:inline text-[11px]">
+                {workosUser ? (workosUser.firstName || workosUser.name?.split(' ')[0] || 'Signed In') : 'Sign In'}
+              </span>
+            </button>
 
             {/* Quick Upgrade Button in Header Bar */}
             <button
@@ -327,6 +383,100 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Menu Sections List */}
             <div className="p-4 space-y-3 overflow-y-auto">
+              {/* TOP OF APPS MENU: GOOGLE SIGN IN CARD (WORKOS AUTHKIT) */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 text-white shadow-xl relative overflow-hidden">
+                <div className="flex items-center justify-between gap-3 relative z-10">
+                  {workosUser ? (
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="relative w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold shrink-0 border border-indigo-400/30">
+                        {workosUser.profilePictureUrl ? (
+                          <img
+                            src={workosUser.profilePictureUrl}
+                            alt={workosUser.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span>{(workosUser.name || workosUser.email)[0].toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-white truncate max-w-[130px]">
+                            {workosUser.name || workosUser.email}
+                          </span>
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-0.5">
+                            <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>Cloud Synced</span>
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-300 font-medium truncate mt-0.5">
+                          {workosUser.email} • Google Auth
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setIsWorkosModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition text-white shrink-0 cursor-pointer"
+                      >
+                        Account
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2.5 w-full">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-sm p-1.5">
+                          <svg className="w-full h-full" viewBox="0 0 24 24">
+                            <path
+                              fill="#4285F4"
+                              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                            />
+                            <path
+                              fill="#34A853"
+                              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                            />
+                            <path
+                              fill="#FBBC05"
+                              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                            />
+                            <path
+                              fill="#EA4335"
+                              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                            />
+                          </svg>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-black text-white flex items-center gap-1">
+                            <span>Sign in with Google</span>
+                          </div>
+                          <p className="text-[10px] text-indigo-200/90 font-medium truncate">
+                            sign in to save your data to cloud
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        id="btn-google-sign-in-top-menu"
+                        type="button"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setIsWorkosModalOpen(true);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span>Sign In</span>
+                        <LogIn className="w-3.5 h-3.5 text-slate-700" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* TOP OF APPS MENU: UPGRADE CARD */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 dark:from-black dark:via-indigo-950 dark:to-slate-950 border border-amber-500/30 text-white shadow-xl relative overflow-hidden">
                 {/* Visual Ambient Glows */}
@@ -626,6 +776,13 @@ export const Header: React.FC<HeaderProps> = ({
           setTimeout(() => setToastMsg(null), 3000);
         }}
         onClose={() => setIsLanguageModalOpen(false)}
+      />
+
+      {/* WorkOS Google Auth Modal */}
+      <WorkOSGoogleAuthModal
+        isOpen={isWorkosModalOpen}
+        onClose={() => setIsWorkosModalOpen(false)}
+        onUserChange={(usr) => setWorkosUser(usr)}
       />
 
       {/* Toast Notification Banner */}

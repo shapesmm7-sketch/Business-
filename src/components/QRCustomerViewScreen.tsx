@@ -42,6 +42,28 @@ import { StorageService } from '../services/storage';
 import { PhoneInputField } from './PhoneInputField';
 import { TouchZoomLightbox, LightboxImageItem } from './TouchZoomLightbox';
 
+export const cleanForbiddenWords = (text: string): string => {
+  if (!text) return '';
+  let cleaned = text;
+  // Case-insensitive replacements
+  cleaned = cleaned.replace(/verified online portals/gi, '');
+  cleaned = cleaned.replace(/verified official websites/gi, '');
+  cleaned = cleaned.replace(/portals & mobile apps/gi, '');
+  cleaned = cleaned.replace(/verified official channels/gi, '');
+  cleaned = cleaned.replace(/upcoming events hub/gi, '');
+  
+  // Replacements with custom text
+  cleaned = cleaned.replace(/official websites & apps/gi, 'our sites');
+  cleaned = cleaned.replace(/business events hub/gi, 'our Events');
+  cleaned = cleaned.replace(/official social media hub/gi, 'our social media platforms');
+  
+  // Clean up double spaces or trailing/leading punctuation
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  // If we cleaned up words, make sure we don't leave double commas or starting/trailing commas
+  cleaned = cleaned.replace(/,\s*,/g, ',').replace(/^,|,$/g, '').trim();
+  return cleaned;
+};
+
 interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
   onBackToApp?: () => void;
@@ -597,11 +619,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                   </div>
                 )}
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {isEventsHub || (page.title && page.title.toLowerCase().includes('events')) ? 'Our Events' : page.title}
+                  {cleanForbiddenWords(isEventsHub ? 'our Events' : (page.title || 'our Events'))}
                 </h1>
-                {page.tagline && !isEventsHub && !page.tagline.toLowerCase().includes('upcoming events') && !page.tagline.toLowerCase().includes('passes') && (
+                {page.tagline && !isEventsHub && cleanForbiddenWords(page.tagline) && (
                   <p className="text-xs sm:text-sm text-purple-200/90 font-medium mt-1 leading-snug">
-                    {page.tagline}
+                    {cleanForbiddenWords(page.tagline)}
                   </p>
                 )}
               </div>
@@ -841,9 +863,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                   {page.title}
                 </h2>
 
-                {page.description && (
+                {page.description && cleanForbiddenWords(page.description) && (
                   <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                    {page.description}
+                    {cleanForbiddenWords(page.description)}
                   </p>
                 )}
 
@@ -1148,11 +1170,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {page.title && !page.title.toLowerCase().includes('official websites & apps') ? page.title : 'Our Sites'}
+                  {cleanForbiddenWords(page.title || 'Our Sites')}
                 </h1>
-                {page.tagline && !page.tagline.toLowerCase().includes('verified official websites') && !page.tagline.toLowerCase().includes('portals & mobile apps') && (
+                {page.tagline && cleanForbiddenWords(page.tagline) && (
                   <p className="text-xs sm:text-sm text-blue-200/90 font-medium mt-1 leading-snug">
-                    {page.tagline}
+                    {cleanForbiddenWords(page.tagline)}
                   </p>
                 )}
               </div>
@@ -1517,11 +1539,13 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {page.title && page.title.toLowerCase().includes('social media hub') ? 'our social media platforms' : page.title}
+                  {cleanForbiddenWords(page.title || 'our social media platforms')}
                 </h1>
-                <p className="text-xs sm:text-sm text-emerald-200/90 font-medium mt-1 leading-snug">
-                  {page.tagline || 'Connect Across All Official Social Channels & Messaging Apps'}
-                </p>
+                {(page.tagline || 'Connect Across All Official Social Channels & Messaging Apps') && (
+                  <p className="text-xs sm:text-sm text-emerald-200/90 font-medium mt-1 leading-snug">
+                    {cleanForbiddenWords(page.tagline || 'Connect Across All Official Social Channels & Messaging Apps')}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -2254,11 +2278,11 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             )}
 
             {/* Description Card */}
-            {page.description && (
+            {page.description && cleanForbiddenWords(page.description) && (
               <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-2xs">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">About Our Venue</h3>
                 <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                  {page.description}
+                  {cleanForbiddenWords(page.description)}
                 </p>
               </div>
             )}

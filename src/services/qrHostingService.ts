@@ -22,6 +22,22 @@ export class QRHostingService {
     }
   }
 
+  private static cleanText(txt: string | undefined): string {
+    if (!txt) return '';
+    let cleaned = txt;
+    cleaned = cleaned.replace(/verified online portals/gi, '');
+    cleaned = cleaned.replace(/verified official websites/gi, '');
+    cleaned = cleaned.replace(/portals & mobile apps/gi, '');
+    cleaned = cleaned.replace(/verified official channels/gi, '');
+    cleaned = cleaned.replace(/upcoming events hub/gi, '');
+    cleaned = cleaned.replace(/official websites & apps/gi, 'our sites');
+    cleaned = cleaned.replace(/business events hub/gi, 'our Events');
+    cleaned = cleaned.replace(/official social media hub/gi, 'our social media platforms');
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    cleaned = cleaned.replace(/,\s*,/g, ',').replace(/^,|,$/g, '').trim();
+    return cleaned;
+  }
+
   /**
    * Generates a clean Cloudflare-hosted URL for customer scanning with optional specific tab targeting
    */
@@ -160,9 +176,9 @@ export class QRHostingService {
 
     return {
       id: event.id,
-      title: event.title,
-      tagline: event.ctaText || 'Official Event Invitation & RSVP Pass',
-      description: event.description || `Event Venue: ${event.location}`,
+      title: this.cleanText(event.title),
+      tagline: this.cleanText(event.ctaText || 'Official Event Invitation & RSVP Pass'),
+      description: this.cleanText(event.description || `Event Venue: ${event.location}`),
       pageType: 'event',
       accentColor: injectedAccentColor,
       theme: 'indigo',
@@ -246,7 +262,7 @@ export class QRHostingService {
       id: hubId,
       title: 'Our Events',
       tagline: undefined,
-      description: `Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`,
+      description: this.cleanText(`Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`),
       pageType: 'events_hub',
       accentColor: injectedAccentColor,
       theme: 'indigo',
@@ -302,7 +318,7 @@ export class QRHostingService {
       id: hubId,
       title: 'Our Sites',
       tagline: undefined,
-      description: `Official web links and verified online apps directory for ${business.name || 'our company'}.`,
+      description: this.cleanText(`Official web links and verified online apps directory for ${business.name || 'our company'}.`),
       pageType: 'websites_hub',
       accentColor: '#2563eb',
       theme: 'indigo',
@@ -369,8 +385,8 @@ export class QRHostingService {
     return {
       id: hubId,
       title: 'our social media platforms',
-      tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-      description: `Official verified social media profiles, chat channels, and community links for ${business.name || 'our brand'}.`,
+      tagline: this.cleanText('Connect Across All Official Social Channels & Messaging Apps'),
+      description: this.cleanText(`Official verified social media profiles, chat channels, and community links for ${business.name || 'our brand'}.`),
       pageType: 'socials_hub',
       accentColor: '#059669',
       theme: 'emerald',

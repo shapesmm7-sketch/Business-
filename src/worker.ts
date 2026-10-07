@@ -7,6 +7,9 @@ export interface Env {
   BUCKET?: any;
   brivu_bucket?: any;
   MY_BUCKET?: any;
+  WORKOS_API_KEY?: string;
+  WORKOS_CLIENT_ID?: string;
+  WORKOS_REDIRECT_URI?: string;
 }
 
 const CORS_HEADERS = {
@@ -36,6 +39,7 @@ export default {
           status: 'connected',
           d1Bound: Boolean(env.DB || env.brivu_db),
           r2Bound: Boolean(env.BUCKET || env.brivu_bucket || env.MY_BUCKET),
+          workosConfigured: Boolean(env.WORKOS_CLIENT_ID || env.WORKOS_API_KEY),
           timestamp: new Date().toISOString(),
         }),
         {
@@ -44,6 +48,287 @@ export default {
             ...CORS_HEADERS,
             'Content-Type': 'application/json',
           },
+        }
+      );
+    }
+
+    // 2b. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
+    if (url.pathname === '/api/auth/workos/authorize') {
+      const redirectUri = url.searchParams.get('redirect_uri') || env.WORKOS_REDIRECT_URI || `${url.origin}`;
+      const clientId = env.WORKOS_CLIENT_ID || '';
+      const isConfigured = Boolean(clientId || env.WORKOS_API_KEY);
+      
+      const authUrl = clientId
+        ? `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`
+        : '';
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          configured: isConfigured,
+          clientId,
+          redirectUri,
+          authUrl,
+          provider: 'GoogleOAuth',
+          message: isConfigured
+            ? 'WorkOS AuthKit Google Sign-In ready'
+            : 'WorkOS variables pending in Cloudflare. You can add WORKOS_CLIENT_ID and WORKOS_API_KEY in Cloudflare Worker environment variables.',
+        }),
+        {
+          status: 200,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    // 2c. WorkOS Auth Code Authenticate endpoint (/api/auth/workos/authenticate)
+    if (url.pathname === '/api/auth/workos/authenticate' && request.method === 'POST') {
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const { code, redirectUri } = body;
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+
+        let user: any = null;
+
+        // If WORKOS_API_KEY and WORKOS_CLIENT_ID exist, exchange code with WorkOS API
+        if (env.WORKOS_API_KEY && env.WORKOS_CLIENT_ID && code) {
+          const workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: env.WORKOS_CLIENT_ID,
+              client_secret: env.WORKOS_API_KEY,
+              code,
+              grant_type: 'authorization_code',
+            }),
+          });
+          if (workosRes.ok) {
+            const wData: any = await workosRes.json();
+            user = {
+              id: wData.user?.id || `workos_usr_${Date.now()}`,
+              email: wData.user?.email || '',
+              firstName: wData.user?.firstName || '',
+              lastName: wData.user?.lastName || '',
+              name: `${wData.user?.firstName || ''} ${wData.user?.lastName || ''}`.trim() || wData.user?.email,
+              profilePictureUrl: wData.user?.profilePictureUrl || '',
+              emailVerified: wData.user?.emailVerified ?? true,
+              provider: 'google',
+              updatedAt: new Date().toISOString(),
+              syncedToCloudflare: true,
+            };
+          }
+        }
+
+        // If user obtained or provided via payload, store user in Cloudflare R2
+        if (!user && body.user) {
+          user = body.user;
+        }
+
+        if (user && user.email && bucket) {
+          const userKey = `users/profile_${user.id || encodeURIComponent(user.email)}.json`;
+          const emailKey = `users/email_${encodeURIComponent(user.email.toLowerCase())}.json`;
+          
+          user.syncedToCloudflare = true;
+          user.cloudflareStoredAt = new Date().toISOString();
+
+          await bucket.put(userKey, JSON.stringify(user), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          await bucket.put(emailKey, JSON.stringify({ email: user.email, userId: user.id, user }), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+
+          // Update aggregated users list
+          let usersList: any[] = [];
+          try {
+            const listObj = await bucket.get('users/all_users.json');
+            if (listObj) {
+              const text = await listObj.text();
+              usersList = JSON.parse(text);
+            }
+          } catch {}
+
+          const existingIdx = usersList.findIndex((u) => u.email === user.email || u.id === user.id);
+          if (existingIdx >= 0) {
+            usersList[existingIdx] = user;
+          } else {
+            usersList.push(user);
+          }
+
+          await bucket.put('users/all_users.json', JSON.stringify(usersList), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            user,
+            storedInCloudflare: true,
+            message: 'Authenticated and saved user profile & email in Cloudflare',
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2d. Cloudflare User Profile & Emails Storage endpoint (/api/user/profile)
+    if (url.pathname === '/api/user/profile' && request.method === 'POST') {
+      try {
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const body: any = await request.json().catch(() => ({}));
+        const { user, businessProfile, appData } = body;
+
+        if (!user || !user.email) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'User email and details are required' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const userPayload = {
+          ...user,
+          syncedToCloudflare: true,
+          cloudflareStoredAt: new Date().toISOString(),
+          businessProfile,
+          appData,
+        };
+
+        if (bucket) {
+          const userKey = `users/profile_${user.id || encodeURIComponent(user.email)}.json`;
+          const emailKey = `users/email_${encodeURIComponent(user.email.toLowerCase())}.json`;
+          const dataKey = `users/data_${user.id || encodeURIComponent(user.email)}.json`;
+
+          await bucket.put(userKey, JSON.stringify(userPayload), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          await bucket.put(emailKey, JSON.stringify({ email: user.email, userId: user.id, userPayload }), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          if (appData || businessProfile) {
+            await bucket.put(dataKey, JSON.stringify({ businessProfile, appData, updatedAt: new Date().toISOString() }), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+          }
+
+          // Maintain list of all user profiles & emails stored in Cloudflare
+          let allUsers: any[] = [];
+          try {
+            const listObj = await bucket.get('users/all_users.json');
+            if (listObj) {
+              allUsers = JSON.parse(await listObj.text());
+            }
+          } catch {}
+
+          const idx = allUsers.findIndex((u) => u.email === user.email || u.id === user.id);
+          const summaryRecord = {
+            id: user.id,
+            email: user.email,
+            name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+            provider: user.provider || 'google',
+            syncedToCloudflare: true,
+            updatedAt: new Date().toISOString(),
+          };
+          if (idx >= 0) {
+            allUsers[idx] = summaryRecord;
+          } else {
+            allUsers.push(summaryRecord);
+          }
+
+          await bucket.put('users/all_users.json', JSON.stringify(allUsers), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            message: 'User profile, email, and data stored successfully in Cloudflare',
+            user: userPayload,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2e. Get stored user profile from Cloudflare (/api/user/profile?email=... or ?id=...)
+    if (url.pathname === '/api/user/profile' && request.method === 'GET') {
+      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const email = url.searchParams.get('email');
+      const id = url.searchParams.get('id');
+
+      if (bucket && (email || id)) {
+        try {
+          const key = id ? `users/profile_${id}.json` : `users/email_${encodeURIComponent(email!.toLowerCase())}.json`;
+          const obj = await bucket.get(key);
+          if (obj) {
+            const data = JSON.parse(await obj.text());
+            return new Response(JSON.stringify({ ok: true, success: true, user: data }), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            });
+          }
+        } catch {}
+      }
+
+      return new Response(
+        JSON.stringify({ ok: false, success: false, message: 'User profile not found in Cloudflare' }),
+        { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2f. List all stored users & emails from Cloudflare (/api/users/all)
+    if (url.pathname === '/api/users/all') {
+      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      let users: any[] = [];
+      if (bucket) {
+        try {
+          const obj = await bucket.get('users/all_users.json');
+          if (obj) {
+            users = JSON.parse(await obj.text());
+          }
+        } catch {}
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          success: true,
+          users,
+          emails: users.map((u) => u.email),
+          total: users.length,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          status: 200,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         }
       );
     }
@@ -201,7 +486,7 @@ export default {
                 id: pageId,
                 title: 'Our Sites',
                 tagline: undefined,
-                description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+                description: `Official web links directory for ${profile.name || 'our company'}.`,
                 pageType: 'websites_hub',
                 accentColor: '#2563eb',
                 theme: 'indigo',
@@ -264,7 +549,7 @@ export default {
                 id: pageId,
                 title: 'our social media platforms',
                 tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-                description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+                description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
                 pageType: 'socials_hub',
                 accentColor: '#059669',
                 theme: 'emerald',
@@ -480,7 +765,7 @@ export default {
               id: hubId,
               title: 'Our Sites',
               tagline: undefined,
-              description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+              description: `Official web links directory for ${profile.name || 'our company'}.`,
               pageType: 'websites_hub',
               accentColor: '#2563eb',
               theme: 'indigo',
@@ -537,7 +822,7 @@ export default {
               id: hubId,
               title: 'our social media platforms',
               tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-              description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+              description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
               pageType: 'socials_hub',
               accentColor: '#059669',
               theme: 'emerald',

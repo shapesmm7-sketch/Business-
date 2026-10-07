@@ -1,4 +1,4 @@
-import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt } from '../types';
+import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, WorkOSUser, WorkOSAuthConfig } from '../types';
 import { StorageService } from './storage';
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
@@ -914,5 +914,152 @@ export const CloudflareService = {
       await this.syncAllToCloudflare().catch(() => {});
       return false;
     }
+  },
+
+  /**
+   * Sync user profile, data, and email to Cloudflare
+   */
+  async syncUserProfile(user: WorkOSUser, businessProfile?: any): Promise<CloudflareSyncResponse> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const headers = this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+
+      const payload = {
+        user: {
+          ...user,
+          syncedToCloudflare: true,
+          cloudflareStoredAt: new Date().toISOString(),
+        },
+        businessProfile: businessProfile || StorageService.getProfile(),
+        appData: {
+          receiptsCount: StorageService.getReceipts().length,
+          lastSync: new Date().toISOString(),
+        },
+      };
+
+      const res = await fetch(`${cleanUrl}/api/user/profile`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok) {
+        return {
+          success: true,
+          message: 'User profile, email & data stored in Cloudflare',
+          timestamp: new Date().toISOString(),
+          data: parsed.data,
+        };
+      } else {
+        return {
+          success: false,
+          message: parsed.error || `HTTP ${res.status} storing user profile in Cloudflare`,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Cloudflare user profile sync error: ${err?.message || err}`,
+      };
+    }
+  },
+
+  /**
+   * Fetch WorkOS Auth configuration from Cloudflare Worker
+   */
+  async getWorkOSConfig(): Promise<WorkOSAuthConfig> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const headers = this.getAuthHeaders();
+      const res = await fetch(`${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`, {
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          clientId: data.clientId || '',
+          apiKeyConfigured: Boolean(data.configured),
+          authUrl: data.authUrl || '',
+          redirectUri: window.location.origin,
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
+    }
+    return {
+      clientId: '',
+      apiKeyConfigured: false,
+      redirectUri: window.location.origin,
+    };
+  },
+
+  /**
+   * Exchange WorkOS Auth code via Cloudflare Worker
+   */
+  async authenticateWorkOSCode(code: string, redirectUri?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const headers = this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+
+      const res = await fetch(`${cleanUrl}/api/auth/workos/authenticate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          code,
+          redirectUri: redirectUri || window.location.origin,
+        }),
+      });
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok && parsed.data?.user) {
+        return {
+          success: true,
+          user: parsed.data.user,
+          message: 'Authenticated successfully with WorkOS & Cloudflare',
+        };
+      }
+      return {
+        success: false,
+        message: parsed.error || parsed.data?.error || 'Authentication failed',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Error authenticating with WorkOS via Cloudflare',
+      };
+    }
+  },
+
+  /**
+   * Fetch all stored user profiles and emails from Cloudflare
+   */
+  async getStoredUserProfiles(): Promise<{ success: boolean; users?: WorkOSUser[]; emails?: string[] }> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const headers = this.getAuthHeaders();
+      const res = await fetch(`${cleanUrl}/api/users/all`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          success: true,
+          users: data.users || [],
+          emails: data.emails || [],
+        };
+      }
+    } catch (err) {
+      console.warn('Error fetching users from Cloudflare:', err);
+    }
+    return { success: false, users: [], emails: [] };
   },
 };
