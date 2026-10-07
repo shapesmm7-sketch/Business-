@@ -532,6 +532,12 @@ export interface QRBusinessPhoto {
   badge?: string;
 }
 
+export interface QRBusinessSocialLink {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export interface QRCodeHostedPage {
   id: string;
   title: string;
@@ -556,6 +562,7 @@ export interface QRCodeHostedPage {
     tiktok?: string;
     website?: string;
   };
+  customSocialLinks?: QRBusinessSocialLink[];
   photos: QRBusinessPhoto[];
   menuCategories: string[];
   menuItems: QRMenuItem[];

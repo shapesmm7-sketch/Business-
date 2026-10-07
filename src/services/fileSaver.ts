@@ -132,18 +132,24 @@ export async function saveFileToCloudflare(options: {
     };
   }
 
-  const result = await tryUploadToCloudflare(data, filename, mimeType, folder);
-  if (result && result.url) {
+  const uploadRes = await CloudflareService.uploadFile({
+    data,
+    filename,
+    mimeType,
+    folder,
+  });
+
+  if (uploadRes.success && uploadRes.url) {
     return {
       success: true,
-      url: result.url,
-      key: result.key,
-      message: `File saved successfully to Cloudflare R2!`,
+      url: uploadRes.url,
+      key: uploadRes.key,
+      message: uploadRes.message || 'File saved successfully to Cloudflare R2!',
     };
   }
   return {
     success: false,
-    message: 'Failed to upload to Cloudflare R2. Check worker status in Settings.',
+    message: uploadRes.message || 'File saved locally. Check Cloudflare connection in Settings.',
   };
 }
 

@@ -68,27 +68,13 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   showToast,
 }) => {
   const [items, setItems] = useState<WebsiteAppQrItem[]>(() => {
-    const stored = StorageService.getWebsitesQrItems();
-    if (stored && stored.length > 0) return stored;
-
-    // Default initial item using business website or sample
-    return [
-      {
-        id: 'web-default-1',
-        title: business.website ? `${business.name || 'Business'} Official Website` : 'Our Official Website',
-        url: business.website || 'https://brivu.app',
-        type: 'website',
-        ctaText: 'Scan to Visit Website',
-        darkColor: '#2563eb',
-        lightColor: '#ffffff',
-        eyeColor: '#1d4ed8',
-        description: 'Instant access to our official website, catalogs & online services.',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    return StorageService.getWebsitesQrItems();
   });
 
-  const [selectedItemId, setSelectedItemId] = useState<string>('all');
+  const [selectedItemId, setSelectedItemId] = useState<string>(() => {
+    const stored = StorageService.getWebsitesQrItems();
+    return stored.length > 0 ? stored[0].id : '';
+  });
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<WebsiteAppQrItem | null>(null);
@@ -476,15 +462,6 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               </p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2.5 rounded-xl bg-white text-blue-700 font-extrabold text-xs shadow-lg hover:bg-blue-50 active:scale-95 transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Create Website / App QR</span>
-          </button>
         </div>
       </div>
 
@@ -509,8 +486,8 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (isAllSelected && items.length > 0) {
-              setSelectedItemId(items[0].id);
+            if (isAllSelected) {
+              setSelectedItemId(items.length > 0 ? items[0].id : '');
             }
           }}
           className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -541,40 +518,46 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedItemId}
-              onChange={(e) => setSelectedItemId(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-            >
-              {items.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.title} - {it.url}
-                </option>
-              ))}
-            </select>
+          {items.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                {items.map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.title} - {it.url}
+                  </option>
+                ))}
+              </select>
 
-            {activeItem && (
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEditModal(activeItem)}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                  title="Edit Link"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteItem(activeItem.id, e)}
-                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                  title="Delete Link"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
+              {activeItem && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(activeItem)}
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                    title="Edit Link"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteItem(activeItem.id, e)}
+                    className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                    title="Delete Link"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
+              No links added yet.
+            </p>
+          )}
         </div>
       )}
 
@@ -773,7 +756,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Link</span>
+                    <span>{isAllSelected ? 'Open Websites Hub' : 'Open Link'}</span>
                   </a>
                 )}
 
@@ -837,18 +820,26 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-900 text-slate-400 flex items-center justify-center mx-auto">
-            <Globe className="w-5 h-5 text-slate-400" />
+        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
+            <Globe className="w-6 h-6" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
               No Website or App QR Codes Created
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Tap "Create Website / App QR" or "+ Add New" above to add your first custom online link.
+              Add your first website, web application, or custom link to generate a scannable QR code.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Link</span>
+          </button>
         </div>
       )}
 

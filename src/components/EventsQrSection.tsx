@@ -80,7 +80,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
 
-  const [selectedItemId, setSelectedItemId] = useState<string>('all');
+  const [selectedItemId, setSelectedItemId] = useState<string>(() => {
+    const stored = StorageService.getEventsQrItems();
+    return stored.length > 0 ? stored[0].id : '';
+  });
   const [allQrColors, setAllQrColors] = useState<{
     darkColor: string;
     eyeColor: string;
@@ -104,7 +107,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const activeUrl = isAllSelected
     ? eventsHubUrl
-    : (activeItem ? QRHostingService.getCustomerEventUrl(activeItem.id) : eventsHubUrl);
+    : (activeItem ? QRHostingService.getCustomerEventUrl(activeItem.id) : '');
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#7c3aed');
   const activeLightColor = isAllSelected ? allQrColors.lightColor : (activeItem?.lightColor || '#ffffff');
   const activeEyeColor = isAllSelected ? allQrColors.eyeColor : (activeItem?.eyeColor || activeDarkColor);
@@ -578,15 +581,6 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               </p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2.5 rounded-xl bg-white text-purple-900 font-extrabold text-xs shadow-lg hover:bg-purple-50 active:scale-95 transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Create Event QR</span>
-          </button>
         </div>
       </div>
 
@@ -611,8 +605,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (isAllSelected && items.length > 0) {
-              setSelectedItemId(items[0].id);
+            if (isAllSelected) {
+              setSelectedItemId(items.length > 0 ? items[0].id : '');
             }
           }}
           className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -643,40 +637,46 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedItemId}
-              onChange={(e) => setSelectedItemId(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
-            >
-              {items.map((it) => (
-                <option key={it.id} value={it.id}>
-                  {it.title} ({it.startDate || 'Upcoming'})
-                </option>
-              ))}
-            </select>
+          {items.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+              >
+                {items.map((it) => (
+                  <option key={it.id} value={it.id}>
+                    {it.title} ({it.startDate || 'Upcoming'})
+                  </option>
+                ))}
+              </select>
 
-            {activeItem && (
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEditModal(activeItem)}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                  title="Edit Event"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteItem(activeItem.id, e)}
-                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                  title="Delete Event"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
+              {activeItem && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(activeItem)}
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                    title="Edit Event"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteItem(activeItem.id, e)}
+                    className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                    title="Delete Event"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
+              No events created yet.
+            </p>
+          )}
         </div>
       )}
 
@@ -983,18 +983,26 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-900 text-slate-400 flex items-center justify-center mx-auto">
-            <Calendar className="w-5 h-5 text-slate-400" />
+        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center mx-auto">
+            <Calendar className="w-6 h-6" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
               No Event QR Codes Created
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Tap "Create Event QR" above to add your first event invitation and RSVP QR code.
+              Add your upcoming event or conference to generate an invitation and RSVP QR code.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs shadow-md shadow-purple-700/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Event</span>
+          </button>
         </div>
       )}
 

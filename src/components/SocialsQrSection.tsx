@@ -349,44 +349,13 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   showToast,
 }) => {
   const [items, setItems] = useState<SocialQrItem[]>(() => {
-    const stored = StorageService.getSocialsQrItems();
-    if (stored && stored.length > 0) return stored;
-
-    // Seed initial items with WhatsApp or business phone
-    const defaultPhone = business.whatsapp || business.phone || '256700000000';
-    return [
-      {
-        id: 'social-wa-1',
-        platform: 'whatsapp',
-        title: `${business.name || 'Business'} WhatsApp`,
-        usernameOrPhone: defaultPhone,
-        prefilledMessage: `Hello ${business.name || 'there'}, I would like to inquire about your products!`,
-        fullUrl: PLATFORMS_CONFIG.whatsapp.buildUrl(
-          defaultPhone,
-          `Hello ${business.name || 'there'}, I would like to inquire about your products!`
-        ),
-        ctaText: 'Chat on WhatsApp',
-        darkColor: '#059669',
-        lightColor: '#ffffff',
-        eyeColor: '#047857',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'social-ig-1',
-        platform: 'instagram',
-        title: `${business.name || 'Business'} Instagram`,
-        usernameOrPhone: (business.name || 'business').toLowerCase().replace(/\s+/g, ''),
-        fullUrl: `https://instagram.com/${(business.name || 'business').toLowerCase().replace(/\s+/g, '')}`,
-        ctaText: 'Follow on Instagram',
-        darkColor: '#e11d48',
-        lightColor: '#ffffff',
-        eyeColor: '#be123c',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    return StorageService.getSocialsQrItems();
   });
 
-  const [selectedItemId, setSelectedItemId] = useState<string>('all');
+  const [selectedItemId, setSelectedItemId] = useState<string>(() => {
+    const stored = StorageService.getSocialsQrItems();
+    return stored.length > 0 ? stored[0].id : '';
+  });
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<SocialQrItem | null>(null);
@@ -766,17 +735,6 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleOpenCreateModal('whatsapp')}
-              className="px-4 py-2.5 rounded-xl bg-white text-emerald-800 font-extrabold text-xs shadow-lg hover:bg-emerald-50 active:scale-95 transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Create Social QR</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -841,8 +799,8 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         <button
           type="button"
           onClick={() => {
-            if (isAllSelected && items.length > 0) {
-              setSelectedItemId(items[0].id);
+            if (isAllSelected) {
+              setSelectedItemId(items.length > 0 ? items[0].id : '');
             }
           }}
           className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -873,43 +831,49 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedItemId}
-              onChange={(e) => setSelectedItemId(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-            >
-              {items.map((it) => {
-                const { name } = getPlatformDisplay(it);
-                return (
-                  <option key={it.id} value={it.id}>
-                    {it.title} ({name}) - {it.usernameOrPhone}
-                  </option>
-                );
-              })}
-            </select>
+          {items.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+              >
+                {items.map((it) => {
+                  const { name } = getPlatformDisplay(it);
+                  return (
+                    <option key={it.id} value={it.id}>
+                      {it.title} ({name}) - {it.usernameOrPhone}
+                    </option>
+                  );
+                })}
+              </select>
 
-            {activeItem && (
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEditModal(activeItem)}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                  title="Edit Channel"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleDeleteItem(activeItem.id, e)}
-                  className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                  title="Delete Channel"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
+              {activeItem && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditModal(activeItem)}
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
+                    title="Edit Channel"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteItem(activeItem.id, e)}
+                    className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
+                    title="Delete Channel"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
+              No channels added yet.
+            </p>
+          )}
         </div>
       )}
 
@@ -1096,7 +1060,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Hub</span>
+                  <span>{isAllSelected ? 'Open Socials Hub' : 'Open Link'}</span>
                 </a>
 
                 {!isAllSelected && activeItem && (
@@ -1159,18 +1123,26 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-900 text-slate-400 flex items-center justify-center mx-auto">
-            <MessageCircle className="w-5 h-5 text-slate-400" />
+        <div className="bg-white dark:bg-slate-800/90 rounded-2xl sm:rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+            <MessageCircle className="w-6 h-6" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
               No Social QR Codes Created
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Select one of the popular platforms above to create your first scannable social channel QR code.
+              Select one of the popular platforms above or tap below to create your first scannable social channel QR code.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => handleOpenCreateModal('whatsapp')}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Social Channel</span>
+          </button>
         </div>
       )}
 

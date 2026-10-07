@@ -448,6 +448,18 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     page.id.includes('socials-hub') ||
     (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'socials');
 
+  const getSocialLinkIcon = (name: string) => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('whatsapp') || n.includes('chat')) return <MessageCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+    if (n.includes('instagram') || n.includes('photo') || n.includes('camera')) return <Camera className="w-4 h-4 text-pink-600 dark:text-pink-400" />;
+    if (n.includes('phone') || n.includes('call') || n.includes('tel')) return <Phone className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+    if (n.includes('email') || n.includes('mail')) return <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
+    if (n.includes('map') || n.includes('location')) return <MapPin className="w-4 h-4 text-rose-600 dark:text-rose-400" />;
+    if (n.includes('ticket') || n.includes('event')) return <Ticket className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
+    if (n.includes('web') || n.includes('site') || n.includes('online')) return <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+    return <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+  };
+
   // Dedicated Standalone Event Customer View
   if (isEventPage) {
     const cleanWaNumber = (page.whatsapp || page.phone || '').replace(/[^0-9]/g, '');
@@ -2423,6 +2435,66 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Social Channels on Bottom of Business QR Page */}
+        {page.customSocialLinks && page.customSocialLinks.length > 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3 mt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    Connect & Follow Us
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Official social channels & online links
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                {page.customSocialLinks.length} Channels
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              {page.customSocialLinks.map((soc) => {
+                const targetUrl =
+                  soc.url.startsWith('http://') ||
+                  soc.url.startsWith('https://') ||
+                  soc.url.startsWith('mailto:') ||
+                  soc.url.startsWith('tel:')
+                    ? soc.url
+                    : `https://${soc.url}`;
+
+                return (
+                  <a
+                    key={soc.id || soc.name}
+                    href={targetUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700/80 hover:border-emerald-300 dark:hover:border-emerald-700 text-slate-800 dark:text-slate-200 transition group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 shadow-2xs group-hover:border-emerald-300">
+                        {getSocialLinkIcon(soc.name)}
+                      </div>
+                      <span className="text-xs font-bold truncate group-hover:text-emerald-700 dark:group-hover:text-emerald-300">
+                        {soc.name}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 shrink-0">
+                      <span className="text-[11px] font-semibold hidden sm:inline">Visit</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

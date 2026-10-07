@@ -347,6 +347,13 @@ export const CloudflareService = {
       };
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return {
+        success: false,
+        message: 'Device is offline. File saved locally.',
+      };
+    }
+
     const { filename, mimeType = 'application/octet-stream', folder = config.filesFolder || 'receipts' } = options;
     const { data } = options;
 
@@ -851,6 +858,8 @@ export const CloudflareService = {
           ...item,
           photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
         })),
+        websitesQrItems: page.websitesQrItems || [],
+        socialsQrItems: page.socialsQrItems || [],
       };
 
       const response = await fetch(targetUrl, {

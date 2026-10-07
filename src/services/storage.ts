@@ -2090,7 +2090,10 @@ export const StorageService = {
         id.includes('websites-hub')
       ) {
         const websites = this.getWebsitesQrItems();
-        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
+        if (websites.length > 0) {
+          return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
+        }
+        return undefined;
       }
       if (
         id.startsWith('socials-hub-') ||
@@ -2100,11 +2103,17 @@ export const StorageService = {
         id.includes('socials-hub')
       ) {
         const socials = this.getSocialsQrItems();
-        return QRHostingService.convertSocialsHubToHostedPage(socials, business);
+        if (socials.length > 0) {
+          return QRHostingService.convertSocialsHubToHostedPage(socials, business);
+        }
+        return undefined;
       }
       const events = this.getEventsQrItems();
       if (id.startsWith('events-hub-')) {
-        return QRHostingService.convertEventsHubToHostedPage(events, business);
+        if (events.length > 0) {
+          return QRHostingService.convertEventsHubToHostedPage(events, business);
+        }
+        return undefined;
       }
       const foundEvt = events.find((e) => e.id === id);
       if (foundEvt) {
@@ -2306,7 +2315,15 @@ export const StorageService = {
 
   // --- WEBSITES / APPS QR ITEMS ---
   getWebsitesQrItems(): WebsiteAppQrItem[] {
-    return readFromStorage<WebsiteAppQrItem[]>(STORAGE_KEYS.WEBSITES_QR, []);
+    const raw = readFromStorage<WebsiteAppQrItem[]>(STORAGE_KEYS.WEBSITES_QR, []);
+    return (raw || []).filter(
+      (item) =>
+        item &&
+        item.id !== 'web-default-1' &&
+        !item.id.includes('default') &&
+        !item.id.includes('sample') &&
+        !item.title?.toLowerCase().includes('sample')
+    );
   },
 
   saveWebsitesQrItems(items: WebsiteAppQrItem[]): boolean {
@@ -2324,7 +2341,16 @@ export const StorageService = {
 
   // --- SOCIALS QR ITEMS ---
   getSocialsQrItems(): SocialQrItem[] {
-    return readFromStorage<SocialQrItem[]>(STORAGE_KEYS.SOCIALS_QR, []);
+    const raw = readFromStorage<SocialQrItem[]>(STORAGE_KEYS.SOCIALS_QR, []);
+    return (raw || []).filter(
+      (item) =>
+        item &&
+        item.id !== 'social-wa-1' &&
+        item.id !== 'social-ig-1' &&
+        !item.id.includes('default') &&
+        !item.id.includes('sample') &&
+        !item.title?.toLowerCase().includes('sample')
+    );
   },
 
   saveSocialsQrItems(items: SocialQrItem[]): boolean {
@@ -2343,13 +2369,25 @@ export const StorageService = {
   // --- EVENTS QR ITEMS ---
   getEventsQrItems(): EventQrItem[] {
     const raw = readFromStorage<EventQrItem[]>(STORAGE_KEYS.EVENTS_QR, []);
-    return (raw || []).filter((item) => item.id !== 'event-default-1');
+    return (raw || []).filter(
+      (item) =>
+        item &&
+        item.id !== 'event-default-1' &&
+        !item.id.includes('default') &&
+        !item.id.includes('sample') &&
+        !item.title?.toLowerCase().includes('sample')
+    );
   },
 
   saveEventsQrItems(items: EventQrItem[]): boolean {
     const success = writeToStorage(STORAGE_KEYS.EVENTS_QR, items);
     if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
+      try {
+        const business = this.getProfile();
+        QRHostingService.syncAllEventsPages(items, business).catch(() => {});
+      } catch {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
     }
     return success;
   },

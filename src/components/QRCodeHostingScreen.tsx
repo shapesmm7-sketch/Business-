@@ -44,7 +44,7 @@ import {
   Store,
   ArrowUpRight,
 } from 'lucide-react';
-import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, BusinessProfile } from '../types';
+import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
@@ -177,7 +177,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     return list[0]?.id || '';
   });
 
-  const [activeTab, setActiveTab] = useState<'qr' | 'info' | 'menu' | 'photos'>('qr');
+  const [activeTab, setActiveTab] = useState<'qr' | 'info' | 'menu' | 'photos' | 'socials'>('qr');
   const [qrScope, setQrScope] = useState<QRScope>('all');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -250,6 +250,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   // QR Page deletion state (for custom in-app confirmation modal)
   const [pageToDelete, setPageToDelete] = useState<QRCodeHostedPage | null>(null);
+
+  // Business Socials Modal state
+  const [showSocialModal, setShowSocialModal] = useState<boolean>(false);
+  const [editingSocial, setEditingSocial] = useState<QRBusinessSocialLink | null>(null);
+  const [socialName, setSocialName] = useState<string>('');
+  const [socialUrl, setSocialUrl] = useState<string>('');
 
   // Dedicated QR Code Colors Editor screen state
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
@@ -1102,6 +1108,67 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     });
   };
 
+  const handleOpenAddSocial = () => {
+    setEditingSocial(null);
+    setSocialName('');
+    setSocialUrl('');
+    setShowSocialModal(true);
+  };
+
+  const handleOpenEditSocial = (soc: QRBusinessSocialLink) => {
+    setEditingSocial(soc);
+    setSocialName(soc.name);
+    setSocialUrl(soc.url);
+    setShowSocialModal(true);
+  };
+
+  const handleSaveSocial = () => {
+    if (!socialName.trim()) {
+      showToast('Please enter social name (e.g. Instagram, WhatsApp)');
+      return;
+    }
+    if (!socialUrl.trim()) {
+      showToast('Please enter social link / URL');
+      return;
+    }
+
+    let formattedUrl = socialUrl.trim();
+    if (
+      !/^https?:\/\//i.test(formattedUrl) &&
+      !/^mailto:/i.test(formattedUrl) &&
+      !/^tel:/i.test(formattedUrl)
+    ) {
+      formattedUrl = `https://${formattedUrl}`;
+    }
+
+    const existingSocials = activePage.customSocialLinks || [];
+    let updatedSocials: QRBusinessSocialLink[];
+
+    if (editingSocial) {
+      updatedSocials = existingSocials.map((s) =>
+        s.id === editingSocial.id ? { ...s, name: socialName.trim(), url: formattedUrl } : s
+      );
+    } else {
+      const newSocial: QRBusinessSocialLink = {
+        id: `soc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: socialName.trim(),
+        url: formattedUrl,
+      };
+      updatedSocials = [...existingSocials, newSocial];
+    }
+
+    handleUpdateActivePage({ customSocialLinks: updatedSocials });
+    setShowSocialModal(false);
+    showToast(editingSocial ? 'Social link updated!' : 'Social link added!');
+  };
+
+  const handleDeleteSocial = (id: string) => {
+    const existingSocials = activePage.customSocialLinks || [];
+    const updatedSocials = existingSocials.filter((s) => s.id !== id);
+    handleUpdateActivePage({ customSocialLinks: updatedSocials });
+    showToast('Social link removed');
+  };
+
   const handleOpenCategoryModal = () => {
     setCategoryModalInput('');
     setCategoryModalError('');
@@ -1534,54 +1601,66 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         )}
       </div>
 
-      {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos */}
-      <div className="grid grid-cols-4 gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
+      {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos | Socials */}
+      <div className="grid grid-cols-5 gap-1 sm:gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
         <button
           onClick={() => setActiveTab('qr')}
-          className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
             activeTab === 'qr'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
-          <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>QR Stand</span>
+          <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span className="truncate">QR Stand</span>
         </button>
 
         <button
           onClick={() => setActiveTab('info')}
-          className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
             activeTab === 'info'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
-          <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-          <span>Info</span>
+          <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span className="truncate">Info</span>
         </button>
 
         <button
           onClick={() => setActiveTab('menu')}
-          className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
             activeTab === 'menu'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
-          <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-          <span>Items ({activePage.menuItems.length})</span>
+          <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="truncate">Items ({activePage.menuItems.length})</span>
         </button>
 
         <button
           onClick={() => setActiveTab('photos')}
-          className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
             activeTab === 'photos'
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
-          <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-          <span>Photos ({activePage.photos.length}/20)</span>
+          <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+          <span className="truncate">Photos ({activePage.photos.length}/20)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('socials')}
+          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
+            activeTab === 'socials'
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+          }`}
+        >
+          <Share2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+          <span className="truncate">Socials ({(activePage.customSocialLinks || []).length})</span>
         </button>
       </div>
 
@@ -2080,6 +2159,75 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </div>
 
+            {/* Social Channels & Online Links Section */}
+            <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-850 border border-slate-200 dark:border-slate-700 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                      Social Channels & Links
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Added socials appear at the bottom of your hosted Business QR page
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenAddSocial}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Social</span>
+                </button>
+              </div>
+
+              {activePage.customSocialLinks && activePage.customSocialLinks.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {activePage.customSocialLinks.map((soc) => (
+                    <div
+                      key={soc.id}
+                      className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shadow-2xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">
+                          {soc.name}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono">
+                          {soc.url}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditSocial(soc)}
+                          className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+                          title="Edit social link"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSocial(soc.id)}
+                          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition"
+                          title="Remove social link"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3.5 text-center rounded-xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
+                  No social channels added yet. Tap <strong>+ Add Social</strong> to add where customers can find and follow you (Instagram, TikTok, WhatsApp, Facebook, Website, etc.).
+                </div>
+              )}
+            </div>
+
             {/* Delete QR Page option if multiple pages exist */}
             {pages.length > 1 && (
               <div className="pt-4 mt-2 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40">
@@ -2526,6 +2674,202 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             variant="card"
             unitId={ADMOB_UNITS.NATIVE_ADVANCED}
           />
+        </div>
+      )}
+
+      {/* TAB 5: BUSINESS SOCIALS & CUSTOM LINKS */}
+      {activeTab === 'socials' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                  Business Channels
+                </span>
+                <span className="text-xs font-bold text-slate-400">
+                  {(activePage.customSocialLinks || []).length} Connected
+                </span>
+              </div>
+              <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
+                Business Socials & Links
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Add your social channels (Instagram, TikTok, WhatsApp, Facebook, Website). All added socials appear at the bottom of your hosted Business QR page on Cloudflare.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenAddSocial}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 active:scale-95 transition shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Social</span>
+            </button>
+          </div>
+
+          {/* Social Links List */}
+          {activePage.customSocialLinks && activePage.customSocialLinks.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {activePage.customSocialLinks.map((soc) => (
+                <div
+                  key={soc.id}
+                  className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-2xs flex items-center justify-between gap-3 hover:border-emerald-300 dark:hover:border-emerald-700 transition"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
+                      <Share2 className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
+                        {soc.name}
+                      </h4>
+                      <a
+                        href={soc.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline truncate block font-mono mt-0.5"
+                      >
+                        {soc.url}
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={soc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition"
+                      title="Open link"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditSocial(soc)}
+                      className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 transition"
+                      title="Edit social"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSocial(soc.id)}
+                      className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition"
+                      title="Delete social"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                <Share2 className="w-7 h-7" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  No Business Socials Added
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Connect your business social profiles so customers scanning your Business QR code can easily follow and message you on Instagram, TikTok, WhatsApp, Facebook, or your website.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAddSocial}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Social</span>
+              </button>
+            </div>
+          )}
+
+          {/* Native Advanced Ad in Socials */}
+          <AdMobNativeAd
+            context="qr"
+            variant="card"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
+        </div>
+      )}
+
+      {/* MODAL: ADD / EDIT BUSINESS SOCIAL LINK (ONLY SOCIAL NAME & LINK) */}
+      {showSocialModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-white animate-fadeIn">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                    {editingSocial ? 'Edit Social Link' : 'Add Social Link'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Displayed on your hosted Business QR page
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSocialModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body - ONLY Social Name and Link */}
+            <div className="p-4 space-y-3.5 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300">Social Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Instagram, TikTok, WhatsApp, Facebook, Website"
+                  value={socialName}
+                  onChange={(e) => setSocialName(e.target.value)}
+                  className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-900 dark:text-slate-100 text-sm"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300">Link / URL *</label>
+                <input
+                  type="text"
+                  placeholder="https://instagram.com/yourbusiness or link URL"
+                  value={socialUrl}
+                  onChange={(e) => setSocialUrl(e.target.value)}
+                  className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-900 dark:text-slate-100 font-mono text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={() => setShowSocialModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSocial}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition flex items-center gap-1.5"
+              >
+                <span>{editingSocial ? 'Save Changes' : 'Add Social'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
