@@ -89,7 +89,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       const config = await CloudflareService.getWorkOSConfig();
 
       // Use the live Client ID from your Cloudflare dashboard as a rock-solid client-side fallback
-      const clientId = config.clientId || 'client_01M4BGNRX0WPW7NQG3WD96PXZE';
+      const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const redirectUri = window.location.origin;
       const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
 
