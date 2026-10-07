@@ -21,8 +21,9 @@ import {
   PlusCircle,
   Layers,
   ArrowRight,
+  Eye,
 } from 'lucide-react';
-import { BusinessProfile, SocialQrItem, SocialPlatform } from '../types';
+import { BusinessProfile, SocialQrItem, SocialPlatform, QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { saveFile, shareContent, saveJsPdf } from '../services/fileSaver';
 import { jsPDF } from 'jspdf';
@@ -341,12 +342,14 @@ interface SocialsQrSectionProps {
   business: BusinessProfile;
   hostedPageId?: string;
   showToast: (msg: string) => void;
+  onOpenCustomerView?: (page: QRCodeHostedPage) => void;
 }
 
 export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   business,
   hostedPageId,
   showToast,
+  onOpenCustomerView,
 }) => {
   const [items, setItems] = useState<SocialQrItem[]>(() => {
     return StorageService.getSocialsQrItems();
@@ -1053,6 +1056,20 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   <span>Share</span>
                 </button>
 
+                {onOpenCustomerView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const page = QRHostingService.convertSocialsHubToHostedPage(items, business);
+                      onOpenCustomerView(page);
+                    }}
+                    className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Customer View</span>
+                  </button>
+                )}
+
                 <a
                   href={activeUrl}
                   target="_blank"
@@ -1060,7 +1077,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>{isAllSelected ? 'Open Socials Hub' : 'Open Link'}</span>
+                  <span>{isAllSelected ? 'Open Live Hub' : 'Open Link'}</span>
                 </a>
 
                 {!isAllSelected && activeItem && (

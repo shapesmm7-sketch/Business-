@@ -2082,42 +2082,53 @@ export const StorageService = {
 
     try {
       const business = this.getProfile();
+      // 1. Websites & Apps Hub or Single Website Link
       if (
-        id.startsWith('websites-hub-') ||
-        id.startsWith('web-hub-') ||
+        id.startsWith('websites-hub') ||
+        id.startsWith('web-hub') ||
+        id.startsWith('website') ||
+        id.startsWith('web-') ||
         id === 'websites' ||
         id === 'websites-hub-all' ||
-        id.includes('websites-hub')
+        id.includes('websites-hub') ||
+        id.includes('web-hub')
       ) {
         const websites = this.getWebsitesQrItems();
-        if (websites.length > 0) {
-          return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
-        }
-        return undefined;
+        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
       }
+
+      // 2. Socials Hub or Single Social Link
       if (
-        id.startsWith('socials-hub-') ||
-        id.startsWith('social-hub-') ||
+        id.startsWith('socials-hub') ||
+        id.startsWith('social-hub') ||
+        id.startsWith('social') ||
+        id.startsWith('social-') ||
         id === 'socials' ||
         id === 'socials-hub-all' ||
-        id.includes('socials-hub')
+        id.includes('socials-hub') ||
+        id.includes('social-hub')
       ) {
         const socials = this.getSocialsQrItems();
-        if (socials.length > 0) {
-          return QRHostingService.convertSocialsHubToHostedPage(socials, business);
-        }
-        return undefined;
+        return QRHostingService.convertSocialsHubToHostedPage(socials, business);
       }
+
+      // 3. Events Hub or Single Event
       const events = this.getEventsQrItems();
-      if (id.startsWith('events-hub-')) {
-        if (events.length > 0) {
-          return QRHostingService.convertEventsHubToHostedPage(events, business);
-        }
-        return undefined;
+      if (
+        id.startsWith('events-hub') ||
+        id.startsWith('event-hub') ||
+        id === 'events' ||
+        id === 'events-hub-all' ||
+        id.includes('events-hub')
+      ) {
+        return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
       const foundEvt = events.find((e) => e.id === id);
       if (foundEvt) {
         return QRHostingService.convertEventToHostedPage(foundEvt, business);
+      }
+      if (id.startsWith('event-')) {
+        return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
     } catch {}
     return undefined;

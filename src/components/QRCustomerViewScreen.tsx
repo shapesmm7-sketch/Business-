@@ -425,28 +425,68 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     return Array.from(set);
   }, [page.menuCategories, page.menuItems]);
 
-  const isEventPage =
-    page.pageType === 'event' ||
+  const pathname = typeof window !== 'undefined' ? (window.location.pathname || '').toLowerCase() : '';
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+
+  const isEventsHub =
     page.pageType === 'events_hub' ||
+    page.id.startsWith('events-hub') ||
+    page.id.startsWith('event-hub') ||
+    page.id === 'events-hub-all' ||
+    page.id === 'events' ||
+    page.id.includes('events-hub') ||
+    pathname.includes('/qr/events-hub') ||
+    pathname.includes('/qr/events') ||
+    searchParams.get('tab') === 'events' ||
+    Boolean(searchParams.get('qr')?.includes('events'));
+
+  const isEventPage =
+    isEventsHub ||
+    page.pageType === 'event' ||
     page.id.startsWith('event-') ||
-    page.id.startsWith('events-hub-');
-  const isEventsHub = page.pageType === 'events_hub' || page.id.startsWith('events-hub-');
+    pathname.includes('/qr/event-');
+
   const isWebsitesHub =
-    page.pageType === 'websites_hub' ||
-    page.pageType === 'websites' ||
-    page.id.startsWith('websites-hub-') ||
-    page.id.startsWith('web-hub-') ||
-    page.id === 'websites-hub-all' ||
-    page.id.includes('websites-hub') ||
-    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'websites');
+    !isEventPage && (
+      page.pageType === 'websites_hub' ||
+      page.pageType === 'websites' ||
+      page.pageType === 'website' ||
+      page.id.startsWith('websites-hub') ||
+      page.id.startsWith('web-hub') ||
+      page.id.startsWith('web-') ||
+      page.id.startsWith('website-') ||
+      page.id === 'websites-hub-all' ||
+      page.id === 'websites' ||
+      page.id.includes('websites-hub') ||
+      page.id.includes('web-hub') ||
+      pathname.includes('/qr/websites') ||
+      pathname.includes('/qr/web-') ||
+      searchParams.get('tab') === 'websites' ||
+      searchParams.get('tab') === 'website' ||
+      Boolean(searchParams.get('qr')?.includes('websites')) ||
+      Boolean(searchParams.get('qr')?.includes('web-'))
+    );
+
   const isSocialsHub =
-    page.pageType === 'socials_hub' ||
-    page.pageType === 'social' ||
-    page.id.startsWith('socials-hub-') ||
-    page.id.startsWith('social-hub-') ||
-    page.id === 'socials-hub-all' ||
-    page.id.includes('socials-hub') ||
-    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'socials');
+    !isEventPage && !isWebsitesHub && (
+      page.pageType === 'socials_hub' ||
+      page.pageType === 'socials' ||
+      page.pageType === 'social' ||
+      page.id.startsWith('socials-hub') ||
+      page.id.startsWith('social-hub') ||
+      page.id.startsWith('social-') ||
+      page.id.startsWith('socials-') ||
+      page.id === 'socials-hub-all' ||
+      page.id === 'socials' ||
+      page.id.includes('socials-hub') ||
+      page.id.includes('social-hub') ||
+      pathname.includes('/qr/socials') ||
+      pathname.includes('/qr/social-') ||
+      searchParams.get('tab') === 'socials' ||
+      searchParams.get('tab') === 'social' ||
+      Boolean(searchParams.get('qr')?.includes('socials')) ||
+      Boolean(searchParams.get('qr')?.includes('social-'))
+    );
 
   const getSocialLinkIcon = (name: string) => {
     const n = (name || '').toLowerCase();

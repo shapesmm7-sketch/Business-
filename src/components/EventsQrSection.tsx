@@ -25,8 +25,9 @@ import {
   MessageCircle,
   Mail,
   Layers,
+  Eye,
 } from 'lucide-react';
-import { BusinessProfile, EventQrItem } from '../types';
+import { BusinessProfile, EventQrItem, QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { saveFile, shareContent, saveJsPdf } from '../services/fileSaver';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -44,12 +45,14 @@ interface EventsQrSectionProps {
   business: BusinessProfile;
   hostedPageId?: string;
   showToast: (msg: string) => void;
+  onOpenCustomerView?: (page: QRCodeHostedPage) => void;
 }
 
 export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   business,
   hostedPageId,
   showToast,
+  onOpenCustomerView,
 }) => {
   const [items, setItems] = useState<EventQrItem[]>(() => {
     return StorageService.getEventsQrItems();
@@ -913,6 +916,22 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   <span>Share</span>
                 </button>
 
+                {onOpenCustomerView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const page = isAllSelected || !activeItem
+                        ? QRHostingService.convertEventsHubToHostedPage(items, business)
+                        : QRHostingService.convertEventToHostedPage(activeItem, business);
+                      onOpenCustomerView(page);
+                    }}
+                    className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Customer View</span>
+                  </button>
+                )}
+
                 <a
                   href={activeUrl}
                   target="_blank"
@@ -920,7 +939,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>{isAllSelected ? 'Open Events Hub' : 'Open Event Page'}</span>
+                  <span>{isAllSelected ? 'Open Live Hub' : 'Open Event Page'}</span>
                 </a>
 
                 {!isAllSelected && activeItem && (

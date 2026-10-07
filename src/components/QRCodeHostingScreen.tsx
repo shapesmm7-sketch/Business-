@@ -1360,7 +1360,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
             <button
               onClick={() => onOpenCustomerView(activePage)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition cursor-pointer"
             >
               <Eye className="w-3.5 h-3.5" />
               <span>Customer View</span>
@@ -1498,17 +1498,32 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
       {/* WEBSITES / APPS QR SECTION */}
       {qrCategory === 'websites' && (
-        <WebsitesAppsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
+        <WebsitesAppsQrSection
+          business={business}
+          hostedPageId={activePageId || activePage?.id}
+          showToast={showToast}
+          onOpenCustomerView={(page) => onOpenCustomerView(page)}
+        />
       )}
 
       {/* SOCIALS QR SECTION */}
       {qrCategory === 'socials' && (
-        <SocialsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
+        <SocialsQrSection
+          business={business}
+          hostedPageId={activePageId || activePage?.id}
+          showToast={showToast}
+          onOpenCustomerView={(page) => onOpenCustomerView(page)}
+        />
       )}
 
       {/* EVENTS QR SECTION */}
       {qrCategory === 'events' && (
-        <EventsQrSection business={business} hostedPageId={activePageId || activePage?.id} showToast={showToast} />
+        <EventsQrSection
+          business={business}
+          hostedPageId={activePageId || activePage?.id}
+          showToast={showToast}
+          onOpenCustomerView={(page) => onOpenCustomerView(page)}
+        />
       )}
 
       {/* BUSINESS QR SECTIONS */}

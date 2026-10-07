@@ -188,7 +188,7 @@ export default {
           }
 
           // Fallback: Check if we have backup data with websitesQrItems for websites hub
-          if (pageId.startsWith('websites-hub-') || pageId === 'websites-hub-all') {
+          if (pageId.includes('websites-hub') || pageId.startsWith('websites') || pageId === 'websites-hub-all') {
             const backupObj = await bucket.get('sync/latest_backup.json');
             if (backupObj) {
               const bText = await backupObj.text();
@@ -251,7 +251,7 @@ export default {
           }
 
           // Fallback: Check if we have backup data with socialsQrItems for socials hub
-          if (pageId.startsWith('socials-hub-') || pageId === 'socials-hub-all') {
+          if (pageId.includes('socials-hub') || pageId.startsWith('socials') || pageId === 'socials-hub-all') {
             const backupObj = await bucket.get('sync/latest_backup.json');
             if (backupObj) {
               const bText = await backupObj.text();
@@ -308,6 +308,144 @@ export default {
                   headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
                 }
               );
+            }
+          }
+
+          // Fallback: Check if we have backup data with eventsQrItems for events hub
+          if (pageId.includes('events-hub') || pageId.startsWith('events') || pageId === 'events-hub-all') {
+            const backupObj = await bucket.get('sync/latest_backup.json');
+            if (backupObj) {
+              const bText = await backupObj.text();
+              const bData = JSON.parse(bText);
+              const events = bData.eventsQrItems || [];
+              const profile = bData.profile || {};
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const page = {
+                id: pageId,
+                title: `${profile.name || 'Official'} Events & Invitations`,
+                tagline: 'Upcoming Conferences, Galas, Workshops & Special Events',
+                description: `Browse upcoming events and get access passes for ${profile.name || 'our organization'}.`,
+                pageType: 'events_hub',
+                accentColor: '#7c3aed',
+                theme: 'indigo',
+                logo: profile.logo,
+                phone: profile.phone || '',
+                whatsapp: cleanWa,
+                email: profile.email || '',
+                address: profile.address || '',
+                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+                currency: profile.currency || 'USD',
+                announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+                photos: events.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
+                  id: `${e.id}-photo-${idx}`,
+                  url,
+                  title: e.title,
+                  description: e.location,
+                  badge: 'Event Photo',
+                }))),
+                menuCategories: ['Upcoming Events'],
+                menuItems: events.map((e: any) => ({
+                  id: `event-pass-${e.id}`,
+                  name: e.title,
+                  category: 'Upcoming Events',
+                  price: 0,
+                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                  url: e.rsvpUrl || undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                  isSpecial: true,
+                  isAvailable: true,
+                  photoUrl: e.photos?.[0] || undefined,
+                })),
+                eventsQrItems: events,
+                qrDarkColor: '#7c3aed',
+                qrLightColor: '#ffffff',
+                qrEyeColor: '#6d28d9',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              return new Response(
+                JSON.stringify({ ok: true, success: true, data: { page } }),
+                {
+                  status: 200,
+                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+                }
+              );
+            }
+          }
+
+          // Fallback: Check if we have a single event in backup data
+          if (pageId.startsWith('event-')) {
+            const backupObj = await bucket.get('sync/latest_backup.json');
+            if (backupObj) {
+              const bText = await backupObj.text();
+              const bData = JSON.parse(bText);
+              const events = bData.eventsQrItems || [];
+              const evt = events.find((e: any) => e.id === pageId);
+              const profile = bData.profile || {};
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              if (evt) {
+                const page = {
+                  id: evt.id,
+                  title: evt.title,
+                  tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+                  description: evt.description || `Event Venue: ${evt.location}`,
+                  pageType: 'event',
+                  accentColor: evt.darkColor || '#7c3aed',
+                  theme: 'indigo',
+                  coverImage: evt.photos?.[0] || undefined,
+                  logo: evt.photos?.[0] || profile.logo || undefined,
+                  phone: evt.contactPhone || profile.phone || '',
+                  whatsapp: cleanWa,
+                  email: evt.contactEmail || profile.email || '',
+                  address: evt.location,
+                  googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
+                  currency: profile.currency || 'UGX',
+                  announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
+                  allowWhatsAppOrdering: true,
+                  photos: (evt.photos || []).map((url: string, idx: number) => ({
+                    id: `${evt.id}-photo-${idx}`,
+                    url,
+                    title: evt.title,
+                    description: evt.location,
+                    badge: 'Event Photo',
+                  })),
+                  menuCategories: ['Event Pass & RSVP'],
+                  menuItems: [
+                    {
+                      id: `rsvp-${evt.id}`,
+                      name: `${evt.title} - Entry & RSVP Pass`,
+                      category: 'Event Pass & RSVP',
+                      price: 0,
+                      description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
+                      tags: ['RSVP', 'Invitation', 'Entry Pass'],
+                      isSpecial: true,
+                      isAvailable: true,
+                      photoUrl: evt.photos?.[0] || undefined,
+                    },
+                  ],
+                  qrDarkColor: evt.darkColor || '#7c3aed',
+                  qrLightColor: '#ffffff',
+                  qrEyeColor: evt.eyeColor || '#6d28d9',
+                  qrBoxBgColor: '#ffffff',
+                  qrBoxBorderColor: '#cbd5e1',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                return new Response(
+                  JSON.stringify({ ok: true, success: true, data: { page } }),
+                  {
+                    status: 200,
+                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+                  }
+                );
+              }
             }
           }
         } catch {}
@@ -441,6 +579,123 @@ export default {
             await bucket.put(`qr_pages/socials-hub-all.json`, JSON.stringify(socialHubPage), {
               httpMetadata: { contentType: 'application/json' },
             });
+          }
+
+          // Also save events hub and individual event pages directly if eventsQrItems exist
+          if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
+            const profile = backupData.profile || {};
+            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+            const hubId = `events-hub-${cleanName}`;
+            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+            const eventsHubPage = {
+              id: hubId,
+              title: `${profile.name || 'Official'} Events & Invitations`,
+              tagline: 'Upcoming Conferences, Galas, Workshops & Special Events',
+              description: `Browse upcoming events and get access passes for ${profile.name || 'our organization'}.`,
+              pageType: 'events_hub',
+              accentColor: '#7c3aed',
+              theme: 'indigo',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || '',
+              address: profile.address || '',
+              googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+              currency: profile.currency || 'USD',
+              announcement: `🎉 ${backupData.eventsQrItems.length} Upcoming Event${backupData.eventsQrItems.length === 1 ? '' : 's'} Available`,
+              photos: backupData.eventsQrItems.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
+                id: `${e.id}-photo-${idx}`,
+                url,
+                title: e.title,
+                description: e.location,
+                badge: 'Event Photo',
+              }))),
+              menuCategories: ['Upcoming Events'],
+              menuItems: backupData.eventsQrItems.map((e: any) => ({
+                id: `event-pass-${e.id}`,
+                name: e.title,
+                category: 'Upcoming Events',
+                price: 0,
+                description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                url: e.rsvpUrl || undefined,
+                ctaText: e.ctaText || 'RSVP & Join',
+                tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                isSpecial: true,
+                isAvailable: true,
+                photoUrl: e.photos?.[0] || undefined,
+              })),
+              eventsQrItems: backupData.eventsQrItems,
+              qrDarkColor: '#7c3aed',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#6d28d9',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(eventsHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`qr_pages/events-hub-all.json`, JSON.stringify(eventsHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+
+            // Save each individual event
+            for (const evt of backupData.eventsQrItems) {
+              const singleEventPage = {
+                id: evt.id,
+                title: evt.title,
+                tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+                description: evt.description || `Event Venue: ${evt.location}`,
+                pageType: 'event',
+                accentColor: evt.darkColor || '#7c3aed',
+                theme: 'indigo',
+                coverImage: evt.photos?.[0] || undefined,
+                logo: evt.photos?.[0] || profile.logo || undefined,
+                phone: evt.contactPhone || profile.phone || '',
+                whatsapp: cleanWa,
+                email: evt.contactEmail || profile.email || '',
+                address: evt.location,
+                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
+                currency: profile.currency || 'UGX',
+                announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
+                allowWhatsAppOrdering: true,
+                photos: (evt.photos || []).map((url: string, idx: number) => ({
+                  id: `${evt.id}-photo-${idx}`,
+                  url,
+                  title: evt.title,
+                  description: evt.location,
+                  badge: 'Event Photo',
+                })),
+                menuCategories: ['Event Pass & RSVP'],
+                menuItems: [
+                  {
+                    id: `rsvp-${evt.id}`,
+                    name: `${evt.title} - Entry & RSVP Pass`,
+                    category: 'Event Pass & RSVP',
+                    price: 0,
+                    description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
+                    tags: ['RSVP', 'Invitation', 'Entry Pass'],
+                    isSpecial: true,
+                    isAvailable: true,
+                    photoUrl: evt.photos?.[0] || undefined,
+                  },
+                ],
+                qrDarkColor: evt.darkColor || '#7c3aed',
+                qrLightColor: '#ffffff',
+                qrEyeColor: evt.eyeColor || '#6d28d9',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              await bucket.put(`qr_pages/${encodeURIComponent(evt.id)}.json`, JSON.stringify(singleEventPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            }
           }
         }
 

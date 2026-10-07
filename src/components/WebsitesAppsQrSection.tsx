@@ -25,7 +25,7 @@ import {
   Phone,
   MessageCircle,
 } from 'lucide-react';
-import { BusinessProfile, WebsiteAppQrItem } from '../types';
+import { BusinessProfile, WebsiteAppQrItem, QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { saveFile, shareContent, saveJsPdf } from '../services/fileSaver';
 import { jsPDF } from 'jspdf';
@@ -60,12 +60,14 @@ interface WebsitesAppsQrSectionProps {
   business: BusinessProfile;
   hostedPageId?: string;
   showToast: (msg: string) => void;
+  onOpenCustomerView?: (page: QRCodeHostedPage) => void;
 }
 
 export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   business,
   hostedPageId,
   showToast,
+  onOpenCustomerView,
 }) => {
   const [items, setItems] = useState<WebsiteAppQrItem[]>(() => {
     return StorageService.getWebsitesQrItems();
@@ -748,6 +750,20 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   <span>Share</span>
                 </button>
 
+                {onOpenCustomerView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const page = QRHostingService.convertWebsitesHubToHostedPage(items, business);
+                      onOpenCustomerView(page);
+                    }}
+                    className="p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Customer View</span>
+                  </button>
+                )}
+
                 {activeUrl && (
                   <a
                     href={activeUrl}
@@ -756,7 +772,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>{isAllSelected ? 'Open Websites Hub' : 'Open Link'}</span>
+                    <span>{isAllSelected ? 'Open Live Hub' : 'Open Link'}</span>
                   </a>
                 )}
 
