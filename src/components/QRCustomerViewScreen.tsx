@@ -1118,7 +1118,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               ) : (
                 <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-200 text-xs font-bold backdrop-blur-md border border-blue-400/30">
                   <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Official Verified Directory</span>
+                  <span>Powered by Brivu</span>
                 </div>
               )}
 
