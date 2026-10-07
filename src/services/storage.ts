@@ -2081,8 +2081,28 @@ export const StorageService = {
     if (found) return found;
 
     try {
-      const events = this.getEventsQrItems();
       const business = this.getProfile();
+      if (
+        id.startsWith('websites-hub-') ||
+        id.startsWith('web-hub-') ||
+        id === 'websites' ||
+        id === 'websites-hub-all' ||
+        id.includes('websites-hub')
+      ) {
+        const websites = this.getWebsitesQrItems();
+        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
+      }
+      if (
+        id.startsWith('socials-hub-') ||
+        id.startsWith('social-hub-') ||
+        id === 'socials' ||
+        id === 'socials-hub-all' ||
+        id.includes('socials-hub')
+      ) {
+        const socials = this.getSocialsQrItems();
+        return QRHostingService.convertSocialsHubToHostedPage(socials, business);
+      }
+      const events = this.getEventsQrItems();
       if (id.startsWith('events-hub-')) {
         return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
@@ -2098,10 +2118,14 @@ export const StorageService = {
     const businessPages = this.getHostedQRPages();
     try {
       const events = this.getEventsQrItems();
+      const websites = this.getWebsitesQrItems();
+      const socials = this.getSocialsQrItems();
       const business = this.getProfile();
       const eventPages = events.map((e) => QRHostingService.convertEventToHostedPage(e, business));
       const hubPage = QRHostingService.convertEventsHubToHostedPage(events, business);
-      return [...businessPages, ...eventPages, hubPage];
+      const websitesHubPage = QRHostingService.convertWebsitesHubToHostedPage(websites, business);
+      const socialsHubPage = QRHostingService.convertSocialsHubToHostedPage(socials, business);
+      return [...businessPages, ...eventPages, hubPage, websitesHubPage, socialsHubPage];
     } catch {
       return businessPages;
     }
@@ -2112,6 +2136,8 @@ export const StorageService = {
       (p) =>
         !p.id.startsWith('event-') &&
         !p.id.startsWith('events-hub-') &&
+        !p.id.startsWith('websites-hub-') &&
+        !p.id.startsWith('socials-hub-') &&
         !p.id.startsWith('test-event-') &&
         !p.id.startsWith('web-') &&
         !p.id.startsWith('social-')
@@ -2127,6 +2153,8 @@ export const StorageService = {
     if (
       page.id.startsWith('event-') ||
       page.id.startsWith('events-hub-') ||
+      page.id.startsWith('websites-hub-') ||
+      page.id.startsWith('socials-hub-') ||
       page.id.startsWith('test-event-') ||
       page.id.startsWith('web-') ||
       page.id.startsWith('social-')
@@ -2284,7 +2312,12 @@ export const StorageService = {
   saveWebsitesQrItems(items: WebsiteAppQrItem[]): boolean {
     const success = writeToStorage(STORAGE_KEYS.WEBSITES_QR, items);
     if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
+      try {
+        const business = this.getProfile();
+        QRHostingService.syncAllWebsitesPages(items, business).catch(() => {});
+      } catch {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
     }
     return success;
   },
@@ -2297,14 +2330,20 @@ export const StorageService = {
   saveSocialsQrItems(items: SocialQrItem[]): boolean {
     const success = writeToStorage(STORAGE_KEYS.SOCIALS_QR, items);
     if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
+      try {
+        const business = this.getProfile();
+        QRHostingService.syncAllSocialsPages(items, business).catch(() => {});
+      } catch {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
     }
     return success;
   },
 
   // --- EVENTS QR ITEMS ---
   getEventsQrItems(): EventQrItem[] {
-    return readFromStorage<EventQrItem[]>(STORAGE_KEYS.EVENTS_QR, []);
+    const raw = readFromStorage<EventQrItem[]>(STORAGE_KEYS.EVENTS_QR, []);
+    return (raw || []).filter((item) => item.id !== 'event-default-1');
   },
 
   saveEventsQrItems(items: EventQrItem[]): boolean {

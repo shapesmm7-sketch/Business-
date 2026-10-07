@@ -48,8 +48,22 @@ export function getQrPageIdFromUrl(): string | null {
     params.get('qr') ||
     params.get('event') ||
     params.get('eventId') ||
-    (params.get('events') ? 'events-hub-all' : null);
+    (params.get('events') ? 'events-hub-all' : null) ||
+    params.get('website') ||
+    params.get('websiteId') ||
+    (params.get('websites') ? 'websites-hub-all' : null) ||
+    params.get('social') ||
+    params.get('socialId') ||
+    (params.get('socials') ? 'socials-hub-all' : null);
   if (fromQuery) return fromQuery;
+
+  if (params.get('tab') === 'websites') {
+    return 'websites-hub-all';
+  }
+
+  if (params.get('tab') === 'socials') {
+    return 'socials-hub-all';
+  }
 
   // 2. Check pathname: /qr/:pageId
   const pathname = window.location.pathname || '';
@@ -76,7 +90,13 @@ export function isCustomerPathFromUrl(): boolean {
     params.get('tab') ||
     params.get('event') ||
     params.get('eventId') ||
-    params.get('events')
+    params.get('events') ||
+    params.get('website') ||
+    params.get('websiteId') ||
+    params.get('websites') ||
+    params.get('social') ||
+    params.get('socialId') ||
+    params.get('socials')
   ) {
     return true;
   }
@@ -114,6 +134,16 @@ export function App() {
         if (found) return found;
       }
       const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'websites' || params.get('websites') || params.get('website')) {
+        const websites = StorageService.getWebsitesQrItems();
+        const business = StorageService.getProfile();
+        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
+      }
+      if (params.get('tab') === 'socials' || params.get('socials') || params.get('social')) {
+        const socials = StorageService.getSocialsQrItems();
+        const business = StorageService.getProfile();
+        return QRHostingService.convertSocialsHubToHostedPage(socials, business);
+      }
       if (params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
         const pages = StorageService.getHostedQRPages();
         if (pages[0]) return pages[0];
@@ -205,7 +235,15 @@ export function App() {
         if (qrPageId) {
           found = StorageService.getHostedQRPage(qrPageId);
         }
-        if (!found && !qrPageId?.startsWith('event-') && !qrPageId?.startsWith('events-hub-')) {
+        if (
+          !found &&
+          !qrPageId?.startsWith('event-') &&
+          !qrPageId?.startsWith('events-hub-') &&
+          !qrPageId?.startsWith('websites-hub-') &&
+          qrPageId !== 'websites-hub-all' &&
+          !qrPageId?.startsWith('socials-hub-') &&
+          qrPageId !== 'socials-hub-all'
+        ) {
           const pages = StorageService.getHostedQRPages();
           found = pages[0];
         }

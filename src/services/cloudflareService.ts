@@ -352,7 +352,8 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/files/upload`;
+      const cleanBaseUrl = normalizeUrl(config.workerUrl);
+      const targetUrl = `${cleanBaseUrl}/api/files/upload`;
 
       let response: Response;
 
@@ -370,19 +371,27 @@ export const CloudflareService = {
         };
       }
 
-      response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename,
-          data: payloadBase64,
-          mimeType,
-          folder,
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      try {
+        response = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            filename,
+            data: payloadBase64,
+            mimeType,
+            folder,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const rawText = await response.text().catch(() => response.statusText || '');
       const parsed = parseWorkerResponse(rawText);
@@ -420,10 +429,15 @@ export const CloudflareService = {
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('Cloudflare file upload error:', errMsg);
+      const readable = errMsg.includes('abort')
+        ? 'Upload timed out (15s)'
+        : errMsg === 'Failed to fetch'
+        ? 'Cloudflare Worker unreachable or CORS blocked. Ensure Worker URL is valid.'
+        : errMsg;
+      console.warn('Cloudflare file upload note:', readable);
       return {
         success: false,
-        message: `Cloudflare R2 upload error: ${errMsg}`,
+        message: `Cloudflare upload note: ${readable}`,
       };
     }
   },

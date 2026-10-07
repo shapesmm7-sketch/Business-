@@ -515,6 +515,11 @@ export interface QRMenuItem {
   isAvailable?: boolean;
   isSpecial?: boolean;
   tags?: string[];
+  url?: string;
+  ctaText?: string;
+  itemType?: string;
+  phone?: string;
+  phoneAction?: 'whatsapp' | 'tel';
 }
 
 export interface QRBusinessPhoto {
@@ -532,7 +537,7 @@ export interface QRCodeHostedPage {
   title: string;
   tagline?: string;
   description?: string;
-  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog' | 'event' | 'events_hub' | 'website' | 'social' | string;
+  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog' | 'event' | 'events_hub' | 'website' | 'websites_hub' | 'social' | 'socials_hub' | string;
   logo?: string;
   coverImage?: string;
   accentColor?: string;
@@ -554,6 +559,8 @@ export interface QRCodeHostedPage {
   photos: QRBusinessPhoto[];
   menuCategories: string[];
   menuItems: QRMenuItem[];
+  websitesQrItems?: WebsiteAppQrItem[];
+  socialsQrItems?: SocialQrItem[];
   currency: string;
   announcement?: string;
   allowWhatsAppOrdering?: boolean;

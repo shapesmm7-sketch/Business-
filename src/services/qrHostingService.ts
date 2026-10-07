@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
-import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, EventQrItem, BusinessProfile } from '../types';
+import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, EventQrItem, WebsiteAppQrItem, SocialQrItem, BusinessProfile } from '../types';
 import { saveJsPdf, SaveFileResult } from './fileSaver';
 import { CloudflareService } from './cloudflareService';
 import { StorageService } from './storage';
@@ -62,6 +62,26 @@ export class QRHostingService {
     const base = this.getWorkerBaseUrl();
     const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
     const hubId = `events-hub-${cleanName}`;
+    return `${base}/qr/${encodeURIComponent(hubId)}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Websites & Apps Hub page
+   */
+  static getCustomerWebsitesHubUrl(businessName?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `websites-hub-${cleanName}`;
+    return `${base}/qr/${encodeURIComponent(hubId)}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Socials Hub page
+   */
+  static getCustomerSocialsHubUrl(businessName?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `socials-hub-${cleanName}`;
     return `${base}/qr/${encodeURIComponent(hubId)}`;
   }
 
@@ -251,6 +271,144 @@ export class QRHostingService {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Converts all WebsiteAppQrItem links into a dedicated unified Websites Hub hosted page
+   */
+  static convertWebsitesHubToHostedPage(websites: WebsiteAppQrItem[], business: BusinessProfile): QRCodeHostedPage {
+    const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `websites-hub-${cleanName}`;
+    const cleanPhone = (business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+
+    const menuItems: QRMenuItem[] = websites.map((web) => ({
+      id: `web-${web.id}`,
+      name: web.title,
+      category: 'Official Websites & Apps',
+      price: 0,
+      description: web.description || web.url,
+      url: web.url,
+      ctaText: web.ctaText || 'Visit Website',
+      itemType: web.type,
+      phone: web.phone,
+      phoneAction: web.phoneAction,
+      tags: [web.type, web.ctaText || 'Visit Website'],
+      isSpecial: true,
+      isAvailable: true,
+    }));
+
+    return {
+      id: hubId,
+      title: `${business.name || 'Official'} Websites & Apps`,
+      tagline: 'Verified Official Websites, Portals & Mobile Apps',
+      description: `Official web links and verified online apps directory for ${business.name || 'our company'}.`,
+      pageType: 'websites_hub',
+      accentColor: '#2563eb',
+      theme: 'indigo',
+      coverImage: undefined,
+      logo: business.logo || undefined,
+      phone: business.phone || '',
+      whatsapp: cleanWa,
+      email: business.email || '',
+      address: business.address || '',
+      googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
+      currency: business.currency || 'USD',
+      announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
+      allowWhatsAppOrdering: false,
+      photos: [],
+      menuCategories: ['Official Websites & Apps'],
+      menuItems,
+      websitesQrItems: websites,
+      qrDarkColor: '#2563eb',
+      qrLightColor: '#ffffff',
+      qrEyeColor: '#1d4ed8',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#cbd5e1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Syncs the websites hub page to local storage and Cloudflare
+   */
+  static async syncAllWebsitesPages(websites: WebsiteAppQrItem[], business: BusinessProfile): Promise<void> {
+    try {
+      const hubPage = this.convertWebsitesHubToHostedPage(websites, business);
+      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync websites hub page to Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Converts all SocialQrItem links into a dedicated unified Socials Hub hosted page
+   */
+  static convertSocialsHubToHostedPage(socials: SocialQrItem[], business: BusinessProfile): QRCodeHostedPage {
+    const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `socials-hub-${cleanName}`;
+    const cleanPhone = (business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+
+    const menuItems: QRMenuItem[] = socials.map((soc) => ({
+      id: `social-${soc.id}`,
+      name: soc.title || soc.customPlatformName || soc.platform,
+      category: 'Official Social Media & Messaging',
+      price: 0,
+      description: soc.prefilledMessage || soc.fullUrl,
+      url: soc.fullUrl,
+      ctaText: soc.ctaText || 'Connect',
+      itemType: soc.platform,
+      tags: [soc.platform, soc.ctaText || 'Connect'],
+      isSpecial: true,
+      isAvailable: true,
+    }));
+
+    return {
+      id: hubId,
+      title: `${business.name || 'Official'} Social Media Hub`,
+      tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+      description: `Official verified social media profiles, chat channels, and community links for ${business.name || 'our brand'}.`,
+      pageType: 'socials_hub',
+      accentColor: '#059669',
+      theme: 'emerald',
+      coverImage: undefined,
+      logo: business.logo || undefined,
+      phone: business.phone || '',
+      whatsapp: cleanWa,
+      email: business.email || '',
+      address: business.address || '',
+      googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
+      currency: business.currency || 'USD',
+      announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
+      allowWhatsAppOrdering: false,
+      photos: [],
+      menuCategories: ['Official Social Media & Messaging'],
+      menuItems,
+      socialsQrItems: socials,
+      qrDarkColor: '#059669',
+      qrLightColor: '#ffffff',
+      qrEyeColor: '#047857',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#cbd5e1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Syncs the socials hub page to local storage and Cloudflare
+   */
+  static async syncAllSocialsPages(socials: SocialQrItem[], business: BusinessProfile): Promise<void> {
+    try {
+      const hubPage = this.convertSocialsHubToHostedPage(socials, business);
+      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync socials hub page to Cloudflare:', err);
+    }
   }
 
   /**

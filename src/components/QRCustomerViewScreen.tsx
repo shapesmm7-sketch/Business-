@@ -32,6 +32,8 @@ import {
   Copy,
   Globe,
   Ticket,
+  Smartphone,
+  ShieldCheck,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto } from '../types';
 import { shareContent } from '../services/fileSaver';
@@ -429,6 +431,22 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     page.id.startsWith('event-') ||
     page.id.startsWith('events-hub-');
   const isEventsHub = page.pageType === 'events_hub' || page.id.startsWith('events-hub-');
+  const isWebsitesHub =
+    page.pageType === 'websites_hub' ||
+    page.pageType === 'websites' ||
+    page.id.startsWith('websites-hub-') ||
+    page.id.startsWith('web-hub-') ||
+    page.id === 'websites-hub-all' ||
+    page.id.includes('websites-hub') ||
+    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'websites');
+  const isSocialsHub =
+    page.pageType === 'socials_hub' ||
+    page.pageType === 'social' ||
+    page.id.startsWith('socials-hub-') ||
+    page.id.startsWith('social-hub-') ||
+    page.id === 'socials-hub-all' ||
+    page.id.includes('socials-hub') ||
+    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'socials');
 
   // Dedicated Standalone Event Customer View
   if (isEventPage) {
@@ -889,6 +907,759 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             }
           />
         )}
+      </div>
+    );
+  }
+
+  // Dedicated Standalone Websites & Apps Directory Customer View
+  if (isWebsitesHub) {
+    const rawWebsites =
+      page.websitesQrItems && page.websitesQrItems.length > 0
+        ? page.websitesQrItems
+        : page.menuItems && page.menuItems.length > 0
+          ? page.menuItems.map((item: any) => ({
+              id: item.id,
+              title: item.name || 'Official Link',
+              url:
+                item.url ||
+                (typeof item.description === 'string' && item.description.startsWith('http')
+                  ? item.description
+                  : item.url) ||
+                '#',
+              type: (item.itemType || item.tags?.[0] || 'website') as any,
+              description:
+                item.description && !item.description.startsWith('http') ? item.description : undefined,
+              ctaText: item.ctaText || item.tags?.[1] || 'Visit Website',
+              phone: item.phone,
+              phoneAction: item.phoneAction,
+            }))
+          : [];
+
+    let finalWebsites = rawWebsites;
+    if (finalWebsites.length === 0) {
+      try {
+        const stored = StorageService.getWebsitesQrItems();
+        if (stored && stored.length > 0) {
+          finalWebsites = stored;
+        }
+      } catch {}
+    }
+
+    const filteredWebsites = finalWebsites.filter((w) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        w.title.toLowerCase().includes(q) ||
+        w.url.toLowerCase().includes(q) ||
+        (w.description && w.description.toLowerCase().includes(q)) ||
+        (w.type && w.type.toLowerCase().includes(q))
+      );
+    });
+
+    const cleanWaNumber = (page.whatsapp || page.phone || '').replace(/[^0-9]/g, '');
+    const defaultDirectoryMsg = encodeURIComponent(
+      `👋 Hello *${page.title}*,\nI found your official websites directory and have a quick inquiry. Thank you!`
+    );
+    const waDirectoryUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${defaultDirectoryMsg}` : '';
+
+    const getTypeIcon = (type: string) => {
+      switch (type) {
+        case 'android_app':
+          return Smartphone;
+        case 'ios_app':
+          return Smartphone;
+        case 'web_app':
+          return Globe;
+        case 'phone_link':
+          return Phone;
+        default:
+          return Globe;
+      }
+    };
+
+    const getTypeBadgeStyle = (type: string) => {
+      switch (type) {
+        case 'android_app':
+          return {
+            label: 'Android App',
+            style: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+          };
+        case 'ios_app':
+          return {
+            label: 'iOS App',
+            style: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+          };
+        case 'web_app':
+          return {
+            label: 'Web Application',
+            style: 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+          };
+        case 'phone_link':
+          return {
+            label: 'Call / WhatsApp',
+            style: 'bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+          };
+        case 'custom':
+          return {
+            label: 'Direct Portal',
+            style: 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+          };
+        default:
+          return {
+            label: 'Official Website',
+            style: 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+          };
+      }
+    };
+
+    const getDomainFromUrl = (urlStr: string) => {
+      try {
+        const u = new URL(urlStr);
+        return u.hostname.replace(/^www\./, '');
+      } catch {
+        return urlStr.replace(/^https?:\/\//, '').split('/')[0];
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white pb-24">
+        {/* Merchant preview top bar */}
+        {isMerchantPreview && (
+          <div className="bg-blue-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-300 animate-pulse" />
+              <span>Websites Directory Mode (Live Preview)</span>
+            </div>
+            {onBackToApp && (
+              <button
+                onClick={onBackToApp}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-white font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back to Editor</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Hero Header */}
+        <div className="relative w-full overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white">
+          <div className="absolute inset-0 z-0 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:20px_20px] opacity-15" />
+          <div className="relative z-10 max-w-2xl mx-auto px-4 pt-6 pb-6 sm:pt-8 sm:pb-8">
+            {/* Top Actions: Share & Back */}
+            <div className="flex items-center justify-between mb-4">
+              {onBackToApp ? (
+                <button
+                  onClick={onBackToApp}
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+                  title="Back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-200 text-xs font-bold backdrop-blur-md border border-blue-400/30">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Official Verified Directory</span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleShareMenu}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/15 transition active:scale-95 shadow-xs cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5 text-blue-300" />
+                <span>{copiedLink ? 'Link Copied!' : 'Share Directory'}</span>
+              </button>
+            </div>
+
+            {/* Business Logo & Main Title */}
+            <div className="flex items-start gap-3.5 sm:gap-4">
+              {page.logo ? (
+                <img
+                  src={page.logo}
+                  alt={page.title}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-blue-400/30 shadow-xl bg-slate-800 shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-2xl font-black shadow-xl border-2 border-white/20 shrink-0">
+                  <Globe className="w-8 h-8" />
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[11px] font-bold tracking-wide uppercase border border-blue-500/30 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  <span>Verified Online Portals</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
+                  {page.title}
+                </h1>
+                <p className="text-xs sm:text-sm text-blue-200/90 font-medium mt-1 leading-snug">
+                  {page.tagline || 'Official Websites, Mobile Apps & Online Portals'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-white/10">
+              {waDirectoryUrl ? (
+                <a
+                  href={waDirectoryUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-emerald-600/30"
+                >
+                  <MessageCircle className="w-4 h-4 mb-1" />
+                  <span className="truncate w-full text-[11px]">WhatsApp Us</span>
+                </a>
+              ) : null}
+
+              {page.phone ? (
+                <a
+                  href={`tel:${page.phone}`}
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <Phone className="w-4 h-4 mb-1 text-blue-300" />
+                  <span className="truncate w-full text-[11px]">Call Us</span>
+                </a>
+              ) : null}
+
+              {page.address ? (
+                <a
+                  href={page.googleMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(page.address)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <MapPin className="w-4 h-4 mb-1 text-blue-300" />
+                  <span className="truncate w-full text-[11px]">Location</span>
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <span>Official Links & Websites</span>
+            </h2>
+            <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
+              {finalWebsites.length} Link{finalWebsites.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {/* Search bar when more than 2 items */}
+          {finalWebsites.length > 2 && (
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search websites or apps..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Websites Cards List */}
+          {filteredWebsites.length > 0 ? (
+            <div className="space-y-3.5">
+              {filteredWebsites.map((item, idx) => {
+                const Icon = getTypeIcon(item.type);
+                const badge = getTypeBadgeStyle(item.type);
+                const domain = getDomainFromUrl(item.url);
+                const cleanPhone = (item.phone || '').replace(/[^0-9+]/g, '');
+                const supportWaUrl = cleanPhone
+                  ? item.phoneAction === 'tel'
+                    ? `tel:${cleanPhone}`
+                    : `https://wa.me/${cleanPhone.replace(/[^0-9]/g, '')}`
+                  : '';
+
+                return (
+                  <div
+                    key={item.id || idx}
+                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-4 sm:p-5 hover:shadow-md transition flex flex-col gap-3 group"
+                  >
+                    {/* Top Row: Type Badge + Domain + Action */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${badge.style}`}
+                        >
+                          <Icon className="w-3 h-3" />
+                          <span>{badge.label}</span>
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-mono font-medium truncate max-w-[150px] sm:max-w-[200px]">
+                          {domain}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigator.clipboard?.writeText(item.url);
+                          setCopiedLink(true);
+                          setTimeout(() => setCopiedLink(false), 2000);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 text-xs transition cursor-pointer"
+                        title="Copy direct link"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Middle: Title & Description */}
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-snug group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
+                        {item.title}
+                      </h3>
+                      {item.description && (
+                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          {item.description}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-blue-600 dark:text-blue-400 font-medium mt-1.5 truncate max-w-full">
+                        {item.url}
+                      </p>
+                    </div>
+
+                    {/* Bottom: Action Buttons */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-xs transition text-center cursor-pointer"
+                      >
+                        <span>{item.ctaText || 'Visit Website'}</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+
+                      {supportWaUrl && (
+                        <a
+                          href={supportWaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-98 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 transition text-center shrink-0 cursor-pointer"
+                          title="Contact support"
+                        >
+                          <Phone className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span className="hidden sm:inline">Support</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
+              <Globe className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                {searchQuery ? 'No websites found matching your search' : 'No Official Websites Added Yet'}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {searchQuery
+                  ? 'Try clearing the search query to see all verified links.'
+                  : 'Official links and verified websites configured by the merchant will appear here.'}
+              </p>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-500 transition cursor-pointer"
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Verified Directory Footer */}
+          <div className="pt-6 pb-4 text-center space-y-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+              <span>Verified Directory • Protected by Cloudflare & Brivu</span>
+            </div>
+            {page.address && (
+              <p className="text-[11px] text-slate-400">{page.address}</p>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Dedicated Standalone Socials & Messaging Directory Customer View
+  if (isSocialsHub) {
+    const rawSocials =
+      page.socialsQrItems && page.socialsQrItems.length > 0
+        ? page.socialsQrItems
+        : page.menuItems && page.menuItems.length > 0
+          ? page.menuItems.map((item: any) => ({
+              id: item.id,
+              platform: (item.itemType || item.tags?.[0] || 'custom') as any,
+              customPlatformName: item.name,
+              title: item.name || 'Social Media',
+              usernameOrPhone: item.usernameOrPhone || '',
+              fullUrl:
+                item.url ||
+                (typeof item.description === 'string' && item.description.startsWith('http')
+                  ? item.description
+                  : item.url) ||
+                '#',
+              prefilledMessage:
+                item.description && !item.description.startsWith('http') ? item.description : undefined,
+              ctaText: item.ctaText || item.tags?.[1] || 'Connect',
+              darkColor: '#059669',
+              lightColor: '#ffffff',
+              createdAt: new Date().toISOString(),
+            }))
+          : [];
+
+    let finalSocials = rawSocials;
+    if (finalSocials.length === 0) {
+      try {
+        const stored = StorageService.getSocialsQrItems();
+        if (stored && stored.length > 0) {
+          finalSocials = stored;
+        }
+      } catch {}
+    }
+
+    const filteredSocials = finalSocials.filter((s) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        s.title.toLowerCase().includes(q) ||
+        s.fullUrl.toLowerCase().includes(q) ||
+        (s.platform && s.platform.toLowerCase().includes(q)) ||
+        (s.customPlatformName && s.customPlatformName.toLowerCase().includes(q)) ||
+        (s.usernameOrPhone && s.usernameOrPhone.toLowerCase().includes(q)) ||
+        (s.prefilledMessage && s.prefilledMessage.toLowerCase().includes(q))
+      );
+    });
+
+    const cleanWaNumber = (page.whatsapp || page.phone || '').replace(/[^0-9]/g, '');
+    const defaultDirectoryMsg = encodeURIComponent(
+      `👋 Hello *${page.title}*,\nI found your official social media hub and would like to connect. Thank you!`
+    );
+    const waDirectoryUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${defaultDirectoryMsg}` : '';
+
+    const getPlatformBrand = (platform: string) => {
+      switch (platform) {
+        case 'whatsapp':
+          return { name: 'WhatsApp', color: '#25D366', bgClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' };
+        case 'instagram':
+          return { name: 'Instagram', color: '#E1306C', bgClass: 'bg-pink-500/10 text-pink-600 border-pink-500/20' };
+        case 'facebook':
+          return { name: 'Facebook', color: '#1877F2', bgClass: 'bg-blue-500/10 text-blue-600 border-blue-500/20' };
+        case 'tiktok':
+          return { name: 'TikTok', color: '#000000', bgClass: 'bg-slate-900/10 text-slate-900 dark:text-white border-slate-700/20' };
+        case 'x_twitter':
+          return { name: 'X (Twitter)', color: '#000000', bgClass: 'bg-slate-900/10 text-slate-900 dark:text-white border-slate-700/20' };
+        case 'youtube':
+          return { name: 'YouTube', color: '#FF0000', bgClass: 'bg-red-500/10 text-red-600 border-red-500/20' };
+        case 'linkedin':
+          return { name: 'LinkedIn', color: '#0A66C2', bgClass: 'bg-sky-600/10 text-sky-600 border-sky-600/20' };
+        case 'telegram':
+          return { name: 'Telegram', color: '#229ED9', bgClass: 'bg-sky-500/10 text-sky-500 border-sky-500/20' };
+        case 'snapchat':
+          return { name: 'Snapchat', color: '#FFFC00', bgClass: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' };
+        case 'threads':
+          return { name: 'Threads', color: '#000000', bgClass: 'bg-slate-900/10 text-slate-900 dark:text-white border-slate-700/20' };
+        case 'pinterest':
+          return { name: 'Pinterest', color: '#BD081C', bgClass: 'bg-red-600/10 text-red-600 border-red-600/20' };
+        case 'reddit':
+          return { name: 'Reddit', color: '#FF4500', bgClass: 'bg-orange-500/10 text-orange-600 border-orange-500/20' };
+        case 'discord':
+          return { name: 'Discord', color: '#5865F2', bgClass: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' };
+        case 'twitch':
+          return { name: 'Twitch', color: '#9146FF', bgClass: 'bg-purple-500/10 text-purple-600 border-purple-500/20' };
+        case 'spotify':
+          return { name: 'Spotify', color: '#1DB954', bgClass: 'bg-emerald-600/10 text-emerald-600 border-emerald-600/20' };
+        default:
+          return { name: 'Social Channel', color: '#059669', bgClass: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' };
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white pb-24">
+        {/* Merchant preview top bar */}
+        {isMerchantPreview && (
+          <div className="bg-emerald-700 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between sticky top-0 z-50 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
+              <span>Socials Hub Mode (Live Preview)</span>
+            </div>
+            {onBackToApp && (
+              <button
+                onClick={onBackToApp}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-white font-bold transition flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Back to Editor</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Hero Header */}
+        <div className="relative w-full overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 text-white">
+          <div className="absolute inset-0 z-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:20px_20px] opacity-15" />
+          <div className="relative z-10 max-w-2xl mx-auto px-4 pt-6 pb-6 sm:pt-8 sm:pb-8">
+            {/* Top Actions: Share & Back */}
+            <div className="flex items-center justify-between mb-4">
+              {onBackToApp ? (
+                <button
+                  onClick={onBackToApp}
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+                  title="Back"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 text-xs font-bold backdrop-blur-md border border-emerald-400/30">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Official Social Hub</span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleShareMenu}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md border border-white/15 transition active:scale-95 shadow-xs cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5 text-emerald-300" />
+                <span>{copiedLink ? 'Link Copied!' : 'Share Hub'}</span>
+              </button>
+            </div>
+
+            {/* Business Logo & Main Title */}
+            <div className="flex items-start gap-3.5 sm:gap-4">
+              {page.logo ? (
+                <img
+                  src={page.logo}
+                  alt={page.title}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-emerald-400/30 shadow-xl bg-slate-800 shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white text-2xl font-black shadow-xl border-2 border-white/20 shrink-0">
+                  <MessageCircle className="w-8 h-8" />
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold tracking-wide uppercase border border-emerald-500/30 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Verified Official Channels</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
+                  {page.title}
+                </h1>
+                <p className="text-xs sm:text-sm text-emerald-200/90 font-medium mt-1 leading-snug">
+                  {page.tagline || 'Connect Across All Official Social Channels & Messaging Apps'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-white/10">
+              {waDirectoryUrl ? (
+                <a
+                  href={waDirectoryUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-emerald-600/30"
+                >
+                  <MessageCircle className="w-4 h-4 mb-1" />
+                  <span className="truncate w-full text-[11px]">Chat on WhatsApp</span>
+                </a>
+              ) : null}
+
+              {page.phone ? (
+                <a
+                  href={`tel:${page.phone}`}
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <Phone className="w-4 h-4 mb-1 text-emerald-300" />
+                  <span className="truncate w-full text-[11px]">Call Us</span>
+                </a>
+              ) : null}
+
+              {page.address ? (
+                <a
+                  href={page.googleMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(page.address)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                >
+                  <MapPin className="w-4 h-4 mb-1 text-emerald-300" />
+                  <span className="truncate w-full text-[11px]">Location</span>
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <span>Official Social Media & Messaging</span>
+            </h2>
+            <span className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
+              {finalSocials.length} Channel{finalSocials.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {/* Search bar when more than 2 items */}
+          {finalSocials.length > 2 && (
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search social platforms or channels..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Social Channels List */}
+          {filteredSocials.length > 0 ? (
+            <div className="space-y-3.5">
+              {filteredSocials.map((item, idx) => {
+                const brand = getPlatformBrand(item.platform);
+                const platformDisplayName = item.customPlatformName || brand.name;
+
+                return (
+                  <div
+                    key={item.id || idx}
+                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-4 sm:p-5 hover:shadow-md transition flex flex-col gap-3 group"
+                  >
+                    {/* Top Row: Brand Badge + Handle/Username + Copy */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${brand.bgClass}`}
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          <span>{platformDisplayName}</span>
+                        </span>
+                        {item.usernameOrPhone && (
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium truncate max-w-[150px] sm:max-w-[200px]">
+                            {item.usernameOrPhone}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigator.clipboard?.writeText(item.fullUrl);
+                          setCopiedLink(true);
+                          setTimeout(() => setCopiedLink(false), 2000);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 text-xs transition cursor-pointer"
+                        title="Copy direct link"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Middle: Title & Message */}
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">
+                        {item.title}
+                      </h3>
+                      {item.prefilledMessage && (
+                        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                          {item.prefilledMessage}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1.5 truncate max-w-full">
+                        {item.fullUrl}
+                      </p>
+                    </div>
+
+                    {/* Bottom: Direct Connect Action Button */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                      <a
+                        href={item.fullUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-xs transition text-center cursor-pointer"
+                      >
+                        <span>{item.ctaText || `Connect on ${platformDisplayName}`}</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
+              <MessageCircle className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                {searchQuery ? 'No social channels found matching your search' : 'No Official Social Channels Added Yet'}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {searchQuery
+                  ? 'Try clearing the search query to see all verified channels.'
+                  : 'Official social profiles and messaging channels configured by the merchant will appear here.'}
+              </p>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl hover:bg-emerald-500 transition cursor-pointer"
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Verified Directory Footer */}
+          <div className="pt-6 pb-4 text-center space-y-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Official Social Hub • Protected by Cloudflare & Brivu</span>
+            </div>
+            {page.address && (
+              <p className="text-[11px] text-slate-400">{page.address}</p>
+            )}
+          </div>
+        </main>
       </div>
     );
   }

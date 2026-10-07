@@ -121,11 +121,9 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   const isAllSelected = selectedItemId === 'all';
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
 
-  const pageIdToUse = hostedPageId || StorageService.getHostedQRPages()[0]?.id || 'brivu_default_hub';
-
   const allHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerPageUrl(pageIdToUse, 'websites');
-  }, [pageIdToUse]);
+    return QRHostingService.getCustomerWebsitesHubUrl(business.name);
+  }, [business.name]);
 
   const activeUrl = isAllSelected ? allHubUrl : (activeItem?.url || '');
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#2563eb');
@@ -173,13 +171,21 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   // Save to storage & Cloudflare on update
   useEffect(() => {
     StorageService.saveWebsitesQrItems(items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
-  }, [items]);
+    if (items.length > 0) {
+      QRHostingService.syncAllWebsitesPages(items, business);
+    } else {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+  }, [items, business]);
 
   // Cloudflare sync on mount
   useEffect(() => {
-    CloudflareService.syncAllToCloudflare().catch(() => {});
-  }, []);
+    if (items.length > 0) {
+      QRHostingService.syncAllWebsitesPages(items, business);
+    } else {
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+  }, [business]);
 
   // Generate QR for active item or ALL hub
   useEffect(() => {

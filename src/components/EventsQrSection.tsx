@@ -52,28 +52,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   showToast,
 }) => {
   const [items, setItems] = useState<EventQrItem[]>(() => {
-    const stored = StorageService.getEventsQrItems();
-    if (stored && stored.length > 0) return stored;
-
-    const defaultContact = business.whatsapp || business.phone || business.website || 'https://brivu.app';
-    return [
-      {
-        id: 'event-default-1',
-        title: `${business.name || 'Our Business'} Special Event / Showcase`,
-        startDate: '2026-10-25',
-        endDate: '2026-10-26',
-        startTime: '10:00',
-        endTime: '20:00',
-        location: business.address || 'Main Venue / City Center',
-        rsvpUrl: defaultContact.startsWith('http') || defaultContact.startsWith('+') ? defaultContact : `https://wa.me/${defaultContact.replace(/[^0-9]/g, '')}`,
-        description: 'Join us for our upcoming exclusive event! Scan to RSVP, view details, and save to calendar.',
-        ctaText: 'Scan to RSVP & Join Event',
-        darkColor: '#7c3aed',
-        lightColor: '#ffffff',
-        eyeColor: '#6d28d9',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    return StorageService.getEventsQrItems();
   });
 
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');

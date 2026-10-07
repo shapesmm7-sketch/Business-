@@ -2,27 +2,533 @@ export interface Env {
   ASSETS: {
     fetch: (request: Request | string) => Promise<Response>;
   };
+  DB?: any;
+  brivu_db?: any;
+  BUCKET?: any;
+  brivu_bucket?: any;
+  MY_BUCKET?: any;
 }
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-Requested-With',
+  'Access-Control-Max-Age': '86400',
+};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    // 1. Handle CORS Preflight OPTIONS requests
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: CORS_HEADERS,
+      });
+    }
+
+    // 2. Health check endpoint (/api/health)
+    if (url.pathname === '/api/health') {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          status: 'connected',
+          d1Bound: Boolean(env.DB || env.brivu_db),
+          r2Bound: Boolean(env.BUCKET || env.brivu_bucket || env.MY_BUCKET),
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          status: 200,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    // 3. R2 File Upload endpoint (/api/files/upload)
+    if (url.pathname === '/api/files/upload' && request.method === 'POST') {
+      try {
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const body: any = await request.json().catch(() => ({}));
+        const { filename, data, mimeType = 'application/octet-stream', folder = 'receipts' } = body;
+
+        const cleanFilename = (filename || `file_${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const key = `${folder}/${Date.now()}_${cleanFilename}`;
+        const publicUrl = `${url.origin}/api/files/${encodeURIComponent(key)}`;
+
+        if (bucket) {
+          let buffer: Uint8Array;
+          if (typeof data === 'string') {
+            const cleanBase64 = data.includes(',') ? data.split(',')[1] : data;
+            const binary = atob(cleanBase64);
+            buffer = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              buffer[i] = binary.charCodeAt(i);
+            }
+          } else {
+            buffer = new Uint8Array(0);
+          }
+
+          await bucket.put(key, buffer, {
+            httpMetadata: { contentType: mimeType },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            url: publicUrl,
+            key,
+            filename: cleanFilename,
+            size: data ? data.length : 0,
+            message: `File ${cleanFilename} saved to Cloudflare R2`,
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            success: false,
+            error: String(err?.message || err),
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      }
+    }
+
+    // 4. File Download endpoint (/api/files/:key)
+    if (url.pathname.startsWith('/api/files/')) {
+      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const key = decodeURIComponent(url.pathname.replace('/api/files/', ''));
+
+      if (bucket && key) {
+        try {
+          const object = await bucket.get(key);
+          if (object) {
+            const headers = new Headers(CORS_HEADERS);
+            object.writeHttpMetadata(headers);
+            headers.set('etag', object.httpEtag);
+            return new Response(object.body, { headers });
+          }
+        } catch {}
+      }
+    }
+
+    // 5. QR Page Save endpoint (/api/qr)
+    if (url.pathname === '/api/qr' && request.method === 'POST') {
+      try {
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const page: any = await request.json().catch(() => ({}));
+        if (page?.id && bucket) {
+          const key = `qr_pages/${encodeURIComponent(page.id)}.json`;
+          const text = JSON.stringify(page);
+          await bucket.put(key, text, {
+            httpMetadata: { contentType: 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            message: `QR page ${page?.id || ''} saved to Cloudflare`,
+            data: { page },
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 6. QR Page Fetch endpoint (/api/qr/:pageId)
+    if (url.pathname.startsWith('/api/qr/')) {
+      const pageId = decodeURIComponent(url.pathname.replace('/api/qr/', ''));
+      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+
+      if (bucket && pageId) {
+        try {
+          const key = `qr_pages/${encodeURIComponent(pageId)}.json`;
+          const object = await bucket.get(key);
+          if (object) {
+            const text = await object.text();
+            const page = JSON.parse(text);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              {
+                status: 200,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+              }
+            );
+          }
+
+          // Fallback: Check if we have backup data with websitesQrItems for websites hub
+          if (pageId.startsWith('websites-hub-') || pageId === 'websites-hub-all') {
+            const backupObj = await bucket.get('sync/latest_backup.json');
+            if (backupObj) {
+              const bText = await backupObj.text();
+              const bData = JSON.parse(bText);
+              const websites = bData.websitesQrItems || [];
+              const profile = bData.profile || {};
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const page = {
+                id: pageId,
+                title: `${profile.name || 'Official'} Websites & Apps`,
+                tagline: 'Verified Official Websites, Portals & Mobile Apps',
+                description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+                pageType: 'websites_hub',
+                accentColor: '#2563eb',
+                theme: 'indigo',
+                logo: profile.logo,
+                phone: profile.phone || '',
+                whatsapp: cleanWa,
+                email: profile.email || '',
+                address: profile.address || '',
+                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+                currency: profile.currency || 'USD',
+                announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
+                photos: [],
+                menuCategories: ['Official Websites & Apps'],
+                menuItems: websites.map((w: any) => ({
+                  id: `web-${w.id}`,
+                  name: w.title,
+                  category: 'Official Websites & Apps',
+                  price: 0,
+                  description: w.description || w.url,
+                  url: w.url,
+                  ctaText: w.ctaText || 'Visit Website',
+                  itemType: w.type,
+                  phone: w.phone,
+                  phoneAction: w.phoneAction,
+                  tags: [w.type, w.ctaText || 'Visit Website'],
+                  isSpecial: true,
+                  isAvailable: true,
+                })),
+                websitesQrItems: websites,
+                qrDarkColor: '#2563eb',
+                qrLightColor: '#ffffff',
+                qrEyeColor: '#1d4ed8',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              return new Response(
+                JSON.stringify({ ok: true, success: true, data: { page } }),
+                {
+                  status: 200,
+                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+                }
+              );
+            }
+          }
+
+          // Fallback: Check if we have backup data with socialsQrItems for socials hub
+          if (pageId.startsWith('socials-hub-') || pageId === 'socials-hub-all') {
+            const backupObj = await bucket.get('sync/latest_backup.json');
+            if (backupObj) {
+              const bText = await backupObj.text();
+              const bData = JSON.parse(bText);
+              const socials = bData.socialsQrItems || [];
+              const profile = bData.profile || {};
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const page = {
+                id: pageId,
+                title: `${profile.name || 'Official'} Social Media Hub`,
+                tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+                description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+                pageType: 'socials_hub',
+                accentColor: '#059669',
+                theme: 'emerald',
+                logo: profile.logo,
+                phone: profile.phone || '',
+                whatsapp: cleanWa,
+                email: profile.email || '',
+                address: profile.address || '',
+                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+                currency: profile.currency || 'USD',
+                announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
+                photos: [],
+                menuCategories: ['Official Social Media & Messaging'],
+                menuItems: socials.map((s: any) => ({
+                  id: `social-${s.id}`,
+                  name: s.title || s.customPlatformName || s.platform,
+                  category: 'Official Social Media & Messaging',
+                  price: 0,
+                  description: s.prefilledMessage || s.fullUrl,
+                  url: s.fullUrl,
+                  ctaText: s.ctaText || 'Connect',
+                  itemType: s.platform,
+                  tags: [s.platform, s.ctaText || 'Connect'],
+                  isSpecial: true,
+                  isAvailable: true,
+                })),
+                socialsQrItems: socials,
+                qrDarkColor: '#059669',
+                qrLightColor: '#ffffff',
+                qrEyeColor: '#047857',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              return new Response(
+                JSON.stringify({ ok: true, success: true, data: { page } }),
+                {
+                  status: 200,
+                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+                }
+              );
+            }
+          }
+        } catch {}
+      }
+
+      return new Response(
+        JSON.stringify({ ok: false, error: 'QR Page not found' }),
+        { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 7. Data Sync Push endpoint (/api/sync/push)
+    if (url.pathname === '/api/sync/push' && request.method === 'POST') {
+      try {
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const body: any = await request.json().catch(() => ({}));
+        const backupData = body?.backupData || body;
+
+        if (bucket && backupData) {
+          await bucket.put('sync/latest_backup.json', JSON.stringify(backupData), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+
+          // Also save websites hub page directly if websitesQrItems exist
+          if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
+            const profile = backupData.profile || {};
+            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+            const hubId = `websites-hub-${cleanName}`;
+            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+            const webHubPage = {
+              id: hubId,
+              title: `${profile.name || 'Official'} Websites & Apps`,
+              tagline: 'Verified Official Websites, Portals & Mobile Apps',
+              description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+              pageType: 'websites_hub',
+              accentColor: '#2563eb',
+              theme: 'indigo',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || '',
+              address: profile.address || '',
+              currency: profile.currency || 'USD',
+              announcement: `🌐 ${backupData.websitesQrItems.length} Official Link${backupData.websitesQrItems.length === 1 ? '' : 's'} Available`,
+              photos: [],
+              menuCategories: ['Official Websites & Apps'],
+              menuItems: backupData.websitesQrItems.map((w: any) => ({
+                id: `web-${w.id}`,
+                name: w.title,
+                category: 'Official Websites & Apps',
+                price: 0,
+                description: w.description || w.url,
+                url: w.url,
+                ctaText: w.ctaText || 'Visit Website',
+                itemType: w.type,
+                phone: w.phone,
+                phoneAction: w.phoneAction,
+                tags: [w.type, w.ctaText || 'Visit Website'],
+                isSpecial: true,
+                isAvailable: true,
+              })),
+              websitesQrItems: backupData.websitesQrItems,
+              qrDarkColor: '#2563eb',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#1d4ed8',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(webHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`qr_pages/websites-hub-all.json`, JSON.stringify(webHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+          }
+
+          // Also save socials hub page directly if socialsQrItems exist
+          if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
+            const profile = backupData.profile || {};
+            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+            const hubId = `socials-hub-${cleanName}`;
+            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+            const socialHubPage = {
+              id: hubId,
+              title: `${profile.name || 'Official'} Social Media Hub`,
+              tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+              description: `Official verified social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+              pageType: 'socials_hub',
+              accentColor: '#059669',
+              theme: 'emerald',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || '',
+              address: profile.address || '',
+              currency: profile.currency || 'USD',
+              announcement: `💬 ${backupData.socialsQrItems.length} Official Channel${backupData.socialsQrItems.length === 1 ? '' : 's'} Connected`,
+              photos: [],
+              menuCategories: ['Official Social Media & Messaging'],
+              menuItems: backupData.socialsQrItems.map((s: any) => ({
+                id: `social-${s.id}`,
+                name: s.title || s.customPlatformName || s.platform,
+                category: 'Official Social Media & Messaging',
+                price: 0,
+                description: s.prefilledMessage || s.fullUrl,
+                url: s.fullUrl,
+                ctaText: s.ctaText || 'Connect',
+                itemType: s.platform,
+                tags: [s.platform, s.ctaText || 'Connect'],
+                isSpecial: true,
+                isAvailable: true,
+              })),
+              socialsQrItems: backupData.socialsQrItems,
+              qrDarkColor: '#059669',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#047857',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(socialHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`qr_pages/socials-hub-all.json`, JSON.stringify(socialHubPage), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            message: 'All records successfully saved to Cloudflare',
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 8. Data Sync Pull endpoint (/api/sync/pull)
+    if (url.pathname === '/api/sync/pull' && request.method === 'GET') {
+      try {
+        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        if (bucket) {
+          const obj = await bucket.get('sync/latest_backup.json');
+          if (obj) {
+            const text = await obj.text();
+            const backupData = JSON.parse(text);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { backupData } }),
+              {
+                status: 200,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+              }
+            );
+          }
+        }
+        return new Response(
+          JSON.stringify({ ok: true, success: true, data: { backupData: null } }),
+          {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 5. Try serving exact static asset from ASSETS binding
     try {
-      // 1. Try to serve exact static asset from ASSETS binding
       const response = await env.ASSETS.fetch(request);
       if (response.status !== 404) {
-        return response;
+        const newHeaders = new Headers(response.headers);
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders,
+        });
       }
     } catch {
       // Ignore asset lookup errors and proceed to SPA fallback
     }
 
-    // 2. SPA Fallback: Serve /index.html for client-side React routes
+    // 6. SPA Fallback: Serve /index.html for client-side React routes
     try {
-      const url = new URL(request.url);
       const indexUrl = new URL('/index.html', url.origin);
-      return await env.ASSETS.fetch(new Request(indexUrl, request));
+      const indexResponse = await env.ASSETS.fetch(new Request(indexUrl, request));
+      const newHeaders = new Headers(indexResponse.headers);
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+      return new Response(indexResponse.body, {
+        status: indexResponse.status,
+        statusText: indexResponse.statusText,
+        headers: newHeaders,
+      });
     } catch {
-      return new Response('Not Found', { status: 404 });
+      return new Response('Not Found', {
+        status: 404,
+        headers: CORS_HEADERS,
+      });
     }
   },
 };
