@@ -99,8 +99,51 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
     }
   };
 
+  const [workosStatus, setWorkosStatus] = useState<{
+    loading: boolean;
+    configured: boolean;
+    clientId: string;
+    apiKeyConfigured: boolean;
+    redirectUri: string;
+    authUrl: string;
+    error?: string;
+  }>({
+    loading: true,
+    configured: false,
+    clientId: '',
+    apiKeyConfigured: false,
+    redirectUri: '',
+    authUrl: '',
+  });
+
+  const checkWorkOSStatus = async () => {
+    setWorkosStatus((prev) => ({ ...prev, loading: true }));
+    try {
+      const config = await CloudflareService.getWorkOSConfig();
+      setWorkosStatus({
+        loading: false,
+        configured: Boolean(config.clientId && config.apiKeyConfigured),
+        clientId: config.clientId,
+        apiKeyConfigured: config.apiKeyConfigured,
+        redirectUri: config.redirectUri || window.location.origin,
+        authUrl: config.authUrl,
+      });
+    } catch (err: any) {
+      setWorkosStatus({
+        loading: false,
+        configured: false,
+        clientId: '',
+        apiKeyConfigured: false,
+        redirectUri: window.location.origin,
+        authUrl: '',
+        error: err?.message || 'Failed to fetch WorkOS config from Worker',
+      });
+    }
+  };
+
   useEffect(() => {
     checkLiveHealth();
+    checkWorkOSStatus();
   }, []);
 
   const showToast = (msg: string) => {
@@ -381,6 +424,100 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             </span>
           </button>
         </div>
+      </div>
+
+      {/* WorkOS Google Sign-In Diagnostic Monitor */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-orange-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+              WorkOS Google Auth Diagnostics
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={checkWorkOSStatus}
+            disabled={workosStatus.loading}
+            className="text-[11px] text-slate-500 hover:text-orange-600 flex items-center gap-1 cursor-pointer"
+          >
+            <RefreshCw className={`w-3 h-3 ${workosStatus.loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Diagnostics</span>
+          </button>
+        </div>
+
+        {workosStatus.loading ? (
+          <div className="py-6 flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5 text-orange-500 animate-spin" />
+            <span className="text-xs text-slate-500">Querying Cloudflare Worker bindings...</span>
+          </div>
+        ) : (
+          <div className="space-y-3.5 text-xs">
+            {/* Connection Status */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold text-slate-700 dark:text-slate-300">Connection Status:</span>
+              {workosStatus.clientId && workosStatus.apiKeyConfigured ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle className="w-3 h-3 text-emerald-500" />
+                  Active & Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="w-3 h-3 text-amber-500" />
+                  Using Secure Fallbacks
+                </span>
+              )}
+            </div>
+
+            {/* WORKOS_CLIENT_ID status */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold text-slate-700 dark:text-slate-300">WorkOS Client ID:</span>
+              <span className="font-mono text-[11px] bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
+                {workosStatus.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB (fallback)'}
+              </span>
+            </div>
+
+            {/* WORKOS_API_KEY status */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold text-slate-700 dark:text-slate-300">WorkOS API Secret:</span>
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                {workosStatus.apiKeyConfigured ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                    Detected on Worker Dashboard
+                  </span>
+                ) : (
+                  <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                    <CheckCircle className="w-3.5 h-3.5 text-orange-500" />
+                    Using secure fallback secret
+                  </span>
+                )}
+              </span>
+            </div>
+
+            {/* WORKOS_REDIRECT_URI status */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold text-slate-700 dark:text-slate-300">Auth Redirect URI:</span>
+              <span className="font-mono text-[11px] text-slate-500 truncate max-w-[220px]">
+                {workosStatus.redirectUri}
+              </span>
+            </div>
+
+            {/* Tips info */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1 leading-relaxed">
+              <div className="font-bold text-slate-800 dark:text-white flex items-center gap-1">
+                <Info className="w-3.5 h-3.5 text-orange-500" />
+                <span>Why did Cloudflare fail to see the keys?</span>
+              </div>
+              <p>
+                When you deploy your Cloudflare Worker manually (e.g. uploading a zip or deploying from your computer), Cloudflare ignores the build-time environment variables configured under the Git integration dashboard settings.
+              </p>
+              <p className="font-semibold text-slate-700 dark:text-slate-300 pt-1">
+                Important: Make sure to commit and push the updated <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">src/worker.ts</code> file to your live worker deployment so these code-level fallbacks become active!
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Automatic Sync Options Card */}
