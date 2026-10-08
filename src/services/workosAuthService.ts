@@ -1,3 +1,4 @@
+import { Browser } from '@capacitor/browser';
 import { WorkOSUser, CloudflareSyncResponse } from '../types';
 import { StorageService } from './storage';
 import { CloudflareService } from './cloudflareService';
@@ -98,15 +99,33 @@ export const WorkOSAuthService = {
       // 3. Check WorkOS configuration on Cloudflare Worker
       const config = await CloudflareService.getWorkOSConfig(codeChallenge);
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-      const redirectUri = window.location.origin;
+
+      const isNative = typeof window !== 'undefined' && (
+        Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+        window.location.origin.includes('localhost') ||
+        window.location.protocol === 'file:' ||
+        window.location.protocol === 'capacitor:'
+      );
+      const cloudflareBaseUrl = config.workerUrl || 'https://shapesmm7.workers.dev';
+      const redirectUri = isNative
+        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/auth/callback`
+        : window.location.origin;
 
       let authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
       if (!authUrl.includes('code_challenge=')) {
         authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
       }
 
-      // Redirect to WorkOS AuthKit Google Sign-In
-      window.location.href = authUrl;
+      // Launch WorkOS AuthKit Google Sign-In via system browser on mobile or direct redirect on web
+      if (isNative) {
+        try {
+          await Browser.open({ url: authUrl, windowName: '_system' });
+        } catch (_) {
+          window.location.href = authUrl;
+        }
+      } else {
+        window.location.href = authUrl;
+      }
       return { success: true, message: 'Redirecting to WorkOS Google Sign-In...' };
     } catch (err: any) {
       console.error('WorkOS Google Sign In error:', err);

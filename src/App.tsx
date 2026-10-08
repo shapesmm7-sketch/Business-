@@ -28,6 +28,8 @@ import { QRHostingService } from './services/qrHostingService';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
+import { WorkOSAuthService } from './services/workosAuthService';
 import { AlertCircle, Ticket } from 'lucide-react';
 import {
   ActiveScreen,
@@ -528,6 +530,7 @@ export function App() {
 
     // 2. Native Capacitor App State Change
     let capListenerHandle: any = null;
+    let urlOpenHandle: any = null;
     try {
       CapApp.addListener('appStateChange', (state) => {
         if (!state.isActive) {
@@ -543,6 +546,38 @@ export function App() {
     } catch (capErr) {
       console.warn('[AppLock] CapApp setup note:', capErr);
     }
+
+    // 2b. Native Capacitor Deep Link listener for OAuth callback
+    try {
+      CapApp.addListener('appUrlOpen', async (data) => {
+        if (data && data.url) {
+          const urlStr = data.url;
+          if (urlStr.includes('code=') || urlStr.includes('/auth/callback')) {
+            try {
+              // Close system browser / Custom Tab if open
+              try {
+                await Browser.close();
+              } catch (_) {}
+
+              const dummyUrl = new URL(urlStr.replace(/^[a-zA-Z0-9_.-]+:\/\//, 'https://dummy.host/'));
+              const code = dummyUrl.searchParams.get('code');
+              if (code) {
+                const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+                const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
+                if (authRes.success && authRes.user) {
+                  await WorkOSAuthService.saveAndSyncUser(authRes.user);
+                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: authRes.user }));
+                }
+              }
+            } catch (err) {
+              console.warn('[OAuth] Deep link parsing error:', err);
+            }
+          }
+        }
+      }).then((handle) => {
+        urlOpenHandle = handle;
+      }).catch(() => {});
+    } catch (_) {}
 
     // 3. Pagehide / beforeunload listeners (clean web unload)
     const handlePageHide = () => {
@@ -768,7 +803,15 @@ export function App() {
   };
 
   // Check if we are inside an OAuth popup window or callback
-  const isOauthPopup = typeof window !== 'undefined' && window.opener && (window.location.search.includes('code=') || window.location.search.includes('error=') || window.location.pathname.includes('/auth/callback'));
+  const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
+  const isOauthPopup = typeof window !== 'undefined' && !isNative && (
+    (window.opener && (window.location.search.includes('code=') || window.location.search.includes('error='))) ||
+    window.location.pathname.includes('/auth/callback') ||
+    window.location.pathname.endsWith('/callback') ||
+    ((window.location.search.includes('code=') || window.location.search.includes('error=')) &&
+     !window.location.search.includes('customer=') &&
+     !window.location.search.includes('receipt='))
+  );
 
   if (isOauthPopup) {
     return <GoogleAuthPopupPage />;

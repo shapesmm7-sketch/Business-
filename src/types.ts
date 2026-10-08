@@ -689,6 +689,7 @@ export interface WorkOSAuthConfig {
   apiKeyConfigured?: boolean;
   redirectUri?: string;
   authUrl?: string;
+  workerUrl?: string;
   cloudflareClientIdConfigured?: boolean;
   cloudflareApiKeyConfigured?: boolean;
   isUsingFallback?: boolean;

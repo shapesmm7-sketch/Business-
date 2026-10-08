@@ -665,6 +665,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     https://auth.workos.com/sso/oauth/google/callback
                   </div>
                 </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-white">4. WorkOS Redirect URIs (For Web & Android APK):</strong>
+                  <br />
+                  <span>
+                    In your <strong className="text-slate-700 dark:text-slate-200">WorkOS Dashboard &rarr; Configuration &rarr; Redirects</strong>, add your Cloudflare Worker URL endpoints.
+                    <span className="text-rose-500 font-semibold block mt-1">
+                      ⚠️ Never use your Google Play app URL in WorkOS Redirects: Google Play Store cannot handle OAuth tokens or return to your app.
+                    </span>
+                  </span>
+                  <div className="mt-1.5 space-y-1 font-mono text-[10px]">
+                    <div className="bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
+                      https://shapesmm7.workers.dev
+                    </div>
+                    <div className="bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
+                      https://shapesmm7.workers.dev/auth/callback
+                    </div>
+                  </div>
+                </li>
               </ul>
             </div>
           </div>

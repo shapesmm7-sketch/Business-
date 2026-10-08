@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Browser } from '@capacitor/browser';
 import {
   X,
   LogOut,
@@ -37,6 +38,26 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       setCurrentUser(u);
     }
   }, [isOpen]);
+
+  // Listen for native deep link auth updates
+  useEffect(() => {
+    const handleUserUpdate = (e: any) => {
+      if (e.detail) {
+        setCurrentUser(e.detail);
+        if (onUserChange) onUserChange(e.detail);
+        setStatusMsg({
+          type: 'success',
+          text: `Signed in as ${e.detail.name || e.detail.email}! Profile synced to Cloudflare.`,
+        });
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
+    };
+
+    window.addEventListener('workos_user_updated', handleUserUpdate);
+    return () => window.removeEventListener('workos_user_updated', handleUserUpdate);
+  }, [onUserChange, onClose]);
 
   // Set up window listener for popup responses
   useEffect(() => {
@@ -101,29 +122,47 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       const config = await CloudflareService.getWorkOSConfig(codeChallenge);
 
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-      const redirectUri = window.location.origin;
-      let authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
-      if (!authUrl.includes('code_challenge=')) {
-        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
-      }
-
-      // Set popup options
-      const width = 500;
-      const height = 620;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-
-      setStatusMsg({ type: 'info', text: 'Opening Google Sign-In window...' });
       
-      const popup = window.open(
-        authUrl,
-        'google_signin_popup',
-        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      const isNative = typeof window !== 'undefined' && (
+        Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+        window.location.origin.includes('localhost') ||
+        window.location.protocol === 'file:' ||
+        window.location.protocol === 'capacitor:'
       );
-      
-      if (!popup) {
-        // If popup was blocked, redirect directly
-        window.location.href = authUrl;
+      const cloudflareBaseUrl = config.workerUrl || 'https://shapesmm7.workers.dev';
+      const redirectUri = isNative
+        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/auth/callback`
+        : window.location.origin;
+
+      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+
+      if (isNative) {
+        setStatusMsg({ type: 'info', text: 'Opening Google Sign-In in secure browser...' });
+        // Use Chrome Custom Tab / system browser on native Android
+        try {
+          await Browser.open({ url: authUrl, windowName: '_system' });
+        } catch (openErr) {
+          window.location.href = authUrl;
+        }
+      } else {
+        // Set popup options for desktop web
+        const width = 500;
+        const height = 620;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+
+        setStatusMsg({ type: 'info', text: 'Opening Google Sign-In window...' });
+        
+        const popup = window.open(
+          authUrl,
+          'google_signin_popup',
+          `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+        );
+        
+        if (!popup) {
+          // If popup was blocked, redirect directly
+          window.location.href = authUrl;
+        }
       }
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });
