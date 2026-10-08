@@ -638,36 +638,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </div>
 
-            {/* Diagnostic helper message for "wrong secret" error */}
-            <div className="p-3 bg-red-500/5 dark:bg-red-950/10 border border-red-500/10 rounded-xl space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-              <div className="font-bold text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 stroke-[2]" />
-                <span>Fixing "Wrong Secret" / Connection Issues</span>
+            {/* Diagnostic helper message for secrets */}
+            <div className="p-3 bg-blue-500/5 dark:bg-blue-950/10 border border-blue-500/10 rounded-xl space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+              <div className="font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+                <Info className="w-4 h-4 stroke-[2]" />
+                <span>How Your Secrets & Keys Connect</span>
               </div>
-              <ul className="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-400">
+              <ul className="list-disc pl-4 space-y-1.5 text-slate-600 dark:text-slate-400">
                 <li>
-                  <strong className="text-slate-800 dark:text-white">Did you get a "Wrong Secret" error inside the popup?</strong>
+                  <strong className="text-slate-800 dark:text-white">1. WorkOS API Key (WORKOS_API_KEY):</strong>
                   <br />
-                  This means the <strong className="text-red-600 dark:text-red-400">Google Client Secret</strong> entered in your WorkOS Dashboard (under Google Social Logins) is incorrect. Go to your <strong className="text-slate-700 dark:text-slate-200">Google Cloud Console</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">APIs & Services</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">Credentials</strong>, delete the old secret, create a new one, copy it, and paste it into WorkOS carefully with no spaces or newlines.
+                  Generated in your <strong className="text-slate-700 dark:text-slate-200">WorkOS Dashboard &rarr; API Keys</strong> (starts with <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">sk_...</code>).
+                  This is the secret added in your <strong className="text-slate-700 dark:text-slate-200">Cloudflare Worker &rarr; Settings &rarr; Variables and Secrets</strong> (or entered above in Local Overrides). Always click <strong className="text-indigo-600 dark:text-indigo-400">"Save and deploy"</strong> in Cloudflare so your Worker runs the new key.
                 </li>
                 <li>
-                  <strong className="text-slate-800 dark:text-white">Google Cloud Redirect URI:</strong>
+                  <strong className="text-slate-800 dark:text-white">2. Google Client Secret:</strong>
                   <br />
-                  In Google Cloud Console, the <strong className="text-slate-800 dark:text-white">Authorized redirect URIs</strong> for your OAuth Web Client ID must be set exactly to:
+                  Generated in your <strong className="text-slate-700 dark:text-slate-200">Google Cloud Console &rarr; Credentials &rarr; OAuth 2.0 Client IDs</strong> (starts with <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">GOCSPX-...</code>).
+                  This secret is pasted exclusively inside your <strong className="text-slate-700 dark:text-slate-200">WorkOS Dashboard &rarr; Authentication &rarr; Social Login &rarr; Google</strong>.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-white">3. Google Authorized Redirect URI:</strong>
+                  <br />
+                  Must be set in Google Cloud Console to:
                   <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
                     https://auth.workos.com/sso/oauth/google/callback
-                  </div>
-                  The <strong className="text-slate-800 dark:text-white">Authorized JavaScript origins</strong> must be:
-                  <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
-                    https://auth.workos.com
-                  </div>
-                </li>
-                <li>
-                  <strong className="text-slate-800 dark:text-white">WorkOS Dashboard Redirect URI whitelist:</strong>
-                  <br />
-                  In your WorkOS Dashboard under <strong className="text-slate-700 dark:text-slate-200">User Management</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">Redirects</strong>, you must whitelist:
-                  <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all text-slate-600 dark:text-slate-300">
-                    {window.location.origin}
                   </div>
                 </li>
               </ul>

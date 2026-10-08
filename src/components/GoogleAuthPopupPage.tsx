@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { CloudflareService } from '../services/cloudflareService';
+import { WorkOSAuthService } from '../services/workosAuthService';
 
 export const GoogleAuthPopupPage: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -20,7 +22,9 @@ export const GoogleAuthPopupPage: React.FC = () => {
       setStatus('loading');
       if (window.opener) {
         // Send the real code back to Brivu main window
-        window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code }, '*');
+        try {
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code }, '*');
+        } catch (_) {}
         
         setTimeout(() => {
           setStatus('success');
@@ -29,8 +33,22 @@ export const GoogleAuthPopupPage: React.FC = () => {
           }, 1200);
         }, 1000);
       } else {
-        setStatus('error');
-        setErrorMsg('Opener window not found. Please try opening Google Sign-In again.');
+        // Direct exchange for mobile / detached tab navigation
+        CloudflareService.authenticateWorkOSCode(code).then(async (authRes) => {
+          if (authRes.success && authRes.user) {
+            await WorkOSAuthService.saveAndSyncUser(authRes.user);
+            setStatus('success');
+            setTimeout(() => {
+              window.location.href = window.location.origin;
+            }, 1000);
+          } else {
+            setStatus('error');
+            setErrorMsg(authRes.message || 'WorkOS authentication failed.');
+          }
+        }).catch((err) => {
+          setStatus('error');
+          setErrorMsg(err?.message || 'Authentication failed.');
+        });
       }
     } else {
       // If there is no code in the query params, show loading spinner

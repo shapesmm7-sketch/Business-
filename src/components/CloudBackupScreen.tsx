@@ -484,12 +484,12 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 {workosStatus.apiKeyConfigured ? (
                   <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    Detected on Worker Dashboard
+                    Detected on Cloudflare Worker
                   </span>
                 ) : (
-                  <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5 text-orange-500" />
-                    Using secure fallback secret
+                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    Pending in Worker Variables
                   </span>
                 )}
               </span>

@@ -50,21 +50,25 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
         const code = event.data.code;
         setIsSubmitting(true);
-        setStatusMsg({ type: 'info', text: 'Verifying Google Account...' });
+        setStatusMsg({ type: 'info', text: 'Authenticating with Google & WorkOS...' });
         try {
           const authRes = await CloudflareService.authenticateWorkOSCode(code);
           if (authRes.success && authRes.user) {
             setCurrentUser(authRes.user);
+            await WorkOSAuthService.saveAndSyncUser(authRes.user);
             if (onUserChange) onUserChange(authRes.user);
             setStatusMsg({
               type: 'success',
-              text: 'Google Sign-In successful! Profile, email & data saved to Cloud.',
+              text: `Signed in as ${authRes.user.name || authRes.user.email}! Profile & cloud backup ready.`,
             });
             setTimeout(() => {
               onClose();
             }, 1500);
           } else {
-            setStatusMsg({ type: 'error', text: authRes.message || 'Failed to authenticate Google Account' });
+            setStatusMsg({
+              type: 'error',
+              text: authRes.message || 'WorkOS authentication failed. Please check your WORKOS_API_KEY in Cloudflare Worker.',
+            });
           }
         } catch (err: any) {
           setStatusMsg({ type: 'error', text: err?.message || 'Authentication error' });
@@ -88,7 +92,6 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     try {
       const config = await CloudflareService.getWorkOSConfig();
 
-      // Use the live Client ID from your Cloudflare dashboard as a rock-solid client-side fallback
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const redirectUri = window.location.origin;
       const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
@@ -99,7 +102,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
 
-      setStatusMsg({ type: 'info', text: 'Opening Google Sign-In...' });
+      setStatusMsg({ type: 'info', text: 'Opening Google Sign-In window...' });
       
       const popup = window.open(
         authUrl,
@@ -108,20 +111,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       );
       
       if (!popup) {
-        setStatusMsg({
-          type: 'error',
-          text: 'Popup blocked! Please allow popups for this site to sign in with Google.',
-        });
-      } else {
-        // Show status message with reminder to save/deploy variables
-        setStatusMsg({
-          type: 'info',
-          text: 'Google Sign-In window opened. Note: If sign-in fails, make sure you clicked the blue "Save and deploy" button at the bottom of your Cloudflare Workers dashboard settings page.',
-        });
+        // If popup was blocked, redirect directly
+        window.location.href = authUrl;
       }
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -314,7 +308,17 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           ) : (
             /* NOT LOGGED IN / ONE-CLICK GOOGLE SIGN IN */
             <div className="space-y-4">
-              {/* Main One-Click Google Sign In Button */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs space-y-1.5">
+                <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Secure Cloud Account</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">
+                  Sign in with your Google Account to automatically sync and safeguard your digital receipts, invoices, customers, and inventory in your Cloudflare storage.
+                </p>
+              </div>
+
+              {/* Main Google Sign In Button */}
               <button
                 type="button"
                 onClick={handleGoogleSignInDirectly}
@@ -339,7 +343,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{isSubmitting ? 'Opening Google...' : 'Sign in with Google'}</span>
+                <span>{isSubmitting ? 'Connecting...' : statusMsg?.type === 'error' ? 'Retry Google Sign-In' : 'Sign in with Google'}</span>
               </button>
             </div>
           )}

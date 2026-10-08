@@ -45,18 +45,9 @@ export const WorkOSAuthService = {
   /**
    * Sign in with Google using WorkOS AuthKit
    */
-  async signInWithGoogle(customUserEmail?: string, customUserName?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
+  async signInWithGoogle(): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     try {
-      // Check WorkOS configuration on Cloudflare Worker
-      const config = await CloudflareService.getWorkOSConfig();
-
-      if (config.authUrl && config.clientId) {
-        // Redirect to WorkOS AuthKit Hosted Page if client_id is set
-        window.location.href = config.authUrl;
-        return { success: true, message: 'Redirecting to WorkOS AuthKit Google Sign-In...' };
-      }
-
-      // If URL callback code is present in current window location
+      // 1. If URL callback code is present in current window location, exchange it immediately
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (code) {
@@ -66,37 +57,21 @@ export const WorkOSAuthService = {
           // Clean code parameter from URL
           window.history.replaceState({}, document.title, window.location.pathname);
           return { success: true, user: authRes.user, message: 'Google Sign-In successful with WorkOS AuthKit!' };
+        } else {
+          return { success: false, message: authRes.message || 'Failed to exchange authorization code' };
         }
       }
 
-      // Fallback / Direct Google Auth login prompt (stores user in Cloudflare)
-      const userEmail = customUserEmail || 'user@gmail.com';
-      const userName = customUserName || userEmail.split('@')[0].replace(/[._]/g, ' ');
-      const userFirstName = userName.split(' ')[0] || 'Google';
-      const userLastName = userName.split(' ').slice(1).join(' ') || 'User';
+      // 2. Check WorkOS configuration on Cloudflare Worker
+      const config = await CloudflareService.getWorkOSConfig();
+      const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+      const redirectUri = window.location.origin;
 
-      const mockUser: WorkOSUser = {
-        id: `workos_gusr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        email: userEmail,
-        firstName: userFirstName,
-        lastName: userLastName,
-        name: userName,
-        profilePictureUrl: `https://lh3.googleusercontent.com/a/default-user`,
-        emailVerified: true,
-        provider: 'google',
-        updatedAt: new Date().toISOString(),
-        syncedToCloudflare: true,
-      };
+      const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
 
-      const syncRes = await this.saveAndSyncUser(mockUser);
-
-      return {
-        success: true,
-        user: mockUser,
-        message: syncRes.success
-          ? 'Signed in with Google! User profile, email & data saved in Cloudflare.'
-          : 'Signed in with Google (Local session active, syncing to Cloudflare).',
-      };
+      // Redirect to WorkOS AuthKit Google Sign-In
+      window.location.href = authUrl;
+      return { success: true, message: 'Redirecting to WorkOS Google Sign-In...' };
     } catch (err: any) {
       console.error('WorkOS Google Sign In error:', err);
       return { success: false, message: err?.message || 'Google Sign-In failed' };
