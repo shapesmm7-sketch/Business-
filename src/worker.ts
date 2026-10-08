@@ -22,6 +22,8 @@ const CORS_HEADERS = {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const workosClientId = env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+    const workosApiKey = env.WORKOS_API_KEY || 'sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWY';
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
@@ -39,7 +41,7 @@ export default {
           status: 'connected',
           d1Bound: Boolean(env.DB || env.brivu_db),
           r2Bound: Boolean(env.BUCKET || env.brivu_bucket || env.MY_BUCKET),
-          workosConfigured: Boolean(env.WORKOS_CLIENT_ID || env.WORKOS_API_KEY),
+          workosConfigured: Boolean(workosClientId || workosApiKey),
           timestamp: new Date().toISOString(),
         }),
         {
@@ -55,8 +57,8 @@ export default {
     // 2b. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
     if (url.pathname === '/api/auth/workos/authorize') {
       const redirectUri = url.searchParams.get('redirect_uri') || env.WORKOS_REDIRECT_URI || `${url.origin}`;
-      const clientId = env.WORKOS_CLIENT_ID || '';
-      const isConfigured = Boolean(clientId || env.WORKOS_API_KEY);
+      const clientId = workosClientId || '';
+      const isConfigured = Boolean(clientId || workosApiKey);
       
       const authUrl = clientId
         ? `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`
@@ -94,7 +96,7 @@ export default {
         let user: any = null;
 
         // If WORKOS_API_KEY and WORKOS_CLIENT_ID exist, exchange code with WorkOS API
-        if (env.WORKOS_API_KEY && env.WORKOS_CLIENT_ID) {
+        if (workosApiKey && workosClientId) {
           if (!code) {
             return new Response(
               JSON.stringify({ ok: false, success: false, error: 'No authorization code provided' }),
@@ -106,8 +108,8 @@ export default {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              client_id: env.WORKOS_CLIENT_ID,
-              client_secret: env.WORKOS_API_KEY,
+              client_id: workosClientId,
+              client_secret: workosApiKey,
               code,
               grant_type: 'authorization_code',
             }),
