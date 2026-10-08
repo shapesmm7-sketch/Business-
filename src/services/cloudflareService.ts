@@ -972,7 +972,7 @@ export const CloudflareService = {
   /**
    * Fetch WorkOS Auth configuration from Cloudflare Worker
    */
-  async getWorkOSConfig(): Promise<WorkOSAuthConfig> {
+  async getWorkOSConfig(codeChallenge?: string): Promise<WorkOSAuthConfig> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
@@ -987,13 +987,18 @@ export const CloudflareService = {
         headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
       }
 
-      const res = await fetch(`${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`, {
+      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`;
+      if (codeChallenge) {
+        authEndpoint += `&code_challenge=${encodeURIComponent(codeChallenge)}`;
+      }
+
+      const res = await fetch(authEndpoint, {
         headers,
       });
       if (res.ok) {
         const data = await res.json();
         return {
-          clientId: data.clientId || '',
+          clientId: data.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB',
           apiKeyConfigured: Boolean(data.configured),
           authUrl: data.authUrl || '',
           redirectUri: window.location.origin,
@@ -1005,9 +1010,15 @@ export const CloudflareService = {
     } catch (err) {
       console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
     }
+    const defaultClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+    let defaultAuthUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(defaultClientId)}&redirect_uri=${encodeURIComponent(window.location.origin)}&provider=GoogleOAuth`;
+    if (codeChallenge) {
+      defaultAuthUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+    }
     return {
-      clientId: config.overrideWorkosKeys ? config.customWorkosClientId : '',
-      apiKeyConfigured: config.overrideWorkosKeys ? Boolean(config.customWorkosApiKey) : false,
+      clientId: defaultClientId,
+      apiKeyConfigured: true,
+      authUrl: defaultAuthUrl,
       redirectUri: window.location.origin,
       cloudflareClientIdConfigured: false,
       cloudflareApiKeyConfigured: false,
@@ -1016,14 +1027,18 @@ export const CloudflareService = {
   },
 
   /**
-   * Exchange WorkOS Auth code via Cloudflare Worker
+   * Exchange WorkOS Auth code via Cloudflare Worker (with PKCE support)
    */
-  async authenticateWorkOSCode(code: string, redirectUri?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
+  async authenticateWorkOSCode(code: string, redirectUri?: string, codeVerifier?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
       ? normalizeUrl(currentOrigin)
       : normalizeUrl(config.workerUrl);
+
+    const resolvedVerifier = codeVerifier || (typeof window !== 'undefined' ? localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined : undefined);
+    const effectiveClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+
     try {
       const headers = this.getAuthHeaders();
       headers['Content-Type'] = 'application/json';
@@ -1039,6 +1054,7 @@ export const CloudflareService = {
         headers,
         body: JSON.stringify({
           code,
+          codeVerifier: resolvedVerifier,
           redirectUri: redirectUri || window.location.origin,
           workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
           workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
@@ -1055,11 +1071,90 @@ export const CloudflareService = {
           message: 'Authenticated successfully with WorkOS & Cloudflare',
         };
       }
+
+      // If worker returned an error and resolvedVerifier is available, try direct WorkOS PKCE exchange
+      if (resolvedVerifier) {
+        try {
+          const directRes = await fetch('https://api.workos.com/user_management/authenticate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: effectiveClientId,
+              code,
+              code_verifier: resolvedVerifier,
+              grant_type: 'authorization_code',
+            }),
+          });
+          if (directRes.ok) {
+            const wData = await directRes.json();
+            const u = wData.user || wData;
+            const firstName = u.first_name || u.firstName || '';
+            const lastName = u.last_name || u.lastName || '';
+            const user: WorkOSUser = {
+              id: u.id || `workos_usr_${Date.now()}`,
+              email: u.email || '',
+              firstName,
+              lastName,
+              name: (u.name || `${firstName} ${lastName}`.trim() || u.email || 'Google User').trim(),
+              profilePictureUrl: u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '',
+              emailVerified: u.email_verified ?? u.emailVerified ?? true,
+              provider: 'google',
+              updatedAt: new Date().toISOString(),
+              syncedToCloudflare: false,
+            };
+            return {
+              success: true,
+              user,
+              message: 'Authenticated successfully with Google & WorkOS',
+            };
+          }
+        } catch (_) {}
+      }
+
       return {
         success: false,
         message: parsed.error || parsed.data?.error || 'Authentication failed',
       };
     } catch (err: any) {
+      // Direct PKCE fallback in case worker is completely unreachable
+      if (resolvedVerifier) {
+        try {
+          const directRes = await fetch('https://api.workos.com/user_management/authenticate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: effectiveClientId,
+              code,
+              code_verifier: resolvedVerifier,
+              grant_type: 'authorization_code',
+            }),
+          });
+          if (directRes.ok) {
+            const wData = await directRes.json();
+            const u = wData.user || wData;
+            const firstName = u.first_name || u.firstName || '';
+            const lastName = u.last_name || u.lastName || '';
+            const user: WorkOSUser = {
+              id: u.id || `workos_usr_${Date.now()}`,
+              email: u.email || '',
+              firstName,
+              lastName,
+              name: (u.name || `${firstName} ${lastName}`.trim() || u.email || 'Google User').trim(),
+              profilePictureUrl: u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '',
+              emailVerified: u.email_verified ?? u.emailVerified ?? true,
+              provider: 'google',
+              updatedAt: new Date().toISOString(),
+              syncedToCloudflare: false,
+            };
+            return {
+              success: true,
+              user,
+              message: 'Authenticated successfully with Google & WorkOS',
+            };
+          }
+        } catch (_) {}
+      }
+
       return {
         success: false,
         message: err?.message || 'Error authenticating with WorkOS via Cloudflare',

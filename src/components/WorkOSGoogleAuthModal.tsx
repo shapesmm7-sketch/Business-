@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { WorkOSUser } from '../types';
-import { WorkOSAuthService } from '../services/workosAuthService';
+import { WorkOSAuthService, generatePKCE } from '../services/workosAuthService';
 import { CloudflareService } from '../services/cloudflareService';
 
 interface WorkOSGoogleAuthModalProps {
@@ -49,10 +49,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
 
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
         const code = event.data.code;
+        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
         setIsSubmitting(true);
         setStatusMsg({ type: 'info', text: 'Authenticating with Google & WorkOS...' });
         try {
-          const authRes = await CloudflareService.authenticateWorkOSCode(code);
+          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
           if (authRes.success && authRes.user) {
             setCurrentUser(authRes.user);
             await WorkOSAuthService.saveAndSyncUser(authRes.user);
@@ -67,7 +68,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           } else {
             setStatusMsg({
               type: 'error',
-              text: authRes.message || 'WorkOS authentication failed. Please check your WORKOS_API_KEY in Cloudflare Worker.',
+              text: authRes.message || 'WorkOS authentication failed. Please retry.',
             });
           }
         } catch (err: any) {
@@ -90,11 +91,21 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     setStatusMsg({ type: 'info', text: 'Connecting to Google...' });
 
     try {
-      const config = await CloudflareService.getWorkOSConfig();
+      // 1. Generate secure PKCE challenge
+      const { codeVerifier, codeChallenge } = await generatePKCE();
+      try {
+        localStorage.setItem('workos_pkce_verifier', codeVerifier);
+        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
+      } catch (_) {}
+
+      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
 
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const redirectUri = window.location.origin;
-      const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
+      let authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      if (!authUrl.includes('code_challenge=')) {
+        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      }
 
       // Set popup options
       const width = 500;

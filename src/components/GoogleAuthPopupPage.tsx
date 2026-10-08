@@ -34,7 +34,8 @@ export const GoogleAuthPopupPage: React.FC = () => {
         }, 1000);
       } else {
         // Direct exchange for mobile / detached tab navigation
-        CloudflareService.authenticateWorkOSCode(code).then(async (authRes) => {
+        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+        CloudflareService.authenticateWorkOSCode(code, undefined, verifier).then(async (authRes) => {
           if (authRes.success && authRes.user) {
             await WorkOSAuthService.saveAndSyncUser(authRes.user);
             setStatus('success');

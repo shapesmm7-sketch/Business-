@@ -2,6 +2,31 @@ import { WorkOSUser, CloudflareSyncResponse } from '../types';
 import { StorageService } from './storage';
 import { CloudflareService } from './cloudflareService';
 
+/**
+ * Generate cryptographically secure PKCE code verifier and challenge (RFC 7636)
+ */
+export async function generatePKCE(): Promise<{ codeVerifier: string; codeChallenge: string }> {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  let binary = '';
+  for (let i = 0; i < array.byteLength; i++) {
+    binary += String.fromCharCode(array[i]);
+  }
+  const codeVerifier = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const digestArray = new Uint8Array(digest);
+  let digestBinary = '';
+  for (let i = 0; i < digestArray.byteLength; i++) {
+    digestBinary += String.fromCharCode(digestArray[i]);
+  }
+  const codeChallenge = btoa(digestBinary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  return { codeVerifier, codeChallenge };
+}
+
 export const WorkOSAuthService = {
   /**
    * Returns current authenticated WorkOS User from storage
@@ -43,7 +68,7 @@ export const WorkOSAuthService = {
   },
 
   /**
-   * Sign in with Google using WorkOS AuthKit
+   * Sign in with Google using WorkOS AuthKit + PKCE
    */
   async signInWithGoogle(): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     try {
@@ -51,7 +76,8 @@ export const WorkOSAuthService = {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (code) {
-        const authRes = await CloudflareService.authenticateWorkOSCode(code);
+        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+        const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
         if (authRes.success && authRes.user) {
           await this.saveAndSyncUser(authRes.user);
           // Clean code parameter from URL
@@ -62,12 +88,22 @@ export const WorkOSAuthService = {
         }
       }
 
-      // 2. Check WorkOS configuration on Cloudflare Worker
-      const config = await CloudflareService.getWorkOSConfig();
+      // 2. Generate PKCE pair
+      const { codeVerifier, codeChallenge } = await generatePKCE();
+      try {
+        localStorage.setItem('workos_pkce_verifier', codeVerifier);
+        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
+      } catch (_) {}
+
+      // 3. Check WorkOS configuration on Cloudflare Worker
+      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const redirectUri = window.location.origin;
 
-      const authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
+      let authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      if (!authUrl.includes('code_challenge=')) {
+        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      }
 
       // Redirect to WorkOS AuthKit Google Sign-In
       window.location.href = authUrl;
@@ -86,7 +122,8 @@ export const WorkOSAuthService = {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (code) {
-        const authRes = await CloudflareService.authenticateWorkOSCode(code);
+        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+        const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
         if (authRes.success && authRes.user) {
           await this.saveAndSyncUser(authRes.user);
           window.history.replaceState({}, document.title, window.location.pathname);

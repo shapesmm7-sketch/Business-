@@ -9,3 +9,8 @@ not_found_handling = "single-page-application"
 
 [build]
 command = "npm run build"
+
+[vars]
+WORKOS_CLIENT_ID = "client_01M4BGNT60CPMEA9P83WD6NRSB"
+WORKOS_API_KEY = "sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWnl"
+

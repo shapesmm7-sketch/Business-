@@ -28,7 +28,7 @@ export default {
     const headerApiKey = request.headers.get('X-WorkOS-Api-Key') || url.searchParams.get('workos_api_key');
 
     const workosClientId = (headerClientId || env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
-    const workosApiKey = (headerApiKey || env.WORKOS_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
+    const workosApiKey = (headerApiKey || env.WORKOS_API_KEY || 'sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWnl').trim().replace(/^['"]|['"]$/g, '');
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
@@ -64,12 +64,14 @@ export default {
     // 2b. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
     if (url.pathname === '/api/auth/workos/authorize') {
       const redirectUri = url.searchParams.get('redirect_uri') || env.WORKOS_REDIRECT_URI || `${url.origin}`;
-      const clientId = workosClientId || '';
-      const isConfigured = Boolean(clientId && (workosApiKey || env.WORKOS_API_KEY));
+      const clientId = workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+      const codeChallenge = url.searchParams.get('code_challenge');
+      const isConfigured = Boolean(clientId);
       
-      const authUrl = clientId
-        ? `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`
-        : '';
+      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
+      if (codeChallenge) {
+        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      }
 
       return new Response(
         JSON.stringify({
@@ -82,9 +84,7 @@ export default {
           cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
           cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
           isUsingFallback: !Boolean(env.WORKOS_CLIENT_ID) && !headerClientId,
-          message: isConfigured
-            ? 'WorkOS AuthKit Google Sign-In ready'
-            : 'WorkOS variables pending in Cloudflare. You can add WORKOS_CLIENT_ID and WORKOS_API_KEY in Cloudflare Worker environment variables.',
+          message: 'WorkOS AuthKit Google Sign-In ready',
         }),
         {
           status: 200,
@@ -100,12 +100,12 @@ export default {
     if (url.pathname === '/api/auth/workos/authenticate' && request.method === 'POST') {
       try {
         const body: any = await request.json().catch(() => ({}));
-        const { code, redirectUri } = body;
+        const { code, redirectUri, codeVerifier } = body;
         const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
 
         // Resolve clean API key and Client ID from request body, headers, or Cloudflare Worker env
-        const cleanApiKey = (body?.workosApiKey || headerApiKey || env.WORKOS_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
-        const cleanClientId = (body?.workosClientId || headerClientId || env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
+        const cleanApiKey = (body?.workosApiKey || headerApiKey || env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
+        const cleanClientId = (body?.workosClientId || headerClientId || env.WORKOS_CLIENT_ID || workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
 
         if (!code) {
           return new Response(
@@ -114,38 +114,56 @@ export default {
           );
         }
 
-        if (!cleanApiKey) {
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              success: false,
-              error: 'WORKOS_API_KEY is not configured in your Cloudflare Worker. Please ensure you saved and deployed WORKOS_API_KEY in your Cloudflare Worker environment variables, or enter it in App Settings -> WorkOS Diagnostics.'
-            }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
+        let user: any = null;
+        let workosRes: Response | null = null;
+
+        // 1. If PKCE codeVerifier is present, use official PKCE exchange
+        if (codeVerifier) {
+          const pkceBody: any = {
+            client_id: cleanClientId,
+            code,
+            code_verifier: codeVerifier,
+            grant_type: 'authorization_code',
+          };
+          if (cleanApiKey) {
+            pkceBody.client_secret = cleanApiKey;
+          }
+
+          const pkceHeaders: any = { 'Content-Type': 'application/json' };
+          if (cleanApiKey) {
+            pkceHeaders['Authorization'] = `Bearer ${cleanApiKey}`;
+          }
+
+          workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
+            method: 'POST',
+            headers: pkceHeaders,
+            body: JSON.stringify(pkceBody),
+          });
+
+          // If rejected with secret error, retry PKCE without secret
+          if (!workosRes.ok && pkceBody.client_secret) {
+            try {
+              const retryPkceRes = await fetch('https://api.workos.com/user_management/authenticate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  client_id: cleanClientId,
+                  code,
+                  code_verifier: codeVerifier,
+                  grant_type: 'authorization_code',
+                }),
+              });
+              if (retryPkceRes.ok) {
+                workosRes = retryPkceRes;
+              }
+            } catch (_) {}
+          }
         }
 
-        let user: any = null;
-
-        // Exchange authorization code with WorkOS API
-        let workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${cleanApiKey}`,
-          },
-          body: JSON.stringify({
-            client_id: cleanClientId,
-            client_secret: cleanApiKey,
-            code,
-            grant_type: 'authorization_code',
-          }),
-        });
-
-        // If first attempt returned error, retry with just client_id and code using Bearer header
-        if (!workosRes.ok) {
-          try {
-            const retryRes = await fetch('https://api.workos.com/user_management/authenticate', {
+        // 2. If PKCE not used or failed, try standard API key code exchange
+        if (!workosRes || !workosRes.ok) {
+          if (cleanApiKey) {
+            workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -153,17 +171,15 @@ export default {
               },
               body: JSON.stringify({
                 client_id: cleanClientId,
+                client_secret: cleanApiKey,
                 code,
                 grant_type: 'authorization_code',
               }),
             });
-            if (retryRes.ok) {
-              workosRes = retryRes;
-            }
-          } catch (_) {}
+          }
         }
 
-        if (workosRes.ok) {
+        if (workosRes && workosRes.ok) {
           const wData: any = await workosRes.json();
           const u = wData.user || wData;
           const firstName = u.first_name || u.firstName || '';
@@ -186,8 +202,8 @@ export default {
             syncedToCloudflare: true,
           };
         } else {
-          const errData: any = await workosRes.json().catch(() => null);
-          const rawMsg = errData?.error_description || errData?.message || errData?.error || `WorkOS exchange failed (HTTP ${workosRes.status})`;
+          const errData: any = workosRes ? await workosRes.json().catch(() => null) : null;
+          const rawMsg = errData?.error_description || errData?.message || errData?.error || 'Authentication code exchange failed';
           return new Response(
             JSON.stringify({
               ok: false,
