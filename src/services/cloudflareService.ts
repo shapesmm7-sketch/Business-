@@ -987,7 +987,8 @@ export const CloudflareService = {
         headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
       }
 
-      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`;
+      const desiredRedirect = `${cleanUrl}/callback`;
+      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(desiredRedirect)}`;
       if (codeChallenge) {
         authEndpoint += `&code_challenge=${encodeURIComponent(codeChallenge)}`;
       }

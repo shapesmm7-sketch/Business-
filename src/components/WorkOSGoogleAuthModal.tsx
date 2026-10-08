@@ -129,10 +129,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         window.location.protocol === 'file:' ||
         window.location.protocol === 'capacitor:'
       );
-      const cloudflareBaseUrl = config.workerUrl || 'https://shapesmm7.workers.dev';
-      const redirectUri = isNative
-        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/auth/callback`
-        : window.location.origin;
+      const cloudflareBaseUrl = config.workerUrl || 'https://brivu.shapesmm7.workers.dev';
+      // Match the WorkOS configured redirect URI: /callback
+      const redirectUri = (isNative || window.location.origin.includes('localhost') || !window.location.origin.includes('http'))
+        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`
+        : `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
 
       let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
 

@@ -676,10 +676,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </span>
                   <div className="mt-1.5 space-y-1 font-mono text-[10px]">
                     <div className="bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
-                      https://shapesmm7.workers.dev
+                      https://brivu.shapesmm7.workers.dev/callback
                     </div>
                     <div className="bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
-                      https://shapesmm7.workers.dev/auth/callback
+                      https://brivu.shapesmm7.workers.dev
                     </div>
                   </div>
                 </li>

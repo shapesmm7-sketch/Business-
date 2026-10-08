@@ -61,9 +61,143 @@ export default {
       );
     }
 
+    // 2a. WorkOS OAuth Callback Handler (/callback and /auth/callback)
+    if (url.pathname === '/callback' || url.pathname === '/auth/callback') {
+      const authCode = url.searchParams.get('code') || '';
+      const authError = url.searchParams.get('error') || url.searchParams.get('error_description') || '';
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brivu - Google Authentication Callback</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #030712;
+      color: #f9fafb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .card {
+      background-color: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 1.5rem;
+      padding: 2.25rem 2rem;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 1.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+    }
+    .icon-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .icon svg { width: 32px; height: 32px; fill: none; stroke: #10b981; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-error svg { stroke: #ef4444; }
+    h1 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
+    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.5rem; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 0.875rem 1.25rem;
+      border-radius: 1rem;
+      font-weight: 700;
+      font-size: 0.875rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 0.75rem;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5, #4338ca);
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
+    }
+    .btn-primary:hover { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+    .btn-secondary {
+      background: #1f2937;
+      color: #d1d5db;
+      border: 1px solid #374151;
+    }
+    .btn-secondary:hover { background: #374151; color: #ffffff; }
+    .link { display: inline-block; font-size: 0.75rem; color: #6b7280; text-decoration: underline; margin-top: 0.5rem; }
+    .link:hover { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${authError ? `
+      <div class="icon icon-error">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      </div>
+      <h1>Authentication Notice</h1>
+      <p>${authError}</p>
+      <a href="/" class="btn btn-secondary">Return Home</a>
+    ` : `
+      <div class="icon">
+        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+      </div>
+      <h1>Google Sign-In Approved</h1>
+      <p>Your authentication was verified with WorkOS. Tap below to return directly to Brivu.</p>
+      ${authCode ? `
+        <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-primary">Open Brivu Android App</a>
+        <a href="com.brivu.myapp://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-secondary">Alternative App Launch</a>
+      ` : ''}
+      <a href="/" class="link">Continue in Web Browser</a>
+    `}
+  </div>
+  <script>
+    var code = ${JSON.stringify(authCode)};
+    if (code) {
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
+          setTimeout(function() { window.close(); }, 1200);
+        } catch (_) {}
+      }
+      // Attempt opening the Android App via deep links
+      try {
+        window.location.href = 'brivu://auth/callback?code=' + encodeURIComponent(code);
+      } catch (_) {}
+    }
+  </script>
+</body>
+</html>`;
+
+      return new Response(html, {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      });
+    }
+
     // 2b. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
     if (url.pathname === '/api/auth/workos/authorize') {
-      const redirectUri = url.searchParams.get('redirect_uri') || env.WORKOS_REDIRECT_URI || `${url.origin}`;
+      const reqRedirect = url.searchParams.get('redirect_uri');
+      // If client requests localhost or missing, default to worker's /callback which matches WorkOS configuration
+      const redirectUri = (!reqRedirect || reqRedirect.includes('localhost'))
+        ? (env.WORKOS_REDIRECT_URI || `${url.origin}/callback`)
+        : reqRedirect;
+
       const clientId = workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const codeChallenge = url.searchParams.get('code_challenge');
       const isConfigured = Boolean(clientId);
