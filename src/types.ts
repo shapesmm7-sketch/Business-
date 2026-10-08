@@ -638,6 +638,11 @@ export interface CloudflareConfig {
   lastErrorMessage?: string;
   filesFolder?: string;
 
+  // Custom live WorkOS override variables
+  customWorkosClientId?: string;
+  customWorkosApiKey?: string;
+  overrideWorkosKeys?: boolean;
+
   // Optional Direct R2 / S3 API Configuration
   accessKeyId?: string;
   secretAccessKey?: string;
@@ -684,6 +689,9 @@ export interface WorkOSAuthConfig {
   apiKeyConfigured?: boolean;
   redirectUri?: string;
   authUrl?: string;
+  cloudflareClientIdConfigured?: boolean;
+  cloudflareApiKeyConfigured?: boolean;
+  isUsingFallback?: boolean;
 }
 
 export interface WorkOSAuthState {

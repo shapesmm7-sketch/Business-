@@ -980,6 +980,13 @@ export const CloudflareService = {
       : normalizeUrl(config.workerUrl);
     try {
       const headers = this.getAuthHeaders();
+      if (config.overrideWorkosKeys && config.customWorkosClientId) {
+        headers['X-WorkOS-Client-Id'] = config.customWorkosClientId;
+      }
+      if (config.overrideWorkosKeys && config.customWorkosApiKey) {
+        headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
+      }
+
       const res = await fetch(`${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(window.location.origin)}`, {
         headers,
       });
@@ -990,15 +997,21 @@ export const CloudflareService = {
           apiKeyConfigured: Boolean(data.configured),
           authUrl: data.authUrl || '',
           redirectUri: window.location.origin,
+          cloudflareClientIdConfigured: data.cloudflareClientIdConfigured,
+          cloudflareApiKeyConfigured: data.cloudflareApiKeyConfigured,
+          isUsingFallback: data.isUsingFallback,
         };
       }
     } catch (err) {
       console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
     }
     return {
-      clientId: '',
-      apiKeyConfigured: false,
+      clientId: config.overrideWorkosKeys ? config.customWorkosClientId : '',
+      apiKeyConfigured: config.overrideWorkosKeys ? Boolean(config.customWorkosApiKey) : false,
       redirectUri: window.location.origin,
+      cloudflareClientIdConfigured: false,
+      cloudflareApiKeyConfigured: false,
+      isUsingFallback: true,
     };
   },
 
@@ -1014,6 +1027,12 @@ export const CloudflareService = {
     try {
       const headers = this.getAuthHeaders();
       headers['Content-Type'] = 'application/json';
+      if (config.overrideWorkosKeys && config.customWorkosClientId) {
+        headers['X-WorkOS-Client-Id'] = config.customWorkosClientId;
+      }
+      if (config.overrideWorkosKeys && config.customWorkosApiKey) {
+        headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
+      }
 
       const res = await fetch(`${cleanUrl}/api/auth/workos/authenticate`, {
         method: 'POST',
@@ -1021,6 +1040,8 @@ export const CloudflareService = {
         body: JSON.stringify({
           code,
           redirectUri: redirectUri || window.location.origin,
+          workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
+          workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
         }),
       });
 

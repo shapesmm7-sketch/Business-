@@ -15,15 +15,20 @@ export interface Env {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-Requested-With',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-Requested-With, X-WorkOS-Client-Id, X-WorkOS-Api-Key',
   'Access-Control-Max-Age': '86400',
 };
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const workosClientId = env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-    const workosApiKey = env.WORKOS_API_KEY || 'sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWY';
+    
+    // Read WorkOS overrides from custom headers or search params
+    const headerClientId = request.headers.get('X-WorkOS-Client-Id') || url.searchParams.get('workos_client_id');
+    const headerApiKey = request.headers.get('X-WorkOS-Api-Key') || url.searchParams.get('workos_api_key');
+
+    const workosClientId = headerClientId || env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
+    const workosApiKey = headerApiKey || env.WORKOS_API_KEY || 'sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWY';
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
@@ -42,6 +47,8 @@ export default {
           d1Bound: Boolean(env.DB || env.brivu_db),
           r2Bound: Boolean(env.BUCKET || env.brivu_bucket || env.MY_BUCKET),
           workosConfigured: Boolean(workosClientId || workosApiKey),
+          cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
+          cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
           timestamp: new Date().toISOString(),
         }),
         {
@@ -72,6 +79,9 @@ export default {
           redirectUri,
           authUrl,
           provider: 'GoogleOAuth',
+          cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
+          cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
+          isUsingFallback: !Boolean(env.WORKOS_CLIENT_ID) && !headerClientId,
           message: isConfigured
             ? 'WorkOS AuthKit Google Sign-In ready'
             : 'WorkOS variables pending in Cloudflare. You can add WORKOS_CLIENT_ID and WORKOS_API_KEY in Cloudflare Worker environment variables.',

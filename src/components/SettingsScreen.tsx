@@ -14,6 +14,7 @@ import {
   Sparkles,
   Cloud,
   Eye,
+  EyeOff,
   Shield,
   CheckCircle2,
   AlertCircle,
@@ -21,6 +22,8 @@ import {
   RefreshCw,
   Ban,
   Lock,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings, CloudflareConfig } from '../types';
 import { StorageService } from '../services/storage';
@@ -52,6 +55,71 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+
+  const [workosState, setWorkosState] = useState<{
+    loading: boolean;
+    clientId: string;
+    apiKeyConfigured: boolean;
+    cloudflareClientIdConfigured: boolean;
+    cloudflareApiKeyConfigured: boolean;
+    isUsingFallback: boolean;
+    redirectUri: string;
+    authUrl: string;
+    error: string | null;
+  }>({
+    loading: false,
+    clientId: '',
+    apiKeyConfigured: false,
+    cloudflareClientIdConfigured: false,
+    cloudflareApiKeyConfigured: false,
+    isUsingFallback: true,
+    redirectUri: '',
+    authUrl: '',
+    error: null,
+  });
+
+  const [overrideKeys, setOverrideKeys] = useState(cfConfig.overrideWorkosKeys || false);
+  const [customClientId, setCustomClientId] = useState(cfConfig.customWorkosClientId || '');
+  const [customApiKey, setCustomApiKey] = useState(cfConfig.customWorkosApiKey || '');
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const fetchWorkosDiagnostics = async () => {
+    setWorkosState(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      const config = await CloudflareService.getWorkOSConfig();
+      setWorkosState({
+        loading: false,
+        clientId: config.clientId || '',
+        apiKeyConfigured: config.apiKeyConfigured || false,
+        cloudflareClientIdConfigured: config.cloudflareClientIdConfigured || false,
+        cloudflareApiKeyConfigured: config.cloudflareApiKeyConfigured || false,
+        isUsingFallback: config.isUsingFallback ?? true,
+        redirectUri: config.redirectUri || window.location.origin,
+        authUrl: config.authUrl || '',
+        error: null,
+      });
+    } catch (err: any) {
+      setWorkosState(prev => ({
+        ...prev,
+        loading: false,
+        error: err?.message || 'Failed to fetch live WorkOS diagnostics from Cloudflare Worker.',
+      }));
+    }
+  };
+
+  useEffect(() => {
+    fetchWorkosDiagnostics();
+  }, [cfConfig]);
+
+  const handleSaveCustomWorkos = () => {
+    const updated = CloudflareService.saveConfig({
+      overrideWorkosKeys: overrideKeys,
+      customWorkosClientId: customClientId.trim(),
+      customWorkosApiKey: customApiKey.trim(),
+    });
+    setCfConfig(updated);
+    showToast('WorkOS overrides updated successfully!');
+  };
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -393,6 +461,219 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <span>Restore Data</span>
           </button>
         </div>
+      </div>
+
+      {/* WorkOS Google Sign-In Setup & Live Diagnostics Panel */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+              <Key className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                WorkOS Google Sign-In Diagnostics
+              </h2>
+              <p className="text-[10px] text-slate-400 font-medium">
+                Verify connections, credentials & debug "wrong secret" errors
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={fetchWorkosDiagnostics}
+            disabled={workosState.loading}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 hover:text-orange-600 transition flex items-center gap-1 cursor-pointer text-[11px]"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${workosState.loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {workosState.loading ? (
+          <div className="py-4 flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5 text-orange-500 animate-spin" />
+            <span className="text-xs text-slate-500">Retrieving Cloudflare Worker state...</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Connection status pills */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Cloudflare Worker:</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Connected
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Worker Status:</span>
+                {workosState.isUsingFallback ? (
+                  <span className="font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[10px]">
+                    Using fallbacks
+                  </span>
+                ) : (
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[10px]">
+                    Custom Active
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Cloudflare Env Bindings Detection */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+              <span className="font-bold text-slate-800 dark:text-white block text-[11px] uppercase tracking-wider text-slate-500">
+                Cloudflare Dashboard Variable Bindings
+              </span>
+              
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Natively Bound WORKOS_CLIENT_ID:</span>
+                {workosState.cloudflareClientIdConfigured ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    Detected
+                  </span>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    Pending (Using Fallback)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Natively Bound WORKOS_API_KEY:</span>
+                {workosState.cloudflareApiKeyConfigured ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    Detected
+                  </span>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    Pending (Using Fallback)
+                  </span>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Active WorkOS Client ID in use:</span>
+                <span className="font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 select-all truncate max-w-[200px]" title={workosState.clientId}>
+                  {workosState.clientId || 'None'}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Override panel */}
+            <div className="p-3.5 rounded-xl bg-orange-500/5 border border-orange-500/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-white block">
+                    Local Settings Keys Override (Immediate Working Solution)
+                  </span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight">
+                    Allows you to specify your own Client ID & API Key right inside the app! No need to redeploy the worker.
+                  </span>
+                </div>
+                <button
+                  id="btn-toggle-override-keys"
+                  type="button"
+                  onClick={() => setOverrideKeys(!overrideKeys)}
+                  className={`w-10 h-5 shrink-0 flex items-center rounded-full p-0.5 transition-colors duration-300 focus:outline-hidden cursor-pointer ${
+                    overrideKeys ? 'bg-orange-600 justify-end' : 'bg-slate-300 dark:bg-slate-600 justify-start'
+                  }`}
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-md" />
+                </button>
+              </div>
+
+              {overrideKeys && (
+                <div className="space-y-2.5 pt-1.5 animate-fadeIn text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      WorkOS Client ID (starts with client_...)
+                    </label>
+                    <input
+                      type="text"
+                      value={customClientId}
+                      onChange={(e) => setCustomClientId(e.target.value)}
+                      placeholder="client_01M4B..."
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      WorkOS API Key / Client Secret (starts with sk_... or api_...)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        placeholder="sk_live_..."
+                        className="w-full pl-3 pr-10 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:border-orange-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded cursor-pointer"
+                      >
+                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveCustomWorkos}
+                    className="w-full py-2 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Save Locally & Override</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Diagnostic helper message for "wrong secret" error */}
+            <div className="p-3 bg-red-500/5 dark:bg-red-950/10 border border-red-500/10 rounded-xl space-y-2 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+              <div className="font-bold text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 stroke-[2]" />
+                <span>Fixing "Wrong Secret" / Connection Issues</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-1 text-slate-600 dark:text-slate-400">
+                <li>
+                  <strong className="text-slate-800 dark:text-white">Did you get a "Wrong Secret" error inside the popup?</strong>
+                  <br />
+                  This means the <strong className="text-red-600 dark:text-red-400">Google Client Secret</strong> entered in your WorkOS Dashboard (under Google Social Logins) is incorrect. Go to your <strong className="text-slate-700 dark:text-slate-200">Google Cloud Console</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">APIs & Services</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">Credentials</strong>, delete the old secret, create a new one, copy it, and paste it into WorkOS carefully with no spaces or newlines.
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-white">Google Cloud Redirect URI:</strong>
+                  <br />
+                  In Google Cloud Console, the <strong className="text-slate-800 dark:text-white">Authorized redirect URIs</strong> for your OAuth Web Client ID must be set exactly to:
+                  <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
+                    https://auth.workos.com/sso/oauth/google/callback
+                  </div>
+                  The <strong className="text-slate-800 dark:text-white">Authorized JavaScript origins</strong> must be:
+                  <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all font-bold text-slate-800 dark:text-slate-300">
+                    https://auth.workos.com
+                  </div>
+                </li>
+                <li>
+                  <strong className="text-slate-800 dark:text-white">WorkOS Dashboard Redirect URI whitelist:</strong>
+                  <br />
+                  In your WorkOS Dashboard under <strong className="text-slate-700 dark:text-slate-200">User Management</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">Redirects</strong>, you must whitelist:
+                  <div className="mt-1 font-mono text-[10px] bg-white dark:bg-slate-950 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 select-all text-slate-600 dark:text-slate-300">
+                    {window.location.origin}
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 5. App Transparency & Ad-Free Subscription Status */}
