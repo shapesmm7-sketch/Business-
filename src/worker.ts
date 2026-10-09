@@ -89,6 +89,18 @@ export async function ensureD1Tables(db: any): Promise<void> {
       )
     `).run();
   } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS receipts (
+        id TEXT PRIMARY KEY,
+        user_email TEXT,
+        receipt_number TEXT,
+        total REAL,
+        data_json TEXT,
+        created_at TEXT
+      )
+    `).run();
+  } catch (_) {}
 }
 
 export default {
@@ -733,6 +745,43 @@ export default {
       );
     }
 
+    // 2c. Single Receipt Sync endpoint (/api/receipts)
+    if (url.pathname === '/api/receipts' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        const receipt: any = await request.json().catch(() => ({}));
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          receipt?.userEmail ||
+          url.searchParams.get('email') ||
+          ''
+        ).toLowerCase().trim();
+
+        if (receipt && receipt.id && db) {
+          try {
+            await ensureD1Tables(db);
+            const receiptJson = JSON.stringify(receipt);
+            await db.prepare(`
+              INSERT INTO receipts (id, user_email, receipt_number, total, data_json, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json
+            `).bind(receipt.id, userEmail || 'global', receipt.receiptNumber || receipt.id, receipt.total || 0, receiptJson, new Date().toISOString()).run();
+          } catch (_) {}
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, success: true, message: 'Receipt synchronized' }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // 3. File Upload endpoint (/api/files/upload)
     if (url.pathname === '/api/files/upload' && request.method === 'POST') {
       try {
@@ -827,32 +876,84 @@ export default {
     if ((url.pathname === '/api/files' || url.pathname === '/api/files/') && request.method === 'GET') {
       const bucket = getR2Bucket(env);
       const db = getD1Database(env);
-      const prefix = url.searchParams.get('prefix') || '';
-      const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 500);
+      const userEmail = (
+        request.headers.get('X-User-Email') ||
+        request.headers.get('X-User-Id') ||
+        url.searchParams.get('email') ||
+        url.searchParams.get('user_id') ||
+        ''
+      ).toLowerCase().trim();
+      const prefixParam = url.searchParams.get('prefix') || '';
+      const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 500);
 
       const files: any[] = [];
       const seenKeys = new Set<string>();
 
+      const isSystemBackupFile = (k: string) => {
+        const lower = k.toLowerCase();
+        return (
+          lower.endsWith('backup.json') ||
+          lower.endsWith('latest_backup.json') ||
+          lower.endsWith('data.json') ||
+          lower.endsWith('profile.json') ||
+          lower.endsWith('all_users.json')
+        );
+      };
+
+      const parseFileRecord = (key: string, size: number, mimeType: string, uploadedAt: string) => {
+        const parts = key.split('/');
+        let folder = 'files';
+        let rawFilename = parts[parts.length - 1] || key;
+        if (key.startsWith('users/') && parts.length >= 4) {
+          folder = parts[2];
+          rawFilename = parts.slice(3).join('_');
+        } else if (parts.length > 1) {
+          folder = parts[parts.length - 2];
+        }
+        const cleanFilename = rawFilename.replace(/^\d+_/, '');
+        return {
+          key,
+          filename: cleanFilename,
+          size,
+          mimeType,
+          uploadedAt,
+          url: `${url.origin}/api/files/${encodeURIComponent(key)}`,
+          folder,
+        };
+      };
+
       // 1. Fetch from R2 if bucket is bound
       if (bucket && typeof bucket.list === 'function') {
         try {
-          const listed = await bucket.list({ prefix: prefix || undefined, limit });
-          if (listed && Array.isArray(listed.objects)) {
-            for (const obj of listed.objects) {
-              seenKeys.add(obj.key);
-              const parts = obj.key.split('/');
-              const rawFilename = parts[parts.length - 1] || obj.key;
-              const cleanFilename = rawFilename.replace(/^\d+_/, '');
-              const folder = parts.length > 1 ? parts[parts.length - 2] : '';
-              files.push({
-                key: obj.key,
-                filename: cleanFilename,
-                size: obj.size || 0,
-                mimeType: obj.httpMetadata?.contentType || 'application/octet-stream',
-                uploadedAt: obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString(),
-                url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
-                folder,
-              });
+          const listPrefixes: (string | undefined)[] = [];
+          if (userEmail) {
+            listPrefixes.push(`users/${encodeURIComponent(userEmail)}/`);
+            listPrefixes.push(`users/${userEmail}/`);
+          }
+          if (prefixParam) {
+            listPrefixes.push(prefixParam);
+          }
+          if (listPrefixes.length === 0) {
+            listPrefixes.push(undefined);
+          }
+
+          for (const pfx of listPrefixes) {
+            const listed = await bucket.list({ prefix: pfx, limit });
+            if (listed && Array.isArray(listed.objects)) {
+              for (const obj of listed.objects) {
+                if (isSystemBackupFile(obj.key)) continue;
+                if (!seenKeys.has(obj.key)) {
+                  seenKeys.add(obj.key);
+                  files.push(
+                    parseFileRecord(
+                      obj.key,
+                      obj.size || 0,
+                      obj.httpMetadata?.contentType || 'application/octet-stream',
+                      obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString()
+                    )
+                  );
+                }
+              }
             }
           }
         } catch (r2Err) {
@@ -866,28 +967,37 @@ export default {
           await ensureD1Tables(db);
           let query = 'SELECT id, filename, mime_type, size, created_at FROM files';
           const params: any[] = [];
-          if (prefix) {
-            query += ' WHERE id LIKE ?';
-            params.push(`${prefix}%`);
+          const whereClauses: string[] = [];
+
+          if (userEmail) {
+            whereClauses.push('(id LIKE ? OR id LIKE ?)');
+            params.push(`users/${encodeURIComponent(userEmail)}/%`);
+            params.push(`users/${userEmail}/%`);
+          } else if (prefixParam) {
+            whereClauses.push('id LIKE ?');
+            params.push(`${prefixParam}%`);
+          }
+
+          if (whereClauses.length > 0) {
+            query += ' WHERE ' + whereClauses.join(' AND ');
           }
           query += ' ORDER BY created_at DESC LIMIT ?';
           params.push(limit);
+
           const rows: any = await db.prepare(query).bind(...params).all();
           if (rows && Array.isArray(rows.results)) {
             for (const row of rows.results) {
+              if (isSystemBackupFile(row.id)) continue;
               if (!seenKeys.has(row.id)) {
                 seenKeys.add(row.id);
-                const parts = row.id.split('/');
-                const folder = parts.length > 1 ? parts[parts.length - 2] : '';
-                files.push({
-                  key: row.id,
-                  filename: row.filename || row.id,
-                  size: row.size || 0,
-                  mimeType: row.mime_type || 'application/octet-stream',
-                  uploadedAt: row.created_at || new Date().toISOString(),
-                  url: `${url.origin}/api/files/${encodeURIComponent(row.id)}`,
-                  folder,
-                });
+                files.push(
+                  parseFileRecord(
+                    row.id,
+                    row.size || 0,
+                    row.mime_type || 'application/octet-stream',
+                    row.created_at || new Date().toISOString()
+                  )
+                );
               }
             }
           }
@@ -1674,8 +1784,8 @@ export default {
           } catch (_) {}
         }
 
-        // 3. Fallback to global latest_backup in R2
-        if (!backupData && bucket) {
+        // 3. Fallback to global latest_backup in R2 only if no user is specified
+        if (!backupData && !userEmail && bucket) {
           try {
             const backupObj = await bucket.get('sync/latest_backup.json');
             if (backupObj) {
@@ -1684,8 +1794,8 @@ export default {
           } catch (_) {}
         }
 
-        // 4. Fallback to global latest_backup in D1
-        if (!backupData && db) {
+        // 4. Fallback to global latest_backup in D1 only if no user is specified
+        if (!backupData && !userEmail && db) {
           try {
             await ensureD1Tables(db);
             const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind('latest_backup').first();

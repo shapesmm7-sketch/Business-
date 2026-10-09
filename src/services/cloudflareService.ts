@@ -163,17 +163,17 @@ export const CloudflareService = {
   },
 
   shouldAutoSyncData(): boolean {
-    // All users should log in to save their data to cloud
+    const config = this.getConfig();
+    if (!this.isConfigured() || config.autoSyncData === false) {
+      return false;
+    }
+    // When logged in with Google, always sync data to Cloudflare
     const user = StorageService.getWorkOSUser();
-    if (!user || !user.email) {
-      return false; // When not logged in, all data is saved to local storage
+    if (user && user.email) {
+      return true;
     }
     const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
-      return false; // Stop syncing database to cloud after trial expires unless subscribed
-    }
-    const config = this.getConfig();
-    return this.isConfigured() && config.autoSyncData !== false;
+    return !trial.isExpired || Boolean(trial.subscribed);
   },
 
   getAuthHeaders(apiKey?: string): Record<string, string> {
@@ -789,7 +789,12 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const queryParam = prefix ? `?prefix=${encodeURIComponent(prefix)}` : '';
+      const user = StorageService.getWorkOSUser();
+      const email = user?.email ? user.email.toLowerCase().trim() : '';
+      const params = new URLSearchParams();
+      if (prefix) params.set('prefix', prefix);
+      if (email) params.set('email', email);
+      const queryParam = params.toString() ? `?${params.toString()}` : '';
       const targetUrl = `${config.workerUrl}/api/files${queryParam}`;
 
       const res = await fetch(targetUrl, {

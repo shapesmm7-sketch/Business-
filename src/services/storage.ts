@@ -548,6 +548,31 @@ export const StorageService = {
       // Background sync to Cloudflare D1 if configured
       this.syncReceiptToCloudflare(receipt);
       CloudflareService.syncAllToCloudflare().catch(() => {});
+
+      // Asynchronously upload PDF document to Cloudflare R2 so it is backed up in Cloud Files
+      if (typeof window !== 'undefined') {
+        const user = this.getWorkOSUser();
+        const cfConfig = this.getCloudflareConfig();
+        if ((user && user.email) || cfConfig.autoSaveFiles !== false) {
+          setTimeout(async () => {
+            try {
+              const { PdfGenerator } = await import('./pdfGenerator');
+              const doc = await PdfGenerator.createPdfDoc(receipt);
+              const isInv = receipt.documentType === 'invoice';
+              const pfx = isInv ? 'Invoice' : 'Receipt';
+              const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+              const fname = `${pfx}_${cleanNum}.pdf`;
+              const arrayBuffer = doc.output('arraybuffer');
+              await CloudflareService.uploadFile({
+                data: arrayBuffer,
+                filename: fname,
+                mimeType: 'application/pdf',
+                folder: isInv ? 'invoices' : 'receipts',
+              });
+            } catch (_) {}
+          }, 800);
+        }
+      }
     }
 
     if (success && isNew) {
@@ -2531,9 +2556,9 @@ export const StorageService = {
 
   syncReceiptToCloudflare(receipt: Receipt): void {
     try {
-      // If user's trial is expired and they don't have active subscription, completely skip saving to cloud!
+      const user = this.getWorkOSUser();
       const status = this.getTrialStatus();
-      if (status.isExpired && !this.isSubscribed()) {
+      if (!user?.email && status.isExpired && !this.isSubscribed()) {
         console.info('Skip background Cloudflare receipt sync: Trial expired without subscription.');
         return;
       }
@@ -2545,6 +2570,10 @@ export const StorageService = {
       if (config.apiKey && config.apiKey.trim() !== '') {
         headers['X-Sync-Key'] = config.apiKey.trim();
         headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
+      }
+      if (user && user.email) {
+        headers['X-User-Email'] = user.email.toLowerCase().trim();
+        headers['X-User-Id'] = user.email.toLowerCase().trim();
       }
       fetch(`${url}/api/receipts`, {
         method: 'POST',

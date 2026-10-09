@@ -127,6 +127,29 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [debts, setDebts] = useState<InventoryDebt[]>(() => StorageService.getInventoryDebts());
   const [stats, setStats] = useState(() => StorageService.getInventoryStats());
 
+  useEffect(() => {
+    const handleSync = () => {
+      setProducts(StorageService.getInventoryProducts());
+      setSales(StorageService.getInventorySales());
+      setStaffSales(StorageService.getStaffSales());
+      setAgentLedger(StorageService.getAgentLedger());
+      setExpenses(StorageService.getInventoryExpenses());
+      setDebts(StorageService.getInventoryDebts());
+      setStats(StorageService.getInventoryStats());
+      setCustomers(StorageService.getCustomers());
+      setAgents(StorageService.getAgents());
+      setWorkers(StorageService.getWorkers());
+      setShoppingList(StorageService.getShoppingListItems());
+      setProductCategories(StorageService.getProductCategories());
+    };
+    window.addEventListener('workos_user_updated', handleSync);
+    window.addEventListener('storage_updated', handleSync);
+    return () => {
+      window.removeEventListener('workos_user_updated', handleSync);
+      window.removeEventListener('storage_updated', handleSync);
+    };
+  }, []);
+
   // Shopping List States
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>(() => StorageService.getShoppingListItems());
   const [shoppingCategories, setShoppingCategories] = useState<ShoppingCategory[]>(() => StorageService.getShoppingCategories());
@@ -4249,11 +4272,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     </div>
                   </div>
 
-                  {/* SECTION 1: PRODUCT SEARCH / NAME */}
+                  {/* SECTION 1: PRODUCT NAME / STOCK SEARCH */}
                   <div className="space-y-1 relative">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                        PRODUCT SEARCH
+                        PRODUCT NAME
                       </label>
                       <div className="flex items-center gap-2">
                         {products.length > 0 ? (
@@ -4268,7 +4291,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             }}
                             className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-sky-50 dark:bg-slate-700 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-slate-600 cursor-pointer focus:outline-none"
                           >
-                            <option value="">Pick Product ▾</option>
+                            <option value="">Pick from Stock ▾</option>
                             {products.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.name} (#{p.itemId})
@@ -4283,7 +4306,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             }}
                             className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition"
                           >
-                            Pick Product ▾
+                            Pick from Stock ▾
                           </button>
                         )}
 
@@ -4304,7 +4327,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       </div>
                     </div>
                     <div className="relative flex items-center">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
                       <input
                         id="input-sale-product-name"
                         type="text"
@@ -4315,8 +4337,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             setSelectedProductForSale(null);
                           }
                         }}
-                        placeholder="Search product name..."
-                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                        placeholder="Enter product name..."
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
                         required
                       />
                     </div>
