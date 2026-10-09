@@ -149,17 +149,17 @@ export const CloudflareService = {
   },
 
   shouldAutoSaveFiles(): boolean {
-    // Only users who are logged in can save files to cloud
+    const config = this.getConfig();
+    if (!this.isConfigured() || config.autoSaveFiles === false) {
+      return false;
+    }
+    // Users signed in with Google or users with active trial/subscription can save files to Cloudflare
     const user = StorageService.getWorkOSUser();
-    if (!user || !user.email) {
-      return false; // When not logged in, files are saved locally
+    if (user && user.email) {
+      return true;
     }
     const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
-      return false; // Stop saving files to cloud after trial expires unless subscribed
-    }
-    const config = this.getConfig();
-    return this.isConfigured() && config.autoSaveFiles !== false;
+    return !trial.isExpired || Boolean(trial.subscribed);
   },
 
   shouldAutoSyncData(): boolean {
@@ -340,6 +340,7 @@ export const CloudflareService = {
     filename: string;
     mimeType?: string;
     folder?: string;
+    force?: boolean;
   }): Promise<{
     success: boolean;
     url?: string;
@@ -348,10 +349,15 @@ export const CloudflareService = {
     size?: number;
     message: string;
   }> {
-    if (!this.shouldAutoSaveFiles()) {
+    const isManualOrDiagnostic = Boolean(
+      options.force ||
+      options.folder === 'diagnostics' ||
+      options.folder === 'manual_uploads'
+    );
+    if (!isManualOrDiagnostic && !this.shouldAutoSaveFiles()) {
       return {
         success: false,
-        message: 'Cloudflare auto-save files is disabled (trial expired or not subscribed)',
+        message: 'Cloudflare auto-save files is disabled (trial expired, or toggled off)',
       };
     }
 
@@ -686,25 +692,30 @@ export const CloudflareService = {
         };
       }
 
-      const result = parsed.data;
-      if (!result.backupData) {
+      const result = parsed.data || {};
+      const rawBackupData: AppBackupData | undefined =
+        result?.backupData || result?.data?.backupData || (result?.receipts ? result : undefined);
+
+      if (!rawBackupData) {
         return {
           success: false,
-          message: 'No backup records found on Cloudflare D1',
+          message: 'No backup records found on Cloudflare',
         };
       }
 
-      const importResult = StorageService.importBackup(result.backupData);
+      const importResult = StorageService.importBackup(rawBackupData);
       if (importResult.success) {
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),
           lastStatus: 'connected',
         });
+        const receiptsCount = rawBackupData.receipts?.length || 0;
+        const productsCount = rawBackupData.inventoryProducts?.length || 0;
         return {
           success: true,
-          message: `Successfully restored ${result.backupData.receipts?.length || 0} receipts from Cloudflare D1!`,
-          count: result.backupData.receipts?.length || 0,
-          data: result.backupData,
+          message: `Successfully restored ${receiptsCount} receipts & ${productsCount} inventory products from Cloudflare!`,
+          count: receiptsCount,
+          data: rawBackupData,
         };
       } else {
         return {
@@ -997,7 +1008,7 @@ export const CloudflareService = {
   async getWorkOSConfig(codeChallenge?: string): Promise<WorkOSAuthConfig> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
+    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
       ? normalizeUrl(currentOrigin)
       : normalizeUrl(config.workerUrl);
     try {
@@ -1035,7 +1046,8 @@ export const CloudflareService = {
       console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
     }
     const defaultClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-    let defaultAuthUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(defaultClientId)}&redirect_uri=${encodeURIComponent(window.location.origin)}&provider=GoogleOAuth`;
+    const callbackUri = `${cleanUrl.replace(/\/$/, '')}/callback`;
+    let defaultAuthUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(defaultClientId)}&redirect_uri=${encodeURIComponent(callbackUri)}&provider=GoogleOAuth`;
     if (codeChallenge) {
       defaultAuthUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
     }
@@ -1043,7 +1055,7 @@ export const CloudflareService = {
       clientId: defaultClientId,
       apiKeyConfigured: true,
       authUrl: defaultAuthUrl,
-      redirectUri: window.location.origin,
+      redirectUri: callbackUri,
       workerUrl: cleanUrl,
       cloudflareClientIdConfigured: false,
       cloudflareApiKeyConfigured: false,
@@ -1057,7 +1069,7 @@ export const CloudflareService = {
   async authenticateWorkOSCode(code: string, redirectUri?: string, codeVerifier?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && (currentOrigin.includes('workers.dev') || currentOrigin.includes('run.app'))
+    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
       ? normalizeUrl(currentOrigin)
       : normalizeUrl(config.workerUrl);
 

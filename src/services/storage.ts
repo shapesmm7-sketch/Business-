@@ -867,8 +867,14 @@ export const StorageService = {
     if (!backupData || typeof backupData !== 'object') {
       return { success: false, message: 'Invalid backup file format' };
     }
-    if (!Array.isArray(backupData.receipts)) {
-      return { success: false, message: 'Backup file missing receipts data' };
+    const hasAnyContent = Array.isArray(backupData.receipts) ||
+      Array.isArray(backupData.inventoryProducts) ||
+      Array.isArray(backupData.inventorySales) ||
+      Array.isArray(backupData.inventoryExpenses) ||
+      Array.isArray(backupData.inventoryDebts) ||
+      Boolean(backupData.profile);
+    if (!hasAnyContent) {
+      return { success: false, message: 'Backup file is empty or missing data' };
     }
 
     try {

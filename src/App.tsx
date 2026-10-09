@@ -588,6 +588,33 @@ export function App() {
     };
     window.addEventListener('workos_user_updated', handleUserUpdatedSync);
 
+    // 2a. Global OAuth popup message listener
+    const handleOAuthMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
+        try {
+          const code = event.data.code;
+          const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
+          if (authRes.success && authRes.user) {
+            await WorkOSAuthService.saveAndSyncUser(authRes.user);
+            refreshData();
+          }
+        } catch (err) {
+          console.warn('[OAuth] Popup message handling error:', err);
+        }
+      }
+    };
+    window.addEventListener('message', handleOAuthMessage);
+
+    // 2b. Process web OAuth callback code if returning from Google / WorkOS
+    if (typeof window !== 'undefined' && window.location.search.includes('code=')) {
+      WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
+        if (usr) {
+          refreshData();
+        }
+      });
+    }
+
     // 3. Pagehide / beforeunload listeners (clean web unload)
     const handlePageHide = () => {
       handleAppGoingBackground();
@@ -616,6 +643,7 @@ export function App() {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
       document.removeEventListener('click', handleFileInputClick, true);
+      window.removeEventListener('message', handleOAuthMessage);
       window.removeEventListener('workos_user_updated', handleUserUpdatedSync);
       if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
         capListenerHandle.remove();
@@ -812,15 +840,12 @@ export function App() {
     StorageService.saveSettings(updated);
   };
 
-  // Check if we are inside an OAuth popup window or callback
+  // Check if we are inside an OAuth popup window or dedicated callback route
   const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
   const isOauthPopup = typeof window !== 'undefined' && !isNative && (
-    (window.opener && (window.location.search.includes('code=') || window.location.search.includes('error='))) ||
+    (Boolean(window.opener) && (window.location.search.includes('code=') || window.location.search.includes('error='))) ||
     window.location.pathname.includes('/auth/callback') ||
-    window.location.pathname.endsWith('/callback') ||
-    ((window.location.search.includes('code=') || window.location.search.includes('error=')) &&
-     !window.location.search.includes('customer=') &&
-     !window.location.search.includes('receipt='))
+    window.location.pathname.endsWith('/callback')
   );
 
   if (isOauthPopup) {

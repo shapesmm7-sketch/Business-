@@ -28,6 +28,10 @@ export async function generatePKCE(): Promise<{ codeVerifier: string; codeChalle
   return { codeVerifier, codeChallenge };
 }
 
+// Lock & cache to prevent duplicate OAuth code exchange calls
+let inFlightExchangePromise: Promise<WorkOSUser | null> | null = null;
+const exchangedCodes = new Set<string>();
+
 export const WorkOSAuthService = {
   /**
    * Returns current authenticated WorkOS User from storage
@@ -64,19 +68,32 @@ export const WorkOSAuthService = {
 
     // 3. First pull existing cloud data from Cloudflare for this email (if any exists from prior install/device)
     // and merge it with current local data
+    let cloudRestored = false;
     if (cleanEmail) {
       try {
-        await CloudflareService.pullFromCloudflare(cleanEmail);
+        const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
+        if (pullRes.success) {
+          cloudRestored = true;
+        }
       } catch (pullErr) {
         console.warn('Initial cloud pull note:', pullErr);
       }
     }
 
-    // 4. Immediately save all local data (including any data added before logging in) to Cloudflare under their email
+    // 4. Save user profile to Cloudflare
     const syncRes = await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile());
-    await CloudflareService.syncAllToCloudflare().catch(() => {});
 
-    // 5. Broadcast user update across app
+    // 5. Only push data to Cloudflare if we have actual records to preserve or cloud was restored.
+    // Never overwrite a cloud backup with an empty array on a fresh installation.
+    const hasLocalData = StorageService.getReceipts().length > 0 ||
+      StorageService.getInventoryProducts().length > 0 ||
+      StorageService.getInventorySales().length > 0;
+
+    if (hasLocalData || cloudRestored) {
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+
+    // 6. Broadcast user update across app
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
     }
@@ -127,19 +144,27 @@ export const WorkOSAuthService = {
 
       const isNative = typeof window !== 'undefined' && (
         Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
-        window.location.origin.includes('localhost') ||
         window.location.protocol === 'file:' ||
         window.location.protocol === 'capacitor:'
       );
       const cloudflareBaseUrl = config.workerUrl || 'https://brivu.shapesmm7.workers.dev';
-      const redirectUri = (isNative || window.location.origin.includes('localhost') || !window.location.origin.includes('http'))
-        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`
-        : `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
+      const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
 
-      let authUrl = config.authUrl || `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
-      if (!authUrl.includes('code_challenge=')) {
-        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
+      if (!isNative && returnUrl) {
+        try {
+          localStorage.setItem('workos_web_return_url', returnUrl);
+          sessionStorage.setItem('workos_web_return_url', returnUrl);
+        } catch (_) {}
       }
+
+      const stateObj = {
+        platform: isNative ? 'app' : 'web',
+        returnUrl: isNative ? '' : returnUrl,
+      };
+      const stateParam = encodeURIComponent(JSON.stringify(stateObj));
+
+      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
       // Launch WorkOS AuthKit Google Sign-In via system browser on mobile or direct redirect on web
       if (isNative) {
@@ -169,15 +194,35 @@ export const WorkOSAuthService = {
       }
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
-      if (code) {
-        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
-        const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
-        if (authRes.success && authRes.user) {
-          await this.saveAndSyncUser(authRes.user);
-          window.history.replaceState({}, document.title, window.location.pathname);
-          return authRes.user;
-        }
+      if (!code) {
+        return null;
       }
+
+      if (exchangedCodes.has(code)) {
+        return StorageService.getWorkOSUser();
+      }
+
+      if (inFlightExchangePromise) {
+        return inFlightExchangePromise;
+      }
+
+      inFlightExchangePromise = (async () => {
+        try {
+          exchangedCodes.add(code);
+          const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
+          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
+          if (authRes.success && authRes.user) {
+            await this.saveAndSyncUser(authRes.user);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return authRes.user;
+          }
+        } finally {
+          inFlightExchangePromise = null;
+        }
+        return null;
+      })();
+
+      return inFlightExchangePromise;
     } catch (err) {
       console.warn('Error handling OAuth callback code:', err);
     }

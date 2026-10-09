@@ -144,17 +144,27 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       
       const isNative = typeof window !== 'undefined' && (
         Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
-        window.location.origin.includes('localhost') ||
         window.location.protocol === 'file:' ||
         window.location.protocol === 'capacitor:'
       );
       const cloudflareBaseUrl = config.workerUrl || 'https://brivu.shapesmm7.workers.dev';
-      // Match the WorkOS configured redirect URI: /callback
-      const redirectUri = (isNative || window.location.origin.includes('localhost') || !window.location.origin.includes('http'))
-        ? `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`
-        : `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
+      const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
 
-      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
+      const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
+      if (!isNative && returnUrl) {
+        try {
+          localStorage.setItem('workos_web_return_url', returnUrl);
+          sessionStorage.setItem('workos_web_return_url', returnUrl);
+        } catch (_) {}
+      }
+
+      const stateObj = {
+        platform: isNative ? 'app' : 'web',
+        returnUrl: isNative ? '' : returnUrl,
+      };
+      const stateParam = encodeURIComponent(JSON.stringify(stateObj));
+
+      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
       if (isNative) {
         setStatusMsg({ type: 'info', text: 'Opening Google Sign-In in secure browser...' });
@@ -185,12 +195,23 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         );
         
         if (!popup) {
-          // If popup was blocked, redirect directly
+          // If popup was blocked by browser, redirect current window directly
           window.location.href = authUrl;
+          return;
         }
-        setIsSubmitting(false);
-        setStatusMsg(null);
-        onClose();
+
+        // Keep modal open to maintain the postMessage event listener
+        setIsSubmitting(true);
+        setStatusMsg({ type: 'info', text: 'Completing Google Sign-In in popup window...' });
+
+        // Poll in case user manually closes the popup window without completing sign-in
+        const popupWatcher = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(popupWatcher);
+            setIsSubmitting(false);
+            setStatusMsg((prev) => (prev?.type === 'info' ? null : prev));
+          }
+        }, 1000);
       }
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });

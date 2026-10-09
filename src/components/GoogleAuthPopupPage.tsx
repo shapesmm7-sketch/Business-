@@ -31,35 +31,28 @@ export const GoogleAuthPopupPage: React.FC = () => {
         
         setStatus('success');
         setTimeout(() => {
-          window.close();
-        }, 300);
+          try {
+            window.close();
+          } catch (_) {}
+        }, 800);
       } else {
-        // Direct exchange for mobile Chrome / external browser flow
+        // Direct exchange for mobile Chrome / web browser flow
         const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
-        
-        // 1. Immediately attempt instant deep link navigation back to Android App
-        try {
-          window.location.replace(`brivu://auth/callback?code=${encodeURIComponent(code)}`);
-        } catch (_) {
-          window.location.href = `brivu://auth/callback?code=${encodeURIComponent(code)}`;
-        }
 
-        // 2. Also authenticate on Cloudflare Worker to sync data
         CloudflareService.authenticateWorkOSCode(code, undefined, verifier).then(async (authRes) => {
           if (authRes.success && authRes.user) {
             await WorkOSAuthService.saveAndSyncUser(authRes.user);
             setStatus('success');
-            // Try deep link again after auth
-            try {
-              window.location.href = `brivu://auth/callback?code=${encodeURIComponent(code)}`;
-            } catch (_) {}
+            setTimeout(() => {
+              window.location.replace('/');
+            }, 300);
           } else {
-            // Even if worker exchange fails here (e.g. PKCE verifier is stored inside Android App's local storage),
-            // still mark as success so user can tap to return to the Android App where the verifier is stored!
-            setStatus('success');
+            setStatus('error');
+            setErrorMsg(authRes.message || 'Authentication code exchange failed');
           }
-        }).catch(() => {
-          setStatus('success');
+        }).catch((err) => {
+          setStatus('error');
+          setErrorMsg(err?.message || 'Authentication error');
         });
       }
     } else {
@@ -112,27 +105,19 @@ export const GoogleAuthPopupPage: React.FC = () => {
           {authCode && (
             <div className="w-full space-y-3">
               <a
-                href={`brivu://auth/callback?code=${encodeURIComponent(authCode)}`}
+                href="/"
                 className="w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/25 active:scale-95 transition cursor-pointer"
               >
-                <Smartphone className="w-4 h-4" />
-                <span>Open Brivu Android App</span>
+                <span>Continue to Brivu Application</span>
                 <ArrowRight className="w-4 h-4 ml-auto" />
               </a>
 
               <a
-                href={`com.brivu.myapp://auth/callback?code=${encodeURIComponent(authCode)}`}
+                href={`brivu://auth/callback?code=${encodeURIComponent(authCode)}`}
                 className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer"
               >
-                <span>Alternative App Launch</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-
-              <a
-                href="/"
-                className="block text-center text-xs text-slate-400 hover:text-white pt-2 transition underline"
-              >
-                Continue in Web Browser
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Open in Android App</span>
               </a>
             </div>
           )}

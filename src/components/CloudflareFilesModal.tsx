@@ -91,6 +91,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         filename: file.name,
         mimeType: file.type || 'application/octet-stream',
         folder: 'manual_uploads',
+        force: true,
       });
 
       if (res.success) {

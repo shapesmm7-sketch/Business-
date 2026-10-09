@@ -4,9 +4,17 @@ export interface Env {
   };
   DB?: any;
   brivu_db?: any;
+  d1?: any;
+  D1?: any;
+  brivu_d1?: any;
+  DATABASE?: any;
   BUCKET?: any;
   brivu_bucket?: any;
   MY_BUCKET?: any;
+  r2?: any;
+  R2?: any;
+  brivu_r2?: any;
+  BRIVU_BUCKET?: any;
   WORKOS_API_KEY?: string;
   WORKOS_CLIENT_ID?: string;
   WORKOS_REDIRECT_URI?: string;
@@ -18,6 +26,70 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-Requested-With, X-WorkOS-Client-Id, X-WorkOS-Api-Key',
   'Access-Control-Max-Age': '86400',
 };
+
+// Flexible detector for any attached R2 storage bucket
+export function getR2Bucket(env: any): any {
+  if (env.BUCKET && typeof env.BUCKET.put === 'function') return env.BUCKET;
+  if (env.brivu_bucket && typeof env.brivu_bucket.put === 'function') return env.brivu_bucket;
+  if (env.MY_BUCKET && typeof env.MY_BUCKET.put === 'function') return env.MY_BUCKET;
+  if (env.r2 && typeof env.r2.put === 'function') return env.r2;
+  if (env.R2 && typeof env.R2.put === 'function') return env.R2;
+  if (env.brivu_r2 && typeof env.brivu_r2.put === 'function') return env.brivu_r2;
+  if (env.BRIVU_BUCKET && typeof env.BRIVU_BUCKET.put === 'function') return env.BRIVU_BUCKET;
+  if (env.STORAGE && typeof env.STORAGE.put === 'function') return env.STORAGE;
+  if (env.FILES && typeof env.FILES.put === 'function') return env.FILES;
+  for (const [key, val] of Object.entries(env)) {
+    if (key !== 'ASSETS' && val && typeof val === 'object' && typeof (val as any).put === 'function' && typeof (val as any).get === 'function') {
+      return val;
+    }
+  }
+  return null;
+}
+
+// Flexible detector for any attached D1 relational database
+export function getD1Database(env: any): any {
+  if (env.DB && typeof env.DB.prepare === 'function') return env.DB;
+  if (env.brivu_db && typeof env.brivu_db.prepare === 'function') return env.brivu_db;
+  if (env.d1 && typeof env.d1.prepare === 'function') return env.d1;
+  if (env.D1 && typeof env.D1.prepare === 'function') return env.D1;
+  if (env.brivu_d1 && typeof env.brivu_d1.prepare === 'function') return env.brivu_d1;
+  if (env.BRIVU_DB && typeof env.BRIVU_DB.prepare === 'function') return env.BRIVU_DB;
+  if (env.DATABASE && typeof env.DATABASE.prepare === 'function') return env.DATABASE;
+  if (env.db && typeof env.db.prepare === 'function') return env.db;
+  for (const [key, val] of Object.entries(env)) {
+    if (val && typeof val === 'object' && typeof (val as any).prepare === 'function' && typeof (val as any).batch === 'function') {
+      return val;
+    }
+  }
+  return null;
+}
+
+// Automatically create D1 backups and files tables if D1 is bound
+export async function ensureD1Tables(db: any): Promise<void> {
+  if (!db || typeof db.prepare !== 'function') return;
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS backups (
+        id TEXT PRIMARY KEY,
+        user_email TEXT,
+        backup_data TEXT,
+        updated_at TEXT
+      )
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS files (
+        id TEXT PRIMARY KEY,
+        filename TEXT,
+        mime_type TEXT,
+        size INTEGER,
+        data_base64 TEXT,
+        created_at TEXT
+      )
+    `).run();
+  } catch (_) {}
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -40,12 +112,16 @@ export default {
 
     // 2. Health check endpoint (/api/health)
     if (url.pathname === '/api/health') {
+      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
+      const d1Bound = Boolean(db);
+      const r2Bound = Boolean(bucket);
       return new Response(
         JSON.stringify({
           ok: true,
           status: 'connected',
-          d1Bound: Boolean(env.DB || env.brivu_db),
-          r2Bound: Boolean(env.BUCKET || env.brivu_bucket || env.MY_BUCKET),
+          d1Bound,
+          r2Bound,
           workosConfigured: Boolean(workosClientId && workosApiKey),
           cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
           cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
@@ -65,13 +141,44 @@ export default {
     if (url.pathname === '/callback' || url.pathname === '/auth/callback') {
       const authCode = url.searchParams.get('code') || '';
       const authError = url.searchParams.get('error') || url.searchParams.get('error_description') || '';
+      const rawState = url.searchParams.get('state') || '';
 
+      let platform = '';
+      let returnUrl = '';
+
+      if (rawState) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(rawState));
+          if (parsed && typeof parsed === 'object') {
+            platform = parsed.platform || '';
+            returnUrl = parsed.returnUrl || '';
+          }
+        } catch (_) {
+          if (rawState === 'app') {
+            platform = 'app';
+          } else if (rawState.startsWith('http://') || rawState.startsWith('https://')) {
+            platform = 'web';
+            returnUrl = decodeURIComponent(rawState);
+          }
+        }
+      }
+
+      // Check referer header if returnUrl is not explicitly in state
+      if (!returnUrl) {
+        const referer = request.headers.get('Referer') || request.headers.get('referrer') || '';
+        if (referer && !referer.includes('google.com') && !referer.includes('workos.com') && !referer.includes(url.hostname)) {
+          returnUrl = referer;
+          if (!platform) platform = 'web';
+        }
+      }
+
+      // Serve the robust callback landing page (supporting Android deep links & Web popups)
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brivu - Returning to App...</title>
+  <title>Brivu - Google Sign-In</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -116,8 +223,20 @@ export default {
       margin-bottom: 1.25rem;
     }
     .icon-error svg { width: 28px; height: 28px; stroke: #ef4444; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    h1 { font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
-    p { font-size: 0.825rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
+    .icon-success {
+      width: 56px;
+      height: 56px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 1.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+    }
+    .icon-success svg { width: 28px; height: 28px; stroke: #10b981; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    h1 { font-size: 1.2rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
+    p { font-size: 0.85rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
     .btn {
       display: block;
       width: 100%;
@@ -131,25 +250,15 @@ export default {
       margin-bottom: 0.75rem;
       background: linear-gradient(135deg, #4f46e5, #4338ca);
       color: #ffffff;
+      border: none;
+    }
+    .btn:hover { opacity: 0.95; }
+    .btn-secondary {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
     }
   </style>
-  <script>
-    var code = ${JSON.stringify(authCode)};
-    if (code) {
-      if (window.opener) {
-        try {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
-          window.close();
-        } catch (_) {}
-      }
-      try {
-        // Fast instant deep link execution
-        window.location.replace('brivu://auth/callback?code=' + encodeURIComponent(code));
-      } catch (_) {
-        window.location.href = 'brivu://auth/callback?code=' + encodeURIComponent(code);
-      }
-    }
-  </script>
 </head>
 <body>
   <div class="card">
@@ -161,22 +270,74 @@ export default {
       <p>${authError}</p>
       <a href="/" class="btn">Return Home</a>
     ` : `
-      <div class="spinner"></div>
-      <h1>Returning to Brivu...</h1>
-      <p>Authentication approved. Opening your application now.</p>
-      ${authCode ? `
-        <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn">Open Brivu App</a>
-      ` : ''}
+      <div class="icon-success">
+        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+      </div>
+      <h1>Sign-In Approved!</h1>
+      <p id="statusMsg">Returning to your application...</p>
+      <div id="actionButtons" style="display:none; margin-top: 1rem;">
+        ${authCode ? `
+          <a id="btnWeb" href="/" class="btn" style="display:none;">Continue in Web Browser</a>
+          <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-secondary">Open Brivu Android App</a>
+        ` : ''}
+      </div>
     `}
   </div>
+
   <script>
-    if (code) {
-      setTimeout(function() {
+    (function() {
+      var code = ${JSON.stringify(authCode)};
+      var platform = ${JSON.stringify(platform)};
+      var returnUrl = ${JSON.stringify(returnUrl)};
+      var error = ${JSON.stringify(authError)};
+
+      if (!code) return;
+
+      // 1. Desktop Popup Flow: post message to opener window and close
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
+          setTimeout(function() { window.close(); }, 300);
+          return;
+        } catch (_) {}
+      }
+
+      // 2. Check localStorage / sessionStorage for saved web return URL
+      var savedWebUrl = returnUrl;
+      try {
+        if (!savedWebUrl) {
+          savedWebUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
+        }
+      } catch (_) {}
+
+      // If user came from the website, redirect back to website
+      if (platform !== 'app' && savedWebUrl && (savedWebUrl.startsWith('http://') || savedWebUrl.startsWith('https://'))) {
+        try {
+          var target = new URL(savedWebUrl);
+          target.searchParams.set('code', code);
+          window.location.replace(target.toString());
+          return;
+        } catch (_) {}
+      }
+
+      // 3. If explicit native Android App
+      if (platform === 'app') {
         try {
           window.location.replace('brivu://auth/callback?code=' + encodeURIComponent(code));
-        } catch (_) {}
-      }, 300);
-    }
+        } catch (_) {
+          window.location.href = 'brivu://auth/callback?code=' + encodeURIComponent(code);
+        }
+      } else {
+        // Show buttons as fallback if automatic redirect didn't trigger
+        var actionBtns = document.getElementById('actionButtons');
+        var btnWeb = document.getElementById('btnWeb');
+        if (actionBtns) actionBtns.style.display = 'block';
+        if (btnWeb && savedWebUrl) {
+          btnWeb.href = savedWebUrl + (savedWebUrl.indexOf('?') >= 0 ? '&' : '?') + 'code=' + encodeURIComponent(code);
+          btnWeb.style.display = 'block';
+        }
+      }
+    })();
   </script>
 </body>
 </html>`;
@@ -235,7 +396,8 @@ export default {
       try {
         const body: any = await request.json().catch(() => ({}));
         const { code, redirectUri, codeVerifier } = body;
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
 
         // Resolve clean API key and Client ID from request body, headers, or Cloudflare Worker env
         const cleanApiKey = (body?.workosApiKey || headerApiKey || env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
@@ -420,7 +582,8 @@ export default {
     // 2d. Cloudflare User Profile & Emails Storage endpoint (/api/user/profile)
     if (url.pathname === '/api/user/profile' && request.method === 'POST') {
       try {
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
         const { user, businessProfile, appData } = body;
 
@@ -517,7 +680,8 @@ export default {
 
     // 2e. Get stored user profile from Cloudflare (/api/user/profile?email=... or ?id=...)
     if (url.pathname === '/api/user/profile' && request.method === 'GET') {
-      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
       const email = url.searchParams.get('email');
       const id = url.searchParams.get('id');
 
@@ -543,7 +707,7 @@ export default {
 
     // 2f. List all stored users & emails from Cloudflare (/api/users/all)
     if (url.pathname === '/api/users/all') {
-      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const bucket = getR2Bucket(env);
       let users: any[] = [];
       if (bucket) {
         try {
@@ -569,10 +733,11 @@ export default {
       );
     }
 
-    // 3. R2 File Upload endpoint (/api/files/upload)
+    // 3. File Upload endpoint (/api/files/upload)
     if (url.pathname === '/api/files/upload' && request.method === 'POST') {
       try {
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
         const { filename, data, mimeType = 'application/octet-stream', folder = 'receipts' } = body;
 
@@ -608,6 +773,20 @@ export default {
           });
         }
 
+        if (db && data) {
+          try {
+            await ensureD1Tables(db);
+            const dataBase64 = typeof data === 'string' ? (data.includes(',') ? data.split(',')[1] : data) : '';
+            await db.prepare(`
+              INSERT INTO files (id, filename, mime_type, size, data_base64, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET data_base64 = excluded.data_base64
+            `).bind(key, cleanFilename, mimeType, dataBase64.length, dataBase64, new Date().toISOString()).run();
+          } catch (d1Err) {
+            console.warn('D1 file save note:', d1Err);
+          }
+        }
+
         return new Response(
           JSON.stringify({
             ok: true,
@@ -616,7 +795,7 @@ export default {
             key,
             filename: cleanFilename,
             size: data ? data.length : 0,
-            message: `File ${cleanFilename} saved to Cloudflare R2`,
+            message: `File ${cleanFilename} saved to Cloudflare`,
           }),
           {
             status: 200,
@@ -644,11 +823,140 @@ export default {
       }
     }
 
-    // 4. File Download endpoint (/api/files/:key)
+    // 3b. File Listing endpoint (GET /api/files)
+    if ((url.pathname === '/api/files' || url.pathname === '/api/files/') && request.method === 'GET') {
+      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
+      const prefix = url.searchParams.get('prefix') || '';
+      const limit = Math.min(Number(url.searchParams.get('limit')) || 100, 500);
+
+      const files: any[] = [];
+      const seenKeys = new Set<string>();
+
+      // 1. Fetch from R2 if bucket is bound
+      if (bucket && typeof bucket.list === 'function') {
+        try {
+          const listed = await bucket.list({ prefix: prefix || undefined, limit });
+          if (listed && Array.isArray(listed.objects)) {
+            for (const obj of listed.objects) {
+              seenKeys.add(obj.key);
+              const parts = obj.key.split('/');
+              const rawFilename = parts[parts.length - 1] || obj.key;
+              const cleanFilename = rawFilename.replace(/^\d+_/, '');
+              const folder = parts.length > 1 ? parts[parts.length - 2] : '';
+              files.push({
+                key: obj.key,
+                filename: cleanFilename,
+                size: obj.size || 0,
+                mimeType: obj.httpMetadata?.contentType || 'application/octet-stream',
+                uploadedAt: obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString(),
+                url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
+                folder,
+              });
+            }
+          }
+        } catch (r2Err) {
+          console.warn('R2 file list note:', r2Err);
+        }
+      }
+
+      // 2. Also check D1 if db is bound
+      if (db) {
+        try {
+          await ensureD1Tables(db);
+          let query = 'SELECT id, filename, mime_type, size, created_at FROM files';
+          const params: any[] = [];
+          if (prefix) {
+            query += ' WHERE id LIKE ?';
+            params.push(`${prefix}%`);
+          }
+          query += ' ORDER BY created_at DESC LIMIT ?';
+          params.push(limit);
+          const rows: any = await db.prepare(query).bind(...params).all();
+          if (rows && Array.isArray(rows.results)) {
+            for (const row of rows.results) {
+              if (!seenKeys.has(row.id)) {
+                seenKeys.add(row.id);
+                const parts = row.id.split('/');
+                const folder = parts.length > 1 ? parts[parts.length - 2] : '';
+                files.push({
+                  key: row.id,
+                  filename: row.filename || row.id,
+                  size: row.size || 0,
+                  mimeType: row.mime_type || 'application/octet-stream',
+                  uploadedAt: row.created_at || new Date().toISOString(),
+                  url: `${url.origin}/api/files/${encodeURIComponent(row.id)}`,
+                  folder,
+                });
+              }
+            }
+          }
+        } catch (d1Err) {
+          console.warn('D1 file list note:', d1Err);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          success: true,
+          files,
+          total: files.length,
+          d1Bound: Boolean(db),
+          r2Bound: Boolean(bucket),
+        }),
+        {
+          status: 200,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    // 4. File Download & Delete endpoint (/api/files/:key)
     if (url.pathname.startsWith('/api/files/')) {
-      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
       const key = decodeURIComponent(url.pathname.replace('/api/files/', ''));
 
+      // Delete file
+      if (request.method === 'DELETE') {
+        let deletedR2 = false;
+        let deletedD1 = false;
+        if (bucket && key) {
+          try {
+            await bucket.delete(key);
+            deletedR2 = true;
+          } catch {}
+        }
+        if (db && key) {
+          try {
+            await ensureD1Tables(db);
+            await db.prepare('DELETE FROM files WHERE id = ?').bind(key).run();
+            deletedD1 = true;
+          } catch {}
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            message: `File ${key} deleted`,
+            deletedR2,
+            deletedD1,
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      }
+
+      // Get/Serve file
       if (bucket && key) {
         try {
           const object = await bucket.get(key);
@@ -660,12 +968,33 @@ export default {
           }
         } catch {}
       }
+
+      if (db && key) {
+        try {
+          await ensureD1Tables(db);
+          const row: any = await db.prepare('SELECT data_base64, mime_type FROM files WHERE id = ?').bind(key).first();
+          if (row && row.data_base64) {
+            const binary = atob(row.data_base64);
+            const buffer = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              buffer[i] = binary.charCodeAt(i);
+            }
+            return new Response(buffer, {
+              headers: {
+                ...CORS_HEADERS,
+                'Content-Type': row.mime_type || 'application/octet-stream',
+              },
+            });
+          }
+        } catch {}
+      }
     }
 
     // 5. QR Page Save endpoint (/api/qr)
     if (url.pathname === '/api/qr' && request.method === 'POST') {
       try {
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
         const page: any = await request.json().catch(() => ({}));
         if (page?.id && bucket) {
           const key = `qr_pages/${encodeURIComponent(page.id)}.json`;
@@ -700,7 +1029,8 @@ export default {
     // 6. QR Page Fetch endpoint (/api/qr/:pageId)
     if (url.pathname.startsWith('/api/qr/')) {
       const pageId = decodeURIComponent(url.pathname.replace('/api/qr/', ''));
-      const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
 
       if (bucket && pageId) {
         try {
@@ -991,7 +1321,8 @@ export default {
     // 7. Data Sync Push endpoint (/api/sync/push)
     if (url.pathname === '/api/sync/push' && request.method === 'POST') {
       try {
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
         const backupData = body?.backupData || body;
 
@@ -1007,251 +1338,276 @@ export default {
           ''
         ).toLowerCase().trim();
 
-        if (bucket && backupData) {
+        if (backupData) {
           const backupJson = JSON.stringify(backupData);
+          const now = new Date().toISOString();
 
-          // Save user-isolated backup under their email ID
-          if (userEmail) {
-            const userKey = encodeURIComponent(userEmail);
-            await bucket.put(`users/${userKey}/backup.json`, backupJson, {
-              httpMetadata: { contentType: 'application/json' },
-            });
-            await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
-              httpMetadata: { contentType: 'application/json' },
-            });
+          // 1. Persist to D1 Relational SQL Database if bound
+          if (db) {
+            try {
+              await ensureD1Tables(db);
+              if (userEmail) {
+                await db.prepare(`
+                  INSERT INTO backups (id, user_email, backup_data, updated_at)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
+                `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
+              }
+              await db.prepare(`
+                INSERT INTO backups (id, user_email, backup_data, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
+              `).bind('latest_backup', userEmail || 'global', backupJson, now).run();
+            } catch (d1Err) {
+              console.warn('D1 database push backup note:', d1Err);
+            }
           }
 
-          // Also save global backup as fallback
-          await bucket.put('sync/latest_backup.json', backupJson, {
-            httpMetadata: { contentType: 'application/json' },
-          });
+          // 2. Persist to R2 Object Storage Bucket if bound
+          if (bucket) {
+            // Save user-isolated backup under their email ID
+            if (userEmail) {
+              const userKey = encodeURIComponent(userEmail);
+              await bucket.put(`users/${userKey}/backup.json`, backupJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            }
 
-          // Also save websites hub page directly if websitesQrItems exist
-          if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
-            const profile = backupData.profile || {};
-            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-            const hubId = `websites-hub-${cleanName}`;
-            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-            const webHubPage = {
-              id: hubId,
-              title: 'Our Sites',
-              tagline: undefined,
-              description: `Official web links directory for ${profile.name || 'our company'}.`,
-              pageType: 'websites_hub',
-              accentColor: '#2563eb',
-              theme: 'indigo',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || '',
-              address: profile.address || '',
-              currency: profile.currency || 'USD',
-              announcement: `🌐 ${backupData.websitesQrItems.length} Official Link${backupData.websitesQrItems.length === 1 ? '' : 's'} Available`,
-              photos: [],
-              menuCategories: ['Our Sites'],
-              menuItems: backupData.websitesQrItems.map((w: any) => ({
-                id: `web-${w.id}`,
-                name: w.title,
-                category: 'Our Sites',
-                price: 0,
-                description: w.description || w.url,
-                url: w.url,
-                ctaText: w.ctaText || 'Visit Website',
-                itemType: w.type,
-                phone: w.phone,
-                phoneAction: w.phoneAction,
-                tags: [w.type, w.ctaText || 'Visit Website'],
-                isSpecial: true,
-                isAvailable: true,
-              })),
-              websitesQrItems: backupData.websitesQrItems,
-              qrDarkColor: '#2563eb',
-              qrLightColor: '#ffffff',
-              qrEyeColor: '#1d4ed8',
-              qrBoxBgColor: '#ffffff',
-              qrBoxBorderColor: '#cbd5e1',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-
-            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(webHubPage), {
-              httpMetadata: { contentType: 'application/json' },
-            });
-            await bucket.put(`qr_pages/websites-hub-all.json`, JSON.stringify(webHubPage), {
-              httpMetadata: { contentType: 'application/json' },
-            });
-          }
-
-          // Also save socials hub page directly if socialsQrItems exist
-          if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
-            const profile = backupData.profile || {};
-            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-            const hubId = `socials-hub-${cleanName}`;
-            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-            const socialHubPage = {
-              id: hubId,
-              title: 'our social media platforms',
-              tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-              description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
-              pageType: 'socials_hub',
-              accentColor: '#059669',
-              theme: 'emerald',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || '',
-              address: profile.address || '',
-              currency: profile.currency || 'USD',
-              announcement: `💬 ${backupData.socialsQrItems.length} Official Channel${backupData.socialsQrItems.length === 1 ? '' : 's'} Connected`,
-              photos: [],
-              menuCategories: ['Official Social Media & Messaging'],
-              menuItems: backupData.socialsQrItems.map((s: any) => ({
-                id: `social-${s.id}`,
-                name: s.title || s.customPlatformName || s.platform,
-                category: 'Official Social Media & Messaging',
-                price: 0,
-                description: s.prefilledMessage || s.fullUrl,
-                url: s.fullUrl,
-                ctaText: s.ctaText || 'Connect',
-                itemType: s.platform,
-                tags: [s.platform, s.ctaText || 'Connect'],
-                isSpecial: true,
-                isAvailable: true,
-              })),
-              socialsQrItems: backupData.socialsQrItems,
-              qrDarkColor: '#059669',
-              qrLightColor: '#ffffff',
-              qrEyeColor: '#047857',
-              qrBoxBgColor: '#ffffff',
-              qrBoxBorderColor: '#cbd5e1',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-
-            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(socialHubPage), {
-              httpMetadata: { contentType: 'application/json' },
-            });
-            await bucket.put(`qr_pages/socials-hub-all.json`, JSON.stringify(socialHubPage), {
-              httpMetadata: { contentType: 'application/json' },
-            });
-          }
-
-          // Also save events hub and individual event pages directly if eventsQrItems exist
-          if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
-            const profile = backupData.profile || {};
-            const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-            const hubId = `events-hub-${cleanName}`;
-            const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-            const eventsHubPage = {
-              id: hubId,
-              title: 'Our Events',
-              tagline: undefined,
-              description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
-              pageType: 'events_hub',
-              accentColor: '#7c3aed',
-              theme: 'indigo',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || '',
-              address: profile.address || '',
-              googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-              currency: profile.currency || 'USD',
-              announcement: `🎉 ${backupData.eventsQrItems.length} Upcoming Event${backupData.eventsQrItems.length === 1 ? '' : 's'} Available`,
-              photos: backupData.eventsQrItems.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
-                id: `${e.id}-photo-${idx}`,
-                url,
-                title: e.title,
-                description: e.location,
-                badge: 'Event Photo',
-              }))),
-              menuCategories: ['Our Events'],
-              menuItems: backupData.eventsQrItems.map((e: any) => ({
-                id: `event-pass-${e.id}`,
-                name: e.title,
-                category: 'Our Events',
-                price: 0,
-                description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                url: e.rsvpUrl || undefined,
-                ctaText: e.ctaText || 'RSVP & Join',
-                tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                isSpecial: true,
-                isAvailable: true,
-                photoUrl: e.photos?.[0] || undefined,
-              })),
-              eventsQrItems: backupData.eventsQrItems,
-              qrDarkColor: '#7c3aed',
-              qrLightColor: '#ffffff',
-              qrEyeColor: '#6d28d9',
-              qrBoxBgColor: '#ffffff',
-              qrBoxBorderColor: '#cbd5e1',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-
-            await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(eventsHubPage), {
-              httpMetadata: { contentType: 'application/json' },
-            });
-            await bucket.put(`qr_pages/events-hub-all.json`, JSON.stringify(eventsHubPage), {
+            // Also save global backup as fallback
+            await bucket.put('sync/latest_backup.json', backupJson, {
               httpMetadata: { contentType: 'application/json' },
             });
 
-            // Save each individual event
-            for (const evt of backupData.eventsQrItems) {
-              const singleEventPage = {
-                id: evt.id,
-                title: evt.title,
-                tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
-                description: evt.description || `Event Venue: ${evt.location}`,
-                pageType: 'event',
-                accentColor: evt.darkColor || '#7c3aed',
+            // Also save websites hub page directly if websitesQrItems exist
+            if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
+              const profile = backupData.profile || {};
+              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+              const hubId = `websites-hub-${cleanName}`;
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const webHubPage = {
+                id: hubId,
+                title: 'Our Sites',
+                tagline: undefined,
+                description: `Official web links directory for ${profile.name || 'our company'}.`,
+                pageType: 'websites_hub',
+                accentColor: '#2563eb',
                 theme: 'indigo',
-                coverImage: evt.photos?.[0] || undefined,
-                logo: evt.photos?.[0] || profile.logo || undefined,
-                phone: evt.contactPhone || profile.phone || '',
+                logo: profile.logo,
+                phone: profile.phone || '',
                 whatsapp: cleanWa,
-                email: evt.contactEmail || profile.email || '',
-                address: evt.location,
-                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
-                currency: profile.currency || 'UGX',
-                announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
-                allowWhatsAppOrdering: true,
-                photos: (evt.photos || []).map((url: string, idx: number) => ({
-                  id: `${evt.id}-photo-${idx}`,
-                  url,
-                  title: evt.title,
-                  description: evt.location,
-                  badge: 'Event Photo',
+                email: profile.email || '',
+                address: profile.address || '',
+                currency: profile.currency || 'USD',
+                announcement: `🌐 ${backupData.websitesQrItems.length} Official Link${backupData.websitesQrItems.length === 1 ? '' : 's'} Available`,
+                photos: [],
+                menuCategories: ['Our Sites'],
+                menuItems: backupData.websitesQrItems.map((w: any) => ({
+                  id: `web-${w.id}`,
+                  name: w.title,
+                  category: 'Our Sites',
+                  price: 0,
+                  description: w.description || w.url,
+                  url: w.url,
+                  ctaText: w.ctaText || 'Visit Website',
+                  itemType: w.type,
+                  phone: w.phone,
+                  phoneAction: w.phoneAction,
+                  tags: [w.type, w.ctaText || 'Visit Website'],
+                  isSpecial: true,
+                  isAvailable: true,
                 })),
-                menuCategories: ['Event Pass & RSVP'],
-                menuItems: [
-                  {
-                    id: `rsvp-${evt.id}`,
-                    name: `${evt.title} - Entry & RSVP Pass`,
-                    category: 'Event Pass & RSVP',
-                    price: 0,
-                    description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
-                    tags: ['RSVP', 'Invitation', 'Entry Pass'],
-                    isSpecial: true,
-                    isAvailable: true,
-                    photoUrl: evt.photos?.[0] || undefined,
-                  },
-                ],
-                qrDarkColor: evt.darkColor || '#7c3aed',
+                websitesQrItems: backupData.websitesQrItems,
+                qrDarkColor: '#2563eb',
                 qrLightColor: '#ffffff',
-                qrEyeColor: evt.eyeColor || '#6d28d9',
+                qrEyeColor: '#1d4ed8',
                 qrBoxBgColor: '#ffffff',
                 qrBoxBorderColor: '#cbd5e1',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               };
 
-              await bucket.put(`qr_pages/${encodeURIComponent(evt.id)}.json`, JSON.stringify(singleEventPage), {
+              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(webHubPage), {
                 httpMetadata: { contentType: 'application/json' },
               });
+              await bucket.put(`qr_pages/websites-hub-all.json`, JSON.stringify(webHubPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            }
+
+            // Also save socials hub page directly if socialsQrItems exist
+            if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
+              const profile = backupData.profile || {};
+              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+              const hubId = `socials-hub-${cleanName}`;
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const socialHubPage = {
+                id: hubId,
+                title: 'our social media platforms',
+                tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+                description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+                pageType: 'socials_hub',
+                accentColor: '#059669',
+                theme: 'emerald',
+                logo: profile.logo,
+                phone: profile.phone || '',
+                whatsapp: cleanWa,
+                email: profile.email || '',
+                address: profile.address || '',
+                currency: profile.currency || 'USD',
+                announcement: `💬 ${backupData.socialsQrItems.length} Official Channel${backupData.socialsQrItems.length === 1 ? '' : 's'} Connected`,
+                photos: [],
+                menuCategories: ['Official Social Media & Messaging'],
+                menuItems: backupData.socialsQrItems.map((s: any) => ({
+                  id: `social-${s.id}`,
+                  name: s.title || s.customPlatformName || s.platform,
+                  category: 'Official Social Media & Messaging',
+                  price: 0,
+                  description: s.prefilledMessage || s.fullUrl,
+                  url: s.fullUrl,
+                  ctaText: s.ctaText || 'Connect',
+                  itemType: s.platform,
+                  tags: [s.platform, s.ctaText || 'Connect'],
+                  isSpecial: true,
+                  isAvailable: true,
+                })),
+                socialsQrItems: backupData.socialsQrItems,
+                qrDarkColor: '#059669',
+                qrLightColor: '#ffffff',
+                qrEyeColor: '#047857',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(socialHubPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`qr_pages/socials-hub-all.json`, JSON.stringify(socialHubPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            }
+
+            // Also save events hub and individual event pages directly if eventsQrItems exist
+            if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
+              const profile = backupData.profile || {};
+              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+              const hubId = `events-hub-${cleanName}`;
+              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+              const eventsHubPage = {
+                id: hubId,
+                title: 'Our Events',
+                tagline: undefined,
+                description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+                pageType: 'events_hub',
+                accentColor: '#7c3aed',
+                theme: 'indigo',
+                logo: profile.logo,
+                phone: profile.phone || '',
+                whatsapp: cleanWa,
+                email: profile.email || '',
+                address: profile.address || '',
+                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+                currency: profile.currency || 'USD',
+                announcement: `🎉 ${backupData.eventsQrItems.length} Upcoming Event${backupData.eventsQrItems.length === 1 ? '' : 's'} Available`,
+                photos: backupData.eventsQrItems.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
+                  id: `${e.id}-photo-${idx}`,
+                  url,
+                  title: e.title,
+                  description: e.location,
+                  badge: 'Event Photo',
+                }))),
+                menuCategories: ['Our Events'],
+                menuItems: backupData.eventsQrItems.map((e: any) => ({
+                  id: `event-pass-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                  url: e.rsvpUrl || undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                  isSpecial: true,
+                  isAvailable: true,
+                  photoUrl: e.photos?.[0] || undefined,
+                })),
+                eventsQrItems: backupData.eventsQrItems,
+                qrDarkColor: '#7c3aed',
+                qrLightColor: '#ffffff',
+                qrEyeColor: '#6d28d9',
+                qrBoxBgColor: '#ffffff',
+                qrBoxBorderColor: '#cbd5e1',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+
+              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(eventsHubPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`qr_pages/events-hub-all.json`, JSON.stringify(eventsHubPage), {
+                httpMetadata: { contentType: 'application/json' },
+              });
+
+              // Save each individual event
+              for (const evt of backupData.eventsQrItems) {
+                const singleEventPage = {
+                  id: evt.id,
+                  title: evt.title,
+                  tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+                  description: evt.description || `Event Venue: ${evt.location}`,
+                  pageType: 'event',
+                  accentColor: evt.darkColor || '#7c3aed',
+                  theme: 'indigo',
+                  coverImage: evt.photos?.[0] || undefined,
+                  logo: evt.photos?.[0] || profile.logo || undefined,
+                  phone: evt.contactPhone || profile.phone || '',
+                  whatsapp: cleanWa,
+                  email: evt.contactEmail || profile.email || '',
+                  address: evt.location,
+                  googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
+                  currency: profile.currency || 'UGX',
+                  announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
+                  allowWhatsAppOrdering: true,
+                  photos: (evt.photos || []).map((url: string, idx: number) => ({
+                    id: `${evt.id}-photo-${idx}`,
+                    url,
+                    title: evt.title,
+                    description: evt.location,
+                    badge: 'Event Photo',
+                  })),
+                  menuCategories: ['Event Pass & RSVP'],
+                  menuItems: [
+                    {
+                      id: `rsvp-${evt.id}`,
+                      name: `${evt.title} - Entry & RSVP Pass`,
+                      category: 'Event Pass & RSVP',
+                      price: 0,
+                      description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
+                      tags: ['RSVP', 'Invitation', 'Entry Pass'],
+                      isSpecial: true,
+                      isAvailable: true,
+                      photoUrl: evt.photos?.[0] || undefined,
+                    },
+                  ],
+                  qrDarkColor: evt.darkColor || '#7c3aed',
+                  qrLightColor: '#ffffff',
+                  qrEyeColor: evt.eyeColor || '#6d28d9',
+                  qrBoxBgColor: '#ffffff',
+                  qrBoxBorderColor: '#cbd5e1',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                await bucket.put(`qr_pages/${encodeURIComponent(evt.id)}.json`, JSON.stringify(singleEventPage), {
+                  httpMetadata: { contentType: 'application/json' },
+                });
+              }
             }
           }
         }
@@ -1260,6 +1616,8 @@ export default {
           JSON.stringify({
             ok: true,
             success: true,
+            d1Saved: Boolean(db),
+            r2Saved: Boolean(bucket),
             message: 'All records successfully saved to Cloudflare',
             timestamp: new Date().toISOString(),
           }),
@@ -1279,7 +1637,8 @@ export default {
     // 8. Data Sync Pull endpoint (/api/sync/pull)
     if (url.pathname === '/api/sync/pull' && request.method === 'GET') {
       try {
-        const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
         const userEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
@@ -1288,36 +1647,62 @@ export default {
           ''
         ).toLowerCase().trim();
 
-        if (bucket) {
-          let backupObj: any = null;
-          // First attempt retrieving user-scoped backup by their email User ID
-          if (userEmail) {
+        let backupData: any = null;
+
+        // 1. First attempt retrieving user-scoped backup from R2
+        if (bucket && userEmail) {
+          try {
             const userKey = encodeURIComponent(userEmail);
-            backupObj = await bucket.get(`users/${userKey}/backup.json`);
+            let backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
             if (!backupObj) {
-              backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+              backupObj = await bucket.get(`users/${userKey}/backup.json`);
             }
-          }
-
-          // Fallback to global backup only if user email is not specified
-          if (!backupObj && !userEmail) {
-            backupObj = await bucket.get('sync/latest_backup.json');
-          }
-
-          if (backupObj) {
-            const text = await backupObj.text();
-            const backupData = JSON.parse(text);
-            return new Response(
-              JSON.stringify({ ok: true, success: true, userEmail, data: { backupData } }),
-              {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-              }
-            );
-          }
+            if (backupObj) {
+              backupData = JSON.parse(await backupObj.text());
+            }
+          } catch (_) {}
         }
+
+        // 2. If not found in R2, check D1 user backup
+        if (!backupData && db && userEmail) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
+            if (row && row.backup_data) {
+              backupData = JSON.parse(row.backup_data);
+            }
+          } catch (_) {}
+        }
+
+        // 3. Fallback to global latest_backup in R2
+        if (!backupData && bucket) {
+          try {
+            const backupObj = await bucket.get('sync/latest_backup.json');
+            if (backupObj) {
+              backupData = JSON.parse(await backupObj.text());
+            }
+          } catch (_) {}
+        }
+
+        // 4. Fallback to global latest_backup in D1
+        if (!backupData && db) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind('latest_backup').first();
+            if (row && row.backup_data) {
+              backupData = JSON.parse(row.backup_data);
+            }
+          } catch (_) {}
+        }
+
         return new Response(
-          JSON.stringify({ ok: true, success: true, userEmail, data: { backupData: null } }),
+          JSON.stringify({
+            ok: true,
+            success: true,
+            userEmail,
+            backupData: backupData || null,
+            data: { backupData: backupData || null },
+          }),
           {
             status: 200,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },

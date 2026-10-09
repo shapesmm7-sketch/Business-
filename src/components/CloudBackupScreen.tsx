@@ -11,14 +11,11 @@ import {
   Database,
   Check,
   Sparkles,
-  AlertTriangle,
-  Info,
   Server,
   Key,
   Globe,
   Settings,
   Save,
-  CheckCircle,
   XCircle,
   Eye,
   EyeOff,
@@ -54,10 +51,6 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const [accessKeyIdInput, setAccessKeyIdInput] = useState(cfConfig.accessKeyId || '');
   const [secretAccessKeyInput, setSecretAccessKeyInput] = useState(cfConfig.secretAccessKey || '');
   const [publicDomainInput, setPublicDomainInput] = useState(cfConfig.publicDomainUrl || '');
-
-  // Live test probe state
-  const [isTestingProbe, setIsTestingProbe] = useState(false);
-  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
 
   const [healthStatus, setHealthStatus] = useState<{
     loading: boolean;
@@ -100,51 +93,8 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
     }
   };
 
-  const [workosStatus, setWorkosStatus] = useState<{
-    loading: boolean;
-    configured: boolean;
-    clientId: string;
-    apiKeyConfigured: boolean;
-    redirectUri: string;
-    authUrl: string;
-    error?: string;
-  }>({
-    loading: true,
-    configured: false,
-    clientId: '',
-    apiKeyConfigured: false,
-    redirectUri: '',
-    authUrl: '',
-  });
-
-  const checkWorkOSStatus = async () => {
-    setWorkosStatus((prev) => ({ ...prev, loading: true }));
-    try {
-      const config = await CloudflareService.getWorkOSConfig();
-      setWorkosStatus({
-        loading: false,
-        configured: Boolean(config.clientId && config.apiKeyConfigured),
-        clientId: config.clientId,
-        apiKeyConfigured: config.apiKeyConfigured,
-        redirectUri: config.redirectUri || window.location.origin,
-        authUrl: config.authUrl,
-      });
-    } catch (err: any) {
-      setWorkosStatus({
-        loading: false,
-        configured: false,
-        clientId: '',
-        apiKeyConfigured: false,
-        redirectUri: window.location.origin,
-        authUrl: '',
-        error: err?.message || 'Failed to fetch WorkOS config from Worker',
-      });
-    }
-  };
-
   useEffect(() => {
     checkLiveHealth();
-    checkWorkOSStatus();
   }, []);
 
   const showToast = (msg: string) => {
@@ -165,59 +115,6 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
     setCfConfig(updated);
     showToast('Cloud settings saved!');
     checkLiveHealth();
-  };
-
-  const handleRunFullProbe = async () => {
-    setIsTestingProbe(true);
-    const logs: string[] = [];
-    logs.push(`[${new Date().toLocaleTimeString()}] Starting diagnostic probe...`);
-
-    try {
-      // 1. Health Ping
-      logs.push(`Pinging Cloudflare Worker (${cfConfig.workerUrl})...`);
-      const health = await CloudflareService.testConnection();
-      if (health.success && health.d1Bound && health.r2Bound) {
-        logs.push(`✓ Worker online! D1 SQL is connected. R2 Storage is connected.`);
-      } else {
-        logs.push(`⚠️ Worker response: ${health.message}`);
-      }
-
-      // 2. Database Sync Test
-      logs.push(`Testing D1 database sync...`);
-      const syncRes = await CloudflareService.syncAllToCloudflare();
-      if (syncRes.success) {
-        logs.push(`✓ D1 SQL Sync successful! Records and snapshots active in brivu-db.`);
-      } else {
-        logs.push(`❌ D1 Sync returned: ${syncRes.message}`);
-      }
-
-      // 3. R2 File Upload Probe
-      logs.push(`Testing R2 File Upload probe...`);
-      const probeData = `Brivu Probe Test - ${new Date().toISOString()}`;
-      const fileRes = await CloudflareService.uploadFile({
-        data: probeData,
-        filename: `probe_${Date.now()}.txt`,
-        mimeType: 'text/plain',
-        folder: 'diagnostics',
-      });
-
-      if (fileRes.success) {
-        logs.push(`✓ R2 File Upload successful! Live URL: ${fileRes.url}`);
-        logs.push(`✓ All systems fully operational!`);
-        showToast('All diagnostics passed successfully!');
-      } else {
-        logs.push(`❌ R2 File Upload failed: ${fileRes.message}`);
-        showToast(`Diagnostic issue: ${fileRes.message}`);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logs.push(`❌ Error running probe: ${msg}`);
-      showToast(`Probe failed: ${msg}`);
-    } finally {
-      setDiagnosticLogs(logs);
-      setIsTestingProbe(false);
-      checkLiveHealth();
-    }
   };
 
   const handleToggleAutoFiles = () => {
@@ -291,7 +188,8 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
     }
   };
 
-  const isFullyOperational = healthStatus.checked && healthStatus.d1Bound && healthStatus.r2Bound;
+  const isFullyOperational = healthStatus.checked && (healthStatus.d1Bound || healthStatus.r2Bound);
+  const isBothBound = healthStatus.checked && healthStatus.d1Bound && healthStatus.r2Bound;
 
   return (
     <div className="space-y-4 pb-12 animate-fadeIn max-w-2xl mx-auto">
@@ -330,10 +228,15 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             <span>Checking...</span>
           </div>
-        ) : isFullyOperational ? (
+        ) : isBothBound ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Active & Connected</span>
+          </div>
+        ) : isFullyOperational ? (
+          <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span>Connected ({healthStatus.d1Bound ? 'D1' : 'R2'})</span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
@@ -435,100 +338,6 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             </span>
           </button>
         </div>
-      </div>
-
-      {/* WorkOS Google Sign-In Diagnostic Monitor */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-orange-500" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              WorkOS Google Auth Diagnostics
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={checkWorkOSStatus}
-            disabled={workosStatus.loading}
-            className="text-[11px] text-slate-500 hover:text-orange-600 flex items-center gap-1 cursor-pointer"
-          >
-            <RefreshCw className={`w-3 h-3 ${workosStatus.loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Diagnostics</span>
-          </button>
-        </div>
-
-        {workosStatus.loading ? (
-          <div className="py-6 flex flex-col items-center justify-center gap-2">
-            <RefreshCw className="w-5 h-5 text-orange-500 animate-spin" />
-            <span className="text-xs text-slate-500">Querying Cloudflare Worker bindings...</span>
-          </div>
-        ) : (
-          <div className="space-y-3.5 text-xs">
-            {/* Connection Status */}
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold text-slate-700 dark:text-slate-300">Connection Status:</span>
-              {workosStatus.clientId && workosStatus.apiKeyConfigured ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="w-3 h-3 text-emerald-500" />
-                  Active & Connected
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
-                  <AlertTriangle className="w-3 h-3 text-amber-500" />
-                  Using Secure Fallbacks
-                </span>
-              )}
-            </div>
-
-            {/* WORKOS_CLIENT_ID status */}
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold text-slate-700 dark:text-slate-300">WorkOS Client ID:</span>
-              <span className="font-mono text-[11px] bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
-                {workosStatus.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB (fallback)'}
-              </span>
-            </div>
-
-            {/* WORKOS_API_KEY status */}
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold text-slate-700 dark:text-slate-300">WorkOS API Secret:</span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                {workosStatus.apiKeyConfigured ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                    Detected on Cloudflare Worker
-                  </span>
-                ) : (
-                  <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                    Pending in Worker Variables
-                  </span>
-                )}
-              </span>
-            </div>
-
-            {/* WORKOS_REDIRECT_URI status */}
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold text-slate-700 dark:text-slate-300">Auth Redirect URI:</span>
-              <span className="font-mono text-[11px] text-slate-500 truncate max-w-[220px]">
-                {workosStatus.redirectUri}
-              </span>
-            </div>
-
-            {/* Tips info */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1 leading-relaxed">
-              <div className="font-bold text-slate-800 dark:text-white flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-orange-500" />
-                <span>Why did Cloudflare fail to see the keys?</span>
-              </div>
-              <p>
-                When you deploy your Cloudflare Worker manually (e.g. uploading a zip or deploying from your computer), Cloudflare ignores the build-time environment variables configured under the Git integration dashboard settings.
-              </p>
-              <p className="font-semibold text-slate-700 dark:text-slate-300 pt-1">
-                Important: Make sure to commit and push the updated <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">src/worker.ts</code> file to your live worker deployment so these code-level fallbacks become active!
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Automatic Sync Options Card */}
