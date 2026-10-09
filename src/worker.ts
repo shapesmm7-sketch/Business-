@@ -71,7 +71,7 @@ export default {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brivu - Google Authentication Callback</title>
+  <title>Brivu - Returning to App...</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -94,25 +94,30 @@ export default {
       text-align: center;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    .icon {
-      width: 64px;
-      height: 64px;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #1f2937;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.25rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .icon-error {
+      width: 56px;
+      height: 56px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
       border-radius: 1.25rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 1.25rem;
     }
-    .icon-error {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-    .icon svg { width: 32px; height: 32px; fill: none; stroke: #10b981; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    .icon-error svg { stroke: #ef4444; }
-    h1 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
-    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.5rem; }
+    .icon-error svg { width: 28px; height: 28px; stroke: #ef4444; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+    h1 { font-size: 1.15rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
+    p { font-size: 0.825rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
     .btn {
       display: block;
       width: 100%;
@@ -124,58 +129,53 @@ export default {
       cursor: pointer;
       transition: all 0.2s;
       margin-bottom: 0.75rem;
-    }
-    .btn-primary {
       background: linear-gradient(135deg, #4f46e5, #4338ca);
       color: #ffffff;
-      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
     }
-    .btn-primary:hover { background: linear-gradient(135deg, #6366f1, #4f46e5); }
-    .btn-secondary {
-      background: #1f2937;
-      color: #d1d5db;
-      border: 1px solid #374151;
-    }
-    .btn-secondary:hover { background: #374151; color: #ffffff; }
-    .link { display: inline-block; font-size: 0.75rem; color: #6b7280; text-decoration: underline; margin-top: 0.5rem; }
-    .link:hover { color: #9ca3af; }
   </style>
-</head>
-<body>
-  <div class="card">
-    ${authError ? `
-      <div class="icon icon-error">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      </div>
-      <h1>Authentication Notice</h1>
-      <p>${authError}</p>
-      <a href="/" class="btn btn-secondary">Return Home</a>
-    ` : `
-      <div class="icon">
-        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-      </div>
-      <h1>Google Sign-In Approved</h1>
-      <p>Your authentication was verified with WorkOS. Tap below to return directly to Brivu.</p>
-      ${authCode ? `
-        <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-primary">Open Brivu Android App</a>
-        <a href="com.brivu.myapp://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-secondary">Alternative App Launch</a>
-      ` : ''}
-      <a href="/" class="link">Continue in Web Browser</a>
-    `}
-  </div>
   <script>
     var code = ${JSON.stringify(authCode)};
     if (code) {
       if (window.opener) {
         try {
           window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
-          setTimeout(function() { window.close(); }, 1200);
+          window.close();
         } catch (_) {}
       }
-      // Attempt opening the Android App via deep links
       try {
+        // Fast instant deep link execution
+        window.location.replace('brivu://auth/callback?code=' + encodeURIComponent(code));
+      } catch (_) {
         window.location.href = 'brivu://auth/callback?code=' + encodeURIComponent(code);
-      } catch (_) {}
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="card">
+    ${authError ? `
+      <div class="icon-error">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      </div>
+      <h1>Authentication Notice</h1>
+      <p>${authError}</p>
+      <a href="/" class="btn">Return Home</a>
+    ` : `
+      <div class="spinner"></div>
+      <h1>Returning to Brivu...</h1>
+      <p>Authentication approved. Opening your application now.</p>
+      ${authCode ? `
+        <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn">Open Brivu App</a>
+      ` : ''}
+    `}
+  </div>
+  <script>
+    if (code) {
+      setTimeout(function() {
+        try {
+          window.location.replace('brivu://auth/callback?code=' + encodeURIComponent(code));
+        } catch (_) {}
+      }, 300);
     }
   </script>
 </body>
@@ -318,13 +318,14 @@ export default {
           const u = wData.user || wData;
           const firstName = u.first_name || u.firstName || '';
           const lastName = u.last_name || u.lastName || '';
-          const email = u.email || '';
+          const email = (u.email || '').toLowerCase().trim();
           const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
           const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
           const emailVerified = u.email_verified ?? u.emailVerified ?? true;
 
+          // User ID on Cloudflare is the user's authentic email
           user = {
-            id: u.id || `workos_usr_${Date.now()}`,
+            id: email || u.id || `workos_usr_${Date.now()}`,
             email,
             firstName,
             lastName,
@@ -353,16 +354,20 @@ export default {
         }
 
         if (user && user.email && bucket) {
-          const userKey = `users/profile_${user.id || encodeURIComponent(user.email)}.json`;
-          const emailKey = `users/email_${encodeURIComponent(user.email.toLowerCase())}.json`;
+          const cleanEmail = user.email.toLowerCase().trim();
+          const userKey = encodeURIComponent(cleanEmail);
           
+          user.id = cleanEmail;
           user.syncedToCloudflare = true;
           user.cloudflareStoredAt = new Date().toISOString();
 
-          await bucket.put(userKey, JSON.stringify(user), {
+          await bucket.put(`users/${userKey}/profile.json`, JSON.stringify(user), {
             httpMetadata: { contentType: 'application/json' },
           });
-          await bucket.put(emailKey, JSON.stringify({ email: user.email, userId: user.id, user }), {
+          await bucket.put(`users/profile_${userKey}.json`, JSON.stringify(user), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          await bucket.put(`users/email_${userKey}.json`, JSON.stringify({ email: user.email, userId: user.id, user }), {
             httpMetadata: { contentType: 'application/json' },
           });
 
@@ -376,7 +381,7 @@ export default {
             }
           } catch {}
 
-          const existingIdx = usersList.findIndex((u) => u.email === user.email || u.id === user.id);
+          const existingIdx = usersList.findIndex((u) => u.email?.toLowerCase() === cleanEmail || u.id === cleanEmail);
           if (existingIdx >= 0) {
             usersList[existingIdx] = user;
           } else {
@@ -426,8 +431,11 @@ export default {
           );
         }
 
+        const cleanEmail = user.email.toLowerCase().trim();
         const userPayload = {
           ...user,
+          id: cleanEmail,
+          email: cleanEmail,
           syncedToCloudflare: true,
           cloudflareStoredAt: new Date().toISOString(),
           businessProfile,
@@ -435,18 +443,21 @@ export default {
         };
 
         if (bucket) {
-          const userKey = `users/profile_${user.id || encodeURIComponent(user.email)}.json`;
-          const emailKey = `users/email_${encodeURIComponent(user.email.toLowerCase())}.json`;
-          const dataKey = `users/data_${user.id || encodeURIComponent(user.email)}.json`;
-
-          await bucket.put(userKey, JSON.stringify(userPayload), {
+          const userKey = encodeURIComponent(cleanEmail);
+          await bucket.put(`users/${userKey}/profile.json`, JSON.stringify(userPayload), {
             httpMetadata: { contentType: 'application/json' },
           });
-          await bucket.put(emailKey, JSON.stringify({ email: user.email, userId: user.id, userPayload }), {
+          await bucket.put(`users/profile_${userKey}.json`, JSON.stringify(userPayload), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          await bucket.put(`users/email_${userKey}.json`, JSON.stringify({ email: cleanEmail, userId: cleanEmail, userPayload }), {
             httpMetadata: { contentType: 'application/json' },
           });
           if (appData || businessProfile) {
-            await bucket.put(dataKey, JSON.stringify({ businessProfile, appData, updatedAt: new Date().toISOString() }), {
+            await bucket.put(`users/${userKey}/data.json`, JSON.stringify({ businessProfile, appData, updatedAt: new Date().toISOString() }), {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`users/data_${userKey}.json`, JSON.stringify({ businessProfile, appData, updatedAt: new Date().toISOString() }), {
               httpMetadata: { contentType: 'application/json' },
             });
           }
@@ -565,8 +576,18 @@ export default {
         const body: any = await request.json().catch(() => ({}));
         const { filename, data, mimeType = 'application/octet-stream', folder = 'receipts' } = body;
 
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          body?.userEmail ||
+          body?.email ||
+          url.searchParams.get('email') ||
+          ''
+        ).toLowerCase().trim();
+
         const cleanFilename = (filename || `file_${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const key = `${folder}/${Date.now()}_${cleanFilename}`;
+        const userPrefix = userEmail ? `users/${encodeURIComponent(userEmail)}/` : '';
+        const key = `${userPrefix}${folder}/${Date.now()}_${cleanFilename}`;
         const publicUrl = `${url.origin}/api/files/${encodeURIComponent(key)}`;
 
         if (bucket) {
@@ -974,8 +995,34 @@ export default {
         const body: any = await request.json().catch(() => ({}));
         const backupData = body?.backupData || body;
 
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          url.searchParams.get('email') ||
+          url.searchParams.get('user_id') ||
+          body?.userEmail ||
+          body?.email ||
+          body?.user?.email ||
+          backupData?.profile?.email ||
+          ''
+        ).toLowerCase().trim();
+
         if (bucket && backupData) {
-          await bucket.put('sync/latest_backup.json', JSON.stringify(backupData), {
+          const backupJson = JSON.stringify(backupData);
+
+          // Save user-isolated backup under their email ID
+          if (userEmail) {
+            const userKey = encodeURIComponent(userEmail);
+            await bucket.put(`users/${userKey}/backup.json`, backupJson, {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
+              httpMetadata: { contentType: 'application/json' },
+            });
+          }
+
+          // Also save global backup as fallback
+          await bucket.put('sync/latest_backup.json', backupJson, {
             httpMetadata: { contentType: 'application/json' },
           });
 
@@ -1233,13 +1280,35 @@ export default {
     if (url.pathname === '/api/sync/pull' && request.method === 'GET') {
       try {
         const bucket = env.BUCKET || env.brivu_bucket || env.MY_BUCKET;
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          url.searchParams.get('email') ||
+          url.searchParams.get('user_id') ||
+          ''
+        ).toLowerCase().trim();
+
         if (bucket) {
-          const obj = await bucket.get('sync/latest_backup.json');
-          if (obj) {
-            const text = await obj.text();
+          let backupObj: any = null;
+          // First attempt retrieving user-scoped backup by their email User ID
+          if (userEmail) {
+            const userKey = encodeURIComponent(userEmail);
+            backupObj = await bucket.get(`users/${userKey}/backup.json`);
+            if (!backupObj) {
+              backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+            }
+          }
+
+          // Fallback to global backup only if user email is not specified
+          if (!backupObj && !userEmail) {
+            backupObj = await bucket.get('sync/latest_backup.json');
+          }
+
+          if (backupObj) {
+            const text = await backupObj.text();
             const backupData = JSON.parse(text);
             return new Response(
-              JSON.stringify({ ok: true, success: true, data: { backupData } }),
+              JSON.stringify({ ok: true, success: true, userEmail, data: { backupData } }),
               {
                 status: 200,
                 headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -1248,7 +1317,7 @@ export default {
           }
         }
         return new Response(
-          JSON.stringify({ ok: true, success: true, data: { backupData: null } }),
+          JSON.stringify({ ok: true, success: true, userEmail, data: { backupData: null } }),
           {
             status: 200,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },

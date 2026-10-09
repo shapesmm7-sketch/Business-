@@ -40,30 +40,46 @@ export const WorkOSAuthService = {
    * Save user session locally & sync user profile, email & data to Cloudflare
    */
   async saveAndSyncUser(user: WorkOSUser): Promise<CloudflareSyncResponse> {
+    const cleanEmail = (user.email || '').toLowerCase().trim();
     const updatedUser: WorkOSUser = {
       ...user,
+      id: cleanEmail || user.id,
+      email: cleanEmail,
       provider: 'google',
       updatedAt: new Date().toISOString(),
       syncedToCloudflare: true,
     };
 
-    // 1. Save in local storage
+    // 1. Save in local storage with email as User ID
     StorageService.saveWorkOSUser(updatedUser);
 
     // 2. If business email is empty, prefill with user email
     const profile = StorageService.getProfile();
-    if (!profile.email) {
+    if (!profile.email && cleanEmail) {
       StorageService.saveProfile({
         ...profile,
-        email: updatedUser.email,
+        email: cleanEmail,
       });
     }
 
-    // 3. Sync user profile, email & data directly to Cloudflare
-    const syncRes = await CloudflareService.syncUserProfile(updatedUser, profile);
-    
-    // Also trigger full cloud backup sync to Cloudflare
+    // 3. First pull existing cloud data from Cloudflare for this email (if any exists from prior install/device)
+    // and merge it with current local data
+    if (cleanEmail) {
+      try {
+        await CloudflareService.pullFromCloudflare(cleanEmail);
+      } catch (pullErr) {
+        console.warn('Initial cloud pull note:', pullErr);
+      }
+    }
+
+    // 4. Immediately save all local data (including any data added before logging in) to Cloudflare under their email
+    const syncRes = await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile());
     await CloudflareService.syncAllToCloudflare().catch(() => {});
+
+    // 5. Broadcast user update across app
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
+    }
 
     return syncRes;
   },
@@ -73,6 +89,15 @@ export const WorkOSAuthService = {
    */
   async signInWithGoogle(): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     try {
+      // 0. Enforce 30-day trial & subscription requirement
+      const trial = StorageService.getTrialStatus();
+      if (trial.isExpired && !trial.subscribed) {
+        return {
+          success: false,
+          message: 'Your 30-day free trial has ended. Please upgrade to Brivu Pro to log in and sync your data to the cloud.',
+        };
+      }
+
       // 1. If URL callback code is present in current window location, exchange it immediately
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -138,6 +163,10 @@ export const WorkOSAuthService = {
    */
   async handleCallbackIfPresent(): Promise<WorkOSUser | null> {
     try {
+      const trial = StorageService.getTrialStatus();
+      if (trial.isExpired && !trial.subscribed) {
+        return null;
+      }
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (code) {
@@ -160,5 +189,8 @@ export const WorkOSAuthService = {
    */
   signOut(): void {
     StorageService.clearWorkOSUser();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: null }));
+    }
   },
 };

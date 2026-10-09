@@ -68,6 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [isRateUsOpen, setIsRateUsOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isWorkosModalOpen, setIsWorkosModalOpen] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [workosUser, setWorkosUser] = useState<WorkOSUser | null>(() =>
     WorkOSAuthService.getCurrentUser()
   );
@@ -75,15 +76,54 @@ export const Header: React.FC<HeaderProps> = ({
     StorageService.getAppLockConfig()
   );
 
+  const handleStartGoogleSignIn = async () => {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      setIsWorkosModalOpen(true);
+      return;
+    }
+    setIsSigningIn(true);
+    try {
+      const res = await WorkOSAuthService.signInWithGoogle();
+      if (!res.success && res.message) {
+        setToastMsg(res.message);
+        setTimeout(() => setToastMsg(null), 4000);
+      }
+    } catch {
+      // Handled
+    } finally {
+      setTimeout(() => setIsSigningIn(false), 2500);
+    }
+  };
+
   // Process OAuth redirect callback if returning from Google / WorkOS
   useEffect(() => {
     WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
       if (usr) {
+        setIsSigningIn(false);
         setWorkosUser(usr);
-        setToastMsg(`Welcome back, ${usr.name || usr.email}! Saved in Cloudflare.`);
-        setTimeout(() => setToastMsg(null), 4000);
+        setIsWorkosModalOpen(false);
+        setToastMsg(`Welcome, ${usr.name || usr.email}! Signed in successfully.`);
+        setTimeout(() => setToastMsg(null), 3500);
       }
     });
+
+    const handleUserUpdate = (e: any) => {
+      setIsSigningIn(false);
+      if (e.detail) {
+        setWorkosUser(e.detail);
+        setIsWorkosModalOpen(false);
+        setToastMsg(`Welcome, ${e.detail.name || e.detail.email}! Signed in successfully.`);
+        setTimeout(() => setToastMsg(null), 3500);
+      } else {
+        setWorkosUser(null);
+        setIsWorkosModalOpen(false);
+        setToastMsg('Signed out successfully.');
+        setTimeout(() => setToastMsg(null), 3000);
+      }
+    };
+    window.addEventListener('workos_user_updated', handleUserUpdate);
+    return () => window.removeEventListener('workos_user_updated', handleUserUpdate);
   }, []);
 
   useEffect(() => {
@@ -261,17 +301,24 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton />
 
-            {/* Google Sign-In Button in Header Bar */}
+            {/* Google Sign-In / Account Button in Header Bar */}
             <button
               id="btn-header-google-auth"
               type="button"
-              onClick={() => setIsWorkosModalOpen(true)}
+              onClick={() => {
+                if (workosUser) {
+                  setIsWorkosModalOpen(true);
+                } else {
+                  handleStartGoogleSignIn();
+                }
+              }}
+              disabled={isSigningIn}
               className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-bold cursor-pointer ${
                 workosUser
                   ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                   : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
-              aria-label="Google Sign-In via WorkOS"
+              aria-label={workosUser ? 'Account & Cloud Sync' : 'Sign In with Google'}
             >
               <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
                 <path
@@ -292,7 +339,11 @@ export const Header: React.FC<HeaderProps> = ({
                 />
               </svg>
               <span className="hidden xs:inline sm:inline text-[11px]">
-                {workosUser ? (workosUser.firstName || workosUser.name?.split(' ')[0] || 'Signed In') : 'Sign In'}
+                {workosUser
+                  ? 'Account'
+                  : isSigningIn
+                  ? 'Connecting...'
+                  : 'Sign In'}
               </span>
             </button>
 
@@ -387,46 +438,27 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 text-white shadow-xl relative overflow-hidden">
                 <div className="flex items-center justify-between gap-3 relative z-10">
                   {workosUser ? (
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="relative w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold shrink-0 border border-indigo-400/30">
-                        {workosUser.profilePictureUrl ? (
-                          <img
-                            src={workosUser.profilePictureUrl}
-                            alt={workosUser.name}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <span>{(workosUser.name || workosUser.email)[0].toUpperCase()}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-white truncate max-w-[130px]">
-                            {workosUser.name || workosUser.email}
-                          </span>
-                          <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-0.5">
-                            <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
-                            <span>Cloud Synced</span>
-                          </span>
+                    <button
+                      id="btn-menu-account"
+                      type="button"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setIsWorkosModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-between text-left cursor-pointer group py-1"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white">
+                          <UserIcon className="w-5 h-5 text-indigo-300" />
                         </div>
-                        <p className="text-[10px] text-slate-300 font-medium truncate mt-0.5">
-                          {workosUser.email} • Google Auth
-                        </p>
+                        <span className="text-sm font-extrabold text-white tracking-wide">
+                          Account
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          setIsWorkosModalOpen(true);
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold transition text-white shrink-0 cursor-pointer"
-                      >
-                        Account
-                      </button>
-                    </div>
+                      <div className="flex items-center gap-1 text-indigo-300">
+                        <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:translate-x-0.5 transition" />
+                      </div>
+                    </button>
                   ) : (
                     <div className="flex items-center justify-between gap-2.5 w-full">
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -455,7 +487,7 @@ export const Header: React.FC<HeaderProps> = ({
                             <span>Sign in with Google</span>
                           </div>
                           <p className="text-[10px] text-indigo-200/90 font-medium truncate">
-                            sign in to save your data to cloud
+                            protect receipts, QR codes & avoid losing data
                           </p>
                         </div>
                       </div>
@@ -465,11 +497,12 @@ export const Header: React.FC<HeaderProps> = ({
                         type="button"
                         onClick={() => {
                           setIsMenuOpen(false);
-                          setIsWorkosModalOpen(true);
+                          handleStartGoogleSignIn();
                         }}
-                        className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
+                        disabled={isSigningIn}
+                        className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                       >
-                        <span>Sign In</span>
+                        <span>{isSigningIn ? 'Connecting...' : 'Sign In'}</span>
                         <LogIn className="w-3.5 h-3.5 text-slate-700" />
                       </button>
                     </div>
@@ -782,7 +815,14 @@ export const Header: React.FC<HeaderProps> = ({
       <WorkOSGoogleAuthModal
         isOpen={isWorkosModalOpen}
         onClose={() => setIsWorkosModalOpen(false)}
-        onUserChange={(usr) => setWorkosUser(usr)}
+        onUserChange={(usr) => {
+          setWorkosUser(usr);
+          if (!usr) {
+            setToastMsg('Signed out successfully.');
+            setTimeout(() => setToastMsg(null), 3000);
+          }
+        }}
+        onNavigate={onNavigate}
       />
 
       {/* Toast Notification Banner */}

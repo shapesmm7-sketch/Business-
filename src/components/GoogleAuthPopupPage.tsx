@@ -29,20 +29,20 @@ export const GoogleAuthPopupPage: React.FC = () => {
           window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code }, '*');
         } catch (_) {}
         
+        setStatus('success');
         setTimeout(() => {
-          setStatus('success');
-          setTimeout(() => {
-            window.close();
-          }, 1200);
-        }, 1000);
+          window.close();
+        }, 300);
       } else {
         // Direct exchange for mobile Chrome / external browser flow
         const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
         
-        // 1. Immediately attempt deep link navigation back to Android App
+        // 1. Immediately attempt instant deep link navigation back to Android App
         try {
+          window.location.replace(`brivu://auth/callback?code=${encodeURIComponent(code)}`);
+        } catch (_) {
           window.location.href = `brivu://auth/callback?code=${encodeURIComponent(code)}`;
-        } catch (_) {}
+        }
 
         // 2. Also authenticate on Cloudflare Worker to sync data
         CloudflareService.authenticateWorkOSCode(code, undefined, verifier).then(async (authRes) => {

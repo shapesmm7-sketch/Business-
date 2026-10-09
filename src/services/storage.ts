@@ -920,19 +920,34 @@ export const StorageService = {
         }
       }
       if (Array.isArray(backupData.inventoryProducts)) {
-        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
+        const existing = this.getInventoryProducts();
+        const cloudIds = new Set(backupData.inventoryProducts.map((p) => p.id));
+        const localOnly = existing.filter((p) => !cloudIds.has(p.id));
+        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, [...backupData.inventoryProducts, ...localOnly]);
       }
       if (Array.isArray(backupData.inventorySales)) {
-        writeToStorage(STORAGE_KEYS.INVENTORY_SALES, backupData.inventorySales);
+        const existing = this.getInventorySales();
+        const cloudIds = new Set(backupData.inventorySales.map((s) => s.id));
+        const localOnly = existing.filter((s) => !cloudIds.has(s.id));
+        writeToStorage(STORAGE_KEYS.INVENTORY_SALES, [...backupData.inventorySales, ...localOnly]);
       }
       if (Array.isArray(backupData.inventoryExpenses)) {
-        writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, backupData.inventoryExpenses);
+        const existing = this.getInventoryExpenses();
+        const cloudIds = new Set(backupData.inventoryExpenses.map((e) => e.id));
+        const localOnly = existing.filter((e) => !cloudIds.has(e.id));
+        writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, [...backupData.inventoryExpenses, ...localOnly]);
       }
       if (Array.isArray(backupData.inventoryDebts)) {
-        writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, backupData.inventoryDebts);
+        const existing = this.getInventoryDebts();
+        const cloudIds = new Set(backupData.inventoryDebts.map((d) => d.id));
+        const localOnly = existing.filter((d) => !cloudIds.has(d.id));
+        writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, [...backupData.inventoryDebts, ...localOnly]);
       }
       if (Array.isArray(backupData.shoppingListItems)) {
-        writeToStorage(STORAGE_KEYS.SHOPPING_LIST, backupData.shoppingListItems);
+        const existing = this.getShoppingList();
+        const cloudIds = new Set(backupData.shoppingListItems.map((s) => s.id));
+        const localOnly = existing.filter((s) => !cloudIds.has(s.id));
+        writeToStorage(STORAGE_KEYS.SHOPPING_LIST, [...backupData.shoppingListItems, ...localOnly]);
       }
       if (Array.isArray(backupData.shoppingCategories)) {
         writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, backupData.shoppingCategories);
@@ -941,7 +956,10 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.PRODUCT_CATEGORIES, backupData.productCategories);
       }
       if (Array.isArray(backupData.customers)) {
-        writeToStorage(STORAGE_KEYS.CUSTOMERS, backupData.customers);
+        const existing = this.getCustomers();
+        const cloudIds = new Set(backupData.customers.map((c) => c.id));
+        const localOnly = existing.filter((c) => !cloudIds.has(c.id));
+        writeToStorage(STORAGE_KEYS.CUSTOMERS, [...backupData.customers, ...localOnly]);
       }
       if (Array.isArray(backupData.agents)) {
         writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
@@ -2464,6 +2482,10 @@ export const StorageService = {
 
   // --- CLOUDFLARE WORKER SYNC & STORAGE ---
   getBrivuUserId(): string {
+    const user = this.getWorkOSUser();
+    if (user && user.email && user.email.trim() !== '') {
+      return user.email.toLowerCase().trim();
+    }
     let id = readFromStorage<string | null>(STORAGE_KEYS.BRIVU_USER_ID, null);
     if (!id || typeof id !== 'string' || id.trim() === '') {
       // Create a secure, non-guessable, unique random ID starting with brivu_usr_
@@ -2659,7 +2681,16 @@ export const StorageService = {
       if (!user) {
         localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
       } else {
-        localStorage.setItem(STORAGE_KEYS.WORKOS_USER, JSON.stringify(user));
+        const cleanEmail = (user.email || '').toLowerCase().trim();
+        const updatedUser: WorkOSUser = {
+          ...user,
+          id: cleanEmail || user.id,
+          email: cleanEmail,
+        };
+        localStorage.setItem(STORAGE_KEYS.WORKOS_USER, JSON.stringify(updatedUser));
+        if (cleanEmail) {
+          writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanEmail);
+        }
       }
     } catch (err) {
       console.warn('Failed to save WorkOS user to localStorage:', err);

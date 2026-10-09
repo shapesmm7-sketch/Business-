@@ -552,7 +552,7 @@ export function App() {
       CapApp.addListener('appUrlOpen', async (data) => {
         if (data && data.url) {
           const urlStr = data.url;
-          if (urlStr.includes('code=') || urlStr.includes('/auth/callback')) {
+          if (urlStr.includes('code=') || urlStr.includes('/callback') || urlStr.includes('/auth/callback')) {
             try {
               // Close system browser / Custom Tab if open
               try {
@@ -562,11 +562,15 @@ export function App() {
               const dummyUrl = new URL(urlStr.replace(/^[a-zA-Z0-9_.-]+:\/\//, 'https://dummy.host/'));
               const code = dummyUrl.searchParams.get('code');
               if (code) {
+                const trial = StorageService.getTrialStatus();
+                if (trial.isExpired && !trial.subscribed) {
+                  return;
+                }
                 const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
                 const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
                 if (authRes.success && authRes.user) {
                   await WorkOSAuthService.saveAndSyncUser(authRes.user);
-                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: authRes.user }));
+                  refreshData();
                 }
               }
             } catch (err) {
@@ -578,6 +582,11 @@ export function App() {
         urlOpenHandle = handle;
       }).catch(() => {});
     } catch (_) {}
+
+    const handleUserUpdatedSync = () => {
+      refreshData();
+    };
+    window.addEventListener('workos_user_updated', handleUserUpdatedSync);
 
     // 3. Pagehide / beforeunload listeners (clean web unload)
     const handlePageHide = () => {
@@ -607,6 +616,7 @@ export function App() {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
       document.removeEventListener('click', handleFileInputClick, true);
+      window.removeEventListener('workos_user_updated', handleUserUpdatedSync);
       if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
         capListenerHandle.remove();
       }

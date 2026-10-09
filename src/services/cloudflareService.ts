@@ -149,6 +149,11 @@ export const CloudflareService = {
   },
 
   shouldAutoSaveFiles(): boolean {
+    // Only users who are logged in can save files to cloud
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email) {
+      return false; // When not logged in, files are saved locally
+    }
     const trial = StorageService.getTrialStatus();
     if (trial.isExpired && !trial.subscribed) {
       return false; // Stop saving files to cloud after trial expires unless subscribed
@@ -158,6 +163,11 @@ export const CloudflareService = {
   },
 
   shouldAutoSyncData(): boolean {
+    // All users should log in to save their data to cloud
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email) {
+      return false; // When not logged in, all data is saved to local storage
+    }
     const trial = StorageService.getTrialStatus();
     if (trial.isExpired && !trial.subscribed) {
       return false; // Stop syncing database to cloud after trial expires unless subscribed
@@ -173,6 +183,12 @@ export const CloudflareService = {
     if (key && key.trim() !== '') {
       headers['X-Sync-Key'] = key.trim();
       headers['Authorization'] = `Bearer ${key.trim()}`;
+    }
+    const user = StorageService.getWorkOSUser();
+    if (user && user.email) {
+      const cleanEmail = user.email.toLowerCase().trim();
+      headers['X-User-Email'] = cleanEmail;
+      headers['X-User-Id'] = cleanEmail;
     }
     return headers;
   },
@@ -472,7 +488,10 @@ export const CloudflareService = {
       const rawBackup = customBackup || StorageService.exportBackup();
       const backupData = sanitizeBackupForD1Sync(rawBackup);
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/sync/push`;
+      const user = StorageService.getWorkOSUser();
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
+      const targetUrl = `${config.workerUrl}/api/sync/push${query}`;
 
       const response = await fetch(targetUrl, {
         method: 'POST',
@@ -480,7 +499,7 @@ export const CloudflareService = {
           ...headers,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ backupData }),
+        body: JSON.stringify({ backupData, userEmail, user }),
       });
 
       const rawText = await response.text().catch(() => response.statusText || '');
@@ -616,7 +635,7 @@ export const CloudflareService = {
   /**
    * Pulls data from Cloudflare D1 and restores it into local storage
    */
-  async pullFromCloudflare(): Promise<{
+  async pullFromCloudflare(emailOverride?: string): Promise<{
     success: boolean;
     message: string;
     count?: number;
@@ -632,7 +651,10 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/sync/pull`;
+      const user = StorageService.getWorkOSUser();
+      const email = (emailOverride || user?.email || '').toLowerCase().trim();
+      const query = email ? `?email=${encodeURIComponent(email)}` : '';
+      const targetUrl = `${config.workerUrl}/api/sync/pull${query}`;
 
       const response = await fetch(targetUrl, {
         method: 'GET',

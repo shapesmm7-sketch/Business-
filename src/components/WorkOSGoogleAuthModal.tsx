@@ -9,21 +9,26 @@ import {
   AlertCircle,
   Cloud,
   Sparkles,
+  QrCode,
+  Crown,
 } from 'lucide-react';
 import { WorkOSUser } from '../types';
 import { WorkOSAuthService, generatePKCE } from '../services/workosAuthService';
 import { CloudflareService } from '../services/cloudflareService';
+import { StorageService } from '../services/storage';
 
 interface WorkOSGoogleAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUserChange?: (user: WorkOSUser | null) => void;
+  onNavigate?: (screen: any) => void;
 }
 
 export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
   isOpen,
   onClose,
   onUserChange,
+  onNavigate,
 }) => {
   const [currentUser, setCurrentUser] = useState<WorkOSUser | null>(() =>
     WorkOSAuthService.getCurrentUser()
@@ -36,6 +41,9 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     if (isOpen) {
       const u = WorkOSAuthService.getCurrentUser();
       setCurrentUser(u);
+      setIsSubmitting(false);
+      setIsSyncing(false);
+      setStatusMsg(null);
     }
   }, [isOpen]);
 
@@ -45,13 +53,15 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       if (e.detail) {
         setCurrentUser(e.detail);
         if (onUserChange) onUserChange(e.detail);
-        setStatusMsg({
-          type: 'success',
-          text: `Signed in as ${e.detail.name || e.detail.email}! Profile synced to Cloudflare.`,
-        });
-        setTimeout(() => {
-          onClose();
-        }, 1500);
+        // Immediately close the modal so user lands straight into the app
+        onClose();
+      } else {
+        setCurrentUser(null);
+        setIsSubmitting(false);
+        setIsSyncing(false);
+        setStatusMsg(null);
+        if (onUserChange) onUserChange(null);
+        onClose();
       }
     };
 
@@ -79,13 +89,8 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
             setCurrentUser(authRes.user);
             await WorkOSAuthService.saveAndSyncUser(authRes.user);
             if (onUserChange) onUserChange(authRes.user);
-            setStatusMsg({
-              type: 'success',
-              text: `Signed in as ${authRes.user.name || authRes.user.email}! Profile & cloud backup ready.`,
-            });
-            setTimeout(() => {
-              onClose();
-            }, 1500);
+            // Immediately close the modal so user lands straight into the app
+            onClose();
           } else {
             setStatusMsg({
               type: 'error',
@@ -106,8 +111,22 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
 
   if (!isOpen) return null;
 
+  const trialStatus = StorageService.getTrialStatus();
+  const isTrialExpiredAndNotSubscribed = trialStatus.isExpired && !trialStatus.subscribed;
+
   const handleGoogleSignInDirectly = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
+
+    // Enforce 30-day free trial & subscription requirement
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Your 30-day free trial has ended. Please upgrade to Brivu Pro in order to log in and sync your data to the cloud.',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setStatusMsg({ type: 'info', text: 'Connecting to Google...' });
 
@@ -144,6 +163,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           await Browser.open({ url: authUrl, windowName: '_system' });
         } catch (openErr) {
           window.location.href = authUrl;
+        } finally {
+          setIsSubmitting(false);
+          setStatusMsg(null);
+          // Close modal immediately so upon return user lands directly in app
+          onClose();
         }
       } else {
         // Set popup options for desktop web
@@ -164,6 +188,9 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           // If popup was blocked, redirect directly
           window.location.href = authUrl;
         }
+        setIsSubmitting(false);
+        setStatusMsg(null);
+        onClose();
       }
     } catch (err: any) {
       setStatusMsg({ type: 'error', text: err?.message || 'Google Sign-In connection failed' });
@@ -173,6 +200,13 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
 
   const handleSyncToCloudNow = async () => {
     if (!currentUser) return;
+    if (isTrialExpiredAndNotSubscribed) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Your 30-day free trial has expired. Please upgrade to Brivu Pro in order to sync your data to the cloud.',
+      });
+      return;
+    }
     setIsSyncing(true);
     setStatusMsg({ type: 'info', text: 'Syncing profile & emails to Cloud...' });
 
@@ -191,13 +225,13 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
   };
 
   const handleSignOut = () => {
-    WorkOSAuthService.signOut();
+    setIsSubmitting(false);
+    setIsSyncing(false);
+    setStatusMsg(null);
     setCurrentUser(null);
+    WorkOSAuthService.signOut();
     if (onUserChange) onUserChange(null);
-    setStatusMsg({ type: 'info', text: 'Signed out successfully' });
-    setTimeout(() => {
-      onClose();
-    }, 1200);
+    onClose();
   };
 
   return createPortal(
@@ -229,10 +263,10 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
-                Sign In with Google
+                {currentUser ? 'Account & Cloud Sync' : 'Sign In with Google'}
               </h3>
               <p className="text-[11px] text-indigo-200/90 font-medium">
-                sign in to save your data to cloud
+                {currentUser ? 'manage profile and cloud backups' : 'avoid losing data on app uninstall • sync receipts & QR codes'}
               </p>
             </div>
           </div>
@@ -336,6 +370,31 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
 
               {/* Action Buttons */}
               <div className="space-y-2">
+                {isTrialExpiredAndNotSubscribed && (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 space-y-2.5">
+                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                      <Crown className="w-4.5 h-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="text-xs font-black uppercase tracking-wider">30-Day Free Trial Expired</span>
+                    </div>
+                    <p className="text-[11px] text-amber-950/90 dark:text-amber-200/90 font-medium leading-relaxed">
+                      Cloud sync is paused. Only subscribed users can continue syncing receipts, invoices, and QR codes to the cloud after the 30-day trial.
+                    </p>
+                    <button
+                      id="btn-account-upgrade-pro"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        if (onNavigate) onNavigate('upgrade');
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition"
+                    >
+                      <Crown className="w-4 h-4 fill-slate-950" />
+                      <span>Upgrade to Pro to Continue Syncing</span>
+                      <Sparkles className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={handleSyncToCloudNow}
@@ -359,14 +418,96 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           ) : (
             /* NOT LOGGED IN / ONE-CLICK GOOGLE SIGN IN */
             <div className="space-y-4">
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs space-y-1.5">
-                <div className="font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <span>Secure Cloud Account</span>
+              {/* TRIAL EXPIRATION BANNER IF PAST 30 DAYS AND NOT SUBSCRIBED */}
+              {isTrialExpiredAndNotSubscribed && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-500/5 border-2 border-amber-500/50 dark:border-amber-500/40 space-y-3 shadow-md">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30">
+                      <Crown className="w-5 h-5 fill-slate-950" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-amber-900 dark:text-amber-300 uppercase tracking-wider block">
+                        30-Day Free Trial Expired
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        Upgrade required to log in & sync to cloud
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                    All users are allowed to log in and sync their data to the cloud during the first 30 free trial days. Because your 30-day trial has completed, only subscribed users can log in to sync data to the cloud.
+                  </p>
+
+                  <div className="p-2.5 rounded-xl bg-amber-100/80 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-800 text-[11px] text-amber-950 dark:text-amber-200 font-bold flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Please upgrade to Brivu Pro in order to log in and sync your data to the cloud.</span>
+                  </div>
+
+                  {/* Direct Upgrade Button */}
+                  <button
+                    id="btn-modal-upgrade-page"
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      if (onNavigate) {
+                        onNavigate('upgrade');
+                      }
+                    }}
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                  >
+                    <Crown className="w-4 h-4 fill-slate-950" />
+                    <span>Upgrade to Pro (Go to Upgrade Page)</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">
-                  Sign in with your Google Account to automatically sync and safeguard your digital receipts, invoices, customers, and inventory in your Cloudflare storage.
+              )}
+
+              {/* SECURE CLOUD ACCOUNT CARD WITH QR CODE & DATA LOSS PREVENTION */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs space-y-3">
+                <div className="font-extrabold text-slate-900 dark:text-white flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-black">Secure Cloud Account</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300">
+                    <QrCode className="w-3 h-3" />
+                    <span>Receipts & QR Codes</span>
+                  </span>
+                </div>
+
+                <p className="text-[11.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                  Sign in with your Google Account to automatically sync and safeguard your digital receipts, invoices, customers, inventory, and hosted QR code menus in your Cloudflare storage.
                 </p>
+
+                {/* Highlight: QR Code & Receipt Cloud Protection */}
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xs flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                    <QrCode className="w-7 h-7" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>QR Codes & Digital Receipts Safe</span>
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                        Cloud Synced
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5 font-medium">
+                      Your published QR code menus, customer links, and business receipts are backed up under your email.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Warning: Avoid losing data when you uninstall the app */}
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200/90 dark:border-amber-800/60 flex items-start gap-2.5 text-amber-900 dark:text-amber-200">
+                  <AlertCircle className="w-4.5 h-4.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <strong className="font-black block text-amber-950 dark:text-amber-100 mb-0.5">
+                      Avoid losing your data when uninstalling the app:
+                    </strong>
+                    When you uninstall the app or switch devices, any data saved only to local storage will be erased by the device. Signing into your account saves all your receipts, invoices, products, and QR codes safely to the cloud. Whenever you reinstall the app or log in again using your email, all your records are restored instantly!
+                  </div>
+                </div>
               </div>
 
               {/* Main Google Sign In Button */}
@@ -374,7 +515,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                 type="button"
                 onClick={handleGoogleSignInDirectly}
                 disabled={isSubmitting}
-                className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-slate-50 text-slate-900 font-black text-sm border-2 border-slate-300 dark:border-slate-700 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer active:scale-98 disabled:opacity-60"
+                className={`w-full py-3.5 px-4 rounded-2xl font-black text-sm border-2 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer active:scale-98 disabled:opacity-60 ${
+                  isTrialExpiredAndNotSubscribed
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                    : 'bg-white hover:bg-slate-50 text-slate-900 border-slate-300 dark:border-slate-700'
+                }`}
               >
                 <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -394,7 +539,15 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{isSubmitting ? 'Connecting...' : statusMsg?.type === 'error' ? 'Retry Google Sign-In' : 'Sign in with Google'}</span>
+                <span>
+                  {isSubmitting
+                    ? 'Connecting...'
+                    : statusMsg?.type === 'error'
+                    ? 'Retry Google Sign-In'
+                    : isTrialExpiredAndNotSubscribed
+                    ? 'Sign in with Google (Upgrade Required)'
+                    : 'Sign in with Google'}
+                </span>
               </button>
             </div>
           )}

@@ -130,6 +130,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleBackupNow = async () => {
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email) {
+      showToast('Please sign in with Google to save & backup your data to the cloud.');
+      return;
+    }
     setIsSyncing(true);
     try {
       const res = await CloudflareService.syncAllToCloudflare();

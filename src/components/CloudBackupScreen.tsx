@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { CloudflareConfig } from '../types';
 import { CloudflareService } from '../services/cloudflareService';
+import { StorageService } from '../services/storage';
 import { CloudflareFilesModal } from './CloudflareFilesModal';
 
 interface CloudBackupScreenProps {
@@ -234,6 +235,11 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   };
 
   const handleSyncAll = async () => {
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email) {
+      showToast('Please sign in with Google to save & backup your data to the cloud.');
+      return;
+    }
     setIsSyncing(true);
     try {
       const res = await CloudflareService.syncAllToCloudflare();
@@ -253,6 +259,11 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   };
 
   const handleRestore = async () => {
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email) {
+      showToast('Please sign in with Google to restore your cloud data.');
+      return;
+    }
     if (
       !confirm(
         'This will download and restore your receipts, products, and settings from cloud storage. Continue?'
