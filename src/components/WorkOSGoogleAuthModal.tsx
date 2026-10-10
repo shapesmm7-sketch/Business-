@@ -80,14 +80,12 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
 
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
         const code = event.data.code;
-        const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
         setIsSubmitting(true);
-        setStatusMsg({ type: 'info', text: 'Authenticating with Google & WorkOS...' });
+        setStatusMsg({ type: 'info', text: 'Signing in...' });
         try {
-          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
+          const authRes = await WorkOSAuthService.authenticateCode(code);
           if (authRes.success && authRes.user) {
             setCurrentUser(authRes.user);
-            await WorkOSAuthService.saveAndSyncUser(authRes.user);
             if (onUserChange) onUserChange(authRes.user);
             // Immediately close the modal so user lands straight into the app
             onClose();

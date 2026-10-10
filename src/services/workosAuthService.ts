@@ -41,7 +41,60 @@ export const WorkOSAuthService = {
   },
 
   /**
-   * Save user session locally & sync user profile, email & data to Cloudflare
+   * Centralized, deduplicated code exchange to authenticate and log in with zero delay
+   */
+  async authenticateCode(code: string, codeVerifier?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
+    if (!code) {
+      return { success: false, message: 'No authorization code provided' };
+    }
+
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return { success: false, message: 'Trial expired. Please upgrade to Pro.' };
+    }
+
+    if (exchangedCodes.has(code)) {
+      const existing = StorageService.getWorkOSUser();
+      if (existing) {
+        return { success: true, user: existing, message: 'Already signed in' };
+      }
+    }
+
+    if (inFlightExchangePromise) {
+      const u = await inFlightExchangePromise;
+      if (u) {
+        return { success: true, user: u, message: 'Signed in successfully' };
+      }
+    }
+
+    exchangedCodes.add(code);
+    const verifier = codeVerifier || (typeof window !== 'undefined' ? localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined : undefined);
+
+    inFlightExchangePromise = (async () => {
+      try {
+        const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
+        if (authRes.success && authRes.user) {
+          await this.saveAndSyncUser(authRes.user);
+          return authRes.user;
+        }
+      } catch (err) {
+        console.warn('OAuth code exchange error:', err);
+      } finally {
+        inFlightExchangePromise = null;
+      }
+      return null;
+    })();
+
+    const user = await inFlightExchangePromise;
+    if (user) {
+      return { success: true, user, message: 'Google Sign-In successful!' };
+    }
+    return { success: false, message: 'Failed to complete sign-in. Please try again.' };
+  },
+
+  /**
+   * Save user session locally & sync user profile, email & data to Cloudflare.
+   * Broadcasts login immediately so user logs in with zero delay!
    */
   async saveAndSyncUser(user: WorkOSUser): Promise<CloudflareSyncResponse> {
     const cleanEmail = (user.email || '').toLowerCase().trim();
@@ -54,7 +107,7 @@ export const WorkOSAuthService = {
       syncedToCloudflare: true,
     };
 
-    // 1. Save in local storage with email as User ID
+    // 1. Save in local storage immediately with email as User ID
     StorageService.saveWorkOSUser(updatedUser);
 
     // 2. If business email is empty, prefill with user email
@@ -66,39 +119,48 @@ export const WorkOSAuthService = {
       });
     }
 
-    // 3. First pull existing cloud data from Cloudflare for this email (if any exists from prior install/device)
-    // and merge it with current local data
-    let cloudRestored = false;
-    if (cleanEmail) {
-      try {
-        const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
-        if (pullRes.success) {
-          cloudRestored = true;
-        }
-      } catch (pullErr) {
-        console.warn('Initial cloud pull note:', pullErr);
-      }
-    }
-
-    // 4. Save user profile to Cloudflare
-    const syncRes = await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile());
-
-    // 5. Only push data to Cloudflare if we have actual records to preserve or cloud was restored.
-    // Never overwrite a cloud backup with an empty array on a fresh installation.
-    const hasLocalData = StorageService.getReceipts().length > 0 ||
-      StorageService.getInventoryProducts().length > 0 ||
-      StorageService.getInventorySales().length > 0;
-
-    if (hasLocalData || cloudRestored) {
-      await CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
-    // 6. Broadcast user update across app
+    // 3. BROADCAST USER UPDATE IMMEDIATELY so the user logs in and sees the welcome message instantly!
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
     }
 
-    return syncRes;
+    // 4. Run cloud restoration & sync in background without blocking or delaying login!
+    const runBackgroundSync = async () => {
+      let cloudRestored = false;
+      if (cleanEmail) {
+        try {
+          const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
+          if (pullRes.success) {
+            cloudRestored = true;
+            // Notify UI to refresh restored receipts and products
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
+            }
+          }
+        } catch (pullErr) {
+          console.warn('Background cloud pull note:', pullErr);
+        }
+      }
+
+      // Save user profile to Cloudflare
+      await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
+
+      // Only push data to Cloudflare if we have actual records to preserve or cloud was restored
+      const hasLocalData = StorageService.getReceipts().length > 0 ||
+        StorageService.getInventoryProducts().length > 0 ||
+        StorageService.getInventorySales().length > 0;
+
+      if (hasLocalData || cloudRestored) {
+        await CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    };
+
+    runBackgroundSync().catch((err) => console.warn('Background sync note:', err));
+
+    return {
+      success: true,
+      message: 'Logged in successfully',
+    };
   },
 
   /**
@@ -188,41 +250,17 @@ export const WorkOSAuthService = {
    */
   async handleCallbackIfPresent(): Promise<WorkOSUser | null> {
     try {
-      const trial = StorageService.getTrialStatus();
-      if (trial.isExpired && !trial.subscribed) {
-        return null;
-      }
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       if (!code) {
         return null;
       }
 
-      if (exchangedCodes.has(code)) {
-        return StorageService.getWorkOSUser();
+      const res = await this.authenticateCode(code);
+      if (res.success && res.user) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return res.user;
       }
-
-      if (inFlightExchangePromise) {
-        return inFlightExchangePromise;
-      }
-
-      inFlightExchangePromise = (async () => {
-        try {
-          exchangedCodes.add(code);
-          const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
-          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
-          if (authRes.success && authRes.user) {
-            await this.saveAndSyncUser(authRes.user);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            return authRes.user;
-          }
-        } finally {
-          inFlightExchangePromise = null;
-        }
-        return null;
-      })();
-
-      return inFlightExchangePromise;
     } catch (err) {
       console.warn('Error handling OAuth callback code:', err);
     }

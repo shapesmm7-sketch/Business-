@@ -19,9 +19,18 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
   const latest = StorageService.getProfile();
   const snapshot = receipt.businessSnapshot || (receipt as any).businessProfile || {};
 
+  const cleanName = (val?: string) => {
+    if (!val || typeof val !== 'string') return '';
+    const trimmed = val.trim();
+    if (trimmed.toLowerCase() === 'business name') return '';
+    return trimmed;
+  };
+
+  const effectiveName = cleanName(latest.name) || cleanName(snapshot.name) || '';
+
   return {
-    name: (latest.name && latest.name.trim() !== '') ? latest.name : (snapshot.name || 'Business Name'),
-    description: (latest.description !== undefined && latest.description !== null) ? latest.description : (snapshot.description || ''),
+    name: effectiveName,
+    description: (latest.description !== undefined && latest.description !== null && latest.description.trim() !== '') ? latest.description : (snapshot.description || ''),
     logo: latest.logo || snapshot.logo,
     signature: latest.signature || snapshot.signature,
     phone: (latest.phone && latest.phone.trim() !== '') ? latest.phone : (snapshot.phone || ''),
@@ -574,9 +583,11 @@ export const PdfGenerator = {
     const maxTextWidth = hasLogo ? contentWidth - (logoSize + 8) * 2 : contentWidth - 14;
     const badgeText = customTheme?.badgeText || defaultBadge;
 
+    const rawBizName = (business.name || '').trim();
+    const hasBizName = rawBizName.length > 0 && rawBizName.toLowerCase() !== 'business name';
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(13.5);
-    const titleLines = doc.splitTextToSize(business.name, maxTextWidth);
+    const titleLines = hasBizName ? doc.splitTextToSize(rawBizName, maxTextWidth) : [];
 
     doc.setFont(theme.pdf.font, 'italic');
     doc.setFontSize(8);
@@ -591,7 +602,9 @@ export const PdfGenerator = {
 
     // Calculate dynamic header height so all text fits comfortably
     let neededBannerHeight = 12; // Top padding & Badge text & spacing
-    neededBannerHeight += (titleLines.length - 1) * 5.0 + 4.0;
+    if (hasBizName && titleLines.length > 0) {
+      neededBannerHeight += (titleLines.length - 1) * 5.0 + 4.0;
+    }
     if (descLines.length > 0) neededBannerHeight += descLines.length * 4.0;
     if (contactLines.length > 0) neededBannerHeight += contactLines.length * 3.6;
     if (addrLines.length > 0) neededBannerHeight += addrLines.length * 3.6;
@@ -653,11 +666,13 @@ export const PdfGenerator = {
 
     // 3. Centered Business Name - positioned safely below the badge with ample clearance
     let currentOffsetY = y + 12.0;
-    doc.setFont(theme.pdf.font, 'bold');
-    doc.setFontSize(13.5);
-    doc.setTextColor(theme.pdf.headerText[0], theme.pdf.headerText[1], theme.pdf.headerText[2]);
-    doc.text(titleLines, pageWidth / 2, currentOffsetY, { align: 'center' });
-    currentOffsetY += titleLines.length * 5.0;
+    if (hasBizName && titleLines.length > 0) {
+      doc.setFont(theme.pdf.font, 'bold');
+      doc.setFontSize(13.5);
+      doc.setTextColor(theme.pdf.headerText[0], theme.pdf.headerText[1], theme.pdf.headerText[2]);
+      doc.text(titleLines, pageWidth / 2, currentOffsetY, { align: 'center' });
+      currentOffsetY += titleLines.length * 5.0;
+    }
 
     // 4. Centered Business Description
     if (descLines.length > 0) {
@@ -920,12 +935,16 @@ export const PdfGenerator = {
     const maxTextW = hasLogo ? contentWidth - (logoSize + 8) * 2 : contentWidth - 10;
 
     // 3. Centered Business Name
-    doc.setFont('times', 'bold');
-    doc.setFontSize(18);
-    doc.setTextColor(20, 20, 20);
-    const formalTitleLines = doc.splitTextToSize(business.name, maxTextW);
-    doc.text(formalTitleLines, pageWidth / 2, y + 5, { align: 'center' });
-    y += Math.max(9, formalTitleLines.length * 6 + 1.5);
+    const rawBizName = (business.name || '').trim();
+    const hasBizName = rawBizName.length > 0 && rawBizName.toLowerCase() !== 'business name';
+    if (hasBizName) {
+      doc.setFont('times', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(20, 20, 20);
+      const formalTitleLines = doc.splitTextToSize(rawBizName, maxTextW);
+      doc.text(formalTitleLines, pageWidth / 2, y + 5, { align: 'center' });
+      y += Math.max(9, formalTitleLines.length * 6 + 1.5);
+    }
 
     // 4. Centered Business Description
     if (business.description) {
@@ -1143,12 +1162,16 @@ export const PdfGenerator = {
     const maxTextW = hasLogo ? contentWidth - (logoSize + 8) * 2 : contentWidth - 10;
 
     // 3. Centered Business Name
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.setTextColor(17, 24, 39);
-    const minTitleLines = doc.splitTextToSize(business.name, maxTextW);
-    doc.text(minTitleLines, pageWidth / 2, y + 5, { align: 'center' });
-    y += Math.max(9, minTitleLines.length * 6 + 1.5);
+    const rawBizName = (business.name || '').trim();
+    const hasBizName = rawBizName.length > 0 && rawBizName.toLowerCase() !== 'business name';
+    if (hasBizName) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(17, 24, 39);
+      const minTitleLines = doc.splitTextToSize(rawBizName, maxTextW);
+      doc.text(minTitleLines, pageWidth / 2, y + 5, { align: 'center' });
+      y += Math.max(9, minTitleLines.length * 6 + 1.5);
+    }
 
     // 4. Centered Business Description
     doc.setFont('helvetica', 'normal');
@@ -1352,12 +1375,16 @@ export const PdfGenerator = {
     const startBizY = y;
     const maxTextW = hasLogo ? contentWidth - (logoSize + 8) * 2 : contentWidth - 10;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.setTextColor(15, 23, 42);
-    const corpTitleLines = doc.splitTextToSize(business.name, maxTextW);
-    doc.text(corpTitleLines, pageWidth / 2, y + 3.5, { align: 'center' });
-    y += corpTitleLines.length * 5 + 2;
+    const rawBizName = (business.name || '').trim();
+    const hasBizName = rawBizName.length > 0 && rawBizName.toLowerCase() !== 'business name';
+    if (hasBizName) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      const corpTitleLines = doc.splitTextToSize(rawBizName, maxTextW);
+      doc.text(corpTitleLines, pageWidth / 2, y + 3.5, { align: 'center' });
+      y += corpTitleLines.length * 5 + 2;
+    }
 
     if (business.description) {
       doc.setFont('helvetica', 'italic');
@@ -1594,12 +1621,16 @@ export const PdfGenerator = {
     const maxTextW = hasLogo ? contentWidth - (logoSize + 4) * 2 : contentWidth;
 
     // 3. Centered Business Name
-    doc.setFont('courier', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(0, 0, 0);
-    const splitName = doc.splitTextToSize(business.name.toUpperCase(), maxTextW);
-    doc.text(splitName, rollWidth / 2, y + 1.5, { align: 'center' });
-    y += splitName.length * 4.5 + 2;
+    const rawBizName = (business.name || '').trim();
+    const hasBizName = rawBizName.length > 0 && rawBizName.toLowerCase() !== 'business name';
+    if (hasBizName) {
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(0, 0, 0);
+      const splitName = doc.splitTextToSize(rawBizName.toUpperCase(), maxTextW);
+      doc.text(splitName, rollWidth / 2, y + 1.5, { align: 'center' });
+      y += splitName.length * 4.5 + 2;
+    }
 
     // 4. Centered Business Description
     doc.setFont('courier', 'normal');
@@ -1806,12 +1837,14 @@ export const PdfGenerator = {
     const filename = `${docTypeLabel}_${cleanNum}.pdf`;
     const currency = receipt.businessSnapshot.currency || 'UGX';
     
+    const bizName = (receipt.businessSnapshot?.name || '').trim();
+    const senderSuffix = (bizName && bizName.toLowerCase() !== 'business name') ? ` from ${bizName}` : '';
     let shareText = '';
     if (isInvoice) {
       const dueInfo = receipt.dueDate ? ` Due: ${receipt.dueDate}.` : '';
-      shareText = `Invoice ${receipt.receiptNumber} from ${receipt.businessSnapshot.name} for ${formatCurrency(receipt.total, currency)}.${dueInfo}`;
+      shareText = `Invoice ${receipt.receiptNumber}${senderSuffix} for ${formatCurrency(receipt.total, currency)}.${dueInfo}`;
     } else {
-      shareText = `Receipt ${receipt.receiptNumber} from ${receipt.businessSnapshot.name} for ${formatCurrency(receipt.total, currency)}. Thank you for your business!`;
+      shareText = `Receipt ${receipt.receiptNumber}${senderSuffix} for ${formatCurrency(receipt.total, currency)}. Thank you for your business!`;
     }
 
     return await shareContent({

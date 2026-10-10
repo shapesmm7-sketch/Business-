@@ -146,6 +146,9 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
     isSample = false,
   } = data;
 
+  const rawStoreName = (storeName || '').trim();
+  const cleanStoreName = (rawStoreName && rawStoreName.toLowerCase() !== 'business name') ? rawStoreName : '';
+
   const isInvoice = documentType === 'invoice';
   const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
   let effectiveBadgeText = defaultBadge;
@@ -379,15 +382,19 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h2 className="text-lg sm:text-xl font-bold tracking-tight uppercase break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h2>
+              {cleanStoreName && (
+                <h2 className="text-lg sm:text-xl font-bold tracking-tight uppercase break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h2>
+              )}
               {businessDescription && (
                 <p className="text-xs text-slate-600 dark:text-slate-300 italic font-sans mt-0.5 text-center" style={headerDescStyle}>
                   {businessDescription}
                 </p>
               )}
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-sans mt-0.5 text-center" style={headerAddressStyle}>
-                {[address, phone, email].filter(Boolean).join(' • ') || 'Plot 22 Kampala Road • Tel: +256 700 123 456'}
-              </p>
+              {[address, phone, email].filter(Boolean).length > 0 && (
+                <p className="text-xs text-slate-600 dark:text-slate-400 font-sans mt-0.5 text-center" style={headerAddressStyle}>
+                  {[address, phone, email].filter(Boolean).join(' • ')}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -477,13 +484,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
-                {storeName}
-              </h3>
+              {cleanStoreName && (
+                <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h3>
+              )}
               {businessDescription && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5 text-center" style={headerDescStyle}>{businessDescription}</p>
               )}
-              <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address || 'kampala • uganda'}</p>
+              {address && (
+                <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address}</p>
+              )}
               <div className="text-xs font-mono text-slate-400 mt-1 text-center">#{receiptNumber}</div>
             </div>
           </div>
@@ -570,13 +581,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5 break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h3>
+              {cleanStoreName && (
+                <h3 className="text-base font-bold text-slate-900 dark:text-white mt-0.5 break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h3>
+              )}
               {businessDescription && (
                 <p className="text-xs text-slate-600 dark:text-slate-300 italic mt-0.5 text-center" style={headerDescStyle}>{businessDescription}</p>
               )}
-              <div className="text-xs font-mono text-slate-500 mt-0.5 text-center">
-                TIN: {taxNumber || '104928371'} • VAT REGISTERED
-              </div>
+              {taxNumber && (
+                <div className="text-xs font-mono text-slate-500 mt-0.5 text-center">
+                  TIN: {taxNumber} • VAT REGISTERED
+                </div>
+              )}
               {address && <p className="text-[11px] text-slate-500 text-center" style={headerAddressStyle}>{address}</p>}
               <div className="text-xs font-mono text-slate-500 mt-0.5 text-center font-bold">
                 {isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:'} {receiptNumber} • {formattedDate}
@@ -665,15 +680,19 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-12 sm:px-14' : 'px-1'}`}>
-              <h3 className="text-sm font-bold uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>*** {storeName} ***</h3>
+              {cleanStoreName && (
+                <h3 className="text-sm font-bold uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>*** {cleanStoreName} ***</h3>
+              )}
               {businessDescription && (
                 <p className="text-[10px] text-slate-600 dark:text-slate-300 font-sans italic my-0.5 text-center" style={headerDescStyle}>
                   {businessDescription}
                 </p>
               )}
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center" style={headerAddressStyle}>
-                {address || 'Plot 22 Kampala Rd'} {phone ? `• Tel ${phone}` : ''}
-              </p>
+              {[address, phone].filter(Boolean).length > 0 && (
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center" style={headerAddressStyle}>
+                  {[address, phone ? `Tel ${phone}` : ''].filter(Boolean).join(' • ')}
+                </p>
+              )}
               <div className="text-[10px] text-slate-500 pt-0.5 text-center">
                 RC# {receiptNumber} • {formattedDate}
               </div>
@@ -755,12 +774,16 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 </div>
               )}
               <div className={`text-center ${logo ? 'px-12 sm:px-14' : 'px-8 sm:px-10'}`}>
-                <h2 className="text-base sm:text-lg font-bold tracking-wider text-amber-300 uppercase break-words leading-tight text-center" style={headerNameStyle}>
-                  {storeName}
-                </h2>
-                <p className="text-[10px] font-sans tracking-widest text-slate-400 uppercase mt-0.5 text-center" style={headerDescStyle}>
-                  OFFICIAL SETTLEMENT RECORD
-                </p>
+                {cleanStoreName && (
+                  <h2 className="text-base sm:text-lg font-bold tracking-wider text-amber-300 uppercase break-words leading-tight text-center" style={headerNameStyle}>
+                    {cleanStoreName}
+                  </h2>
+                )}
+                {businessDescription && (
+                  <p className="text-[10px] font-sans tracking-widest text-slate-400 uppercase mt-0.5 text-center" style={headerDescStyle}>
+                    {businessDescription}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -859,10 +882,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 </div>
               )}
               <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
-                  {storeName}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5 text-center" style={headerDescStyle}>{address || 'Clean Sustainable Commerce'}</p>
+                {cleanStoreName && (
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
+                    {cleanStoreName}
+                  </h3>
+                )}
+                {businessDescription && (
+                  <p className="text-xs text-slate-500 mt-0.5 text-center" style={headerDescStyle}>{businessDescription}</p>
+                )}
+                {address && (
+                  <p className="text-xs text-slate-500 mt-0.5 text-center" style={headerDescStyle}>{address}</p>
+                )}
                 <div className="mt-1 flex justify-center">
                   <span className="px-2 py-0.5 rounded-full font-bold text-[10px] border" style={{ background: `${effectiveAccent}20`, color: effectiveAccent, borderColor: `${effectiveAccent}40` }}>
                     #{receiptNumber}
@@ -933,7 +963,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base sm:text-lg font-black uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h3>
+              {cleanStoreName && (
+                <h3 className="text-base sm:text-lg font-black uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h3>
+              )}
+              {businessDescription && (
+                <p className="text-xs text-rose-200/80 italic mt-0.5 text-center">{businessDescription}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1006,9 +1041,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base font-bold text-white tracking-wide font-sans break-words leading-tight text-center" style={headerNameStyle}>
-                {storeName}
-              </h3>
+              {cleanStoreName && (
+                <h3 className="text-base font-bold text-white tracking-wide font-sans break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h3>
+              )}
+              {businessDescription && (
+                <p className="text-xs text-indigo-200/80 italic mt-0.5 text-center">{businessDescription}</p>
+              )}
               <div className="text-[10px] text-slate-400 mt-0.5 font-mono text-center">
                 TX_HASH: 0x8F2A...{receiptNumber.slice(-4)}
               </div>
@@ -1089,8 +1129,15 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base font-bold text-white uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h3>
-              <p className="text-[10px] text-stone-400 text-center" style={headerDescStyle}>{address || 'Artisan Roastery & Kitchen'}</p>
+              {cleanStoreName && (
+                <h3 className="text-base font-bold text-white uppercase tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h3>
+              )}
+              {businessDescription && (
+                <p className="text-[10px] text-amber-200/80 italic text-center">{businessDescription}</p>
+              )}
+              {address && (
+                <p className="text-[10px] text-stone-400 text-center" style={headerDescStyle}>{address}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1158,7 +1205,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-base sm:text-lg font-bold tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h3>
+              {cleanStoreName && (
+                <h3 className="text-base sm:text-lg font-bold tracking-tight break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h3>
+              )}
+              {businessDescription && (
+                <p className="text-xs text-cyan-200/80 italic mt-0.5 text-center">{businessDescription}</p>
+              )}
               <div className="mt-0.5 flex justify-center">
                 <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold text-[10px] border border-cyan-400/40">
                   #{receiptNumber}
@@ -1234,9 +1286,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h3 className="text-xs sm:text-sm font-bold uppercase tracking-widest break-words leading-tight text-center" style={headerNameStyle}>
-                {storeName}
-              </h3>
+              {cleanStoreName && (
+                <h3 className="text-xs sm:text-sm font-bold uppercase tracking-widest break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h3>
+              )}
+              {businessDescription && (
+                <p className="text-[10px] italic mt-0.5 text-center">{businessDescription}</p>
+              )}
               <span className="text-[10px] font-mono font-bold block mt-0.5 text-center">NO. {receiptNumber} • {formattedDate}</span>
             </div>
           </div>
@@ -1301,12 +1358,19 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h2 className="text-lg sm:text-xl font-bold italic tracking-wide text-rose-950 dark:text-rose-300 break-words leading-tight text-center" style={headerNameStyle}>
-                {storeName}
-              </h2>
-              <p className="text-xs font-sans text-slate-500 mt-0.5 text-center" style={headerDescStyle}>
-                Boutique & Haute Sélection • Tel: {phone || '+256 700 123 456'}
-              </p>
+              {cleanStoreName && (
+                <h2 className="text-lg sm:text-xl font-bold italic tracking-wide text-rose-950 dark:text-rose-300 break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h2>
+              )}
+              {businessDescription && (
+                <p className="text-xs font-sans text-rose-800/80 italic mt-0.5 text-center">{businessDescription}</p>
+              )}
+              {phone && (
+                <p className="text-xs font-sans text-slate-500 mt-0.5 text-center" style={headerDescStyle}>
+                  Tel: {phone}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -1369,17 +1433,22 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <div className="absolute left-0 top-1/2 -translate-y-1/2">
                 <img src={logo} alt="Logo" className="w-10 h-10 object-contain rounded-2xl border border-sky-200 dark:border-slate-700 bg-white p-0.5" />
               </div>
-            ) : (
+            ) : cleanStoreName ? (
               <div className="absolute left-0 top-1/2 -translate-y-1/2">
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-md shadow-sky-500/20 font-black text-xs">
-                  {storeName.slice(0, 2).toUpperCase()}
+                  {cleanStoreName.slice(0, 2).toUpperCase()}
                 </div>
               </div>
-            )}
-            <div className={`text-center ${logo ? 'px-12 sm:px-14' : 'px-10 sm:px-12'}`}>
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
-                {storeName}
-              </h3>
+            ) : null}
+            <div className={`text-center ${logo ? 'px-12 sm:px-14' : cleanStoreName ? 'px-10 sm:px-12' : 'px-2'}`}>
+              {cleanStoreName && (
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h3>
+              )}
+              {businessDescription && (
+                <p className="text-xs text-sky-800/80 italic mt-0.5 text-center">{businessDescription}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1440,10 +1509,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </div>
             )}
             <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              <h2 className="text-base sm:text-lg font-bold uppercase tracking-widest break-words leading-tight text-center" style={headerNameStyle}>{storeName}</h2>
-              <p className="text-[10px] font-mono text-[#5d4037] dark:text-[#d7ccc8] mt-0.5 text-center" style={headerDescStyle}>
-                GENERAL STORE & MERCHANDISE LEDGER • REG. 1954
-              </p>
+              {cleanStoreName && (
+                <h2 className="text-base sm:text-lg font-bold uppercase tracking-widest break-words leading-tight text-center" style={headerNameStyle}>{cleanStoreName}</h2>
+              )}
+              {businessDescription && (
+                <p className="text-[10px] font-mono text-[#5d4037] dark:text-[#d7ccc8] mt-0.5 text-center" style={headerDescStyle}>
+                  {businessDescription}
+                </p>
+              )}
               <div className="text-[10px] font-mono text-[#795548] dark:text-[#bcaaa4] mt-0.5 text-center">
                 RECORD NO. {receiptNumber} • {formattedDate}
               </div>
@@ -1510,15 +1583,19 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <img src={logo} alt="Logo" className="max-h-12 w-auto max-w-[90px] sm:max-w-[110px] object-contain rounded-lg border border-slate-700 bg-white p-0.5" />
             </div>
           )}
-          <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-            <h3 className="text-base sm:text-lg font-extrabold text-white break-words leading-tight text-center" style={headerNameStyle}>
-              {storeName}
-            </h3>
-            {businessDescription && (
-              <p className="text-xs italic mt-0.5 opacity-90 text-center" style={headerDescStyle}>{businessDescription}</p>
-            )}
-            <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address || 'Kampala, Uganda'}</p>
-          </div>
+            <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
+              {cleanStoreName && (
+                <h3 className="text-base sm:text-lg font-extrabold text-white break-words leading-tight text-center" style={headerNameStyle}>
+                  {cleanStoreName}
+                </h3>
+              )}
+              {businessDescription && (
+                <p className="text-xs italic mt-0.5 opacity-90 text-center" style={headerDescStyle}>{businessDescription}</p>
+              )}
+              {address && (
+                <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address}</p>
+              )}
+            </div>
         </div>
       </div>
 

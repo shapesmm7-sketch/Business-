@@ -562,14 +562,8 @@ export function App() {
               const dummyUrl = new URL(urlStr.replace(/^[a-zA-Z0-9_.-]+:\/\//, 'https://dummy.host/'));
               const code = dummyUrl.searchParams.get('code');
               if (code) {
-                const trial = StorageService.getTrialStatus();
-                if (trial.isExpired && !trial.subscribed) {
-                  return;
-                }
-                const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
-                const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
-                if (authRes.success && authRes.user) {
-                  await WorkOSAuthService.saveAndSyncUser(authRes.user);
+                const res = await WorkOSAuthService.authenticateCode(code);
+                if (res.success) {
                   refreshData();
                 }
               }
@@ -593,10 +587,8 @@ export function App() {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
         try {
           const code = event.data.code;
-          const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
-          const authRes = await CloudflareService.authenticateWorkOSCode(code, undefined, verifier);
-          if (authRes.success && authRes.user) {
-            await WorkOSAuthService.saveAndSyncUser(authRes.user);
+          const res = await WorkOSAuthService.authenticateCode(code);
+          if (res.success) {
             refreshData();
           }
         } catch (err) {

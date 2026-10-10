@@ -291,10 +291,10 @@ export default {
       </div>
       <h1>Sign-In Approved!</h1>
       <p id="statusMsg">Returning to your application...</p>
-      <div id="actionButtons" style="display:none; margin-top: 1rem;">
+      <div id="actionButtons" style="margin-top: 1.25rem;">
         ${authCode ? `
-          <a id="btnWeb" href="/" class="btn" style="display:none;">Continue in Web Browser</a>
-          <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn btn-secondary">Open Brivu Android App</a>
+          <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn" style="${platform === 'app' ? 'display:block;' : 'display:none;'} margin-bottom: 0.75rem;">Open Brivu App</a>
+          <a id="btnWeb" href="/" class="btn" style="${platform !== 'app' ? 'display:block;' : 'display:none;'}">Continue to Brivu</a>
         ` : ''}
       </div>
     `}
@@ -313,7 +313,7 @@ export default {
       if (window.opener) {
         try {
           window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
-          setTimeout(function() { window.close(); }, 300);
+          setTimeout(function() { window.close(); }, 200);
           return;
         } catch (_) {}
       }
@@ -338,10 +338,24 @@ export default {
 
       // 3. If explicit native Android App
       if (platform === 'app') {
+        var appUrl = 'brivu://auth/callback?code=' + encodeURIComponent(code);
+        var intentUrl = 'intent://auth/callback?code=' + encodeURIComponent(code) + '#Intent;scheme=brivu;package=com.brivu.app;end';
+        var btnApp = document.getElementById('btnApp');
+        if (btnApp) {
+          btnApp.style.display = 'block';
+          btnApp.href = appUrl;
+        }
+        var actionBtns = document.getElementById('actionButtons');
+        if (actionBtns) actionBtns.style.display = 'block';
+        var statusMsg = document.getElementById('statusMsg');
+        if (statusMsg) statusMsg.textContent = 'Returning to Brivu App... Tap the button below if not redirected automatically.';
+
         try {
-          window.location.replace('brivu://auth/callback?code=' + encodeURIComponent(code));
+          window.location.replace(intentUrl);
         } catch (_) {
-          window.location.href = 'brivu://auth/callback?code=' + encodeURIComponent(code);
+          try {
+            window.location.href = appUrl;
+          } catch (__) {}
         }
       } else {
         // Show buttons as fallback if automatic redirect didn't trigger

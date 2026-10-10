@@ -27,8 +27,10 @@ export interface ReceiptDataForQr {
  */
 export function normalizeReceiptData(input: ReceiptDataForQr | Receipt): Receipt {
   const inputObj = input as ReceiptDataForQr & Receipt;
+  const rawBizName = (inputObj.businessName || inputObj.storeName || '').trim();
+  const cleanBizName = (rawBizName && rawBizName.toLowerCase() !== 'business name') ? rawBizName : '';
   const businessSnapshot: BusinessProfile = inputObj.businessSnapshot || {
-    name: inputObj.businessName || inputObj.storeName || 'Brivu Store',
+    name: cleanBizName,
     currency: inputObj.currency || 'UGX',
     phone: '',
     address: '',
@@ -115,10 +117,13 @@ export function buildQrReceiptPayload(input: ReceiptDataForQr | Receipt): string
   }
 
   lines.push(`================================`);
-  lines.push(`${rec.businessSnapshot.name.toUpperCase()}`);
-  if (rec.businessSnapshot.address) lines.push(`Addr: ${rec.businessSnapshot.address}`);
-  if (rec.businessSnapshot.phone) lines.push(`Tel: ${rec.businessSnapshot.phone}`);
-  if (rec.businessSnapshot.taxNumber) lines.push(`TIN/VAT: ${rec.businessSnapshot.taxNumber}`);
+  const qrBizName = (rec.businessSnapshot?.name || '').trim();
+  if (qrBizName && qrBizName.toLowerCase() !== 'business name') {
+    lines.push(`${qrBizName.toUpperCase()}`);
+  }
+  if (rec.businessSnapshot?.address) lines.push(`Addr: ${rec.businessSnapshot.address}`);
+  if (rec.businessSnapshot?.phone) lines.push(`Tel: ${rec.businessSnapshot.phone}`);
+  if (rec.businessSnapshot?.taxNumber) lines.push(`TIN/VAT: ${rec.businessSnapshot.taxNumber}`);
   lines.push(`================================`);
 
   lines.push(`Receipt No : ${rec.receiptNumber}`);

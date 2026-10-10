@@ -498,14 +498,22 @@ export const CloudflareService = {
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
       const targetUrl = `${config.workerUrl}/api/sync/push${query}`;
 
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ backupData, userEmail, user }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify({ backupData, userEmail, user }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const rawText = await response.text().catch(() => response.statusText || '');
       const parsed = parseWorkerResponse(rawText);
@@ -661,10 +669,18 @@ export const CloudflareService = {
       const query = email ? `?email=${encodeURIComponent(email)}` : '';
       const targetUrl = `${config.workerUrl}/api/sync/pull${query}`;
 
-      const response = await fetch(targetUrl, {
-        method: 'GET',
-        headers,
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const rawText = await response.text().catch(() => response.statusText || '');
       const parsed = parseWorkerResponse(rawText);
@@ -1090,17 +1106,25 @@ export const CloudflareService = {
         headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
       }
 
-      const res = await fetch(`${cleanUrl}/api/auth/workos/authenticate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          code,
-          codeVerifier: resolvedVerifier,
-          redirectUri: redirectUri || window.location.origin,
-          workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
-          workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/workos/authenticate`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            code,
+            codeVerifier: resolvedVerifier,
+            redirectUri: redirectUri || window.location.origin,
+            workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
+            workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const text = await res.text();
       const parsed = parseWorkerResponse(text);

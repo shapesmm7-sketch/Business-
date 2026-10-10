@@ -292,9 +292,13 @@ export class BluetoothPrinterService {
           }
         </style>
         <div style="width: ${widthCss}; margin: 0 auto; padding: 4px; font-family: monospace; font-size: 11px;">
-          <div style="text-align: center; font-weight: bold; font-size: 14px; text-transform: uppercase;">
-            ${escapeHtml(receipt.businessSnapshot.name || 'QuickReceipt')}
-          </div>
+          ${(() => {
+            const bName = (receipt.businessSnapshot?.name || '').trim();
+            if (bName && bName.toLowerCase() !== 'business name' && bName.toLowerCase() !== 'quickreceipt') {
+              return `<div style="text-align: center; font-weight: bold; font-size: 14px; text-transform: uppercase;">${escapeHtml(bName)}</div>`;
+            }
+            return '';
+          })()}
           ${receipt.businessSnapshot.description ? `<div style="text-align: center; font-size: 10px;">${escapeHtml(receipt.businessSnapshot.description)}</div>` : ''}
           ${receipt.businessSnapshot.phone ? `<div style="text-align: center; font-size: 10px;">Tel: ${escapeHtml(receipt.businessSnapshot.phone)}</div>` : ''}
           ${receipt.businessSnapshot.address ? `<div style="text-align: center; font-size: 10px;">${escapeHtml(receipt.businessSnapshot.address)}</div>` : ''}
@@ -402,9 +406,13 @@ export class BluetoothPrinterService {
     // Center align
     pushBytes(0x1b, 0x61, 0x01);
 
-    // Double height & width for header
-    pushBytes(0x1d, 0x21, 0x11);
-    pushString((receipt.businessSnapshot.name || 'QUICKRECEIPT').toUpperCase() + '\n');
+    // Header Business Name
+    const bName = (receipt.businessSnapshot?.name || '').trim();
+    if (bName && bName.toLowerCase() !== 'business name' && bName.toLowerCase() !== 'quickreceipt') {
+      // Double height & width for header
+      pushBytes(0x1d, 0x21, 0x11);
+      pushString(bName.toUpperCase() + '\n');
+    }
 
     // Normal text size
     pushBytes(0x1d, 0x21, 0x00);
