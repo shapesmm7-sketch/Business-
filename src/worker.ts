@@ -20,10 +20,10 @@ export interface Env {
   WORKOS_REDIRECT_URI?: string;
 }
 
-const CORS_HEADERS = {
+const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-Requested-With, X-WorkOS-Client-Id, X-WorkOS-Api-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-User-Email, X-User-Id, X-Requested-With, X-WorkOS-Client-Id, X-WorkOS-Api-Key, Origin, Accept',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -116,9 +116,13 @@ export default {
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
+      const reqHeaders = request.headers.get('Access-Control-Request-Headers');
       return new Response(null, {
         status: 204,
-        headers: CORS_HEADERS,
+        headers: {
+          ...CORS_HEADERS,
+          ...(reqHeaders ? { 'Access-Control-Allow-Headers': reqHeaders } : {}),
+        },
       });
     }
 

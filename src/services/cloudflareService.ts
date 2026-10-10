@@ -220,13 +220,12 @@ export const CloudflareService = {
     }
 
     try {
-      const headers = this.getAuthHeaders(apiKeyOverride);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+      // Simple GET request without custom headers prevents cross-origin preflight issues on native Android
       const res = await fetch(`${targetUrl}/api/health`, {
         method: 'GET',
-        headers,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
