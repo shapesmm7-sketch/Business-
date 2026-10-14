@@ -490,12 +490,19 @@ export const CloudflareService = {
     }
 
     try {
+      const user = StorageService.getWorkOSUser();
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      if (!userEmail) {
+        return {
+          success: false,
+          message: 'User must be signed in with email to sync to Cloudflare',
+        };
+      }
+
       const rawBackup = customBackup || StorageService.exportBackup();
       const backupData = sanitizeBackupForD1Sync(rawBackup);
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const userEmail = (user?.email || '').toLowerCase().trim();
-      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
+      const query = `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}`;
       const targetUrl = `${config.workerUrl}/api/sync/push${query}`;
 
       const controller = new AbortController();
@@ -507,9 +514,11 @@ export const CloudflareService = {
           headers: {
             ...headers,
             'Content-Type': 'application/json',
+            'X-User-Email': userEmail,
+            'X-User-Id': userEmail,
           },
           signal: controller.signal,
-          body: JSON.stringify({ backupData, userEmail, user }),
+          body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user }),
         });
       } finally {
         clearTimeout(timeoutId);
@@ -533,6 +542,11 @@ export const CloudflareService = {
           error: errorMsg,
         };
       }
+
+      // Also cache in local user vault
+      try {
+        localStorage.setItem(`brivu_vault_${userEmail}`, JSON.stringify(rawBackup));
+      } catch (_) {}
 
       if (!parsed.ok) {
         return {
@@ -582,14 +596,18 @@ export const CloudflareService = {
     }
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/receipts`;
+      const user = StorageService.getWorkOSUser();
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
+      const targetUrl = `${config.workerUrl}/api/receipts${query}`;
       const response = await fetch(targetUrl, {
         method: 'POST',
         headers: {
           ...headers,
           'Content-Type': 'application/json',
+          ...(userEmail ? { 'X-User-Email': userEmail, 'X-User-Id': userEmail } : {}),
         },
-        body: JSON.stringify(receipt),
+        body: JSON.stringify({ ...receipt, userEmail, user_id: userEmail }),
       });
 
       const rawText = await response.text().catch(() => '');
@@ -663,10 +681,19 @@ export const CloudflareService = {
     }
 
     try {
-      const headers = this.getAuthHeaders();
       const user = StorageService.getWorkOSUser();
       const email = (emailOverride || user?.email || '').toLowerCase().trim();
-      const query = email ? `?email=${encodeURIComponent(email)}` : '';
+      if (!email) {
+        return {
+          success: false,
+          message: 'User email is required to pull cloud backup',
+        };
+      }
+
+      const headers = this.getAuthHeaders();
+      headers['X-User-Email'] = email;
+      headers['X-User-Id'] = email;
+      const query = `?email=${encodeURIComponent(email)}&user_id=${encodeURIComponent(email)}`;
       const targetUrl = `${config.workerUrl}/api/sync/pull${query}`;
 
       const controller = new AbortController();
@@ -714,12 +741,16 @@ export const CloudflareService = {
       if (!rawBackupData) {
         return {
           success: false,
-          message: 'No backup records found on Cloudflare',
+          message: 'No backup records found on Cloudflare for this account',
         };
       }
 
-      const importResult = StorageService.importBackup(rawBackupData);
+      // Restoring for this specific user account: replace active workspace so previous user's records never leak
+      const importResult = StorageService.importBackup(rawBackupData, true);
       if (importResult.success) {
+        try {
+          localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(rawBackupData));
+        } catch (_) {}
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),
           lastStatus: 'connected',
@@ -758,10 +789,15 @@ export const CloudflareService = {
     const config = this.getConfig();
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/receipts`;
+      const user = StorageService.getWorkOSUser();
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
+      const targetUrl = `${config.workerUrl}/api/receipts${query}`;
 
       const cleanReceipt = {
         ...receipt,
+        userEmail,
+        user_id: userEmail,
         businessSnapshot: receipt.businessSnapshot
           ? {
               ...receipt.businessSnapshot,
@@ -776,6 +812,7 @@ export const CloudflareService = {
         headers: {
           ...headers,
           'Content-Type': 'application/json',
+          ...(userEmail ? { 'X-User-Email': userEmail, 'X-User-Id': userEmail } : {}),
         },
         body: JSON.stringify(cleanReceipt),
       });

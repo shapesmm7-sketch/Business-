@@ -98,6 +98,10 @@ export const WorkOSAuthService = {
    */
   async saveAndSyncUser(user: WorkOSUser): Promise<CloudflareSyncResponse> {
     const cleanEmail = (user.email || '').toLowerCase().trim();
+
+    // 1. Switch session cleanly to incoming user email, ensuring no data from previous accounts leaks
+    StorageService.switchUserSession(cleanEmail);
+
     const updatedUser: WorkOSUser = {
       ...user,
       id: cleanEmail || user.id,
@@ -107,10 +111,10 @@ export const WorkOSAuthService = {
       syncedToCloudflare: true,
     };
 
-    // 1. Save in local storage immediately with email as User ID
+    // 2. Save in local storage immediately with email as User ID
     StorageService.saveWorkOSUser(updatedUser);
 
-    // 2. If business email is empty, prefill with user email
+    // 3. If business email is empty, prefill with user email
     const profile = StorageService.getProfile();
     if (!profile.email && cleanEmail) {
       StorageService.saveProfile({
@@ -119,22 +123,26 @@ export const WorkOSAuthService = {
       });
     }
 
-    // 3. BROADCAST USER UPDATE IMMEDIATELY so the user logs in and sees the welcome message instantly!
+    // 4. BROADCAST USER UPDATE IMMEDIATELY so the user logs in and sees the welcome message instantly!
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
+      window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+      window.dispatchEvent(new Event('storage'));
     }
 
-    // 4. Run cloud restoration & sync in background without blocking or delaying login!
+    // 5. Run cloud restoration & sync in background without blocking or delaying login!
     const runBackgroundSync = async () => {
       let cloudRestored = false;
       if (cleanEmail) {
         try {
           const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
-          if (pullRes.success) {
+          if (pullRes.success && pullRes.data) {
             cloudRestored = true;
             // Notify UI to refresh restored receipts and products
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
+              window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+              window.dispatchEvent(new Event('storage'));
             }
           }
         } catch (pullErr) {
@@ -145,12 +153,12 @@ export const WorkOSAuthService = {
       // Save user profile to Cloudflare
       await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
 
-      // Only push data to Cloudflare if we have actual records to preserve or cloud was restored
+      // Only push data to Cloudflare if this user has actual local records
       const hasLocalData = StorageService.getReceipts().length > 0 ||
         StorageService.getInventoryProducts().length > 0 ||
         StorageService.getInventorySales().length > 0;
 
-      if (hasLocalData || cloudRestored) {
+      if (hasLocalData) {
         await CloudflareService.syncAllToCloudflare().catch(() => {});
       }
     };
@@ -268,12 +276,14 @@ export const WorkOSAuthService = {
   },
 
   /**
-   * Sign out current user
+   * Sign out current user cleanly, isolating and resetting active workspace
    */
   signOut(): void {
-    StorageService.clearWorkOSUser();
+    StorageService.switchUserSession(null);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: null }));
+      window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+      window.dispatchEvent(new Event('storage'));
     }
   },
 };

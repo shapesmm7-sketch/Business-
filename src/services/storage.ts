@@ -888,7 +888,7 @@ export const StorageService = {
     };
   },
 
-  importBackup(backupData: AppBackupData): { success: boolean; message: string } {
+  importBackup(backupData: AppBackupData, replaceExisting = false): { success: boolean; message: string } {
     if (!backupData || typeof backupData !== 'object') {
       return { success: false, message: 'Invalid backup file format' };
     }
@@ -910,13 +910,17 @@ export const StorageService = {
         this.saveSettings(backupData.settings);
       }
       // Import and merge deleted receipt ids so tombstones survive across devices/APK installs
-      if (Array.isArray(backupData.deletedReceiptIds) && backupData.deletedReceiptIds.length > 0) {
-        const currentDeleted = this.getDeletedReceiptIds();
-        const mergedSet = new Set([
-          ...currentDeleted.map((s) => String(s).trim().toLowerCase()),
-          ...backupData.deletedReceiptIds.map((s) => String(s).trim().toLowerCase()),
-        ]);
-        writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
+      if (Array.isArray(backupData.deletedReceiptIds)) {
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, backupData.deletedReceiptIds);
+        } else if (backupData.deletedReceiptIds.length > 0) {
+          const currentDeleted = this.getDeletedReceiptIds();
+          const mergedSet = new Set([
+            ...currentDeleted.map((s) => String(s).trim().toLowerCase()),
+            ...backupData.deletedReceiptIds.map((s) => String(s).trim().toLowerCase()),
+          ]);
+          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
+        }
       }
 
       if (Array.isArray(backupData.receipts)) {
@@ -934,13 +938,17 @@ export const StorageService = {
           return false;
         };
 
-        const existing = this.getReceipts().filter((r) => !isDeleted(r));
         const cloudReceipts = backupData.receipts.filter((r) => !isDeleted(r));
-        const cloudIds = new Set(cloudReceipts.map((r) => r.id));
-        // Keep cloud records + any local-only records (excluding deleted receipts)
-        const localOnly = existing.filter((r) => !cloudIds.has(r.id));
-        const mergedReceipts = [...cloudReceipts, ...localOnly];
-        writeToStorage(STORAGE_KEYS.RECEIPTS, mergedReceipts);
+        if (replaceExisting) {
+          // Strictly load this account's receipts without merging previous session receipts
+          writeToStorage(STORAGE_KEYS.RECEIPTS, cloudReceipts);
+        } else {
+          const existing = this.getReceipts().filter((r) => !isDeleted(r));
+          const cloudIds = new Set(cloudReceipts.map((r) => r.id));
+          const localOnly = existing.filter((r) => !cloudIds.has(r.id));
+          const mergedReceipts = [...cloudReceipts, ...localOnly];
+          writeToStorage(STORAGE_KEYS.RECEIPTS, mergedReceipts);
+        }
 
         // If cloud backup still held receipts that were locally deleted, push sanitized state back to D1 immediately
         const hadDeletedInCloud = backupData.receipts.some((r) => isDeleted(r));
@@ -951,34 +959,54 @@ export const StorageService = {
         }
       }
       if (Array.isArray(backupData.inventoryProducts)) {
-        const existing = this.getInventoryProducts();
-        const cloudIds = new Set(backupData.inventoryProducts.map((p) => p.id));
-        const localOnly = existing.filter((p) => !cloudIds.has(p.id));
-        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, [...backupData.inventoryProducts, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
+        } else {
+          const existing = this.getInventoryProducts();
+          const cloudIds = new Set(backupData.inventoryProducts.map((p) => p.id));
+          const localOnly = existing.filter((p) => !cloudIds.has(p.id));
+          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, [...backupData.inventoryProducts, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.inventorySales)) {
-        const existing = this.getInventorySales();
-        const cloudIds = new Set(backupData.inventorySales.map((s) => s.id));
-        const localOnly = existing.filter((s) => !cloudIds.has(s.id));
-        writeToStorage(STORAGE_KEYS.INVENTORY_SALES, [...backupData.inventorySales, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, backupData.inventorySales);
+        } else {
+          const existing = this.getInventorySales();
+          const cloudIds = new Set(backupData.inventorySales.map((s) => s.id));
+          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
+          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, [...backupData.inventorySales, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.inventoryExpenses)) {
-        const existing = this.getInventoryExpenses();
-        const cloudIds = new Set(backupData.inventoryExpenses.map((e) => e.id));
-        const localOnly = existing.filter((e) => !cloudIds.has(e.id));
-        writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, [...backupData.inventoryExpenses, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, backupData.inventoryExpenses);
+        } else {
+          const existing = this.getInventoryExpenses();
+          const cloudIds = new Set(backupData.inventoryExpenses.map((e) => e.id));
+          const localOnly = existing.filter((e) => !cloudIds.has(e.id));
+          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, [...backupData.inventoryExpenses, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.inventoryDebts)) {
-        const existing = this.getInventoryDebts();
-        const cloudIds = new Set(backupData.inventoryDebts.map((d) => d.id));
-        const localOnly = existing.filter((d) => !cloudIds.has(d.id));
-        writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, [...backupData.inventoryDebts, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, backupData.inventoryDebts);
+        } else {
+          const existing = this.getInventoryDebts();
+          const cloudIds = new Set(backupData.inventoryDebts.map((d) => d.id));
+          const localOnly = existing.filter((d) => !cloudIds.has(d.id));
+          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, [...backupData.inventoryDebts, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.shoppingListItems)) {
-        const existing = this.getShoppingList();
-        const cloudIds = new Set(backupData.shoppingListItems.map((s) => s.id));
-        const localOnly = existing.filter((s) => !cloudIds.has(s.id));
-        writeToStorage(STORAGE_KEYS.SHOPPING_LIST, [...backupData.shoppingListItems, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, backupData.shoppingListItems);
+        } else {
+          const existing = this.getShoppingList();
+          const cloudIds = new Set(backupData.shoppingListItems.map((s) => s.id));
+          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
+          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, [...backupData.shoppingListItems, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.shoppingCategories)) {
         writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, backupData.shoppingCategories);
@@ -987,10 +1015,14 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.PRODUCT_CATEGORIES, backupData.productCategories);
       }
       if (Array.isArray(backupData.customers)) {
-        const existing = this.getCustomers();
-        const cloudIds = new Set(backupData.customers.map((c) => c.id));
-        const localOnly = existing.filter((c) => !cloudIds.has(c.id));
-        writeToStorage(STORAGE_KEYS.CUSTOMERS, [...backupData.customers, ...localOnly]);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.CUSTOMERS, backupData.customers);
+        } else {
+          const existing = this.getCustomers();
+          const cloudIds = new Set(backupData.customers.map((c) => c.id));
+          const localOnly = existing.filter((c) => !cloudIds.has(c.id));
+          writeToStorage(STORAGE_KEYS.CUSTOMERS, [...backupData.customers, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.agents)) {
         writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
@@ -2732,9 +2764,101 @@ export const StorageService = {
     }
   },
 
-  clearWorkOSUser(): void {
+  /**
+   * Resets all business and operational records from the active workspace.
+   * Ensures that when a user logs out or switches accounts, no private receipts or customer data remain.
+   */
+  clearActiveUserData(): void {
+    writeToStorage(STORAGE_KEYS.RECEIPTS, []);
     try {
-      localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+      localStorage.removeItem(STORAGE_KEYS.DRAFT);
     } catch {}
+    writeToStorage(STORAGE_KEYS.PROFILE, { ...DEFAULT_BUSINESS_PROFILE });
+    writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, []);
+    writeToStorage(STORAGE_KEYS.INVENTORY_SALES, []);
+    writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, []);
+    writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, []);
+    writeToStorage(STORAGE_KEYS.SHOPPING_LIST, []);
+    writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, []);
+    writeToStorage(STORAGE_KEYS.PRODUCT_CATEGORIES, []);
+    writeToStorage(STORAGE_KEYS.CUSTOMERS, []);
+    writeToStorage(STORAGE_KEYS.AGENTS, []);
+    writeToStorage(STORAGE_KEYS.AGENT_LEDGER, []);
+    writeToStorage(STORAGE_KEYS.WORKERS, []);
+    writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, []);
+    writeToStorage(STORAGE_KEYS.STAFF_LOSSES, []);
+    writeToStorage(STORAGE_KEYS.STAFF_SALES, []);
+    writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, []);
+    writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, []);
+    writeToStorage(STORAGE_KEYS.WEBSITES_QR, []);
+    writeToStorage(STORAGE_KEYS.SOCIALS_QR, []);
+    writeToStorage(STORAGE_KEYS.EVENTS_QR, []);
+    writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
+  },
+
+  /**
+   * Switches user session cleanly:
+   * 1. Caches previous user's workspace locally so nothing is lost if they return.
+   * 2. Clears the active workspace so previous user's data never leaks to new account.
+   * 3. If newUserEmail is provided, restores cached data for newUserEmail if available,
+   *    or starts with a clean empty slate.
+   */
+  switchUserSession(newUserEmail: string | null): void {
+    const prevUser = this.getWorkOSUser();
+    const prevEmail = (prevUser?.email || '').toLowerCase().trim();
+    const cleanNewEmail = (newUserEmail || '').toLowerCase().trim();
+
+    // 1. If previous user had data, cache it into their private local vault
+    if (prevEmail) {
+      try {
+        const backup = this.exportBackup();
+        localStorage.setItem(`brivu_vault_${prevEmail}`, JSON.stringify(backup));
+      } catch (err) {
+        console.warn('Failed to cache user vault:', err);
+      }
+    }
+
+    // 2. Wipe active workspace to prevent any cross-account data leakage
+    this.clearActiveUserData();
+
+    // 3. Configure state for the incoming user
+    if (cleanNewEmail) {
+      writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
+      // Pre-set user email in business profile
+      const prof = this.getProfile();
+      this.saveProfile({
+        ...prof,
+        email: cleanNewEmail,
+      });
+
+      // Update cloudflare config to use this user's email as the key
+      const cf = this.getCloudflareConfig();
+      cf.apiKey = cleanNewEmail;
+      this.saveCloudflareConfig(cf);
+
+      // Check if this user has a local vault cached from a previous session on this device
+      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
+      if (vaultJson) {
+        try {
+          const vaultData = JSON.parse(vaultJson);
+          this.importBackup(vaultData, true);
+        } catch (_) {}
+      }
+    } else {
+      // User signed out completely
+      try {
+        localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+        localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
+        const cf = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, null as any);
+        if (cf) {
+          cf.apiKey = '';
+          writeToStorage(STORAGE_KEYS.CLOUDFLARE, cf);
+        }
+      } catch {}
+    }
+  },
+
+  clearWorkOSUser(): void {
+    this.switchUserSession(null);
   },
 };

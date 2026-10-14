@@ -940,19 +940,29 @@ export default {
         };
       };
 
-      // 1. Fetch from R2 if bucket is bound
+      // If no user email provided, return empty files list to prevent data leakage
+      if (!userEmail) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            files: [],
+            count: 0,
+            message: 'User email is required to list files',
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 1. Fetch from R2 if bucket is bound strictly for this user email
       if (bucket && typeof bucket.list === 'function') {
         try {
-          const listPrefixes: (string | undefined)[] = [];
-          if (userEmail) {
-            listPrefixes.push(`users/${encodeURIComponent(userEmail)}/`);
-            listPrefixes.push(`users/${userEmail}/`);
-          }
-          if (prefixParam) {
+          const listPrefixes: string[] = [
+            `users/${encodeURIComponent(userEmail)}/`,
+            `users/${userEmail}/`,
+          ];
+          if (prefixParam && prefixParam.startsWith('users/')) {
             listPrefixes.push(prefixParam);
-          }
-          if (listPrefixes.length === 0) {
-            listPrefixes.push(undefined);
           }
 
           for (const pfx of listPrefixes) {
@@ -979,22 +989,17 @@ export default {
         }
       }
 
-      // 2. Also check D1 if db is bound
+      // 2. Also check D1 if db is bound strictly for this user email
       if (db) {
         try {
           await ensureD1Tables(db);
           let query = 'SELECT id, filename, mime_type, size, created_at FROM files';
           const params: any[] = [];
-          const whereClauses: string[] = [];
-
-          if (userEmail) {
-            whereClauses.push('(id LIKE ? OR id LIKE ?)');
-            params.push(`users/${encodeURIComponent(userEmail)}/%`);
-            params.push(`users/${userEmail}/%`);
-          } else if (prefixParam) {
-            whereClauses.push('id LIKE ?');
-            params.push(`${prefixParam}%`);
-          }
+          const whereClauses: string[] = [
+            '(id LIKE ? OR id LIKE ?)'
+          ];
+          params.push(`users/${encodeURIComponent(userEmail)}/%`);
+          params.push(`users/${userEmail}/%`);
 
           if (whereClauses.length > 0) {
             query += ' WHERE ' + whereClauses.join(' AND ');
@@ -1460,52 +1465,45 @@ export default {
           url.searchParams.get('email') ||
           url.searchParams.get('user_id') ||
           body?.userEmail ||
+          body?.user_id ||
           body?.email ||
           body?.user?.email ||
           backupData?.profile?.email ||
           ''
         ).toLowerCase().trim();
 
+        if (!userEmail) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'User email is required to push and isolate cloud data' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
         if (backupData) {
           const backupJson = JSON.stringify(backupData);
           const now = new Date().toISOString();
 
-          // 1. Persist to D1 Relational SQL Database if bound
+          // 1. Persist to D1 Relational SQL Database strictly isolated by user email ID
           if (db) {
             try {
               await ensureD1Tables(db);
-              if (userEmail) {
-                await db.prepare(`
-                  INSERT INTO backups (id, user_email, backup_data, updated_at)
-                  VALUES (?, ?, ?, ?)
-                  ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
-                `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
-              }
               await db.prepare(`
                 INSERT INTO backups (id, user_email, backup_data, updated_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
-              `).bind('latest_backup', userEmail || 'global', backupJson, now).run();
+              `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
             }
           }
 
-          // 2. Persist to R2 Object Storage Bucket if bound
+          // 2. Persist to R2 Object Storage Bucket strictly isolated under user email ID
           if (bucket) {
-            // Save user-isolated backup under their email ID
-            if (userEmail) {
-              const userKey = encodeURIComponent(userEmail);
-              await bucket.put(`users/${userKey}/backup.json`, backupJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-            }
-
-            // Also save global backup as fallback
-            await bucket.put('sync/latest_backup.json', backupJson, {
+            const userKey = encodeURIComponent(userEmail);
+            await bucket.put(`users/${userKey}/backup.json`, backupJson, {
+              httpMetadata: { contentType: 'application/json' },
+            });
+            await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
               httpMetadata: { contentType: 'application/json' },
             });
 
@@ -1777,8 +1775,26 @@ export default {
 
         let backupData: any = null;
 
-        // 1. First attempt retrieving user-scoped backup from R2
-        if (bucket && userEmail) {
+        // If no user email provided, return empty data (never leak someone else's data)
+        if (!userEmail) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              userEmail: '',
+              backupData: null,
+              data: { backupData: null },
+              message: 'User email is required to pull cloud backup',
+            }),
+            {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            }
+          );
+        }
+
+        // 1. Attempt retrieving user-scoped backup from R2 under user email ID
+        if (bucket) {
           try {
             const userKey = encodeURIComponent(userEmail);
             let backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
@@ -1791,32 +1807,11 @@ export default {
           } catch (_) {}
         }
 
-        // 2. If not found in R2, check D1 user backup
-        if (!backupData && db && userEmail) {
+        // 2. If not found in R2, check D1 user backup strictly for this user email
+        if (!backupData && db) {
           try {
             await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
-            if (row && row.backup_data) {
-              backupData = JSON.parse(row.backup_data);
-            }
-          } catch (_) {}
-        }
-
-        // 3. Fallback to global latest_backup in R2 only if no user is specified
-        if (!backupData && !userEmail && bucket) {
-          try {
-            const backupObj = await bucket.get('sync/latest_backup.json');
-            if (backupObj) {
-              backupData = JSON.parse(await backupObj.text());
-            }
-          } catch (_) {}
-        }
-
-        // 4. Fallback to global latest_backup in D1 only if no user is specified
-        if (!backupData && !userEmail && db) {
-          try {
-            await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind('latest_backup').first();
+            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ? OR user_email = ?').bind(`user_${userEmail}`, userEmail).first();
             if (row && row.backup_data) {
               backupData = JSON.parse(row.backup_data);
             }

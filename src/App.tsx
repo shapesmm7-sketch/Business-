@@ -581,6 +581,8 @@ export function App() {
       refreshData();
     };
     window.addEventListener('workos_user_updated', handleUserUpdatedSync);
+    window.addEventListener('brivu_data_refreshed', handleUserUpdatedSync);
+    window.addEventListener('storage', handleUserUpdatedSync);
 
     // 2a. Global OAuth popup message listener
     const handleOAuthMessage = async (event: MessageEvent) => {
@@ -637,6 +639,8 @@ export function App() {
       document.removeEventListener('click', handleFileInputClick, true);
       window.removeEventListener('message', handleOAuthMessage);
       window.removeEventListener('workos_user_updated', handleUserUpdatedSync);
+      window.removeEventListener('brivu_data_refreshed', handleUserUpdatedSync);
+      window.removeEventListener('storage', handleUserUpdatedSync);
       if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
         capListenerHandle.remove();
       }
