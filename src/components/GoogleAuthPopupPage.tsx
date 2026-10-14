@@ -111,14 +111,6 @@ export const GoogleAuthPopupPage: React.FC = () => {
                 <span>Continue to Brivu Application</span>
                 <ArrowRight className="w-4 h-4 ml-auto" />
               </a>
-
-              <a
-                href={`brivu://auth/callback?code=${encodeURIComponent(authCode)}`}
-                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>Open in Android App</span>
-              </a>
             </div>
           )}
         </div>

@@ -586,12 +586,17 @@ export function App() {
 
     // 2a. Global OAuth popup message listener
     const handleOAuthMessage = async (event: MessageEvent) => {
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         try {
-          const code = event.data.code;
-          const res = await WorkOSAuthService.authenticateCode(code);
-          if (res.success) {
+          const { code, user } = event.data;
+          if (user) {
+            await WorkOSAuthService.saveAndSyncUser(user);
             refreshData();
+          } else if (code) {
+            const res = await WorkOSAuthService.authenticateCode(code);
+            if (res.success) {
+              refreshData();
+            }
           }
         } catch (err) {
           console.warn('[OAuth] Popup message handling error:', err);
@@ -600,8 +605,8 @@ export function App() {
     };
     window.addEventListener('message', handleOAuthMessage);
 
-    // 2b. Process web OAuth callback code if returning from Google / WorkOS
-    if (typeof window !== 'undefined' && window.location.search.includes('code=')) {
+    // 2b. Process web OAuth callback code or session if returning from Google / WorkOS
+    if (typeof window !== 'undefined' && (window.location.search.includes('code=') || window.location.search.includes('auth_session='))) {
       WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
         if (usr) {
           refreshData();

@@ -221,32 +221,40 @@ export const WorkOSAuthService = {
       const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
 
       const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
-      if (!isNative && returnUrl) {
+      if (returnUrl) {
         try {
           localStorage.setItem('workos_web_return_url', returnUrl);
           sessionStorage.setItem('workos_web_return_url', returnUrl);
         } catch (_) {}
       }
 
+      // Always handle authentication by web to prevent external Play Store redirects
+      const sessionId = 'auth_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      try {
+        localStorage.setItem('workos_session_id', sessionId);
+        sessionStorage.setItem('workos_session_id', sessionId);
+      } catch (_) {}
+
       const stateObj = {
-        platform: isNative ? 'app' : 'web',
-        returnUrl: isNative ? '' : returnUrl,
+        sessionId,
+        platform: 'web',
+        returnUrl: returnUrl || 'https://brivu.shapesmm7.workers.dev',
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
       let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
-      // Launch WorkOS AuthKit Google Sign-In via system browser on mobile or direct redirect on web
+      // Launch WorkOS AuthKit Google Sign-In via web
       if (isNative) {
         try {
-          await Browser.open({ url: authUrl, windowName: '_system' });
+          await Browser.open({ url: authUrl, presentationStyle: 'popover' });
         } catch (_) {
           window.location.href = authUrl;
         }
       } else {
         window.location.href = authUrl;
       }
-      return { success: true, message: 'Redirecting to WorkOS Google Sign-In...' };
+      return { success: true, message: 'Opening Google Sign-In...' };
     } catch (err: any) {
       console.error('WorkOS Google Sign In error:', err);
       return { success: false, message: err?.message || 'Google Sign-In failed' };
@@ -254,20 +262,29 @@ export const WorkOSAuthService = {
   },
 
   /**
-   * Check and process OAuth code in query string on page load
+   * Check and process OAuth code or session in query string on page load
    */
   async handleCallbackIfPresent(): Promise<WorkOSUser | null> {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
-      if (!code) {
-        return null;
+      const sessionId = urlParams.get('auth_session');
+
+      if (sessionId) {
+        const check = await CloudflareService.checkAuthSessionStatus(sessionId);
+        if (check.status === 'completed' && check.user) {
+          await this.saveAndSyncUser(check.user);
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return check.user;
+        }
       }
 
-      const res = await this.authenticateCode(code);
-      if (res.success && res.user) {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return res.user;
+      if (code) {
+        const res = await this.authenticateCode(code);
+        if (res.success && res.user) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return res.user;
+        }
       }
     } catch (err) {
       console.warn('Error handling OAuth callback code:', err);

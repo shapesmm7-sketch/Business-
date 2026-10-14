@@ -72,27 +72,40 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
   // Set up window listener for popup responses
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      // Validate origin is from same origin or run.app
+      // Validate origin is from same origin, run.app, or Cloudflare workers.dev
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost') && origin !== window.location.origin) {
+      const isAllowedOrigin =
+        origin.endsWith('.run.app') ||
+        origin.includes('workers.dev') ||
+        origin.includes('localhost') ||
+        origin === window.location.origin;
+
+      if (!isAllowedOrigin) {
         return;
       }
 
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.code) {
-        const code = event.data.code;
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const { code, user } = event.data;
         setIsSubmitting(true);
         setStatusMsg({ type: 'info', text: 'Signing in...' });
         try {
-          const authRes = await WorkOSAuthService.authenticateCode(code);
-          if (authRes.success && authRes.user) {
-            setCurrentUser(authRes.user);
-            if (onUserChange) onUserChange(authRes.user);
-            // Immediately close the modal so user lands straight into the app
+          let resolvedUser = user;
+          if (!resolvedUser && code) {
+            const authRes = await WorkOSAuthService.authenticateCode(code);
+            if (authRes.success && authRes.user) {
+              resolvedUser = authRes.user;
+            }
+          }
+          if (resolvedUser) {
+            await WorkOSAuthService.saveAndSyncUser(resolvedUser);
+            setCurrentUser(resolvedUser);
+            if (onUserChange) onUserChange(resolvedUser);
+            // Immediately close the modal so user lands straight into the app with zero delay
             onClose();
           } else {
             setStatusMsg({
               type: 'error',
-              text: authRes.message || 'WorkOS authentication failed. Please retry.',
+              text: 'WorkOS authentication failed. Please retry.',
             });
           }
         } catch (err: any) {
@@ -136,10 +149,16 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
       } catch (_) {}
 
-      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
+      // 2. Generate a unique session ID for web polling (enables instant web & Android login)
+      const sessionId = 'auth_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      try {
+        localStorage.setItem('workos_session_id', sessionId);
+        sessionStorage.setItem('workos_session_id', sessionId);
+      } catch (_) {}
 
+      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-      
+
       const isNative = typeof window !== 'undefined' && (
         Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
         window.location.protocol === 'file:' ||
@@ -149,34 +168,87 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
 
       const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
-      if (!isNative && returnUrl) {
+      if (returnUrl) {
         try {
           localStorage.setItem('workos_web_return_url', returnUrl);
           sessionStorage.setItem('workos_web_return_url', returnUrl);
         } catch (_) {}
       }
 
+      // All logins are handled strictly by web (zero custom URL schemes, zero Play Store redirects)
       const stateObj = {
-        platform: isNative ? 'app' : 'web',
-        returnUrl: isNative ? '' : returnUrl,
+        sessionId,
+        platform: 'web',
+        returnUrl: isNative ? `${cloudflareBaseUrl}/` : (returnUrl || `${cloudflareBaseUrl}/`),
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
       let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
+      // Background session poller: checks session status every 1.2s for zero-delay instant login
+      let pollTimer: any = null;
+      let isCompleted = false;
+
+      const stopSessionPolling = () => {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      };
+
+      const startSessionPolling = () => {
+        stopSessionPolling();
+        pollTimer = setInterval(async () => {
+          if (isCompleted) {
+            stopSessionPolling();
+            return;
+          }
+          try {
+            const check = await CloudflareService.checkAuthSessionStatus(sessionId);
+            if (check.status === 'completed' && check.user) {
+              isCompleted = true;
+              stopSessionPolling();
+
+              if (isNative) {
+                try {
+                  await Browser.close();
+                } catch (_) {}
+              }
+
+              setIsSubmitting(true);
+              setStatusMsg({ type: 'info', text: 'Welcome! Setting up your account...' });
+              await WorkOSAuthService.saveAndSyncUser(check.user);
+              setCurrentUser(check.user);
+              if (onUserChange) onUserChange(check.user);
+              setIsSubmitting(false);
+              onClose();
+            }
+          } catch (_) {}
+        }, 1200);
+      };
+
       if (isNative) {
-        setStatusMsg({ type: 'info', text: 'Opening Google Sign-In in secure browser...' });
-        // Use Chrome Custom Tab / system browser on native Android
+        setStatusMsg({ type: 'info', text: 'Opening Google Sign-In in web browser...' });
+        // Use Chrome Custom Tab with pure web callback handling on Android
         try {
-          await Browser.open({ url: authUrl, windowName: '_system' });
+          await Browser.open({ url: authUrl, presentationStyle: 'popover' });
         } catch (openErr) {
           window.location.href = authUrl;
-        } finally {
-          setIsSubmitting(false);
-          setStatusMsg(null);
-          // Close modal immediately so upon return user lands directly in app
-          onClose();
         }
+
+        startSessionPolling();
+
+        try {
+          Browser.addListener('browserFinished', () => {
+            setTimeout(() => {
+              if (!isCompleted) {
+                stopSessionPolling();
+                setIsSubmitting(false);
+                setStatusMsg((prev) => (prev?.type === 'info' ? null : prev));
+              }
+            }, 1500);
+          });
+        } catch (_) {}
       } else {
         // Set popup options for desktop web
         const width = 500;
@@ -185,29 +257,36 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         const top = window.screenY + (window.outerHeight - height) / 2;
 
         setStatusMsg({ type: 'info', text: 'Opening Google Sign-In window...' });
-        
+
         const popup = window.open(
           authUrl,
           'google_signin_popup',
           `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
         );
-        
+
         if (!popup) {
           // If popup was blocked by browser, redirect current window directly
           window.location.href = authUrl;
           return;
         }
 
-        // Keep modal open to maintain the postMessage event listener
         setIsSubmitting(true);
         setStatusMsg({ type: 'info', text: 'Completing Google Sign-In in popup window...' });
+
+        // Start session polling in parallel as a guaranteed fallback
+        startSessionPolling();
 
         // Poll in case user manually closes the popup window without completing sign-in
         const popupWatcher = setInterval(() => {
           if (popup.closed) {
             clearInterval(popupWatcher);
-            setIsSubmitting(false);
-            setStatusMsg((prev) => (prev?.type === 'info' ? null : prev));
+            setTimeout(() => {
+              if (!isCompleted) {
+                stopSessionPolling();
+                setIsSubmitting(false);
+                setStatusMsg((prev) => (prev?.type === 'info' ? null : prev));
+              }
+            }, 1500);
           }
         }, 1000);
       }

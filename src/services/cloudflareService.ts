@@ -1265,6 +1265,32 @@ export const CloudflareService = {
   },
 
   /**
+   * Check real-time auth session status for instant web and Android login
+   */
+  async checkAuthSessionStatus(sessionId: string): Promise<{ status: 'pending' | 'completed' | 'error'; user?: WorkOSUser; code?: string }> {
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
+      ? normalizeUrl(currentOrigin)
+      : normalizeUrl(config.workerUrl);
+
+    try {
+      const res = await fetch(`${cleanUrl}/api/auth/session/status?session_id=${encodeURIComponent(sessionId)}`, {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'completed' && data.user) {
+          return { status: 'completed', user: data.user, code: data.code };
+        }
+        return { status: 'pending' };
+      }
+    } catch (_) {}
+    return { status: 'pending' };
+  },
+
+  /**
    * Fetch all stored user profiles and emails from Cloudflare
    */
   async getStoredUserProfiles(): Promise<{ success: boolean; users?: WorkOSUser[]; emails?: string[] }> {

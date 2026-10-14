@@ -64,7 +64,10 @@ export function getD1Database(env: any): any {
   return null;
 }
 
-// Automatically create D1 backups and files tables if D1 is bound
+// In-memory auth session cache for fast instant login polling across web and Android
+const authSessionsCache = new Map<string, { status: string; code?: string; user?: any; createdAt: number }>();
+
+// Automatically create D1 backups, files, receipts and auth_sessions tables if D1 is bound
 export async function ensureD1Tables(db: any): Promise<void> {
   if (!db || typeof db.prepare !== 'function') return;
   try {
@@ -98,6 +101,17 @@ export async function ensureD1Tables(db: any): Promise<void> {
         total REAL,
         data_json TEXT,
         created_at TEXT
+      )
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        session_id TEXT PRIMARY KEY,
+        status TEXT,
+        code TEXT,
+        user_json TEXT,
+        created_at INTEGER
       )
     `).run();
   } catch (_) {}
@@ -154,26 +168,24 @@ export default {
     }
 
     // 2a. WorkOS OAuth Callback Handler (/callback and /auth/callback)
+    // Pure Web-based OAuth handling for both Website and Android app (zero Play Store links or custom schemes)
     if (url.pathname === '/callback' || url.pathname === '/auth/callback') {
       const authCode = url.searchParams.get('code') || '';
       const authError = url.searchParams.get('error') || url.searchParams.get('error_description') || '';
       const rawState = url.searchParams.get('state') || '';
 
-      let platform = '';
+      let sessionId = '';
       let returnUrl = '';
 
       if (rawState) {
         try {
           const parsed = JSON.parse(decodeURIComponent(rawState));
           if (parsed && typeof parsed === 'object') {
-            platform = parsed.platform || '';
+            sessionId = parsed.sessionId || '';
             returnUrl = parsed.returnUrl || '';
           }
         } catch (_) {
-          if (rawState === 'app') {
-            platform = 'app';
-          } else if (rawState.startsWith('http://') || rawState.startsWith('https://')) {
-            platform = 'web';
+          if (rawState.startsWith('http://') || rawState.startsWith('https://')) {
             returnUrl = decodeURIComponent(rawState);
           }
         }
@@ -184,17 +196,87 @@ export default {
         const referer = request.headers.get('Referer') || request.headers.get('referrer') || '';
         if (referer && !referer.includes('google.com') && !referer.includes('workos.com') && !referer.includes(url.hostname)) {
           returnUrl = referer;
-          if (!platform) platform = 'web';
         }
       }
 
-      // Serve the robust callback landing page (supporting Android deep links & Web popups)
+      // 1. Direct server-side exchange on worker for immediate zero-delay sign-in
+      let authenticatedUser: any = null;
+      if (authCode) {
+        try {
+          const cleanApiKey = (env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
+          const cleanClientId = (env.WORKOS_CLIENT_ID || workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
+
+          if (cleanApiKey) {
+            const wRes = await fetch('https://api.workos.com/user_management/authenticate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${cleanApiKey}`,
+              },
+              body: JSON.stringify({
+                client_id: cleanClientId,
+                client_secret: cleanApiKey,
+                code: authCode,
+                grant_type: 'authorization_code',
+              }),
+            });
+
+            if (wRes.ok) {
+              const wData: any = await wRes.json();
+              const u = wData.user || wData;
+              const firstName = u.first_name || u.firstName || '';
+              const lastName = u.last_name || u.lastName || '';
+              const email = (u.email || '').toLowerCase().trim();
+              const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
+              const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
+
+              authenticatedUser = {
+                id: email || u.id || `workos_usr_${Date.now()}`,
+                email,
+                firstName,
+                lastName,
+                name,
+                profilePictureUrl,
+                emailVerified: true,
+                provider: 'google',
+                updatedAt: new Date().toISOString(),
+                syncedToCloudflare: true,
+              };
+            }
+          }
+        } catch (exErr) {
+          console.warn('Callback direct server-side exchange note:', exErr);
+        }
+      }
+
+      // 2. Persist session for instant polling in web and Android
+      if (sessionId) {
+        authSessionsCache.set(sessionId, {
+          status: 'completed',
+          user: authenticatedUser,
+          code: authCode,
+          createdAt: Date.now(),
+        });
+
+        const db = getD1Database(env);
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            await db.prepare(`
+              INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
+              VALUES (?, ?, ?, ?, ?)
+            `).bind(sessionId, 'completed', authCode, authenticatedUser ? JSON.stringify(authenticatedUser) : null, Date.now()).run();
+          } catch (_) {}
+        }
+      }
+
+      // 3. Serve the clean, web-only callback landing page (never triggers Play Store or custom scheme errors)
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brivu - Google Sign-In</title>
+  <title>Brivu - Google Sign-In Approved</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -217,16 +299,6 @@ export default {
       text-align: center;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    .spinner {
-      width: 44px;
-      height: 44px;
-      border: 4px solid #1f2937;
-      border-top-color: #6366f1;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 1.25rem;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
     .icon-error {
       width: 56px;
       height: 56px;
@@ -236,7 +308,7 @@ export default {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 1.25rem;
+      margin: 0 auto 1.25rem;
     }
     .icon-error svg { width: 28px; height: 28px; stroke: #ef4444; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
     .icon-success {
@@ -248,11 +320,25 @@ export default {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 1.25rem;
+      margin: 0 auto 1.25rem;
     }
     .icon-success svg { width: 28px; height: 28px; stroke: #10b981; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    h1 { font-size: 1.2rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
-    p { font-size: 0.85rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
+    h1 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
+    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
+    .user-pill {
+      display: inline-block;
+      background: #1f2937;
+      border: 1px solid #374151;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      color: #e5e7eb;
+      margin-bottom: 1.25rem;
+      max-width: 90%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .btn {
       display: block;
       width: 100%;
@@ -263,7 +349,6 @@ export default {
       text-decoration: none;
       cursor: pointer;
       transition: all 0.2s;
-      margin-bottom: 0.75rem;
       background: linear-gradient(135deg, #4f46e5, #4338ca);
       color: #ffffff;
       border: none;
@@ -273,6 +358,7 @@ export default {
       background: #1f2937;
       color: #e5e7eb;
       border: 1px solid #374151;
+      margin-top: 0.75rem;
     }
   </style>
 </head>
@@ -290,12 +376,10 @@ export default {
         <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
       </div>
       <h1>Sign-In Approved!</h1>
-      <p id="statusMsg">Returning to your application...</p>
+      ${authenticatedUser?.email ? `<div class="user-pill">${authenticatedUser.email}</div>` : ''}
+      <p id="statusMsg">Your Google account has been verified. Returning to Brivu...</p>
       <div id="actionButtons" style="margin-top: 1.25rem;">
-        ${authCode ? `
-          <a id="btnApp" href="brivu://auth/callback?code=${encodeURIComponent(authCode)}" class="btn" style="${platform === 'app' ? 'display:block;' : 'display:none;'} margin-bottom: 0.75rem;">Open Brivu App</a>
-          <a id="btnWeb" href="/" class="btn" style="${platform !== 'app' ? 'display:block;' : 'display:none;'}">Continue to Brivu</a>
-        ` : ''}
+        <a id="btnWeb" href="/" class="btn">Continue to Brivu</a>
       </div>
     `}
   </div>
@@ -303,69 +387,49 @@ export default {
   <script>
     (function() {
       var code = ${JSON.stringify(authCode)};
-      var platform = ${JSON.stringify(platform)};
+      var user = ${JSON.stringify(authenticatedUser)};
       var returnUrl = ${JSON.stringify(returnUrl)};
-      var error = ${JSON.stringify(authError)};
+      var sessionId = ${JSON.stringify(sessionId)};
 
       if (!code) return;
 
-      // 1. Desktop Popup Flow: post message to opener window and close
+      // 1. Web Popup Flow: post message to opener window and close cleanly
       if (window.opener) {
         try {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code }, '*');
-          setTimeout(function() { window.close(); }, 200);
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code, user: user, sessionId: sessionId }, '*');
+          setTimeout(function() {
+            try { window.close(); } catch (_) {}
+          }, 400);
           return;
         } catch (_) {}
       }
 
-      // 2. Check localStorage / sessionStorage for saved web return URL
-      var savedWebUrl = returnUrl;
+      // 2. Saved web return URL check
+      var targetUrl = returnUrl;
       try {
-        if (!savedWebUrl) {
-          savedWebUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
+        if (!targetUrl) {
+          targetUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
         }
       } catch (_) {}
 
-      // If user came from the website, redirect back to website
-      if (platform !== 'app' && savedWebUrl && (savedWebUrl.startsWith('http://') || savedWebUrl.startsWith('https://'))) {
-        try {
-          var target = new URL(savedWebUrl);
-          target.searchParams.set('code', code);
-          window.location.replace(target.toString());
-          return;
-        } catch (_) {}
+      // Update the Continue button destination
+      var btnWeb = document.getElementById('btnWeb');
+      if (btnWeb) {
+        var dest = targetUrl || '/';
+        if (dest.startsWith('http://') || dest.startsWith('https://') || dest.startsWith('/')) {
+          var sep = dest.indexOf('?') >= 0 ? '&' : '?';
+          btnWeb.href = dest + sep + 'code=' + encodeURIComponent(code) + (sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '');
+        }
       }
 
-      // 3. If explicit native Android App
-      if (platform === 'app') {
-        var appUrl = 'brivu://auth/callback?code=' + encodeURIComponent(code);
-        var intentUrl = 'intent://auth/callback?code=' + encodeURIComponent(code) + '#Intent;scheme=brivu;package=com.brivu.app;end';
-        var btnApp = document.getElementById('btnApp');
-        if (btnApp) {
-          btnApp.style.display = 'block';
-          btnApp.href = appUrl;
-        }
-        var actionBtns = document.getElementById('actionButtons');
-        if (actionBtns) actionBtns.style.display = 'block';
-        var statusMsg = document.getElementById('statusMsg');
-        if (statusMsg) statusMsg.textContent = 'Returning to Brivu App... Tap the button below if not redirected automatically.';
-
+      // 3. Web Auto-redirect if returnUrl was provided
+      if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
         try {
-          window.location.replace(intentUrl);
-        } catch (_) {
-          try {
-            window.location.href = appUrl;
-          } catch (__) {}
-        }
-      } else {
-        // Show buttons as fallback if automatic redirect didn't trigger
-        var actionBtns = document.getElementById('actionButtons');
-        var btnWeb = document.getElementById('btnWeb');
-        if (actionBtns) actionBtns.style.display = 'block';
-        if (btnWeb && savedWebUrl) {
-          btnWeb.href = savedWebUrl + (savedWebUrl.indexOf('?') >= 0 ? '&' : '?') + 'code=' + encodeURIComponent(code);
-          btnWeb.style.display = 'block';
-        }
+          var target = new URL(targetUrl);
+          target.searchParams.set('code', code);
+          if (sessionId) target.searchParams.set('auth_session', sessionId);
+          window.location.replace(target.toString());
+        } catch (_) {}
       }
     })();
   </script>
@@ -381,7 +445,60 @@ export default {
       });
     }
 
-    // 2b. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
+    // 2b. WorkOS Auth Session Polling Endpoint (/api/auth/session/status)
+    // Instant real-time status check for web and Android login without any custom URL schemes
+    if (url.pathname === '/api/auth/session/status' && request.method === 'GET') {
+      const sessionId = url.searchParams.get('session_id') || '';
+      if (!sessionId) {
+        return new Response(JSON.stringify({ ok: false, error: 'Missing session_id' }), {
+          status: 400,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let session = authSessionsCache.get(sessionId);
+      if (!session) {
+        const db = getD1Database(env);
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT * FROM auth_sessions WHERE session_id = ?').bind(sessionId).first();
+            if (row) {
+              session = {
+                status: row.status,
+                code: row.code,
+                user: row.user_json ? JSON.parse(row.user_json) : null,
+                createdAt: row.created_at,
+              };
+              authSessionsCache.set(sessionId, session);
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (session && session.status === 'completed') {
+        return new Response(JSON.stringify({
+          ok: true,
+          success: true,
+          status: 'completed',
+          user: session.user,
+          code: session.code,
+        }), {
+          status: 200,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        status: 'pending',
+      }), {
+        status: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 2c. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
     if (url.pathname === '/api/auth/workos/authorize') {
       const reqRedirect = url.searchParams.get('redirect_uri');
       // If client requests localhost or missing, default to worker's /callback which matches WorkOS configuration
