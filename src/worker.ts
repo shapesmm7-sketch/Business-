@@ -500,11 +500,7 @@ export default {
 
     // 2c. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
     if (url.pathname === '/api/auth/workos/authorize') {
-      const reqRedirect = url.searchParams.get('redirect_uri');
-      // If client requests localhost or missing, default to worker's /callback which matches WorkOS configuration
-      const redirectUri = (!reqRedirect || reqRedirect.includes('localhost'))
-        ? (env.WORKOS_REDIRECT_URI || `${url.origin}/callback`)
-        : reqRedirect;
+      const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
 
       const clientId = workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
       const codeChallenge = url.searchParams.get('code_challenge');
