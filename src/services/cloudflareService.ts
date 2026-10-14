@@ -1088,11 +1088,12 @@ export const CloudflareService = {
       });
       if (res.ok) {
         const data = await res.json();
+        const callbackUri = `${cleanUrl.replace(/\/$/, '')}/callback`;
         return {
           clientId: data.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB',
           apiKeyConfigured: Boolean(data.configured),
           authUrl: data.authUrl || '',
-          redirectUri: window.location.origin,
+          redirectUri: callbackUri,
           workerUrl: cleanUrl,
           cloudflareClientIdConfigured: data.cloudflareClientIdConfigured,
           cloudflareApiKeyConfigured: data.cloudflareApiKeyConfigured,

@@ -48,6 +48,23 @@ class AdMobManager {
 
   constructor() {
     this.initNativeAdMob();
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        this.pingAdMobRequests().catch(() => {});
+      }, 3000);
+    }
+  }
+
+  async pingAdMobRequests() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await this.initNativeAdMob();
+        await AdMob.prepareInterstitial({
+          adId: ADMOB_UNITS.INTERSTITIAL,
+          isTesting: false,
+        }).catch(() => {});
+      } catch (_) {}
+    }
   }
 
   /**
@@ -83,6 +100,11 @@ class AdMobManager {
         });
         this.isInitialized = true;
         console.info('[AdMob Native] Initialized successfully with Google AdMob production configuration.');
+        // Proactively prepare an interstitial to ensure request counts register on Google AdMob dashboard
+        await AdMob.prepareInterstitial({
+          adId: ADMOB_UNITS.INTERSTITIAL,
+          isTesting: false,
+        }).catch(() => {});
       } catch (err) {
         console.warn('[AdMob Native] Initialization note (normal in web preview):', err);
       }
