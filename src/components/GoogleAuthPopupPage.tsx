@@ -19,14 +19,77 @@ export const GoogleAuthPopupPage: React.FC = () => {
       return;
     }
 
+    const sessionId = urlParams.get('auth_session');
+    const rawUser = urlParams.get('user');
+
+    if (rawUser) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(rawUser));
+        if (parsed && (parsed.email || parsed.id)) {
+          WorkOSAuthService.saveAndSyncUser(parsed).then(() => {
+            if (window.opener) {
+              try {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: parsed }, '*');
+              } catch (_) {}
+            }
+            setStatus('success');
+            setTimeout(() => {
+              if (window.opener) {
+                try { window.close(); } catch (_) {}
+              } else {
+                window.location.replace('/');
+              }
+            }, 400);
+          });
+          return;
+        }
+      } catch (_) {}
+    }
+
+    if (sessionId) {
+      setStatus('loading');
+      CloudflareService.checkAuthSessionStatus(sessionId).then(async (check) => {
+        if (check.status === 'completed' && check.user) {
+          await WorkOSAuthService.saveAndSyncUser(check.user);
+          if (window.opener) {
+            try {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: check.user, sessionId }, '*');
+            } catch (_) {}
+          }
+          setStatus('success');
+          setTimeout(() => {
+            if (window.opener) {
+              try { window.close(); } catch (_) {}
+            } else {
+              window.location.replace('/');
+            }
+          }, 400);
+        } else if (code) {
+          proceedWithCodeExchange(code);
+        } else {
+          setStatus('error');
+          setErrorMsg('Authentication session could not be completed.');
+        }
+      }).catch(() => {
+        if (code) proceedWithCodeExchange(code);
+      });
+      return;
+    }
+
     if (code) {
-      setAuthCode(code);
+      proceedWithCodeExchange(code);
+    } else {
+      setStatus('loading');
+    }
+
+    function proceedWithCodeExchange(c: string) {
+      setAuthCode(c);
       setStatus('loading');
 
       if (window.opener) {
         // Send the real code back to Brivu main window (desktop popup flow)
         try {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code }, '*');
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: c }, '*');
         } catch (_) {}
         
         setStatus('success');
@@ -39,7 +102,7 @@ export const GoogleAuthPopupPage: React.FC = () => {
         // Direct exchange for mobile Chrome / web browser flow
         const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
 
-        CloudflareService.authenticateWorkOSCode(code, undefined, verifier).then(async (authRes) => {
+        CloudflareService.authenticateWorkOSCode(c, undefined, verifier).then(async (authRes) => {
           if (authRes.success && authRes.user) {
             await WorkOSAuthService.saveAndSyncUser(authRes.user);
             setStatus('success');
@@ -55,8 +118,6 @@ export const GoogleAuthPopupPage: React.FC = () => {
           setErrorMsg(err?.message || 'Authentication error');
         });
       }
-    } else {
-      setStatus('loading');
     }
   }, []);
 

@@ -501,7 +501,29 @@ export function App() {
       }
     };
 
-    const handleAppResuming = () => {
+    const handleAppResuming = async () => {
+      // 0. Instant resume check: if an OAuth session was completed in browser, log the user in immediately!
+      try {
+        const pendingSessionId = localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id');
+        if (pendingSessionId) {
+          const check = await CloudflareService.checkAuthSessionStatus(pendingSessionId);
+          if (check.status === 'completed' && check.user) {
+            try {
+              localStorage.removeItem('workos_session_id');
+              sessionStorage.removeItem('workos_session_id');
+            } catch (_) {}
+            await WorkOSAuthService.saveAndSyncUser(check.user);
+            refreshData();
+            window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: check.user }));
+            try {
+              await Browser.close();
+            } catch (_) {}
+          }
+        }
+      } catch (resumeAuthErr) {
+        console.warn('OAuth resume check note:', resumeAuthErr);
+      }
+
       const currentCfg = StorageService.getAppLockConfig();
       setLockConfig(currentCfg);
 
@@ -557,7 +579,7 @@ export function App() {
       CapApp.addListener('appUrlOpen', async (data) => {
         if (data && data.url) {
           const urlStr = data.url;
-          if (urlStr.includes('code=') || urlStr.includes('/callback') || urlStr.includes('/auth/callback')) {
+          if (urlStr.includes('code=') || urlStr.includes('/callback') || urlStr.includes('auth_session=') || urlStr.includes('user=')) {
             try {
               // Close system browser / Custom Tab if open
               try {
@@ -565,11 +587,44 @@ export function App() {
               } catch (_) {}
 
               const dummyUrl = new URL(urlStr.replace(/^[a-zA-Z0-9_.-]+:\/\//, 'https://dummy.host/'));
+              
+              // 1. If direct user JSON was passed in deep link, log in immediately
+              const userRaw = dummyUrl.searchParams.get('user');
+              if (userRaw) {
+                try {
+                  const parsedUser = JSON.parse(decodeURIComponent(userRaw));
+                  if (parsedUser && (parsedUser.email || parsedUser.id)) {
+                    await WorkOSAuthService.saveAndSyncUser(parsedUser);
+                    refreshData();
+                    window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: parsedUser }));
+                    return;
+                  }
+                } catch (_) {}
+              }
+
+              // 2. If auth_session is passed, resolve via session status
+              const sId = dummyUrl.searchParams.get('auth_session') || localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id');
+              if (sId) {
+                const check = await CloudflareService.checkAuthSessionStatus(sId);
+                if (check.status === 'completed' && check.user) {
+                  try {
+                    localStorage.removeItem('workos_session_id');
+                    sessionStorage.removeItem('workos_session_id');
+                  } catch (_) {}
+                  await WorkOSAuthService.saveAndSyncUser(check.user);
+                  refreshData();
+                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: check.user }));
+                  return;
+                }
+              }
+
+              // 3. Fallback: authenticate code if not yet exchanged
               const code = dummyUrl.searchParams.get('code');
               if (code) {
                 const res = await WorkOSAuthService.authenticateCode(code);
-                if (res.success) {
+                if (res.success && res.user) {
                   refreshData();
+                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: res.user }));
                 }
               }
             } catch (err) {

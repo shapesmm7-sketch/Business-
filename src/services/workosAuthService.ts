@@ -240,7 +240,7 @@ export const WorkOSAuthService = {
 
       const stateObj = {
         sessionId,
-        platform: 'web',
+        platform: isNative ? 'android' : 'web',
         returnUrl: returnUrl,
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
@@ -272,6 +272,22 @@ export const WorkOSAuthService = {
         setTimeout(() => {
           if (pollTimer) clearInterval(pollTimer);
         }, 180000);
+
+        try {
+          Browser.addListener('browserFinished', async () => {
+            try {
+              const sId = localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id') || sessionId;
+              if (sId) {
+                const check = await CloudflareService.checkAuthSessionStatus(sId);
+                if (check.status === 'completed' && check.user) {
+                  isDone = true;
+                  if (pollTimer) clearInterval(pollTimer);
+                  await this.saveAndSyncUser(check.user);
+                }
+              }
+            } catch (_) {}
+          });
+        } catch (_) {}
       }
 
       // Launch WorkOS AuthKit Google Sign-In via web
@@ -299,6 +315,18 @@ export const WorkOSAuthService = {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const sessionId = urlParams.get('auth_session');
+      const rawUser = urlParams.get('user');
+
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(rawUser));
+          if (parsed && (parsed.email || parsed.id)) {
+            await this.saveAndSyncUser(parsed);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return parsed;
+          }
+        } catch (_) {}
+      }
 
       if (sessionId) {
         const check = await CloudflareService.checkAuthSessionStatus(sessionId);

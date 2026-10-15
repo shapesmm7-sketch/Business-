@@ -178,10 +178,10 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         sessionStorage.setItem('workos_web_return_url', returnUrl);
       } catch (_) {}
 
-      // All logins are handled strictly by web (zero custom URL schemes, zero Play Store redirects)
+      // Handle OAuth callback routing with target platform detection
       const stateObj = {
         sessionId,
-        platform: 'web',
+        platform: isNative ? 'android' : 'web',
         returnUrl: returnUrl,
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
@@ -199,6 +199,26 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         }
       };
 
+      const handleSuccessfulLogin = async (user: any) => {
+        if (isCompleted) return;
+        isCompleted = true;
+        stopSessionPolling();
+
+        if (isNative) {
+          try {
+            await Browser.close();
+          } catch (_) {}
+        }
+
+        setIsSubmitting(true);
+        setStatusMsg({ type: 'info', text: 'Welcome! Setting up your account...' });
+        await WorkOSAuthService.saveAndSyncUser(user);
+        setCurrentUser(user);
+        if (onUserChange) onUserChange(user);
+        setIsSubmitting(false);
+        onClose();
+      };
+
       const startSessionPolling = () => {
         stopSessionPolling();
         pollTimer = setInterval(async () => {
@@ -209,22 +229,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           try {
             const check = await CloudflareService.checkAuthSessionStatus(sessionId);
             if (check.status === 'completed' && check.user) {
-              isCompleted = true;
-              stopSessionPolling();
-
-              if (isNative) {
-                try {
-                  await Browser.close();
-                } catch (_) {}
-              }
-
-              setIsSubmitting(true);
-              setStatusMsg({ type: 'info', text: 'Welcome! Setting up your account...' });
-              await WorkOSAuthService.saveAndSyncUser(check.user);
-              setCurrentUser(check.user);
-              if (onUserChange) onUserChange(check.user);
-              setIsSubmitting(false);
-              onClose();
+              await handleSuccessfulLogin(check.user);
             }
           } catch (_) {}
         }, 1200);
@@ -242,14 +247,25 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         startSessionPolling();
 
         try {
-          Browser.addListener('browserFinished', () => {
+          Browser.addListener('browserFinished', async () => {
+            try {
+              const sId = localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id') || sessionId;
+              if (sId) {
+                const check = await CloudflareService.checkAuthSessionStatus(sId);
+                if (check.status === 'completed' && check.user) {
+                  await handleSuccessfulLogin(check.user);
+                  return;
+                }
+              }
+            } catch (_) {}
+
             setTimeout(() => {
               if (!isCompleted) {
                 stopSessionPolling();
                 setIsSubmitting(false);
                 setStatusMsg((prev) => (prev?.type === 'info' ? null : prev));
               }
-            }, 1500);
+            }, 1000);
           });
         } catch (_) {}
       } else {

@@ -176,6 +176,7 @@ export default {
 
       let sessionId = '';
       let returnUrl = '';
+      let platform = '';
 
       if (rawState) {
         try {
@@ -183,6 +184,7 @@ export default {
           if (parsed && typeof parsed === 'object') {
             sessionId = parsed.sessionId || '';
             returnUrl = parsed.returnUrl || '';
+            platform = parsed.platform || '';
           }
         } catch (_) {
           if (rawState.startsWith('http://') || rawState.startsWith('https://')) {
@@ -384,7 +386,8 @@ export default {
       ${authenticatedUser?.email ? `<div class="user-pill">${authenticatedUser.email}</div>` : ''}
       <p id="statusMsg">Your Google account has been verified. Returning to Brivu...</p>
       <div id="actionButtons" style="margin-top: 1.25rem;">
-        <a id="btnWeb" href="/" class="btn">Continue to Brivu</a>
+        <a id="btnPrimary" href="/" class="btn">Open Brivu App</a>
+        <a id="btnWebSecondary" href="https://brivu.shapesmm7.workers.dev/" class="btn btn-secondary" style="display: none;">Continue on Web Instead</a>
       </div>
     `}
   </div>
@@ -395,8 +398,9 @@ export default {
       var user = ${JSON.stringify(authenticatedUser)};
       var returnUrl = ${JSON.stringify(returnUrl)};
       var sessionId = ${JSON.stringify(sessionId)};
+      var platform = ${JSON.stringify(platform)};
 
-      if (!code) return;
+      if (!code && !user) return;
 
       // 1. Web Popup Flow: post message to opener window and close cleanly
       if (window.opener) {
@@ -409,42 +413,87 @@ export default {
         } catch (_) {}
       }
 
-      // 2. Saved web return URL check
-      var targetUrl = returnUrl;
-      try {
-        if (!targetUrl) {
-          targetUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
-        }
-      } catch (_) {}
+      var userAgent = (navigator.userAgent || '').toLowerCase();
+      var isAndroid = userAgent.indexOf('android') >= 0;
+      var isMobile = isAndroid || userAgent.indexOf('iphone') >= 0 || userAgent.indexOf('ipad') >= 0;
+      var isAndroidApp = platform === 'android' || isAndroid;
 
-      // CRITICAL: NEVER navigate or redirect to localhost or 127.0.0.1 in mobile or external browser!
-      if (targetUrl && (targetUrl.indexOf('localhost') >= 0 || targetUrl.indexOf('127.0.0.1') >= 0 || targetUrl.indexOf('capacitor:') >= 0)) {
-        targetUrl = 'https://brivu.shapesmm7.workers.dev/';
-      }
+      // Build payload parameters
+      var userParam = user ? '&user=' + encodeURIComponent(JSON.stringify(user)) : '';
+      var sessionParam = sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '';
+      var codeParam = code ? '&code=' + encodeURIComponent(code) : '';
 
-      // Update the Continue button destination
-      var btnWeb = document.getElementById('btnWeb');
-      if (btnWeb) {
-        var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
-        if (dest.indexOf('localhost') >= 0 || dest.indexOf('127.0.0.1') >= 0) {
-          dest = 'https://brivu.shapesmm7.workers.dev/';
-        }
-        var sep = dest.indexOf('?') >= 0 ? '&' : '?';
-        btnWeb.href = dest + sep + 'code=' + encodeURIComponent(code) + (sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '');
-      }
+      // Direct Android app deep link schemes registered in AndroidManifest.xml
+      var appSchemeUrl = 'brivu://auth/callback?' + codeParam + sessionParam + userParam;
+      var appIntentUrl = 'intent://auth/callback?' + codeParam + sessionParam + userParam + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
 
-      // 3. Web Auto-redirect only if valid web domain and NOT localhost
-      if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
+      var btnPrimary = document.getElementById('btnPrimary');
+      var btnWebSecondary = document.getElementById('btnWebSecondary');
+      var statusMsg = document.getElementById('statusMsg');
+
+      function openAndroidApp(e) {
+        if (e && e.preventDefault) e.preventDefault();
         try {
-          var target = new URL(targetUrl);
-          if (target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname.indexOf('localhost') >= 0) {
-            // Do NOT redirect to localhost!
-          } else if (target.origin !== window.location.origin) {
-            target.searchParams.set('code', code);
-            if (sessionId) target.searchParams.set('auth_session', sessionId);
-            window.location.replace(target.toString());
+          window.location.href = appSchemeUrl;
+        } catch (_) {}
+        setTimeout(function() {
+          try {
+            window.location.href = appIntentUrl;
+          } catch (_) {}
+        }, 250);
+      }
+
+      if (isAndroidApp) {
+        if (statusMsg) {
+          statusMsg.textContent = 'Account verified! Opening your Brivu Android App...';
+        }
+        if (btnPrimary) {
+          btnPrimary.textContent = 'Open Brivu App';
+          btnPrimary.href = appSchemeUrl;
+          btnPrimary.onclick = openAndroidApp;
+        }
+        if (btnWebSecondary) {
+          btnWebSecondary.style.display = 'block';
+          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?auth_session=' + encodeURIComponent(sessionId || '') + userParam;
+        }
+
+        // Auto-launch into Android app immediately
+        setTimeout(function() {
+          openAndroidApp();
+        }, 300);
+      } else {
+        // Desktop Web Flow
+        var targetUrl = returnUrl;
+        try {
+          if (!targetUrl) {
+            targetUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
           }
         } catch (_) {}
+
+        if (targetUrl && (targetUrl.indexOf('localhost') >= 0 || targetUrl.indexOf('127.0.0.1') >= 0 || targetUrl.indexOf('capacitor:') >= 0)) {
+          targetUrl = 'https://brivu.shapesmm7.workers.dev/';
+        }
+
+        var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
+        var sep = dest.indexOf('?') >= 0 ? '&' : '?';
+        var webDestination = dest + sep + (code ? 'code=' + encodeURIComponent(code) : '') + sessionParam + userParam;
+
+        if (btnPrimary) {
+          btnPrimary.textContent = 'Continue to Brivu';
+          btnPrimary.href = webDestination;
+        }
+
+        if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
+          try {
+            var target = new URL(targetUrl);
+            if (target.hostname !== 'localhost' && target.hostname !== '127.0.0.1' && target.origin !== window.location.origin) {
+              target.searchParams.set('code', code);
+              if (sessionId) target.searchParams.set('auth_session', sessionId);
+              if (user) target.searchParams.set('user', JSON.stringify(user));
+              window.location.replace(target.toString());
+            }
+          } catch (_) {}
+        }
       }
     })();
   </script>
