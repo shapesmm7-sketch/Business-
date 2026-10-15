@@ -199,6 +199,11 @@ export default {
         }
       }
 
+      // CRITICAL: NEVER permit localhost or 127.0.0.1 as returnUrl on mobile or web
+      if (returnUrl && (returnUrl.includes('localhost') || returnUrl.includes('127.0.0.1') || returnUrl.includes('capacitor:'))) {
+        returnUrl = 'https://brivu.shapesmm7.workers.dev/';
+      }
+
       // 1. Direct server-side exchange on worker for immediate zero-delay sign-in
       let authenticatedUser: any = null;
       if (authCode) {
@@ -412,23 +417,33 @@ export default {
         }
       } catch (_) {}
 
+      // CRITICAL: NEVER navigate or redirect to localhost or 127.0.0.1 in mobile or external browser!
+      if (targetUrl && (targetUrl.indexOf('localhost') >= 0 || targetUrl.indexOf('127.0.0.1') >= 0 || targetUrl.indexOf('capacitor:') >= 0)) {
+        targetUrl = 'https://brivu.shapesmm7.workers.dev/';
+      }
+
       // Update the Continue button destination
       var btnWeb = document.getElementById('btnWeb');
       if (btnWeb) {
-        var dest = targetUrl || '/';
-        if (dest.startsWith('http://') || dest.startsWith('https://') || dest.startsWith('/')) {
-          var sep = dest.indexOf('?') >= 0 ? '&' : '?';
-          btnWeb.href = dest + sep + 'code=' + encodeURIComponent(code) + (sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '');
+        var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
+        if (dest.indexOf('localhost') >= 0 || dest.indexOf('127.0.0.1') >= 0) {
+          dest = 'https://brivu.shapesmm7.workers.dev/';
         }
+        var sep = dest.indexOf('?') >= 0 ? '&' : '?';
+        btnWeb.href = dest + sep + 'code=' + encodeURIComponent(code) + (sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '');
       }
 
-      // 3. Web Auto-redirect if returnUrl was provided
+      // 3. Web Auto-redirect only if valid web domain and NOT localhost
       if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
         try {
           var target = new URL(targetUrl);
-          target.searchParams.set('code', code);
-          if (sessionId) target.searchParams.set('auth_session', sessionId);
-          window.location.replace(target.toString());
+          if (target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname.indexOf('localhost') >= 0) {
+            // Do NOT redirect to localhost!
+          } else if (target.origin !== window.location.origin) {
+            target.searchParams.set('code', code);
+            if (sessionId) target.searchParams.set('auth_session', sessionId);
+            window.location.replace(target.toString());
+          }
         } catch (_) {}
       }
     })();

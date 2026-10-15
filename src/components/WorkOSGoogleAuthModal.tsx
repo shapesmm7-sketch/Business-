@@ -128,12 +128,12 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
   const handleGoogleSignInDirectly = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
 
-    // Enforce 30-day free trial & subscription requirement
+    // Enforce 7-day free trial & subscription requirement
     const trial = StorageService.getTrialStatus();
     if (trial.isExpired && !trial.subscribed) {
       setStatusMsg({
         type: 'error',
-        text: 'Your 30-day free trial has ended. Please upgrade to Brivu Pro in order to log in and sync your data to the cloud.',
+        text: 'Your 7-day free trial has ended. Please upgrade to Brivu Pro in order to log in and sync your data to the cloud.',
       });
       return;
     }
@@ -162,24 +162,27 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       const isNative = typeof window !== 'undefined' && (
         Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
         window.location.protocol === 'file:' ||
-        window.location.protocol === 'capacitor:'
+        window.location.protocol === 'capacitor:' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
       );
-      const cloudflareBaseUrl = config.workerUrl || 'https://brivu.shapesmm7.workers.dev';
-      const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
+      const cloudflareBaseUrl = 'https://brivu.shapesmm7.workers.dev';
+      const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
 
-      const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
-      if (returnUrl) {
-        try {
-          localStorage.setItem('workos_web_return_url', returnUrl);
-          sessionStorage.setItem('workos_web_return_url', returnUrl);
-        } catch (_) {}
+      let returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
+      if (returnUrl.includes('localhost') || returnUrl.includes('127.0.0.1') || returnUrl.startsWith('capacitor:') || returnUrl.startsWith('file:') || isNative) {
+        returnUrl = 'https://brivu.shapesmm7.workers.dev/';
       }
+      try {
+        localStorage.setItem('workos_web_return_url', returnUrl);
+        sessionStorage.setItem('workos_web_return_url', returnUrl);
+      } catch (_) {}
 
       // All logins are handled strictly by web (zero custom URL schemes, zero Play Store redirects)
       const stateObj = {
         sessionId,
         platform: 'web',
-        returnUrl: isNative ? `${cloudflareBaseUrl}/` : (returnUrl || `${cloudflareBaseUrl}/`),
+        returnUrl: returnUrl,
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
@@ -301,7 +304,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     if (isTrialExpiredAndNotSubscribed) {
       setStatusMsg({
         type: 'error',
-        text: 'Your 30-day free trial has expired. Please upgrade to Brivu Pro in order to sync your data to the cloud.',
+        text: 'Your 7-day free trial has expired. Please upgrade to Brivu Pro in order to sync your data to the cloud.',
       });
       return;
     }
@@ -472,10 +475,10 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                   <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 space-y-2.5">
                     <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
                       <Crown className="w-4.5 h-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span className="text-xs font-black uppercase tracking-wider">30-Day Free Trial Expired</span>
+                      <span className="text-xs font-black uppercase tracking-wider">7-Day Free Trial Expired</span>
                     </div>
                     <p className="text-[11px] text-amber-950/90 dark:text-amber-200/90 font-medium leading-relaxed">
-                      Cloud sync is paused. Only subscribed users can continue syncing receipts, invoices, and QR codes to the cloud after the 30-day trial.
+                      Cloud sync is paused. Only subscribed users can continue syncing receipts, invoices, and QR codes to the cloud after the 7-day trial.
                     </p>
                     <button
                       id="btn-account-upgrade-pro"
@@ -516,7 +519,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
           ) : (
             /* NOT LOGGED IN / ONE-CLICK GOOGLE SIGN IN */
             <div className="space-y-4">
-              {/* TRIAL EXPIRATION BANNER IF PAST 30 DAYS AND NOT SUBSCRIBED */}
+              {/* TRIAL EXPIRATION BANNER IF PAST 7 DAYS AND NOT SUBSCRIBED */}
               {isTrialExpiredAndNotSubscribed && (
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-500/5 border-2 border-amber-500/50 dark:border-amber-500/40 space-y-3 shadow-md">
                   <div className="flex items-center gap-2.5">
@@ -525,7 +528,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                     </div>
                     <div>
                       <span className="text-xs font-black text-amber-900 dark:text-amber-300 uppercase tracking-wider block">
-                        30-Day Free Trial Expired
+                        7-Day Free Trial Expired
                       </span>
                       <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                         Upgrade required to log in & sync to cloud
@@ -534,7 +537,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                   </div>
 
                   <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                    All users are allowed to log in and sync their data to the cloud during the first 30 free trial days. Because your 30-day trial has completed, only subscribed users can log in to sync data to the cloud.
+                    All users are allowed to log in and sync their data to the cloud during the first 7 free trial days. Because your 7-day trial has completed, only subscribed users can log in to sync data to the cloud.
                   </p>
 
                   <div className="p-2.5 rounded-xl bg-amber-100/80 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-800 text-[11px] text-amber-950 dark:text-amber-200 font-bold flex items-center gap-2">

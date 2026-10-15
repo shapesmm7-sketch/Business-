@@ -176,12 +176,12 @@ export const WorkOSAuthService = {
    */
   async signInWithGoogle(): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     try {
-      // 0. Enforce 30-day trial & subscription requirement
+      // 0. Enforce 7-day trial & subscription requirement
       const trial = StorageService.getTrialStatus();
       if (trial.isExpired && !trial.subscribed) {
         return {
           success: false,
-          message: 'Your 30-day free trial has ended. Please upgrade to Brivu Pro to log in and sync your data to the cloud.',
+          message: 'Your 7-day free trial has ended. Please upgrade to Brivu Pro to log in and sync your data to the cloud.',
         };
       }
 
@@ -215,18 +215,21 @@ export const WorkOSAuthService = {
       const isNative = typeof window !== 'undefined' && (
         Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
         window.location.protocol === 'file:' ||
-        window.location.protocol === 'capacitor:'
+        window.location.protocol === 'capacitor:' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1'
       );
-      const cloudflareBaseUrl = config.workerUrl || 'https://brivu.shapesmm7.workers.dev';
-      const redirectUri = `${cloudflareBaseUrl.replace(/\/$/, '')}/callback`;
+      const cloudflareBaseUrl = 'https://brivu.shapesmm7.workers.dev';
+      const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
 
-      const returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
-      if (returnUrl) {
-        try {
-          localStorage.setItem('workos_web_return_url', returnUrl);
-          sessionStorage.setItem('workos_web_return_url', returnUrl);
-        } catch (_) {}
+      let returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
+      if (returnUrl.includes('localhost') || returnUrl.includes('127.0.0.1') || returnUrl.startsWith('capacitor:') || returnUrl.startsWith('file:') || isNative) {
+        returnUrl = 'https://brivu.shapesmm7.workers.dev/';
       }
+      try {
+        localStorage.setItem('workos_web_return_url', returnUrl);
+        sessionStorage.setItem('workos_web_return_url', returnUrl);
+      } catch (_) {}
 
       // Always handle authentication by web to prevent external Play Store redirects
       const sessionId = 'auth_session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
@@ -238,11 +241,38 @@ export const WorkOSAuthService = {
       const stateObj = {
         sessionId,
         platform: 'web',
-        returnUrl: returnUrl || 'https://brivu.shapesmm7.workers.dev',
+        returnUrl: returnUrl,
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
       let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
+
+      // Start background session polling immediately on native Android / mobile
+      if (isNative) {
+        let pollTimer: any = null;
+        let isDone = false;
+        pollTimer = setInterval(async () => {
+          if (isDone) {
+            clearInterval(pollTimer);
+            return;
+          }
+          try {
+            const check = await CloudflareService.checkAuthSessionStatus(sessionId);
+            if (check.status === 'completed' && check.user) {
+              isDone = true;
+              clearInterval(pollTimer);
+              await this.saveAndSyncUser(check.user);
+              try {
+                await Browser.close();
+              } catch (_) {}
+            }
+          } catch (_) {}
+        }, 1200);
+
+        setTimeout(() => {
+          if (pollTimer) clearInterval(pollTimer);
+        }, 180000);
+      }
 
       // Launch WorkOS AuthKit Google Sign-In via web
       if (isNative) {

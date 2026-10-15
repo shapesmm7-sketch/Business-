@@ -2568,8 +2568,9 @@ export const StorageService = {
       filesFolder: 'receipts',
     };
     const loaded = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, defaultVal);
-    if (!loaded.workerUrl || loaded.workerUrl.trim() === '') {
+    if (!loaded.workerUrl || loaded.workerUrl.trim() === '' || loaded.workerUrl.includes('localhost') || loaded.workerUrl.includes('127.0.0.1')) {
       loaded.workerUrl = defaultVal.workerUrl;
+      writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
     }
     // Get the unique, secure, persistent Brivu User ID
     const brivuId = this.getBrivuUserId();
@@ -2644,17 +2645,17 @@ export const StorageService = {
     const daysSinceInstall = this.getDaysSinceInstall();
     const subscribed = this.isSubscribed();
 
-    // Free trial lasts for exactly 30 days
-    const isFreeTrial = daysSinceInstall <= 30;
-    // Grace period lasts for exactly 30 days after free trial (day 31 to 60)
-    const isGracePeriod = !isFreeTrial && daysSinceInstall <= 60 && !subscribed;
-    // Expired without subscription (above 30 days since install and not subscribed)
-    const isExpired = daysSinceInstall > 30 && !subscribed;
-    // Grace period expired without subscription (above 60 days)
-    const isGracePeriodExpired = daysSinceInstall > 60 && !subscribed;
+    // Free trial lasts for exactly 7 days
+    const isFreeTrial = daysSinceInstall <= 7;
+    // Grace period lasts for exactly 7 days after free trial (day 8 to 14)
+    const isGracePeriod = !isFreeTrial && daysSinceInstall <= 14 && !subscribed;
+    // Expired without subscription (above 7 days since install and not subscribed)
+    const isExpired = daysSinceInstall > 7 && !subscribed;
+    // Grace period expired without subscription (above 14 days)
+    const isGracePeriodExpired = daysSinceInstall > 14 && !subscribed;
 
-    const remainingTrialDays = Math.max(0, 30 - daysSinceInstall);
-    const remainingGraceDays = Math.max(0, 60 - daysSinceInstall);
+    const remainingTrialDays = Math.max(0, 7 - daysSinceInstall);
+    const remainingGraceDays = Math.max(0, 14 - daysSinceInstall);
 
     return {
       daysSinceInstall,

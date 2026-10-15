@@ -334,6 +334,11 @@ export function App() {
     };
   }, []);
 
+  // Initialize Google AdMob SDK immediately on app mount to send live ad requests
+  useEffect(() => {
+    AdMobService.initNativeAdMob().catch(() => {});
+  }, []);
+
   // Setup global interaction tracking on mount
   useEffect(() => {
     // Track user clicks / taps to trigger an ad popup every 25 interactions
@@ -348,7 +353,7 @@ export function App() {
     };
   }, []);
 
-  // Free Trial and Grace Period lifecycle management
+  // Free Trial (7 Days) and Grace Period (7 Days) lifecycle management
   useEffect(() => {
     const handleSubscriptionLifecycle = async () => {
       try {
@@ -367,25 +372,25 @@ export function App() {
             // Trigger a business alert notification
             PushNotificationService.triggerBusinessAlert({
               title: '⚠️ Grace Period Expired: Files Deleted',
-              body: 'Your grace period is over. All files have been safely wiped from Cloud but remain secure on your phone local storage!',
+              body: 'Your 7-day grace period is over. All files have been safely wiped from Cloud but remain secure on your phone local storage!',
               type: 'debt_reminder',
             }).catch(() => {});
 
             // Set state to display the warning modal
             setLifecycleAlert({
               title: 'Grace Period Expired!',
-              message: 'Your 1-month grace period has ended. All your backups and hosted pages have been permanently deleted from the cloud. However, they remain 100% safe in your phone\'s local storage inside the app. Please subscribe to restore cloud features.',
+              message: 'Your 7-day grace period has ended. All your backups and hosted pages have been permanently deleted from the cloud. However, they remain 100% safe in your phone\'s local storage inside the app. Please subscribe to restore cloud features.',
               type: 'expired',
             });
           }
           return;
         }
 
-        // 3. Handle 3-day reminder triggers for active free trial or grace period
+        // 3. Handle reminder triggers for active 7-day free trial or 7-day grace period
         const daysSinceInstall = status.daysSinceInstall;
-        // Trigger reminder on day 0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30 (Trial)
-        // and day 33, 36, 39, 42, 45, 48, 51, 54, 57, 60 (Grace Period)
-        if (daysSinceInstall % 3 === 0) {
+        // Trigger reminder on days 0, 2, 4, 6, 7 (Trial) and days 8, 10, 12, 14 (Grace Period)
+        const isReminderDay = [0, 2, 4, 6, 7, 8, 10, 12, 14].includes(daysSinceInstall);
+        if (isReminderDay) {
           const lastAlertDay = localStorage.getItem('quickreceipt_last_alert_day_v1');
           if (lastAlertDay !== String(daysSinceInstall)) {
             // Mark alert shown for this day
@@ -394,7 +399,7 @@ export function App() {
             if (status.isFreeTrial) {
               const remaining = status.remainingTrialDays;
               const title = 'Free Trial Remaining';
-              const message = `Your Brivu Free Trial is remaining with ${remaining} days! Subscribe to a paid plan to keep your automatic cloud backup and keep qr code and business info hosting working.`;
+              const message = `Your Brivu 7-Day Free Trial is remaining with ${remaining} days! Subscribe to a paid plan to keep your automatic cloud backup and keep qr code and business info hosting working.`;
 
               // Send native local notification alert
               PushNotificationService.triggerBusinessAlert({
@@ -1268,12 +1273,12 @@ export function App() {
         )}
       </main>
 
-      {/* Google AdMob Bottom Banner - Displayed on home page, receipts-invoices overview, inventory main overview, and host qr code */}
-      {(activeScreen === 'home' || activeScreen === 'receipts-invoices' || (activeScreen === 'inventory' && inventoryCategory === null) || activeScreen === 'qr-hosting') && (
+      {/* Google AdMob Bottom Banner - Displayed on Android for unsubscribed users */}
+      {!StorageService.isSubscribed() && (
         <AdMobBanner
           placement="bottom_sticky"
-          hasBottomNav={true}
-          bottomMargin={84}
+          hasBottomNav={!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen)}
+          bottomMargin={!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen) ? 84 : 12}
           unitId={ADMOB_UNITS.ADAPTIVE_BANNER}
         />
       )}

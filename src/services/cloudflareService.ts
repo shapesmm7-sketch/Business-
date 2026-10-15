@@ -11,9 +11,9 @@ export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
 };
 
 function normalizeUrl(url: string): string {
-  if (!url) return 'https://brivu.shapesmm7.workers.dev';
+  if (!url || url.includes('localhost') || url.includes('127.0.0.1')) return 'https://brivu.shapesmm7.workers.dev';
   let trimmed = url.trim();
-  if (!trimmed) return 'https://brivu.shapesmm7.workers.dev';
+  if (!trimmed || trimmed.includes('localhost') || trimmed.includes('127.0.0.1')) return 'https://brivu.shapesmm7.workers.dev';
   // Strip trailing slash
   if (trimmed.endsWith('/')) {
     trimmed = trimmed.slice(0, -1);
@@ -1077,8 +1077,8 @@ export const CloudflareService = {
         headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
       }
 
-      const desiredRedirect = `${cleanUrl}/callback`;
-      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(desiredRedirect)}`;
+      const callbackUri = 'https://brivu.shapesmm7.workers.dev/callback';
+      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(callbackUri)}`;
       if (codeChallenge) {
         authEndpoint += `&code_challenge=${encodeURIComponent(codeChallenge)}`;
       }
@@ -1088,7 +1088,6 @@ export const CloudflareService = {
       });
       if (res.ok) {
         const data = await res.json();
-        const callbackUri = `${cleanUrl.replace(/\/$/, '')}/callback`;
         return {
           clientId: data.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB',
           apiKeyConfigured: Boolean(data.configured),
@@ -1104,7 +1103,7 @@ export const CloudflareService = {
       console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
     }
     const defaultClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-    const callbackUri = `${cleanUrl.replace(/\/$/, '')}/callback`;
+    const callbackUri = 'https://brivu.shapesmm7.workers.dev/callback';
     let defaultAuthUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(defaultClientId)}&redirect_uri=${encodeURIComponent(callbackUri)}&provider=GoogleOAuth`;
     if (codeChallenge) {
       defaultAuthUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
@@ -1155,7 +1154,9 @@ export const CloudflareService = {
           body: JSON.stringify({
             code,
             codeVerifier: resolvedVerifier,
-            redirectUri: redirectUri || window.location.origin,
+            redirectUri: redirectUri && !redirectUri.includes('localhost') && !redirectUri.includes('127.0.0.1')
+              ? redirectUri
+              : 'https://brivu.shapesmm7.workers.dev/callback',
             workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
             workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
           }),
