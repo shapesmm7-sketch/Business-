@@ -416,7 +416,7 @@ export default {
       var userAgent = (navigator.userAgent || '').toLowerCase();
       var isAndroid = userAgent.indexOf('android') >= 0;
       var isMobile = isAndroid || userAgent.indexOf('iphone') >= 0 || userAgent.indexOf('ipad') >= 0;
-      var isAndroidApp = platform === 'android' || isAndroid;
+      var isAndroidApp = platform === 'android' || isAndroid || isMobile;
 
       // Build payload parameters
       var userParam = user ? '&user=' + encodeURIComponent(JSON.stringify(user)) : '';
@@ -440,7 +440,7 @@ export default {
           try {
             window.location.href = appIntentUrl;
           } catch (_) {}
-        }, 250);
+        }, 200);
       }
 
       if (isAndroidApp) {
@@ -448,7 +448,7 @@ export default {
           statusMsg.textContent = 'Account verified! Opening your Brivu Android App...';
         }
         if (btnPrimary) {
-          btnPrimary.textContent = 'Open Brivu App';
+          btnPrimary.textContent = 'Open Brivu App & Log In';
           btnPrimary.href = appSchemeUrl;
           btnPrimary.onclick = openAndroidApp;
         }
@@ -460,7 +460,7 @@ export default {
         // Auto-launch into Android app immediately
         setTimeout(function() {
           openAndroidApp();
-        }, 300);
+        }, 200);
       } else {
         // Desktop Web Flow
         var targetUrl = returnUrl;

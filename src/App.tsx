@@ -188,12 +188,19 @@ export function App() {
         }
         return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
-      if (params.get('photoId') || params.get('photo') || params.get('itemId') || params.get('item')) {
-        const pages = StorageService.getHostedQRPages();
-        if (pages[0]) return pages[0];
-      }
     }
-    return null;
+    const pages = StorageService.getHostedQRPages();
+    return pages[0] || ({
+      id: 'default',
+      title: 'Brivu Business',
+      pageType: 'business_showcase',
+      menuItems: [],
+      menuCategories: [],
+      photos: [],
+      currency: 'USD',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as QRCodeHostedPage);
   });
   const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about'>(() => {
     if (typeof window !== 'undefined') {
