@@ -1576,8 +1576,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
         </div>
 
-      {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos | Socials */}
-      <div className="grid grid-cols-5 gap-1 sm:gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
+      {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos */}
+      <div className="grid grid-cols-4 gap-1 sm:gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
         <button
           onClick={() => setActiveTab('qr')}
           className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
@@ -1624,18 +1624,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         >
           <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
           <span className="truncate">Photos ({activePage.photos.length}/20)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('socials')}
-          className={`py-2 px-1 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
-            activeTab === 'socials'
-              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
-          }`}
-        >
-          <Share2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-          <span className="truncate">Socials ({(activePage.customSocialLinks || []).length})</span>
         </button>
       </div>
 
