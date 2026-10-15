@@ -1574,47 +1574,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           </div>
         </div>
 
-        {/* Page Selector Tabs if multiple */}
-        {pages.length > 1 && (
-          <div className="flex items-center gap-2 overflow-x-auto pt-3.5 mt-2 border-t border-white/15 no-scrollbar">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-200 shrink-0">Pages:</span>
-            {pages.map((p) => (
-              <div
-                key={p.id}
-                className={`inline-flex items-center rounded-xl transition overflow-hidden shadow-xs border shrink-0 ${
-                  p.id === activePageId
-                    ? 'bg-white text-emerald-950 border-white'
-                    : 'bg-white/15 text-white border-white/20 hover:bg-white/25'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActivePageId(p.id)}
-                  className="px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition text-left"
-                >
-                  <span>{p.title}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPageToDelete(p);
-                  }}
-                  className={`px-2 py-1.5 transition flex items-center justify-center border-l ${
-                    p.id === activePageId
-                      ? 'border-emerald-200/80 text-rose-500 hover:bg-rose-50'
-                      : 'border-white/20 text-rose-200 hover:text-white hover:bg-rose-600/40'
-                  }`}
-                  title={`Delete ${p.title}`}
-                  aria-label={`Delete ${p.title}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
 
       {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos | Socials */}
       <div className="grid grid-cols-5 gap-1 sm:gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
@@ -2243,26 +2203,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               )}
             </div>
 
-            {/* Delete QR Page option if multiple pages exist */}
-            {pages.length > 1 && (
-              <div className="pt-4 mt-2 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40">
-                <div>
-                  <p className="font-bold text-rose-700 dark:text-rose-400 text-xs sm:text-sm">Delete This QR Page</p>
-                  <p className="text-[11px] text-rose-600/80 dark:text-rose-400/80">
-                    Permanently delete &quot;{activePage.title}&quot; and remove its QR links
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPageToDelete(activePage)}
-                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-95 shrink-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete QR Page</span>
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
 
           {/* Native Advanced Ad in Business Info */}
           <AdMobNativeAd

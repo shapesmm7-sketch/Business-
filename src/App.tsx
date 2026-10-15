@@ -1230,36 +1230,24 @@ export function App() {
         )}
 
         {activeScreen === 'qr-customer-view' && (
-          (activeCustomerPage || StorageService.getHostedQRPages()[0]) ? (
-            <QRCustomerViewScreen
-              page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
-              initialTab={customerInitialTab}
-              initialItemId={customerInitialItemId}
-              initialPhotoId={customerInitialPhotoId}
-              onBackToApp={() => {
-                if (isCustomerViewMode) {
-                  if (typeof window !== 'undefined' && window.history) {
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                  }
-                  setIsCustomerViewMode(false);
-                  handleNavigate('home');
-                } else {
-                  handleNavigate('qr-hosting');
+          <QRCustomerViewScreen
+            page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
+            initialTab={customerInitialTab}
+            initialItemId={customerInitialItemId}
+            initialPhotoId={customerInitialPhotoId}
+            onBackToApp={() => {
+              if (isCustomerViewMode) {
+                if (typeof window !== 'undefined' && window.history) {
+                  window.history.replaceState({}, document.title, window.location.pathname);
                 }
-              }}
-              isMerchantPreview={!isCustomerViewMode}
-            />
-          ) : (
-            <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4 font-sans">
-              <div className="w-14 h-14 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center animate-pulse border border-purple-500/30 shadow-xl">
-                <Ticket className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-black tracking-tight">Loading Page & Event Details...</h3>
-                <p className="text-xs text-slate-400">Fetching live page from Cloudflare</p>
-              </div>
-            </div>
-          )
+                setIsCustomerViewMode(false);
+                handleNavigate('home');
+              } else {
+                handleNavigate('qr-hosting');
+              }
+            }}
+            isMerchantPreview={!isCustomerViewMode}
+          />
         )}
 
         {activeScreen === 'upgrade' && (
