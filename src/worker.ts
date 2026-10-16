@@ -1697,6 +1697,15 @@ export default {
       if (db) {
         try {
           await ensureD1Tables(db);
+          // Prioritize pages with menuItems or photos
+          const bestRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE page_json LIKE '%menuItems%' AND page_json NOT LIKE '%\"menuItems\":[]%' ORDER BY updated_at DESC LIMIT 1").first();
+          if (bestRow && bestRow.page_json) {
+            const page = JSON.parse(bestRow.page_json);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
           const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = 'default' OR id = 'latest' ORDER BY updated_at DESC LIMIT 1").first();
           if (row && row.page_json) {
             const page = JSON.parse(row.page_json);
@@ -1721,7 +1730,9 @@ export default {
       const bData = await getLatestBackup();
       if (bData) {
         const pages = bData.qrHostedPages || [];
-        const matched = pages.find((p: any) => p.id === pageId) || pages[0];
+        const matched = pages.find((p: any) => p.id === pageId) || 
+                        pages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0)) || 
+                        pages[0];
         if (matched) {
           return new Response(
             JSON.stringify({ ok: true, success: true, data: { page: matched } }),
@@ -1821,17 +1832,18 @@ export default {
                     `).bind(p.id, pJson, now).run();
                   }
                 }
-                const firstP = JSON.stringify(backupData.qrHostedPages[0]);
+                const bestPage = backupData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0)) || backupData.qrHostedPages[0];
+                const bestPJson = JSON.stringify(bestPage);
                 await db.prepare(`
                   INSERT INTO qr_pages (id, page_json, updated_at)
                   VALUES ('default', ?, ?)
                   ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
-                `).bind(firstP, now).run();
+                `).bind(bestPJson, now).run();
                 await db.prepare(`
                   INSERT INTO qr_pages (id, page_json, updated_at)
                   VALUES ('latest', ?, ?)
                   ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
-                `).bind(firstP, now).run();
+                `).bind(bestPJson, now).run();
               }
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
@@ -1860,11 +1872,12 @@ export default {
                   });
                 }
               }
-              const firstP = JSON.stringify(backupData.qrHostedPages[0]);
-              await bucket.put('qr_pages/default.json', firstP, {
+              const bestPage = backupData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0)) || backupData.qrHostedPages[0];
+              const bestPJson = JSON.stringify(bestPage);
+              await bucket.put('qr_pages/default.json', bestPJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
-              await bucket.put('qr_pages/latest.json', firstP, {
+              await bucket.put('qr_pages/latest.json', bestPJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
             }
