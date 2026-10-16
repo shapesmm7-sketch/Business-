@@ -868,11 +868,15 @@ export const CloudflareService = {
    */
   async getHostedQrPage(pageId: string): Promise<any | null> {
     const config = this.getConfig();
-    if (!this.isConfigured()) return null;
+    const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
+      ? window.location.origin
+      : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
+
+    if (!effectiveWorkerUrl) return null;
 
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/qr/${encodeURIComponent(pageId)}`;
+      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',

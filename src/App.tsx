@@ -304,14 +304,15 @@ export function App() {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
         }
-        if (qrPageId) {
+        const fetchId = qrPageId || (isCustomerPathFromUrl() ? 'latest' : null);
+        if (fetchId) {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
-          CloudflareService.getHostedQrPage(qrPageId).then((remotePage) => {
+          CloudflareService.getHostedQrPage(fetchId).then((remotePage) => {
             if (remotePage) {
               StorageService.saveHostedQRPage(remotePage);
               setActiveCustomerPage(remotePage);
-            } else {
+            } else if (fetchId !== 'latest') {
               CloudflareService.getHostedQrPage('latest').then((latestPage) => {
                 if (latestPage) {
                   StorageService.saveHostedQRPage(latestPage);
