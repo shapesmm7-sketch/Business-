@@ -353,6 +353,8 @@ export class QRHostingService {
     try {
       const hubPage = this.convertWebsitesHubToHostedPage(websites, business);
       await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites-hub-all' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites' }).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync websites hub page to Cloudflare:', err);
@@ -421,6 +423,8 @@ export class QRHostingService {
     try {
       const hubPage = this.convertSocialsHubToHostedPage(socials, business);
       await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials-hub-all' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials' }).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync socials hub page to Cloudflare:', err);
@@ -433,12 +437,14 @@ export class QRHostingService {
   static async syncEventPage(event: EventQrItem, business: BusinessProfile): Promise<void> {
     try {
       const page = this.convertEventToHostedPage(event, business);
-      StorageService.saveHostedQRPage(page);
+      await CloudflareService.saveSingleQrPage(page).catch(() => {});
       // Also update the Events Hub page
       const allEvents = StorageService.getEventsQrItems();
       const updatedList = [event, ...allEvents.filter((e) => e.id !== event.id)];
       const hubPage = this.convertEventsHubToHostedPage(updatedList, business);
-      StorageService.saveHostedQRPage(hubPage);
+      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }).catch(() => {});
       // Trigger Cloudflare D1 full backup sync
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
@@ -453,10 +459,12 @@ export class QRHostingService {
     try {
       for (const evt of events) {
         const page = this.convertEventToHostedPage(evt, business);
-        StorageService.saveHostedQRPage(page);
+        await CloudflareService.saveSingleQrPage(page).catch(() => {});
       }
       const hubPage = this.convertEventsHubToHostedPage(events, business);
-      StorageService.saveHostedQRPage(hubPage);
+      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync all event pages to Cloudflare:', err);

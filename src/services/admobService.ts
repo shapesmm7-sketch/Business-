@@ -64,8 +64,9 @@ class AdMobManager {
     setInterval(() => {
       if (Capacitor.isNativePlatform() && this.shouldShowAds()) {
         this.preloadInterstitial().catch(() => {});
+        this.showNativeBanner('bottom', true, 84).catch(() => {});
       }
-    }, 30000);
+    }, 25000);
   }
 
   async pingAdMobRequests() {
@@ -73,6 +74,7 @@ class AdMobManager {
       try {
         await this.initNativeAdMob();
         await this.preloadInterstitial();
+        await this.showNativeBanner('bottom', true, 84);
       } catch (_) {}
     }
   }
@@ -152,15 +154,6 @@ class AdMobManager {
           });
         } catch (_) {}
 
-        // Request UMP consent non-blockingly so ad requests are not delayed
-        AdMob.requestConsentInfo().then(async (consentInfo) => {
-          if (consentInfo.isConsentFormAvailable && consentInfo.status === 'REQUIRED') {
-            await AdMob.showConsentForm();
-          }
-        }).catch((consentErr) => {
-          console.warn('[AdMob Native] Consent verification note:', consentErr);
-        });
-
         // Proactively prepare an interstitial to ensure request counts register immediately on Google AdMob
         await this.preloadInterstitial();
       } catch (err) {
@@ -197,9 +190,10 @@ class AdMobManager {
           isTesting: false,
         };
 
-        if (this.isBannerCreated && this.isBannerVisible) {
+        if (this.isBannerCreated) {
           try {
             await AdMob.resumeBanner();
+            this.isBannerVisible = true;
             return;
           } catch (_) {}
         }

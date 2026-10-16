@@ -17,15 +17,11 @@ export const AdMobBanner: React.FC<AdMobBannerProps> = ({
 }) => {
   // Hook into native Android AdMob banner when running on an Android device
   useEffect(() => {
-    if (Capacitor.isNativePlatform() && (placement === 'bottom_sticky' || placement === 'inline' || placement === 'bottom_page')) {
+    if (Capacitor.isNativePlatform()) {
       AdMobService.showNativeBanner('bottom', hasBottomNav, bottomMargin);
-      return () => {
-        AdMobService.hideNativeBanner();
-      };
     }
-  }, [placement, hasBottomNav, unitId, bottomMargin]);
+  }, [hasBottomNav, bottomMargin]);
 
-  // Do not render any custom HTML ads in web preview.
-  // Ads will only be rendered natively by Google Mobile Ads SDK on Android.
+  // Ads are rendered natively by Google Mobile Ads SDK on Android.
   return null;
 };

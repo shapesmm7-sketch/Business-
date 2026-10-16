@@ -115,6 +115,15 @@ export async function ensureD1Tables(db: any): Promise<void> {
       )
     `).run();
   } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS qr_pages (
+        id TEXT PRIMARY KEY,
+        page_json TEXT,
+        updated_at TEXT
+      )
+    `).run();
+  } catch (_) {}
 }
 
 export default {
@@ -1306,12 +1315,46 @@ export default {
         const bucket = getR2Bucket(env);
         const db = getD1Database(env);
         const page: any = await request.json().catch(() => ({}));
-        if (page?.id && bucket) {
-          const key = `qr_pages/${encodeURIComponent(page.id)}.json`;
+        if (page?.id) {
           const text = JSON.stringify(page);
-          await bucket.put(key, text, {
-            httpMetadata: { contentType: 'application/json' },
-          });
+          const now = new Date().toISOString();
+          if (bucket) {
+            try {
+              await bucket.put(`qr_pages/${encodeURIComponent(page.id)}.json`, text, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put('qr_pages/default.json', text, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put('qr_pages/latest.json', text, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            } catch (r2Err) {
+              console.warn('R2 QR save note:', r2Err);
+            }
+          }
+          if (db) {
+            try {
+              await ensureD1Tables(db);
+              await db.prepare(`
+                INSERT INTO qr_pages (id, page_json, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+              `).bind(page.id, text, now).run();
+              await db.prepare(`
+                INSERT INTO qr_pages (id, page_json, updated_at)
+                VALUES ('default', ?, ?)
+                ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+              `).bind(text, now).run();
+              await db.prepare(`
+                INSERT INTO qr_pages (id, page_json, updated_at)
+                VALUES ('latest', ?, ?)
+                ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+              `).bind(text, now).run();
+            } catch (d1Err) {
+              console.warn('D1 QR page save note:', d1Err);
+            }
+          }
         }
         return new Response(
           JSON.stringify({
@@ -1338,11 +1381,30 @@ export default {
 
     // 6. QR Page Fetch endpoint (/api/qr/:pageId)
     if (url.pathname.startsWith('/api/qr/')) {
-      const pageId = decodeURIComponent(url.pathname.replace('/api/qr/', ''));
+      const pageId = decodeURIComponent(url.pathname.replace('/api/qr/', '')).trim();
       const bucket = getR2Bucket(env);
       const db = getD1Database(env);
 
-      if (bucket && pageId) {
+      // Helper to fetch backup data from R2 or D1
+      const getLatestBackup = async (): Promise<any | null> => {
+        if (bucket) {
+          try {
+            const bObj = await bucket.get('sync/latest_backup.json');
+            if (bObj) return JSON.parse(await bObj.text());
+          } catch (_) {}
+        }
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT backup_data FROM backups ORDER BY updated_at DESC LIMIT 1').first();
+            if (row && row.backup_data) return JSON.parse(row.backup_data);
+          } catch (_) {}
+        }
+        return null;
+      };
+
+      // 1. Direct fetch from R2 bucket
+      if (bucket && pageId && pageId !== 'default' && pageId !== 'latest') {
         try {
           const key = `qr_pages/${encodeURIComponent(pageId)}.json`;
           const object = await bucket.get(key);
@@ -1351,275 +1413,354 @@ export default {
             const page = JSON.parse(text);
             return new Response(
               JSON.stringify({ ok: true, success: true, data: { page } }),
-              {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-              }
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
           }
+        } catch (_) {}
+      }
 
-          // Fallback: Check if we have backup data with websitesQrItems for websites hub
-          if (pageId.includes('websites-hub') || pageId.startsWith('websites') || pageId === 'websites-hub-all') {
-            const backupObj = await bucket.get('sync/latest_backup.json');
-            if (backupObj) {
-              const bText = await backupObj.text();
-              const bData = JSON.parse(bText);
-              const websites = bData.websitesQrItems || [];
-              const profile = bData.profile || {};
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+      // 2. Direct fetch from D1 database table
+      if (db && pageId && pageId !== 'default' && pageId !== 'latest') {
+        try {
+          await ensureD1Tables(db);
+          const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ?').bind(pageId).first();
+          if (row && row.page_json) {
+            const page = JSON.parse(row.page_json);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+        } catch (_) {}
+      }
 
-              const page = {
-                id: pageId,
-                title: 'Our Sites',
-                tagline: undefined,
-                description: `Official web links directory for ${profile.name || 'our company'}.`,
-                pageType: 'websites_hub',
-                accentColor: '#2563eb',
-                theme: 'indigo',
-                logo: profile.logo,
-                phone: profile.phone || '',
-                whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-                currency: profile.currency || 'USD',
-                announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
-                photos: [],
-                menuCategories: ['Our Sites'],
-                menuItems: websites.map((w: any) => ({
-                  id: `web-${w.id}`,
-                  name: w.title,
-                  category: 'Our Sites',
+      // 3. Fallback for Websites Hub
+      if (pageId.includes('websites-hub') || pageId.startsWith('websites') || pageId === 'websites-hub-all' || pageId.startsWith('web-')) {
+        const bData = await getLatestBackup();
+        if (bData) {
+          const websites = bData.websitesQrItems || [];
+          const profile = bData.profile || {};
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+          const page = {
+            id: pageId || 'websites-hub-all',
+            title: 'Our Sites',
+            tagline: undefined,
+            description: `Official web links directory for ${profile.name || 'our company'}.`,
+            pageType: 'websites_hub',
+            accentColor: '#2563eb',
+            theme: 'indigo',
+            logo: profile.logo,
+            phone: profile.phone || '',
+            whatsapp: cleanWa,
+            email: profile.email || '',
+            address: profile.address || '',
+            googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+            currency: profile.currency || 'USD',
+            announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
+            photos: [],
+            menuCategories: ['Our Sites'],
+            menuItems: websites.map((w: any) => ({
+              id: `web-${w.id}`,
+              name: w.title,
+              category: 'Our Sites',
+              price: 0,
+              description: w.description || w.url,
+              url: w.url,
+              ctaText: w.ctaText || 'Visit Website',
+              itemType: w.type,
+              phone: w.phone,
+              phoneAction: w.phoneAction,
+              tags: [w.type, w.ctaText || 'Visit Website'],
+              isSpecial: true,
+              isAvailable: true,
+            })),
+            websitesQrItems: websites,
+            qrDarkColor: '#2563eb',
+            qrLightColor: '#ffffff',
+            qrEyeColor: '#1d4ed8',
+            qrBoxBgColor: '#ffffff',
+            qrBoxBorderColor: '#cbd5e1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return new Response(
+            JSON.stringify({ ok: true, success: true, data: { page } }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
+      // 4. Fallback for Socials Hub
+      if (pageId.includes('socials-hub') || pageId.startsWith('socials') || pageId === 'socials-hub-all' || pageId.startsWith('social-')) {
+        const bData = await getLatestBackup();
+        if (bData) {
+          const socials = bData.socialsQrItems || [];
+          const profile = bData.profile || {};
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+          const page = {
+            id: pageId || 'socials-hub-all',
+            title: 'our social media platforms',
+            tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+            description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+            pageType: 'socials_hub',
+            accentColor: '#059669',
+            theme: 'emerald',
+            logo: profile.logo,
+            phone: profile.phone || '',
+            whatsapp: cleanWa,
+            email: profile.email || '',
+            address: profile.address || '',
+            googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+            currency: profile.currency || 'USD',
+            announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
+            photos: [],
+            menuCategories: ['Official Social Media & Messaging'],
+            menuItems: socials.map((s: any) => ({
+              id: `social-${s.id}`,
+              name: s.title || s.customPlatformName || s.platform,
+              category: 'Official Social Media & Messaging',
+              price: 0,
+              description: s.prefilledMessage || s.fullUrl,
+              url: s.fullUrl,
+              ctaText: s.ctaText || 'Connect',
+              itemType: s.platform,
+              tags: [s.platform, s.ctaText || 'Connect'],
+              isSpecial: true,
+              isAvailable: true,
+            })),
+            socialsQrItems: socials,
+            qrDarkColor: '#059669',
+            qrLightColor: '#ffffff',
+            qrEyeColor: '#047857',
+            qrBoxBgColor: '#ffffff',
+            qrBoxBorderColor: '#cbd5e1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return new Response(
+            JSON.stringify({ ok: true, success: true, data: { page } }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
+      // 5. Fallback for Events Hub
+      if (pageId.includes('events-hub') || pageId.startsWith('events') || pageId === 'events-hub-all') {
+        const bData = await getLatestBackup();
+        if (bData) {
+          const events = bData.eventsQrItems || [];
+          const profile = bData.profile || {};
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+          const page = {
+            id: pageId || 'events-hub-all',
+            title: 'Our Events',
+            tagline: undefined,
+            description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+            pageType: 'events_hub',
+            accentColor: '#7c3aed',
+            theme: 'indigo',
+            logo: profile.logo,
+            phone: profile.phone || '',
+            whatsapp: cleanWa,
+            email: profile.email || '',
+            address: profile.address || '',
+            googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+            currency: profile.currency || 'USD',
+            announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+            photos: events.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
+              id: `${e.id}-photo-${idx}`,
+              url,
+              title: e.title,
+              description: e.location,
+              badge: 'Event Photo',
+            }))),
+            menuCategories: ['Our Events'],
+            menuItems: events.map((e: any) => ({
+              id: `event-pass-${e.id}`,
+              name: e.title,
+              category: 'Our Events',
+              price: 0,
+              description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+              url: e.rsvpUrl || undefined,
+              ctaText: e.ctaText || 'RSVP & Join',
+              tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+              isSpecial: true,
+              isAvailable: true,
+              photoUrl: e.photos?.[0] || undefined,
+            })),
+            eventsQrItems: events,
+            qrDarkColor: '#7c3aed',
+            qrLightColor: '#ffffff',
+            qrEyeColor: '#6d28d9',
+            qrBoxBgColor: '#ffffff',
+            qrBoxBorderColor: '#cbd5e1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return new Response(
+            JSON.stringify({ ok: true, success: true, data: { page } }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
+      // 6. Fallback for single Event
+      if (pageId.startsWith('event-')) {
+        const bData = await getLatestBackup();
+        if (bData) {
+          const events = bData.eventsQrItems || [];
+          const evt = events.find((e: any) => e.id === pageId);
+          const profile = bData.profile || {};
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+          if (evt) {
+            const page = {
+              id: evt.id,
+              title: evt.title,
+              tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+              description: evt.description || `Event Venue: ${evt.location}`,
+              pageType: 'event',
+              accentColor: evt.darkColor || '#7c3aed',
+              theme: 'indigo',
+              coverImage: evt.photos?.[0] || undefined,
+              logo: evt.photos?.[0] || profile.logo || undefined,
+              phone: evt.contactPhone || profile.phone || '',
+              whatsapp: cleanWa,
+              email: evt.contactEmail || profile.email || '',
+              address: evt.location,
+              googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
+              currency: profile.currency || 'UGX',
+              announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
+              allowWhatsAppOrdering: true,
+              photos: (evt.photos || []).map((url: string, idx: number) => ({
+                id: `${evt.id}-photo-${idx}`,
+                url,
+                title: evt.title,
+                description: evt.location,
+                badge: 'Event Photo',
+              })),
+              menuCategories: ['Event Pass & RSVP'],
+              menuItems: [
+                {
+                  id: `rsvp-${evt.id}`,
+                  name: `${evt.title} - Entry & RSVP Pass`,
+                  category: 'Event Pass & RSVP',
                   price: 0,
-                  description: w.description || w.url,
-                  url: w.url,
-                  ctaText: w.ctaText || 'Visit Website',
-                  itemType: w.type,
-                  phone: w.phone,
-                  phoneAction: w.phoneAction,
-                  tags: [w.type, w.ctaText || 'Visit Website'],
+                  description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
+                  tags: ['RSVP', 'Invitation', 'Entry Pass'],
                   isSpecial: true,
                   isAvailable: true,
-                })),
-                websitesQrItems: websites,
-                qrDarkColor: '#2563eb',
-                qrLightColor: '#ffffff',
-                qrEyeColor: '#1d4ed8',
-                qrBoxBgColor: '#ffffff',
-                qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
+                  photoUrl: evt.photos?.[0] || undefined,
+                },
+              ],
+              qrDarkColor: evt.darkColor || '#7c3aed',
+              qrLightColor: '#ffffff',
+              qrEyeColor: evt.eyeColor || '#6d28d9',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
 
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+      }
+
+      // 7. Check default or latest in R2
+      if (bucket) {
+        try {
+          for (const key of ['qr_pages/default.json', 'qr_pages/latest.json']) {
+            const object = await bucket.get(key);
+            if (object) {
+              const text = await object.text();
+              const page = JSON.parse(text);
               return new Response(
                 JSON.stringify({ ok: true, success: true, data: { page } }),
-                {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-                }
+                { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
               );
             }
           }
+        } catch (_) {}
+      }
 
-          // Fallback: Check if we have backup data with socialsQrItems for socials hub
-          if (pageId.includes('socials-hub') || pageId.startsWith('socials') || pageId === 'socials-hub-all') {
-            const backupObj = await bucket.get('sync/latest_backup.json');
-            if (backupObj) {
-              const bText = await backupObj.text();
-              const bData = JSON.parse(bText);
-              const socials = bData.socialsQrItems || [];
-              const profile = bData.profile || {};
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              const page = {
-                id: pageId,
-                title: 'our social media platforms',
-                tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-                description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
-                pageType: 'socials_hub',
-                accentColor: '#059669',
-                theme: 'emerald',
-                logo: profile.logo,
-                phone: profile.phone || '',
-                whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-                currency: profile.currency || 'USD',
-                announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
-                photos: [],
-                menuCategories: ['Official Social Media & Messaging'],
-                menuItems: socials.map((s: any) => ({
-                  id: `social-${s.id}`,
-                  name: s.title || s.customPlatformName || s.platform,
-                  category: 'Official Social Media & Messaging',
-                  price: 0,
-                  description: s.prefilledMessage || s.fullUrl,
-                  url: s.fullUrl,
-                  ctaText: s.ctaText || 'Connect',
-                  itemType: s.platform,
-                  tags: [s.platform, s.ctaText || 'Connect'],
-                  isSpecial: true,
-                  isAvailable: true,
-                })),
-                socialsQrItems: socials,
-                qrDarkColor: '#059669',
-                qrLightColor: '#ffffff',
-                qrEyeColor: '#047857',
-                qrBoxBgColor: '#ffffff',
-                qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-
-              return new Response(
-                JSON.stringify({ ok: true, success: true, data: { page } }),
-                {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-                }
-              );
-            }
+      // 8. Check default or latest in D1 qr_pages table
+      if (db) {
+        try {
+          await ensureD1Tables(db);
+          const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = 'default' OR id = 'latest' ORDER BY updated_at DESC LIMIT 1").first();
+          if (row && row.page_json) {
+            const page = JSON.parse(row.page_json);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
           }
-
-          // Fallback: Check if we have backup data with eventsQrItems for events hub
-          if (pageId.includes('events-hub') || pageId.startsWith('events') || pageId === 'events-hub-all') {
-            const backupObj = await bucket.get('sync/latest_backup.json');
-            if (backupObj) {
-              const bText = await backupObj.text();
-              const bData = JSON.parse(bText);
-              const events = bData.eventsQrItems || [];
-              const profile = bData.profile || {};
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              const page = {
-                id: pageId,
-                title: 'Our Events',
-                tagline: undefined,
-                description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
-                pageType: 'events_hub',
-                accentColor: '#7c3aed',
-                theme: 'indigo',
-                logo: profile.logo,
-                phone: profile.phone || '',
-                whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-                currency: profile.currency || 'USD',
-                announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
-                photos: events.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
-                  id: `${e.id}-photo-${idx}`,
-                  url,
-                  title: e.title,
-                  description: e.location,
-                  badge: 'Event Photo',
-                }))),
-                menuCategories: ['Our Events'],
-                menuItems: events.map((e: any) => ({
-                  id: `event-pass-${e.id}`,
-                  name: e.title,
-                  category: 'Our Events',
-                  price: 0,
-                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                  url: e.rsvpUrl || undefined,
-                  ctaText: e.ctaText || 'RSVP & Join',
-                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                  isSpecial: true,
-                  isAvailable: true,
-                  photoUrl: e.photos?.[0] || undefined,
-                })),
-                eventsQrItems: events,
-                qrDarkColor: '#7c3aed',
-                qrLightColor: '#ffffff',
-                qrEyeColor: '#6d28d9',
-                qrBoxBgColor: '#ffffff',
-                qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-
-              return new Response(
-                JSON.stringify({ ok: true, success: true, data: { page } }),
-                {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-                }
-              );
-            }
+          // Any latest page in D1
+          const anyRow: any = await db.prepare("SELECT page_json FROM qr_pages ORDER BY updated_at DESC LIMIT 1").first();
+          if (anyRow && anyRow.page_json) {
+            const page = JSON.parse(anyRow.page_json);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data: { page } }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
           }
+        } catch (_) {}
+      }
 
-          // Fallback: Check if we have a single event in backup data
-          if (pageId.startsWith('event-')) {
-            const backupObj = await bucket.get('sync/latest_backup.json');
-            if (backupObj) {
-              const bText = await backupObj.text();
-              const bData = JSON.parse(bText);
-              const events = bData.eventsQrItems || [];
-              const evt = events.find((e: any) => e.id === pageId);
-              const profile = bData.profile || {};
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              if (evt) {
-                const page = {
-                  id: evt.id,
-                  title: evt.title,
-                  tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
-                  description: evt.description || `Event Venue: ${evt.location}`,
-                  pageType: 'event',
-                  accentColor: evt.darkColor || '#7c3aed',
-                  theme: 'indigo',
-                  coverImage: evt.photos?.[0] || undefined,
-                  logo: evt.photos?.[0] || profile.logo || undefined,
-                  phone: evt.contactPhone || profile.phone || '',
-                  whatsapp: cleanWa,
-                  email: evt.contactEmail || profile.email || '',
-                  address: evt.location,
-                  googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
-                  currency: profile.currency || 'UGX',
-                  announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
-                  allowWhatsAppOrdering: true,
-                  photos: (evt.photos || []).map((url: string, idx: number) => ({
-                    id: `${evt.id}-photo-${idx}`,
-                    url,
-                    title: evt.title,
-                    description: evt.location,
-                    badge: 'Event Photo',
-                  })),
-                  menuCategories: ['Event Pass & RSVP'],
-                  menuItems: [
-                    {
-                      id: `rsvp-${evt.id}`,
-                      name: `${evt.title} - Entry & RSVP Pass`,
-                      category: 'Event Pass & RSVP',
-                      price: 0,
-                      description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
-                      tags: ['RSVP', 'Invitation', 'Entry Pass'],
-                      isSpecial: true,
-                      isAvailable: true,
-                      photoUrl: evt.photos?.[0] || undefined,
-                    },
-                  ],
-                  qrDarkColor: evt.darkColor || '#7c3aed',
-                  qrLightColor: '#ffffff',
-                  qrEyeColor: evt.eyeColor || '#6d28d9',
-                  qrBoxBgColor: '#ffffff',
-                  qrBoxBorderColor: '#cbd5e1',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
-
-                return new Response(
-                  JSON.stringify({ ok: true, success: true, data: { page } }),
-                  {
-                    status: 200,
-                    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-                  }
-                );
-              }
-            }
-          }
-        } catch {}
+      // 9. Check backup data qrHostedPages
+      const bData = await getLatestBackup();
+      if (bData) {
+        const pages = bData.qrHostedPages || [];
+        const matched = pages.find((p: any) => p.id === pageId) || pages[0];
+        if (matched) {
+          return new Response(
+            JSON.stringify({ ok: true, success: true, data: { page: matched } }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (bData.profile && bData.profile.name) {
+          const profile = bData.profile;
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+          const page = {
+            id: pageId || 'default',
+            title: profile.name,
+            tagline: profile.description || 'Welcome to our official business page',
+            description: profile.description || '',
+            pageType: 'menu',
+            accentColor: '#059669',
+            theme: 'emerald',
+            logo: profile.logo,
+            phone: profile.phone || '',
+            whatsapp: cleanWa,
+            email: profile.email || '',
+            address: profile.address || '',
+            currency: profile.currency || 'USD',
+            photos: [],
+            menuCategories: ['All'],
+            menuItems: [],
+            qrDarkColor: '#000000',
+            qrLightColor: '#ffffff',
+            qrEyeColor: '#000000',
+            qrBoxBgColor: '#ffffff',
+            qrBoxBorderColor: '#cbd5e1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          return new Response(
+            JSON.stringify({ ok: true, success: true, data: { page } }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
       }
 
       return new Response(
@@ -1647,20 +1788,13 @@ export default {
           body?.user?.email ||
           backupData?.profile?.email ||
           ''
-        ).toLowerCase().trim();
-
-        if (!userEmail) {
-          return new Response(
-            JSON.stringify({ ok: false, error: 'User email is required to push and isolate cloud data' }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
+        ).toLowerCase().trim() || 'default_user';
 
         if (backupData) {
           const backupJson = JSON.stringify(backupData);
           const now = new Date().toISOString();
 
-          // 1. Persist to D1 Relational SQL Database strictly isolated by user email ID
+          // 1. Persist to D1 Relational SQL Database
           if (db) {
             try {
               await ensureD1Tables(db);
@@ -1669,12 +1803,42 @@ export default {
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
               `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
+              await db.prepare(`
+                INSERT INTO backups (id, user_email, backup_data, updated_at)
+                VALUES ('latest_backup', ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
+              `).bind(userEmail, backupJson, now).run();
+
+              // Also persist all business QR pages into D1 qr_pages table
+              if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+                for (const p of backupData.qrHostedPages) {
+                  if (p?.id) {
+                    const pJson = JSON.stringify(p);
+                    await db.prepare(`
+                      INSERT INTO qr_pages (id, page_json, updated_at)
+                      VALUES (?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+                    `).bind(p.id, pJson, now).run();
+                  }
+                }
+                const firstP = JSON.stringify(backupData.qrHostedPages[0]);
+                await db.prepare(`
+                  INSERT INTO qr_pages (id, page_json, updated_at)
+                  VALUES ('default', ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+                `).bind(firstP, now).run();
+                await db.prepare(`
+                  INSERT INTO qr_pages (id, page_json, updated_at)
+                  VALUES ('latest', ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
+                `).bind(firstP, now).run();
+              }
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
             }
           }
 
-          // 2. Persist to R2 Object Storage Bucket strictly isolated under user email ID
+          // 2. Persist to R2 Object Storage Bucket
           if (bucket) {
             const userKey = encodeURIComponent(userEmail);
             await bucket.put(`users/${userKey}/backup.json`, backupJson, {
@@ -1683,6 +1847,27 @@ export default {
             await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
               httpMetadata: { contentType: 'application/json' },
             });
+            await bucket.put('sync/latest_backup.json', backupJson, {
+              httpMetadata: { contentType: 'application/json' },
+            });
+
+            // Also persist each business QR page into R2
+            if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+              for (const p of backupData.qrHostedPages) {
+                if (p?.id) {
+                  await bucket.put(`qr_pages/${encodeURIComponent(p.id)}.json`, JSON.stringify(p), {
+                    httpMetadata: { contentType: 'application/json' },
+                  });
+                }
+              }
+              const firstP = JSON.stringify(backupData.qrHostedPages[0]);
+              await bucket.put('qr_pages/default.json', firstP, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put('qr_pages/latest.json', firstP, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            }
 
             // Also save websites hub page directly if websitesQrItems exist
             if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {

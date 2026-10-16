@@ -311,6 +311,13 @@ export function App() {
             if (remotePage) {
               StorageService.saveHostedQRPage(remotePage);
               setActiveCustomerPage(remotePage);
+            } else {
+              CloudflareService.getHostedQrPage('latest').then((latestPage) => {
+                if (latestPage) {
+                  StorageService.saveHostedQRPage(latestPage);
+                  setActiveCustomerPage(latestPage);
+                }
+              }).catch(() => {});
             }
           }).catch(() => {});
         }

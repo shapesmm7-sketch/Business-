@@ -79,41 +79,33 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
       businessSnapshot: r.businessSnapshot
         ? {
             ...r.businessSnapshot,
-            logo: r.businessSnapshot.logo?.startsWith('data:') ? undefined : r.businessSnapshot.logo,
-            signature: r.businessSnapshot.signature?.startsWith('data:') ? undefined : r.businessSnapshot.signature,
+            logo: r.businessSnapshot.logo,
+            signature: r.businessSnapshot.signature,
           }
         : r.businessSnapshot,
     })),
     inventoryProducts: (data.inventoryProducts || []).map((p) => ({
       ...p,
-      image: p.image?.startsWith('data:') ? undefined : p.image,
+      image: p.image,
     })),
     customers: (data.customers || []).map((c) => ({
       ...c,
-      profilePic: c.profilePic?.startsWith('data:') ? undefined : c.profilePic,
+      profilePic: c.profilePic,
     })),
     agents: (data.agents || []).map((a) => ({
       ...a,
-      profilePic: a.profilePic?.startsWith('data:') ? undefined : a.profilePic,
+      profilePic: a.profilePic,
     })),
     workers: (data.workers || []).map((w) => ({
       ...w,
-      profilePic: w.profilePic?.startsWith('data:') ? undefined : w.profilePic,
+      profilePic: w.profilePic,
     })),
     qrHostedPages: (data.qrHostedPages || []).map((page) => ({
       ...page,
-      coverImage: page.coverImage?.startsWith('data:') ? undefined : page.coverImage,
-      logo: page.logo?.startsWith('data:') ? undefined : page.logo,
-      photos: (page.photos || [])
-        .map((photo) => ({
-          ...photo,
-          url: photo.url?.startsWith('data:') ? '' : photo.url,
-        }))
-        .filter((photo) => Boolean(photo.url)),
-      menuItems: (page.menuItems || []).map((item) => ({
-        ...item,
-        photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
-      })),
+      coverImage: page.coverImage,
+      logo: page.logo,
+      photos: (page.photos || []).filter((photo) => Boolean(photo && photo.url)),
+      menuItems: page.menuItems || [],
     })),
     eventsQrItems: (data.eventsQrItems || []).map((evt) => ({
       ...evt,
@@ -150,30 +142,12 @@ export const CloudflareService = {
 
   shouldAutoSaveFiles(): boolean {
     const config = this.getConfig();
-    if (!this.isConfigured() || config.autoSaveFiles === false) {
-      return false;
-    }
-    // Users signed in with Google or users with active trial/subscription can save files to Cloudflare
-    const user = StorageService.getWorkOSUser();
-    if (user && user.email) {
-      return true;
-    }
-    const trial = StorageService.getTrialStatus();
-    return !trial.isExpired || Boolean(trial.subscribed);
+    return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSaveFiles !== false);
   },
 
   shouldAutoSyncData(): boolean {
     const config = this.getConfig();
-    if (!this.isConfigured() || config.autoSyncData === false) {
-      return false;
-    }
-    // When logged in with Google, always sync data to Cloudflare
-    const user = StorageService.getWorkOSUser();
-    if (user && user.email) {
-      return true;
-    }
-    const trial = StorageService.getTrialStatus();
-    return !trial.isExpired || Boolean(trial.subscribed);
+    return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSyncData !== false);
   },
 
   getAuthHeaders(apiKey?: string): Record<string, string> {
@@ -491,13 +465,14 @@ export const CloudflareService = {
 
     try {
       const user = StorageService.getWorkOSUser();
-      const userEmail = (user?.email || '').toLowerCase().trim();
-      if (!userEmail) {
-        return {
-          success: false,
-          message: 'User must be signed in with email to sync to Cloudflare',
-        };
-      }
+      const profile = StorageService.getProfile();
+      const brivuId = StorageService.getBrivuUserId();
+      const userEmail = (
+        user?.email ||
+        profile?.email ||
+        brivuId ||
+        'brivu_user'
+      ).toLowerCase().trim();
 
       const rawBackup = customBackup || StorageService.exportBackup();
       const backupData = sanitizeBackupForD1Sync(rawBackup);
@@ -921,10 +896,6 @@ export const CloudflareService = {
    * Saves or updates a hosted QR page directly in Cloudflare D1
    */
   async saveSingleQrPage(page: any): Promise<{ success: boolean; message: string }> {
-    if (!this.shouldAutoSyncData()) {
-      return { success: false, message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)' };
-    }
-
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };
@@ -936,18 +907,10 @@ export const CloudflareService = {
 
       const cleanPage = {
         ...page,
-        coverImage: page.coverImage?.startsWith('data:') ? undefined : page.coverImage,
-        logo: page.logo?.startsWith('data:') ? undefined : page.logo,
-        photos: (page.photos || [])
-          .map((photo: any) => ({
-            ...photo,
-            url: photo.url?.startsWith('data:') ? '' : photo.url,
-          }))
-          .filter((photo: any) => Boolean(photo.url)),
-        menuItems: (page.menuItems || []).map((item: any) => ({
-          ...item,
-          photoUrl: item.photoUrl?.startsWith('data:') ? undefined : item.photoUrl,
-        })),
+        coverImage: page.coverImage,
+        logo: page.logo,
+        photos: (page.photos || []).filter((photo: any) => Boolean(photo && photo.url)),
+        menuItems: page.menuItems || [],
         websitesQrItems: page.websitesQrItems || [],
         socialsQrItems: page.socialsQrItems || [],
       };

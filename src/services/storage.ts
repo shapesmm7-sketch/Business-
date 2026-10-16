@@ -2262,8 +2262,9 @@ export const StorageService = {
       page.id.startsWith('web-') ||
       page.id.startsWith('social-')
     ) {
-      // Do not pollute business QR pages with other pages
-      return false;
+      // Special QR page - sync directly to Cloudflare
+      CloudflareService.saveSingleQrPage(page).catch(() => {});
+      return true;
     }
     const pages = this.getHostedQRPages();
     const index = pages.findIndex((p) => p.id === page.id);
