@@ -474,13 +474,6 @@ export class PushNotificationService {
 
     const alert = await this.addAlert(params);
 
-    // Trigger system notification if permitted
-    this.triggerSystemNotification(params.title, {
-      body: params.body,
-      tag: params.type,
-      data: { url: params.actionUrl || '/' },
-    });
-
     return alert;
   }
 
