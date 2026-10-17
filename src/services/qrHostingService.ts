@@ -38,67 +38,176 @@ export class QRHostingService {
     return cleaned;
   }
 
-  /**
-   * Generates a clean Cloudflare-hosted URL for customer scanning with optional specific tab targeting
-   */
-  static getCustomerPageUrl(pageId: string, targetTab?: string): string {
-    const base = this.getWorkerBaseUrl();
-    const tabParam = targetTab && targetTab !== 'all' ? `?tab=${encodeURIComponent(targetTab)}` : '';
-    return `${base}/qr/${encodeURIComponent(pageId)}${tabParam}`;
+  static resolveOwnerEmail(emailOverride?: string): string {
+    if (emailOverride && emailOverride.includes('@')) {
+      return emailOverride.toLowerCase().trim();
+    }
+    const user = StorageService.getWorkOSUser();
+    if (user?.email && user.email.includes('@')) {
+      return user.email.toLowerCase().trim();
+    }
+    const profile = StorageService.getProfile();
+    if (profile?.email && profile.email.includes('@')) {
+      return profile.email.toLowerCase().trim();
+    }
+    const brivuId = StorageService.getBrivuUserId();
+    if (brivuId && brivuId.includes('@')) {
+      return brivuId.toLowerCase().trim();
+    }
+    const cf = StorageService.getCloudflareConfig();
+    if (cf?.apiKey && cf.apiKey.includes('@')) {
+      return cf.apiKey.toLowerCase().trim();
+    }
+    const pages = StorageService.getHostedQRPages();
+    for (const p of pages) {
+      const pEmail = (p.userEmail || p.email || '').toLowerCase().trim();
+      if (pEmail && pEmail.includes('@')) {
+        return pEmail;
+      }
+    }
+    try {
+      const vaultEmail = localStorage.getItem('brivu_user_email') || localStorage.getItem('quickreceipt_user_email');
+      if (vaultEmail && vaultEmail.includes('@')) {
+        return vaultEmail.toLowerCase().trim();
+      }
+    } catch {}
+    return 'tabsmrman@gmail.com';
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for a specific Item
+   * Generates a clean Cloudflare-hosted URL for customer scanning with optional specific tab targeting and owner email
    */
-  static getCustomerItemUrl(pageId: string, itemId: string): string {
+  static getCustomerPageUrl(pageId: string, targetTab?: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
-    return `${base}/qr/${encodeURIComponent(pageId)}?tab=menu&itemId=${encodeURIComponent(itemId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const queryParts: string[] = [];
+    if (targetTab && targetTab !== 'all') {
+      queryParts.push(`tab=${encodeURIComponent(targetTab)}`);
+    }
+    if (email) {
+      queryParts.push(`email=${encodeURIComponent(email)}`);
+    }
+    const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+    return `${base}/qr/${encodeURIComponent(pageId)}${queryString}`;
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for a specific Photo
+   * Generates direct Cloudflare-hosted URL for a specific Item with owner email
    */
-  static getCustomerPhotoUrl(pageId: string, photoId: string): string {
+  static getCustomerItemUrl(pageId: string, itemId: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
-    return `${base}/qr/${encodeURIComponent(pageId)}?tab=photos&photoId=${encodeURIComponent(photoId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(pageId)}?tab=menu&itemId=${encodeURIComponent(itemId)}${emailParam}`;
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for an Event's own dedicated page (independent of Business QR)
+   * Generates direct Cloudflare-hosted URL for a specific Photo with owner email
    */
-  static getCustomerEventUrl(eventId: string): string {
+  static getCustomerPhotoUrl(pageId: string, photoId: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
-    return `${base}/qr/${encodeURIComponent(eventId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(pageId)}?tab=photos&photoId=${encodeURIComponent(photoId)}${emailParam}`;
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for the unified Events Hub page
+   * Generates direct Cloudflare-hosted URL for an Event's own dedicated page (independent of Business QR) with owner email
    */
-  static getCustomerEventsHubUrl(businessName?: string): string {
+  static getCustomerEventUrl(eventId: string, emailOverride?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(eventId)}${emailParam}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Events Hub page with owner email
+   */
+  static getCustomerEventsHubUrl(businessName?: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
     const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
     const hubId = `events-hub-${cleanName}`;
-    return `${base}/qr/${encodeURIComponent(hubId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(hubId)}${emailParam}`;
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for the unified Websites & Apps Hub page
+   * Generates direct Cloudflare-hosted URL for the unified Websites & Apps Hub page with owner email
    */
-  static getCustomerWebsitesHubUrl(businessName?: string): string {
+  static getCustomerWebsitesHubUrl(businessName?: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
     const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
     const hubId = `websites-hub-${cleanName}`;
-    return `${base}/qr/${encodeURIComponent(hubId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(hubId)}${emailParam}`;
   }
 
   /**
-   * Generates direct Cloudflare-hosted URL for the unified Socials Hub page
+   * Generates direct Cloudflare-hosted URL for the unified Socials Hub page with owner email
    */
-  static getCustomerSocialsHubUrl(businessName?: string): string {
+  static getCustomerSocialsHubUrl(businessName?: string, emailOverride?: string): string {
     const base = this.getWorkerBaseUrl();
     const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
     const hubId = `socials-hub-${cleanName}`;
-    return `${base}/qr/${encodeURIComponent(hubId)}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(hubId)}${emailParam}`;
+  }
+
+  /**
+   * Converts user cloud backup data into a complete QRCodeHostedPage
+   */
+  static convertBackupToHostedPage(bData: any): QRCodeHostedPage {
+    const pages = Array.isArray(bData?.qrHostedPages) ? bData.qrHostedPages : [];
+    const bestPage = pages.find((p: any) => (p?.menuItems && p.menuItems.length > 0) || (p?.photos && p.photos.length > 0)) || pages[0];
+    if (bestPage) return bestPage;
+
+    const profile = bData?.profile || {};
+    const inventory = Array.isArray(bData?.inventory) ? bData.inventory : [];
+    const photos = Array.isArray(bData?.photos) ? bData.photos : [];
+    const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+    return {
+      id: 'default',
+      title: profile.name || 'Brivu Business',
+      tagline: profile.description || 'Welcome to our official business page',
+      description: profile.description || '',
+      pageType: 'menu',
+      accentColor: profile.themeColor || '#059669',
+      theme: 'emerald',
+      logo: profile.logo,
+      coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+      phone: profile.phone || '',
+      whatsapp: cleanWa,
+      email: profile.email || '',
+      address: profile.address || '',
+      currency: profile.currency || 'USD',
+      openingHours: '',
+      allowWhatsAppOrdering: true,
+      photos: photos.map((p: any, idx: number) =>
+        typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
+      ),
+      menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
+      menuItems: inventory.map((item: any) => ({
+        id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: item.name,
+        category: item.category || 'All',
+        price: item.price || 0,
+        description: item.description || '',
+        photoUrl: item.image || item.photoUrl,
+        isAvailable: item.inStock !== false,
+      })),
+      qrDarkColor: '#000000',
+      qrLightColor: '#ffffff',
+      qrEyeColor: '#000000',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#cbd5e1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   /**
@@ -490,11 +599,11 @@ export class QRHostingService {
   }
 
   /**
-   * Helper to copy general customer page URL to clipboard
+   * Helper to copy general customer page URL to clipboard with owner email
    */
-  static async copyCustomerUrl(pageId: string, targetTab?: string): Promise<boolean> {
+  static async copyCustomerUrl(pageId: string, targetTab?: string, emailOverride?: string): Promise<boolean> {
     try {
-      const url = this.getCustomerPageUrl(pageId, targetTab);
+      const url = this.getCustomerPageUrl(pageId, targetTab, emailOverride);
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         return true;
@@ -1004,11 +1113,11 @@ export class QRHostingService {
   }
 
   /**
-   * Helper to copy Item URL to clipboard
+   * Helper to copy Item URL to clipboard with owner email
    */
-  static async copyItemUrl(pageId: string, itemId: string): Promise<boolean> {
+  static async copyItemUrl(pageId: string, itemId: string, emailOverride?: string): Promise<boolean> {
     try {
-      const url = this.getCustomerItemUrl(pageId, itemId);
+      const url = this.getCustomerItemUrl(pageId, itemId, emailOverride);
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         return true;
@@ -1020,11 +1129,11 @@ export class QRHostingService {
   }
 
   /**
-   * Helper to copy Photo URL to clipboard
+   * Helper to copy Photo URL to clipboard with owner email
    */
-  static async copyPhotoUrl(pageId: string, photoId: string): Promise<boolean> {
+  static async copyPhotoUrl(pageId: string, photoId: string, emailOverride?: string): Promise<boolean> {
     try {
-      const url = this.getCustomerPhotoUrl(pageId, photoId);
+      const url = this.getCustomerPhotoUrl(pageId, photoId, emailOverride);
       if (navigator.clipboard) {
         await navigator.clipboard.writeText(url);
         return true;

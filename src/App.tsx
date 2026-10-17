@@ -82,6 +82,11 @@ export function getQrPageIdFromUrl(): string | null {
     }
   }
 
+  // 3. Check for owner email parameter
+  if (params.get('email') || params.get('u') || params.get('user')) {
+    return 'latest';
+  }
+
   return null;
 }
 
@@ -90,6 +95,9 @@ export function isCustomerPathFromUrl(): boolean {
   const params = new URLSearchParams(window.location.search);
   if (
     params.get('qr') ||
+    params.get('email') ||
+    params.get('u') ||
+    params.get('user') ||
     params.get('photoId') ||
     params.get('photo') ||
     params.get('itemId') ||
@@ -108,7 +116,7 @@ export function isCustomerPathFromUrl(): boolean {
     return true;
   }
   const pathname = window.location.pathname || '';
-  return Boolean(pathname.includes('/qr/'));
+  return Boolean(pathname.includes('/qr/') || pathname === '/qr' || pathname.startsWith('/qr/'));
 }
 
 export function App() {
@@ -304,16 +312,31 @@ export function App() {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
         }
+        const emailFromUrl = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
         const fetchId = qrPageId || (isCustomerPathFromUrl() ? 'latest' : null);
-        if (fetchId) {
+        if (fetchId || emailFromUrl) {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
-          CloudflareService.getHostedQrPage(fetchId).then((remotePage) => {
-            if (remotePage) {
+          CloudflareService.getHostedQrPage(fetchId || 'latest', emailFromUrl).then(async (remotePage) => {
+            if (remotePage && (remotePage.title !== 'Brivu Business' || (remotePage.menuItems && remotePage.menuItems.length > 0) || (remotePage.photos && remotePage.photos.length > 0))) {
               StorageService.saveHostedQRPage(remotePage);
               setActiveCustomerPage(remotePage);
+            } else if (emailFromUrl) {
+              const pulled = await CloudflareService.pullFromCloudflare(emailFromUrl);
+              if (pulled.success && pulled.data) {
+                const bData = pulled.data;
+                const bestPage = (Array.isArray(bData.qrHostedPages) && bData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0))) || bData.qrHostedPages?.[0];
+                if (bestPage) {
+                  StorageService.saveHostedQRPage(bestPage);
+                  setActiveCustomerPage(bestPage);
+                } else if (bData.profile?.name) {
+                  const generated = QRHostingService.convertBackupToHostedPage(bData);
+                  StorageService.saveHostedQRPage(generated);
+                  setActiveCustomerPage(generated);
+                }
+              }
             } else if (fetchId !== 'latest') {
-              CloudflareService.getHostedQrPage('latest').then((latestPage) => {
+              CloudflareService.getHostedQrPage('latest', emailFromUrl).then((latestPage) => {
                 if (latestPage) {
                   StorageService.saveHostedQRPage(latestPage);
                   setActiveCustomerPage(latestPage);

@@ -864,9 +864,9 @@ export const CloudflareService = {
   },
 
   /**
-   * Fetches a specific hosted QR page directly from Cloudflare
+   * Fetches a specific hosted QR page directly from Cloudflare, scoped by pageId and optional owner email
    */
-  async getHostedQrPage(pageId: string): Promise<any | null> {
+  async getHostedQrPage(pageId: string, emailOverride?: string): Promise<any | null> {
     const config = this.getConfig();
     const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
       ? window.location.origin
@@ -876,7 +876,24 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}`;
+      const user = StorageService.getWorkOSUser();
+      const profile = StorageService.getProfile();
+      const brivuId = StorageService.getBrivuUserId();
+      const userEmail = (
+        emailOverride ||
+        user?.email ||
+        profile?.email ||
+        (brivuId && brivuId.includes('@') ? brivuId : '') ||
+        ''
+      ).toLowerCase().trim();
+
+      if (userEmail) {
+        headers['X-User-Email'] = userEmail;
+        headers['X-User-Id'] = userEmail;
+      }
+
+      const emailParam = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
+      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}${emailParam}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',
@@ -897,9 +914,9 @@ export const CloudflareService = {
   },
 
   /**
-   * Saves or updates a hosted QR page directly in Cloudflare D1
+   * Saves or updates a hosted QR page directly in Cloudflare D1 and R2, indexed by owner email
    */
-  async saveSingleQrPage(page: any): Promise<{ success: boolean; message: string }> {
+  async saveSingleQrPage(page: any, emailOverride?: string): Promise<{ success: boolean; message: string }> {
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };
@@ -907,10 +924,31 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/qr`;
+      const user = StorageService.getWorkOSUser();
+      const profile = StorageService.getProfile();
+      const brivuId = StorageService.getBrivuUserId();
+      const userEmail = (
+        emailOverride ||
+        user?.email ||
+        profile?.email ||
+        (brivuId && brivuId.includes('@') ? brivuId : '') ||
+        page?.userEmail ||
+        page?.email ||
+        ''
+      ).toLowerCase().trim();
+
+      if (userEmail) {
+        headers['X-User-Email'] = userEmail;
+        headers['X-User-Id'] = userEmail;
+      }
+
+      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
+      const targetUrl = `${config.workerUrl}/api/qr${query}`;
 
       const cleanPage = {
         ...page,
+        userEmail: userEmail || page.userEmail || page.email,
+        email: page.email || userEmail,
         coverImage: page.coverImage,
         logo: page.logo,
         photos: (page.photos || []).filter((photo: any) => Boolean(photo && photo.url)),

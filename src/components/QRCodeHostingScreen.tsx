@@ -274,36 +274,43 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const activeBoxBgColor = activePage?.qrBoxBgColor || '#ffffff';
   const activeBoxBorderColor = activePage?.qrBoxBorderColor || '#e2e8f0';
 
+  const ownerEmail = useMemo(() => {
+    return QRHostingService.resolveOwnerEmail(activePage?.email || activePage?.userEmail || business.email);
+  }, [activePage?.email, activePage?.userEmail, business.email]);
+
   // Scoped URLs
   const customerPageUrl = useMemo(() => {
     if (!activePage) return '';
-    return QRHostingService.getCustomerPageUrl(activePage.id, qrScope);
-  }, [activePage, qrScope]);
+    return QRHostingService.getCustomerPageUrl(activePage.id, qrScope, ownerEmail);
+  }, [activePage, qrScope, ownerEmail]);
 
   const quickQrCustomerUrl = useMemo(() => {
     if (!activePage) return '';
-    return QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope);
-  }, [activePage, quickQrScope]);
+    return QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail);
+  }, [activePage, quickQrScope, ownerEmail]);
 
   const itemQrCustomerUrl = useMemo(() => {
     if (!activePage || !itemQrModalItem) return '';
-    return QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id);
-  }, [activePage, itemQrModalItem]);
+    return QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id, ownerEmail);
+  }, [activePage, itemQrModalItem, ownerEmail]);
 
   const photoQrCustomerUrl = useMemo(() => {
     if (!activePage || !photoQrModalPhoto) return '';
-    return QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
-  }, [activePage, photoQrModalPhoto]);
+    return QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail);
+  }, [activePage, photoQrModalPhoto, ownerEmail]);
 
   // Sync QR pages with Cloudflare on mount
   useEffect(() => {
+    if (activePage) {
+      CloudflareService.saveSingleQrPage(activePage, ownerEmail).catch(() => {});
+    }
     CloudflareService.syncAllToCloudflare().catch(() => {});
-  }, []);
+  }, [ownerEmail]);
 
   // Refresh Main QR Code when active page or scope changes
   useEffect(() => {
     if (!activePage) return;
-    const url = QRHostingService.getCustomerPageUrl(activePage.id, qrScope);
+    const url = QRHostingService.getCustomerPageUrl(activePage.id, qrScope, ownerEmail);
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
@@ -315,12 +322,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     })
       .then((data) => setQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, qrScope]);
+  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, qrScope, ownerEmail]);
 
   // Refresh Quick QR Modal QR Code
   useEffect(() => {
     if (!activePage || !showQuickQrModal) return;
-    const url = QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope);
+    const url = QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail);
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
@@ -332,31 +339,31 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     })
       .then((data) => setQuickQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, quickQrScope, showQuickQrModal]);
+  }, [activePage?.id, activePage?.qrDarkColor, activePage?.qrLightColor, activePage?.qrEyeColor, quickQrScope, showQuickQrModal, ownerEmail]);
 
   // Refresh Item QR Code when item modal is open
   useEffect(() => {
     if (!activePage || !itemQrModalItem) return;
-    const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id);
+    const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id, ownerEmail);
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
     })
       .then((data) => setItemQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage, itemQrModalItem]);
+  }, [activePage, itemQrModalItem, ownerEmail]);
 
   // Refresh Photo QR Code when photo modal is open
   useEffect(() => {
     if (!activePage || !photoQrModalPhoto) return;
-    const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
+    const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail);
     QRHostingService.generateQrCodeDataUrl(url, {
       width: 600,
       margin: 1.5,
     })
       .then((data) => setPhotoQrDataUrl(data))
       .catch((err) => console.error(err));
-  }, [activePage, photoQrModalPhoto]);
+  }, [activePage, photoQrModalPhoto, ownerEmail]);
 
   const handleOpenQuickQr = (scope: QRScope) => {
     setQuickQrScope(scope);
@@ -366,11 +373,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleUpdateActivePage = (updates: Partial<QRCodeHostedPage>) => {
     if (!activePage) return;
-    const updated = { ...activePage, ...updates, updatedAt: new Date().toISOString() };
+    const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
+    const updated = {
+      ...activePage,
+      ...updates,
+      email: resolvedEmail || activePage.email,
+      userEmail: resolvedEmail || activePage.userEmail,
+      updatedAt: new Date().toISOString(),
+    };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
     CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
@@ -470,7 +484,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCopyLink = async () => {
     if (!activePage) return;
-    const success = await QRHostingService.copyCustomerUrl(activePage.id, qrScope);
+    const success = await QRHostingService.copyCustomerUrl(activePage.id, qrScope, ownerEmail);
     if (success) {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
@@ -479,7 +493,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCopyQuickQrLink = async () => {
     if (!activePage) return;
-    const success = await QRHostingService.copyCustomerUrl(activePage.id, quickQrScope);
+    const success = await QRHostingService.copyCustomerUrl(activePage.id, quickQrScope, ownerEmail);
     if (success) {
       setQuickQrCopied(true);
       setTimeout(() => setQuickQrCopied(false), 2000);
@@ -534,7 +548,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       name: qrName,
       subtitle: `Quick Scan QR Code (${scopeLabel})`,
       tag: quickQrTableNumber || scopeLabel,
-      urlOrHandle: QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope),
+      urlOrHandle: QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -699,7 +713,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleShareItemLink = async () => {
     if (!activePage || !itemQrModalItem) return;
-    const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id);
+    const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id, ownerEmail);
     const title = `${itemQrModalItem.name} - ${activePage.title}`;
     const text = `Check out ${itemQrModalItem.name} (${activePage.currency} ${itemQrModalItem.price}) at ${activePage.title}:`;
 
@@ -717,7 +731,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCopyPhotoLink = async () => {
     if (!activePage || !photoQrModalPhoto) return;
-    const success = await QRHostingService.copyPhotoUrl(activePage.id, photoQrModalPhoto.id);
+    const success = await QRHostingService.copyPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail);
     if (success) {
       setPhotoQrCopied(true);
       setTimeout(() => setPhotoQrCopied(false), 2000);
@@ -735,7 +749,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       name: qrName,
       subtitle: 'Scan with phone camera to view full photo',
       tag: photoQrTableNumber || 'Gallery Photo',
-      urlOrHandle: QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id),
+      urlOrHandle: QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -780,7 +794,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleSharePhotoLink = async () => {
     if (!activePage || !photoQrModalPhoto) return;
-    const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id);
+    const url = QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail);
     const title = `${photoQrModalPhoto.caption || 'Photo Details'} - ${activePage.title}`;
     const text = `Check out this photo from ${activePage.title}:`;
 
