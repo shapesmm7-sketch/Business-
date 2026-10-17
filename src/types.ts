@@ -551,6 +551,7 @@ export interface QRCodeHostedPage {
   phone?: string;
   whatsapp?: string;
   email?: string;
+  userEmail?: string;
   address?: string;
   googleMapsUrl?: string;
   wifiName?: string;
