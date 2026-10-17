@@ -113,35 +113,18 @@ export class PlayBillingService {
         throw new Error(`Unknown product plan: ${planId}`);
       }
 
-      const now = new Date();
-      const expires = new Date();
-      expires.setMonth(expires.getMonth() + product.monthsCount);
+      // Enforce live Google Play Store connection. Block mock/test billing when not connected to Play Console.
+      if (!this.isAndroid() || !localStorage.getItem('brivu_live_play_connected')) {
+        return {
+          success: false,
+          error: 'Google Play Store connection required. Subscriptions can only be processed via live Google Play Billing once published on the Play Console.',
+        };
+      }
 
-      // Unique Google Play Order & Purchase Token format
-      const mockOrderId = `GPA.${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(10000 + Math.random() * 90000)}`;
-      const mockPurchaseToken = `gp_token_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-
-      const subscription: UserSubscription = {
-        planId: product.planId,
-        planName: product.name,
-        status: 'active',
-        price: product.priceAmountMicros / 1000000,
-        formattedPrice: product.formattedPrice,
-        startDate: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        paymentMethod: this.isAndroid() || paymentMethod === 'google_play' ? 'Google Play Billing' : paymentMethod === 'gpay' ? 'Google Pay' : paymentMethod === 'card' ? 'Credit/Debit Card' : 'Mobile Money',
-        productId: product.productId,
-        orderId: mockOrderId,
-        purchaseToken: mockPurchaseToken,
-        isGooglePlay: true,
-        autoRenewing: true,
-        acknowledged: true,
+      return {
+        success: false,
+        error: 'Google Play Billing connection error or pending verification.',
       };
-
-      // Save to local storage
-      StorageService.saveSubscription(subscription);
-
-      return { success: true, subscription };
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Purchase failed. Please try again.';
       return { success: false, error: msg };
@@ -158,24 +141,32 @@ export class PlayBillingService {
   }> {
     try {
       await this.initialize();
+      if (!this.isAndroid() || !localStorage.getItem('brivu_live_play_connected')) {
+        return {
+          restored: false,
+          subscription: null,
+          message: 'Google Play Store connection required to restore purchases.',
+        };
+      }
+
       const existing = StorageService.getSubscription();
-      if (existing && existing.status === 'active') {
+      if (existing && existing.status === 'active' && existing.isGooglePlay) {
         return {
           restored: true,
           subscription: existing,
-          message: `Active subscription found: ${existing.planName} (Expires: ${new Date(existing.expiresAt).toLocaleDateString()}).`,
+          message: `Active subscription restored from Google Play: ${existing.planName}.`,
         };
       }
       return {
         restored: false,
         subscription: null,
-        message: 'No active Google Play subscription found for this account.',
+        message: 'No active Google Play subscription found.',
       };
     } catch {
       return {
         restored: false,
         subscription: null,
-        message: 'Unable to restore purchases at this moment. Please check your network.',
+        message: 'Unable to connect to Google Play to restore purchases.',
       };
     }
   }
