@@ -22,9 +22,11 @@ import {
   AlertTriangle,
   HardDrive,
   ShieldAlert,
+  RotateCcw,
 } from 'lucide-react';
 import { SubscriptionPlanId, UserSubscription } from '../types';
 import { StorageService } from '../services/storage';
+import { PlayBillingService } from '../services/playBillingService';
 
 interface UpgradeScreenProps {
   onBack: () => void;
@@ -51,10 +53,10 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     id: '1-month',
     name: '1 Month',
     durationLabel: 'Monthly Billing',
-    price: 3.6,
-    formattedPrice: '$3.6',
+    price: 5.6,
+    formattedPrice: '$5.6',
     periodLabel: '/ month',
-    monthlyEquivalent: '$3.60/mo',
+    monthlyEquivalent: '$5.60/mo',
     description: 'Cloud sync & live QR hosting for 1 month. Flexible with zero lock-in.',
     monthsCount: 1,
   },
@@ -62,26 +64,26 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     id: '6-months',
     name: '6 Months',
     durationLabel: '6-Month Plan',
-    price: 19.2,
-    formattedPrice: '$19.2',
+    price: 30.0,
+    formattedPrice: '$30.0',
     periodLabel: '/ 6 months',
-    monthlyEquivalent: '$3.20/mo',
+    monthlyEquivalent: '$5.00/mo',
     badge: 'SAVE 11%',
     badgeColor: 'bg-emerald-500 text-white',
-    description: 'Billed $19.20 every 6 months. Continuous cloud sync & QR link hosting.',
+    description: 'Billed $30.00 every 6 months. Continuous cloud sync & QR link hosting.',
     monthsCount: 6,
   },
   {
     id: '1-year',
     name: '1 Year',
     durationLabel: 'Annual Billing',
-    price: 31.9,
-    formattedPrice: '$31.9',
+    price: 55.9,
+    formattedPrice: '$55.9',
     periodLabel: '/ year',
-    monthlyEquivalent: '$2.66/mo',
-    badge: 'BEST VALUE • SAVE 26%',
+    monthlyEquivalent: '$4.66/mo',
+    badge: 'BEST VALUE • SAVE 17%',
     badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs',
-    description: 'Billed $31.90 annually. 365 days of guaranteed cloud sync, backup & live QR hosting.',
+    description: 'Billed $55.90 annually. 365 days of guaranteed cloud sync, backup & live QR hosting.',
     monthsCount: 12,
     popular: true,
   },
@@ -99,6 +101,26 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [showCancelConfirmModal, setShowCancelConfirmModal] = useState<boolean>(false);
+  const [isRestoring, setIsRestoring] = useState<boolean>(false);
+  const [restoreFeedback, setRestoreFeedback] = useState<{ msg: string; success: boolean } | null>(null);
+
+  const handleRestorePurchases = async () => {
+    setIsRestoring(true);
+    setRestoreFeedback(null);
+
+    const res = await PlayBillingService.restorePurchases();
+    setIsRestoring(false);
+
+    if (res.restored && res.subscription) {
+      if (onSubscriptionChange) {
+        onSubscriptionChange(res.subscription);
+      }
+      setSubscription(res.subscription);
+      setRestoreFeedback({ msg: res.message, success: true });
+    } else {
+      setRestoreFeedback({ msg: res.message, success: false });
+    }
+  };
 
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
   const isCurrentlyActive = subscription && subscription.status === 'active';
@@ -267,7 +289,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               Starting From
             </span>
             <div className="flex items-baseline justify-center sm:justify-end gap-1">
-              <span className="text-2xl font-black text-amber-400">$3.6</span>
+              <span className="text-2xl font-black text-amber-400">$5.6</span>
               <span className="text-xs text-indigo-200">/ mo</span>
             </div>
             <span className="text-[10px] text-emerald-400 font-bold block mt-0.5">
@@ -518,6 +540,35 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
           <span>256-Bit SSL Encrypted • Unlimited Cloud Sync • Live QR Code Hosting</span>
         </div>
+
+        {/* Restore Purchases Button */}
+        <div className="text-center pt-2">
+          <button
+            id="btn-restore-purchases"
+            type="button"
+            disabled={isRestoring}
+            onClick={handleRestorePurchases}
+            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 py-2 px-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 transition active:scale-95 inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            {isRestoring ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Restoring Purchases...</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restore Previous Subscription</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {restoreFeedback && (
+          <div className={`p-3 rounded-2xl text-xs font-medium text-center border animate-fadeIn ${restoreFeedback.success ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200' : 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200'}`}>
+            {restoreFeedback.msg}
+          </div>
+        )}
       </div>
 
       {/* In-App Cancel Subscription Confirmation Modal */}
