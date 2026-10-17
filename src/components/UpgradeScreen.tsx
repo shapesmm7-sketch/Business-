@@ -130,35 +130,37 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     ? Math.max(0, Math.ceil((new Date(subscription.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
     setIsProcessing(true);
+    setSuccessToast(null);
+    setRestoreFeedback(null);
 
-    setTimeout(() => {
-      const now = new Date();
-      const expires = new Date();
-      expires.setMonth(expires.getMonth() + selectedPlan.monthsCount);
-
-      const newSub: UserSubscription = {
-        planId: selectedPlan.id,
-        planName: selectedPlan.name,
-        status: 'active',
-        price: selectedPlan.price,
-        formattedPrice: selectedPlan.formattedPrice,
-        startDate: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        paymentMethod: 'Instant Secure Activation',
-      };
-
-      StorageService.saveSubscription(newSub);
-      setSubscription(newSub);
-      if (onSubscriptionChange) {
-        onSubscriptionChange(newSub);
-      }
+    try {
+      const result = await PlayBillingService.purchaseSubscription(selectedPlan.id);
       setIsProcessing(false);
-      setIsSuccess(true);
-      setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlan.formattedPrice})!`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 850);
+
+      if (result.success && result.subscription) {
+        StorageService.saveSubscription(result.subscription);
+        setSubscription(result.subscription);
+        if (onSubscriptionChange) {
+          onSubscriptionChange(result.subscription);
+        }
+        setIsSuccess(true);
+        setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlan.formattedPrice}) via Google Play Billing!`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setRestoreFeedback({
+          msg: result.error || 'Google Play Store connection required. Subscriptions can only be processed via live Google Play Billing once published on the Play Console.',
+          success: false,
+        });
+      }
+    } catch (err: any) {
+      setIsProcessing(false);
+      setRestoreFeedback({
+        msg: err?.message || 'Google Play Billing product not available. App bundle and subscription products must be configured in Google Play Console.',
+        success: false,
+      });
+    }
   };
 
   const handleConfirmCancel = () => {
