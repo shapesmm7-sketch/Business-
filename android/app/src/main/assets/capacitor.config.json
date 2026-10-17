@@ -1,0 +1,15 @@
+{
+	"appId": "com.brivu.myapp",
+	"appName": "Brivu",
+	"webDir": "dist",
+	"bundledWebRuntime": false,
+	"plugins": {
+		"AdMob": {
+			"appId": "ca-app-pub-8582659585800553~8957324812",
+			"initializeForTesting": false
+		},
+		"CapacitorHttp": {
+			"enabled": true
+		}
+	}
+}

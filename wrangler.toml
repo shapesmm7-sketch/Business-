@@ -1,0 +1,27 @@
+name = "brivu"
+main = "src/worker.ts"
+compatibility_date = "2024-10-06"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[build]
+command = "npm run build"
+
+[vars]
+WORKOS_CLIENT_ID = "client_01M4BGNT60CPMEA9P83WD6NRSB"
+WORKOS_API_KEY = "sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWnl"
+
+# R2 Object Storage Bucket Binding (Preserved across all deploys)
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "brivu-files"
+
+# D1 SQL Database Binding (Preserved across all deploys)
+[[d1_databases]]
+binding = "DB"
+database_name = "brivu-db"
+database_id = "add56248-d8bf-46ba-9373-9a65037c0e55"
+

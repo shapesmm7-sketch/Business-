@@ -1,0 +1,123 @@
+workflows:
+  android-release:
+    name: Build Android Release APK & AAB
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      node: 22
+      java: 21
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install --legacy-peer-deps
+          npm install @tailwindcss/oxide-darwin-arm64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @esbuild/darwin-arm64 --no-save --legacy-peer-deps || true
+      - name: Build Web Production Bundle
+        script: |
+          npm run build
+      - name: Generate App Icons
+        script: |
+          # Create assets directory if it doesn't exist
+          mkdir -p assets
+          
+          # Check if icon.png was uploaded to root, copy to assets directory
+          if [ -f "icon.png" ]; then
+            echo "Found icon.png in repository root, copying it to assets/icon.png"
+            cp icon.png assets/icon.png
+          elif [ -f "public/icon.png" ]; then
+            echo "Found public/icon.png, copying it to assets/icon.png"
+            cp public/icon.png assets/icon.png
+          fi
+          
+          # Generate icons if the source file is present
+          if [ -f "assets/icon.png" ] || [ -f "assets/logo.png" ]; then
+            echo "Generating Android adaptive and launcher icons..."
+            npx @capacitor/assets generate --android
+          else
+            echo "No icon.png found in root or assets directory. Skipping automatic icon generation."
+          fi
+      - name: Capacitor Sync
+        script: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            rm -rf android
+            npx cap add android
+          fi
+          npx cap sync android
+      - name: Generate and Setup Release Keystore
+        script: |
+          cd android/app
+          if [ ! -f "brivu.keystore" ]; then
+            echo "Release keystore brivu.keystore not found. Generating a new one dynamically..."
+            keytool -genkeypair \
+              -v \
+              -keystore brivu.keystore \
+              -alias brivu \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "Burubi23re%" \
+              -keypass "Burubi23re%" \
+              -dname "CN=Brivu, O=Brivu, C=UG"
+            echo "Successfully generated a new release keystore!"
+          else
+            echo "Using existing brivu.keystore found in the repository."
+          fi
+      - name: Build Android Release APK & Bundle
+        script: |
+          cd android
+          chmod +x gradlew || true
+          ./gradlew assembleRelease bundleRelease
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/**/*.aab
+
+  android-debug:
+    name: Build Android Debug APK
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      node: 22
+      java: 21
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install --legacy-peer-deps
+          npm install @tailwindcss/oxide-darwin-arm64 @rollup/rollup-darwin-arm64 lightningcss-darwin-arm64 @esbuild/darwin-arm64 --no-save --legacy-peer-deps || true
+      - name: Build Web Production Bundle
+        script: |
+          npm run build
+      - name: Generate App Icons
+        script: |
+          # Create assets directory if it doesn't exist
+          mkdir -p assets
+          
+          # Check if icon.png was uploaded to root, copy to assets directory
+          if [ -f "icon.png" ]; then
+            echo "Found icon.png in repository root, copying it to assets/icon.png"
+            cp icon.png assets/icon.png
+          elif [ -f "public/icon.png" ]; then
+            echo "Found public/icon.png, copying it to assets/icon.png"
+            cp public/icon.png assets/icon.png
+          fi
+          
+          # Generate icons if the source file is present
+          if [ -f "assets/icon.png" ] || [ -f "assets/logo.png" ]; then
+            echo "Generating Android adaptive and launcher icons..."
+            npx @capacitor/assets generate --android
+          else
+            echo "No icon.png found in root or assets directory. Skipping automatic icon generation."
+          fi
+      - name: Capacitor Sync
+        script: |
+          if [ ! -d "android" ] || [ ! -f "android/build.gradle" ]; then
+            rm -rf android
+            npx cap add android
+          fi
+          npx cap sync android
+      - name: Build Android Debug APK
+        script: |
+          cd android
+          chmod +x gradlew || true
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+      - android/app/build/outputs/**/*.aab
