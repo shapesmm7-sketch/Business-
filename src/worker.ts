@@ -1395,6 +1395,280 @@ export default {
       );
     }
 
+    // GET /api/receipts/:id - View hosted receipt / invoice info page (with boxes and details)
+    if (url.pathname.startsWith('/api/receipts/') && request.method === 'GET') {
+      try {
+        const receiptId = decodeURIComponent(url.pathname.replace('/api/receipts/', '')).trim();
+        const db = getD1Database(env);
+        const bucket = getR2Bucket(env);
+        let receipt: any = null;
+
+        if (db && receiptId) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT data_json FROM receipts WHERE id = ?').bind(receiptId).first();
+            if (row && row.data_json) {
+              receipt = JSON.parse(row.data_json);
+            }
+          } catch (_) {}
+        }
+
+        if (!receipt && bucket && receiptId) {
+          try {
+            const obj = await bucket.get(`receipts/${encodeURIComponent(receiptId)}.json`);
+            if (obj) {
+              receipt = JSON.parse(await obj.text());
+            }
+          } catch (_) {}
+        }
+
+        const acceptHeader = request.headers.get('Accept') || '';
+        if (acceptHeader.includes('application/json')) {
+          if (receipt) {
+            return new Response(JSON.stringify({ ok: true, success: true, receipt }), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            });
+          }
+          return new Response(JSON.stringify({ ok: false, error: 'Receipt not found' }), {
+            status: 404,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const isInvoice = receipt?.documentType === 'invoice';
+        const docTitle = isInvoice ? `Invoice #${receipt?.receiptNumber || receiptId}` : `Receipt #${receipt?.receiptNumber || receiptId}`;
+        const bizName = receipt?.businessSnapshot?.name || 'Brivu Business';
+        const currency = receipt?.businessSnapshot?.currency || 'UGX';
+        const total = receipt?.total || 0;
+        const amountPaid = receipt?.amountPaid || 0;
+        const balance = receipt?.balance || (amountPaid - total);
+        const items = Array.isArray(receipt?.items) ? receipt.items : [];
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${docTitle} | ${bizName}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      min-height: 100vh;
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .receipt-container {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      max-width: 520px;
+      width: 100%;
+      padding: 2rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+      margin-bottom: 1.5rem;
+    }
+    .header { text-align: center; border-bottom: 2px dashed #e2e8f0; padding-bottom: 1.5rem; margin-bottom: 1.25rem; }
+    .logo { width: 64px; height: 64px; object-fit: contain; border-radius: 50%; margin: 0 auto 0.75rem; display: block; border: 1px solid #e2e8f0; background: #f1f5f9; }
+    .biz-name { font-size: 1.25rem; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.025em; margin-bottom: 0.25rem; }
+    .biz-meta { font-size: 0.8rem; color: #64748b; line-height: 1.4; }
+    .badge {
+      display: inline-block;
+      background: #d1fae5;
+      color: #065f46;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      margin-top: 0.75rem;
+    }
+    .badge.invoice { background: #e0e7ff; color: #3730a3; }
+    .meta-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.85rem;
+    }
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 0.35rem; }
+    .meta-row:last-child { margin-bottom: 0; }
+    .label { color: #64748b; font-weight: 500; }
+    .value { color: #0f172a; font-weight: 600; text-align: right; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 1.25rem; font-size: 0.875rem; }
+    .items-table th { background: #f1f5f9; color: #475569; font-weight: 600; text-align: left; padding: 0.65rem 0.75rem; border-bottom: 1px solid #cbd5e1; }
+    .items-table th:last-child { text-align: right; }
+    .items-table td { padding: 0.75rem; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+    .items-table td:last-child { text-align: right; font-weight: 600; }
+    .summary-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1.25rem; font-size: 0.9rem; }
+    .summary-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    .summary-row.total { font-size: 1.15rem; font-weight: 800; color: #0f172a; border-top: 1px solid #e2e8f0; padding-top: 0.65rem; margin-top: 0.5rem; }
+    .footer-note { text-align: center; font-size: 0.75rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 1rem; }
+    .btn {
+      display: block;
+      width: 100%;
+      background: #0f172a;
+      color: #ffffff;
+      text-align: center;
+      padding: 0.85rem;
+      border-radius: 0.75rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-decoration: none;
+      margin-top: 1rem;
+      transition: background 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover { background: #1e293b; }
+    .empty-state { text-align: center; padding: 3rem 1rem; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="receipt-container">
+    ${receipt ? `
+      <div class="header">
+        ${receipt.businessSnapshot?.logo ? `<img src="${receipt.businessSnapshot.logo}" class="logo" alt="Logo">` : ''}
+        <div class="biz-name">${receipt.businessSnapshot?.name || 'Brivu Business'}</div>
+        <div class="biz-meta">
+          ${receipt.businessSnapshot?.address ? `${receipt.businessSnapshot.address}<br>` : ''}
+          ${receipt.businessSnapshot?.phone ? `Tel: ${receipt.businessSnapshot.phone}` : ''}
+          ${receipt.businessSnapshot?.taxNumber ? `<br>TIN/VAT: ${receipt.businessSnapshot.taxNumber}` : ''}
+        </div>
+        <div class="badge ${isInvoice ? 'invoice' : ''}">${isInvoice ? 'Official Invoice' : 'Verified Receipt'}</div>
+      </div>
+
+      <div class="meta-box">
+        <div class="meta-row">
+          <span class="label">${isInvoice ? 'Invoice No' : 'Receipt No'}</span>
+          <span class="value">${receipt.receiptNumber || 'N/A'}</span>
+        </div>
+        <div class="meta-row">
+          <span class="label">Date & Time</span>
+          <span class="value">${receipt.createdAt ? new Date(receipt.createdAt).toLocaleString() : 'N/A'}</span>
+        </div>
+        ${receipt.customerName ? `
+          <div class="meta-row">
+            <span class="label">Customer</span>
+            <span class="value">${receipt.customerName}</span>
+          </div>
+        ` : ''}
+        ${receipt.customerPhone ? `
+          <div class="meta-row">
+            <span class="label">Cust Phone</span>
+            <span class="value">${receipt.customerPhone}</span>
+          </div>
+        ` : ''}
+        <div class="meta-row">
+          <span class="label">Payment Method</span>
+          <span class="value">${receipt.paymentMethod || 'Cash'}</span>
+        </div>
+        ${receipt.dueDate ? `
+          <div class="meta-row">
+            <span class="label">Due Date</span>
+            <span class="value">${receipt.dueDate}</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>Item / Description</th>
+            <th>Qty</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item: any) => `
+            <tr>
+              <td>
+                <div style="font-weight: 600;">${item.name}</div>
+                ${item.unitPrice ? `<div style="font-size: 0.75rem; color: #64748b;">${item.quantity} × ${currency} ${Number(item.unitPrice).toLocaleString()}</div>` : ''}
+              </td>
+              <td>${item.quantity || 1}</td>
+              <td>${currency} ${Number(item.subtotal || (item.quantity * item.unitPrice) || 0).toLocaleString()}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="summary-box">
+        <div class="summary-row">
+          <span class="label">Subtotal</span>
+          <span class="value">${currency} ${Number(receipt.subtotal || 0).toLocaleString()}</span>
+        </div>
+        ${receipt.discountAmount && receipt.discountAmount > 0 ? `
+          <div class="summary-row">
+            <span class="label">Discount</span>
+            <span class="value" style="color: #ef4444;">-${currency} ${Number(receipt.discountAmount).toLocaleString()}</span>
+          </div>
+        ` : ''}
+        <div class="summary-row total">
+          <span>TOTAL</span>
+          <span>${currency} ${Number(receipt.total || 0).toLocaleString()}</span>
+        </div>
+        <div class="summary-row" style="margin-top: 0.5rem; font-size: 0.85rem;">
+          <span class="label">Amount Paid</span>
+          <span class="value">${currency} ${Number(receipt.amountPaid || 0).toLocaleString()}</span>
+        </div>
+        ${balance > 0 ? `
+          <div class="summary-row" style="font-size: 0.85rem;">
+            <span class="label">Change Due</span>
+            <span class="value">${currency} ${Number(balance).toLocaleString()}</span>
+          </div>
+        ` : balance < 0 ? `
+          <div class="summary-row" style="font-size: 0.85rem; color: #ef4444;">
+            <span class="label">Balance Due</span>
+            <span class="value">${currency} ${Number(Math.abs(balance)).toLocaleString()}</span>
+          </div>
+        ` : ''}
+      </div>
+
+      ${receipt.notes ? `
+        <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 0.75rem; padding: 0.85rem; font-size: 0.8rem; color: #854d0e; margin-bottom: 1.25rem;">
+          <strong>Notes:</strong> ${receipt.notes}
+        </div>
+      ` : ''}
+
+      <div class="footer-note">
+        Receipt ID: ${receipt.id}<br>
+        🔒 Securely Verified & Synced via Brivu Cloud
+      </div>
+
+      <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+    ` : `
+      <div class="empty-state">
+        <h2>Receipt Not Found</h2>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">The requested receipt or invoice record could not be found or has not been synchronized to cloud storage yet.</p>
+        <a href="/" class="btn" style="margin-top: 1.5rem;">Return to Brivu</a>
+      </div>
+    `}
+  </div>
+</body>
+</html>`;
+
+        return new Response(html, {
+          status: receipt ? 200 : 404,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+        });
+      } catch (err: any) {
+        return new Response('Error loading receipt: ' + String(err?.message || err), {
+          status: 500,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'text/plain' },
+        });
+      }
+    }
+
     // 2c. Single Receipt Sync endpoint (/api/receipts)
     if (url.pathname === '/api/receipts' && request.method === 'POST') {
       try {
