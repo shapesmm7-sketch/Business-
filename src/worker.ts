@@ -383,10 +383,24 @@ export async function resolveHostedQrPage(
     };
   };
 
-  // 1. If userEmail is known, check user's private storage in R2 & D1 first
+  // 1. Prioritize D1 qr_pages by pageId (most recently updated) regardless of global vs user-scoped
+  if (db && pageId && pageId !== 'default' && pageId !== 'latest') {
+    try {
+      await ensureD1Tables(db);
+      const d1Row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
+      if (d1Row?.page_json) {
+        try {
+          const parsed = JSON.parse(d1Row.page_json);
+          if (parsed) return parsed;
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  // 2. If userEmail is known, check user's private storage in R2 & D1
   if (userEmail) {
     const userKey = encodeURIComponent(userEmail);
-    // 1a. User specific page from R2
+    // 2a. User specific page from R2
     if (bucket) {
       try {
         if (pageId && pageId !== 'default' && pageId !== 'latest') {
@@ -405,15 +419,10 @@ export async function resolveHostedQrPage(
       } catch (_) {}
     }
 
-    // 1b. User specific page from D1
+    // 2b. User specific page from D1
     if (db) {
       try {
         await ensureD1Tables(db);
-        if (pageId && pageId !== 'default' && pageId !== 'latest') {
-          const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? AND id = ?').bind(userEmail, pageId).first();
-          if (row?.page_json) return JSON.parse(row.page_json);
-        }
-        // D1 pages for this user prioritized with items
         const bestRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE user_email = ? AND page_json LIKE '%menuItems%' AND page_json NOT LIKE '%\"menuItems\":[]%' ORDER BY updated_at DESC LIMIT 1").bind(userEmail).first();
         if (bestRow?.page_json) return JSON.parse(bestRow.page_json);
 
@@ -422,7 +431,7 @@ export async function resolveHostedQrPage(
       } catch (_) {}
     }
 
-    // 1c. User backup data
+    // 2c. User backup data
     const uBackup = await getUserBackupData();
     if (uBackup) {
       const converted = convertBackupToPage(uBackup);
@@ -432,18 +441,11 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // 2. Direct fetch by pageId from R2 & D1 (for any user / global)
+  // 3. Direct fetch by pageId from global R2
   if (bucket && pageId && pageId !== 'default' && pageId !== 'latest') {
     try {
       const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
       if (obj) return JSON.parse(await obj.text());
-    } catch (_) {}
-  }
-  if (db && pageId && pageId !== 'default' && pageId !== 'latest') {
-    try {
-      await ensureD1Tables(db);
-      const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ?').bind(pageId).first();
-      if (row?.page_json) return JSON.parse(row.page_json);
     } catch (_) {}
   }
 
