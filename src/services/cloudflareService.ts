@@ -1,5 +1,6 @@
 import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, WorkOSUser, WorkOSAuthConfig } from '../types';
 import { StorageService } from './storage';
+import { optimizeImageForR2 } from '../utils/imageCompressor';
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
   workerUrl: 'https://brivu.shapesmm7.workers.dev',
@@ -349,8 +350,24 @@ export const CloudflareService = {
       };
     }
 
-    const { filename, mimeType = 'application/octet-stream', folder = config.filesFolder || 'receipts' } = options;
-    const { data } = options;
+    let { filename, mimeType = 'application/octet-stream', folder = config.filesFolder || 'receipts' } = options;
+    let { data } = options;
+
+    const isImage =
+      mimeType.startsWith('image/') ||
+      /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(filename) ||
+      (typeof data === 'string' && data.startsWith('data:image/'));
+
+    if (isImage) {
+      try {
+        const optimized = await optimizeImageForR2(data, folder, filename);
+        data = optimized.data;
+        mimeType = optimized.mimeType;
+        filename = optimized.filename;
+      } catch (optErr) {
+        console.warn('Image optimization for R2 note:', optErr);
+      }
+    }
 
     try {
       const headers = this.getAuthHeaders();

@@ -67,7 +67,51 @@ export function getD1Database(env: any): any {
 // In-memory auth session cache for fast instant login polling across web and Android
 const authSessionsCache = new Map<string, { status: string; code?: string; user?: any; createdAt: number }>();
 
-// Automatically create D1 backups, files, receipts and auth_sessions tables if D1 is bound
+// 60s Query Cache & D1 metrics logger
+const queryCache = new Map<string, { data: any; expiry: number }>();
+
+export function getCachedQuery(key: string): any | null {
+  const cached = queryCache.get(key);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
+  }
+  queryCache.delete(key);
+  return null;
+}
+
+export function setCachedQuery(key: string, data: any, ttlSeconds = 60): void {
+  queryCache.set(key, { data, expiry: Date.now() + ttlSeconds * 1000 });
+}
+
+export function invalidateCachePattern(pattern: string): void {
+  for (const k of queryCache.keys()) {
+    if (k.includes(pattern)) {
+      queryCache.delete(k);
+    }
+  }
+}
+
+export async function executeMeasuredQuery(stmt: any, queryName = 'D1_QUERY'): Promise<any> {
+  const start = Date.now();
+  let res: any;
+  try {
+    res = await stmt.all();
+  } catch (err) {
+    try {
+      res = await stmt.run();
+    } catch (err2) {
+      res = { results: [], meta: { rows_read: 0, rows_written: 0, duration: Date.now() - start } };
+    }
+  }
+  const duration = Date.now() - start;
+  const meta = res?.meta || {};
+  const rowsRead = meta.rows_read ?? meta.rowsRead ?? 0;
+  const rowsWritten = meta.rows_written ?? meta.rowsWritten ?? 0;
+  console.info(`[D1 METRICS] query=${queryName} rows_read=${rowsRead} rows_written=${rowsWritten} duration_ms=${duration}`);
+  return res;
+}
+
+// Automatically create D1 backups, files, receipts, products, invoices, invoice_items, menus and auth_sessions tables and indexes if D1 is bound
 export async function ensureD1Tables(db: any): Promise<void> {
   if (!db || typeof db.prepare !== 'function') return;
   try {
@@ -127,6 +171,76 @@ export async function ensureD1Tables(db: any): Promise<void> {
   } catch (_) {}
   try {
     await db.prepare(`ALTER TABLE qr_pages ADD COLUMN user_email TEXT`).run();
+  } catch (_) {}
+
+  // Products table & indexes
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        shop_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        barcode TEXT,
+        category TEXT,
+        selling_price REAL,
+        cost_price REAL,
+        stock_quantity INTEGER,
+        image TEXT,
+        updated_at TEXT
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id)`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_updated ON products(shop_id, updated_at)`).run();
+  } catch (_) {}
+
+  // Invoices table & indexes
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id TEXT PRIMARY KEY,
+        shop_id TEXT NOT NULL,
+        invoice_number TEXT,
+        customer_name TEXT,
+        total REAL,
+        tax REAL,
+        status TEXT,
+        updated_at TEXT,
+        created_at TEXT
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_id ON invoices(shop_id)`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_updated ON invoices(shop_id, updated_at)`).run();
+  } catch (_) {}
+
+  // Invoice Items table & indexes
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS invoice_items (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL,
+        product_id TEXT,
+        quantity INTEGER,
+        unit_price REAL,
+        total REAL
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id)`).run();
+  } catch (_) {}
+
+  // Menus table & indexes
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS menus (
+        id TEXT PRIMARY KEY,
+        hotel_id TEXT NOT NULL,
+        title TEXT,
+        menu_data TEXT,
+        updated_at TEXT
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_menus_hotel_id ON menus(hotel_id)`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_menus_hotel_updated ON menus(hotel_id, updated_at)`).run();
   } catch (_) {}
 }
 
@@ -620,6 +734,139 @@ export default {
           },
         }
       );
+    }
+
+    // Optimized D1 Products API GET (/api/products)
+    if (url.pathname === '/api/products' && request.method === 'GET') {
+      try {
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(JSON.stringify({ ok: true, results: [] }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+        await ensureD1Tables(db);
+        const shopId = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          url.searchParams.get('shop_id') ||
+          url.searchParams.get('email') ||
+          'default_shop'
+        ).toLowerCase().trim();
+
+        const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+        let limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10)));
+        const offset = (page - 1) * limit;
+        const cacheKey = `products_${shopId}_p${page}_l${limit}`;
+
+        const cached = getCachedQuery(cacheKey);
+        if (cached) {
+          return new Response(JSON.stringify({ ok: true, cached: true, ...cached }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+
+        const stmt = db.prepare(`
+          SELECT id, shop_id, name, barcode, category, selling_price, cost_price, stock_quantity, updated_at
+          FROM products
+          WHERE shop_id = ?
+          ORDER BY updated_at DESC
+          LIMIT ? OFFSET ?
+        `).bind(shopId, limit, offset);
+
+        const res = await executeMeasuredQuery(stmt, 'GET_PRODUCTS');
+        const results = res.results || [];
+        const payload = { results, meta: res.meta || {} };
+        setCachedQuery(cacheKey, payload, 60);
+
+        return new Response(JSON.stringify({ ok: true, ...payload }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // Optimized D1 Products API POST (/api/products)
+    if (url.pathname === '/api/products' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(JSON.stringify({ ok: false, error: 'Database not bound' }), { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+        await ensureD1Tables(db);
+        const body: any = await request.json().catch(() => ({}));
+        const shopId = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          body?.shopId ||
+          body?.userEmail ||
+          'default_shop'
+        ).toLowerCase().trim();
+
+        const id = body.id || `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const name = body.name || 'Unnamed Product';
+        const barcode = body.barcode || null;
+        const category = body.category || 'General';
+        const sellingPrice = Number(body.sellingPrice || body.price || 0);
+        const costPrice = Number(body.costPrice || 0);
+        const stockQuantity = Number(body.stockQuantity || body.stock || 0);
+        const image = body.image || null;
+        const updatedAt = new Date().toISOString();
+
+        const stmt = db.prepare(`
+          INSERT INTO products (id, shop_id, name, barcode, category, selling_price, cost_price, stock_quantity, image, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            barcode = excluded.barcode,
+            category = excluded.category,
+            selling_price = excluded.selling_price,
+            cost_price = excluded.cost_price,
+            stock_quantity = excluded.stock_quantity,
+            image = excluded.image,
+            updated_at = excluded.updated_at
+        `).bind(id, shopId, name, barcode, category, sellingPrice, costPrice, stockQuantity, image, updatedAt);
+
+        await executeMeasuredQuery(stmt, 'UPSERT_PRODUCT');
+        invalidateCachePattern(`products_${shopId}`);
+
+        return new Response(JSON.stringify({ ok: true, success: true, id }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // Optimized D1 Menu / Hotel Public API GET (/api/m/:hotelId)
+    if (url.pathname.startsWith('/api/m/') && request.method === 'GET') {
+      try {
+        const hotelId = decodeURIComponent(url.pathname.replace('/api/m/', '')).trim();
+        const db = getD1Database(env);
+        if (!hotelId || !db) {
+          return new Response(JSON.stringify({ ok: false, error: 'Not found' }), { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+        await ensureD1Tables(db);
+        const cacheKey = `menu_${hotelId}`;
+        const cached = getCachedQuery(cacheKey);
+        if (cached) {
+          return new Response(JSON.stringify({ ok: true, cached: true, ...cached }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+
+        const stmt = db.prepare(`
+          SELECT id, hotel_id, title, menu_data, updated_at
+          FROM menus
+          WHERE hotel_id = ?
+          LIMIT 1
+        `).bind(hotelId);
+
+        const res = await executeMeasuredQuery(stmt, 'GET_MENU');
+        const row = res.results?.[0];
+        if (!row) {
+          return new Response(JSON.stringify({ ok: false, error: 'Menu not found' }), { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+        }
+
+        const menuData = JSON.parse(row.menu_data || '{}');
+        const payload = { menu: menuData, meta: res.meta || {} };
+        setCachedQuery(cacheKey, payload, 60);
+
+        return new Response(JSON.stringify({ ok: true, ...payload }), { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ ok: false, error: String(err?.message || err) }), { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+      }
     }
 
     // 2a. WorkOS OAuth Callback Handler (/callback and /auth/callback)

@@ -95,72 +95,22 @@ export function generateVerificationHash(input: ReceiptDataForQr | Receipt): str
 }
 
 /**
- * Constructs the structured plain text offline receipt string for QR code encoding
+ * Constructs the receipt verification URL for QR code encoding so scanning opens the hosted web receipt page with details and boxes
  */
 export function buildQrReceiptPayload(input: ReceiptDataForQr | Receipt): string {
   const rec = normalizeReceiptData(input);
-  const currency = rec.businessSnapshot.currency || 'UGX';
-  const hash = generateVerificationHash(rec);
-
-  const lines: string[] = [];
-
-  // Inject online web verification link at the top of QR payload if Cloudflare is configured
   try {
     const config = StorageService.getCloudflareConfig();
     if (config && config.workerUrl) {
       const cleanUrl = config.workerUrl.trim().replace(/\/$/, '');
-      lines.push(`${cleanUrl}/api/receipts/${encodeURIComponent(rec.id)}`);
-      lines.push(``); // Spacer line for scanner separation
+      return `${cleanUrl}/api/receipts/${encodeURIComponent(rec.id)}`;
     }
   } catch (err) {
-    console.warn('Could not inject Cloudflare web verification link:', err);
+    console.warn('Could not get Cloudflare workerUrl for QR:', err);
   }
 
-  lines.push(`================================`);
-  const qrBizName = (rec.businessSnapshot?.name || '').trim();
-  if (qrBizName && qrBizName.toLowerCase() !== 'business name') {
-    lines.push(`${qrBizName.toUpperCase()}`);
-  }
-  if (rec.businessSnapshot?.address) lines.push(`Addr: ${rec.businessSnapshot.address}`);
-  if (rec.businessSnapshot?.phone) lines.push(`Tel: ${rec.businessSnapshot.phone}`);
-  if (rec.businessSnapshot?.taxNumber) lines.push(`TIN/VAT: ${rec.businessSnapshot.taxNumber}`);
-  lines.push(`================================`);
-
-  lines.push(`Receipt No : ${rec.receiptNumber}`);
-  lines.push(`Date & Time: ${formatDateTime(rec.createdAt)}`);
-  if (rec.customerName) lines.push(`Customer   : ${rec.customerName}`);
-  if (rec.customerPhone) lines.push(`Cust Phone : ${rec.customerPhone}`);
-  lines.push(`Payment    : ${rec.paymentMethod}`);
-  lines.push(`--------------------------------`);
-
-  lines.push(`ITEMS PURCHASED:`);
-  rec.items.forEach((item, index) => {
-    lines.push(`${index + 1}. ${item.name}`);
-    lines.push(`   Qty: ${item.quantity} x ${formatCurrency(item.unitPrice, currency)} = ${formatCurrency(item.subtotal, currency)}`);
-  });
-
-  lines.push(`--------------------------------`);
-  lines.push(`Subtotal   : ${formatCurrency(rec.subtotal, currency)}`);
-  if (rec.discountAmount && rec.discountAmount > 0) {
-    lines.push(`Discount   : -${formatCurrency(rec.discountAmount, currency)}`);
-  }
-  lines.push(`TOTAL      : ${formatCurrency(rec.total, currency)}`);
-  lines.push(`Amount Paid: ${formatCurrency(rec.amountPaid, currency)}`);
-
-  if (rec.balance > 0) {
-    lines.push(`Change     : ${formatCurrency(rec.balance, currency)}`);
-  } else if (rec.balance < 0) {
-    lines.push(`Balance Due: ${formatCurrency(Math.abs(rec.balance), currency)}`);
-  }
-
-  lines.push(`--------------------------------`);
-  lines.push(`Receipt ID : ${rec.id}`);
-  lines.push(`VERIFY HASH: ${hash}`);
-  lines.push(`================================`);
-  lines.push(`OFFLINE VERIFIABLE RECEIPT`);
-  lines.push(`Scan to verify authenticity.`);
-
-  return lines.join('\n');
+  const fallbackBase = typeof window !== 'undefined' ? window.location.origin : 'https://quickreceipt.app';
+  return `${fallbackBase}/api/receipts/${encodeURIComponent(rec.id)}`;
 }
 
 /**

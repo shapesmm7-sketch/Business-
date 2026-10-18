@@ -150,3 +150,98 @@ export function compressDataUrl(
     img.src = dataUrl;
   });
 }
+
+export async function optimizeImageForR2(
+  data: Blob | ArrayBuffer | string,
+  folder = '',
+  filename = ''
+): Promise<{ data: string; mimeType: string; filename: string }> {
+  let dataUrl = '';
+  if (typeof data === 'string') {
+    dataUrl = data.startsWith('data:') ? data : `data:image/jpeg;base64,${data}`;
+  } else if (data instanceof ArrayBuffer) {
+    const blob = new Blob([data]);
+    dataUrl = await blobToDataUrl(blob);
+  } else if (data instanceof Blob) {
+    dataUrl = await blobToDataUrl(data);
+  } else {
+    return { data: typeof data === 'string' ? data : '', mimeType: 'application/octet-stream', filename };
+  }
+
+  if (!dataUrl.startsWith('data:image/')) {
+    return { data: dataUrl, mimeType: 'application/octet-stream', filename };
+  }
+
+  const fLower = (folder || '').toLowerCase();
+  const nameLower = (filename || '').toLowerCase();
+
+  let maxBytes = 250 * 1024;
+  let targetQuality = 0.75;
+
+  if (
+    fLower.includes('logo') ||
+    fLower.includes('business') ||
+    fLower.includes('profile') ||
+    fLower.includes('signature') ||
+    nameLower.includes('logo') ||
+    nameLower.includes('signature') ||
+    nameLower.includes('favicon')
+  ) {
+    // Business logos (inside app): target 30–80 KB, max 100 KB
+    maxBytes = 100 * 1024;
+    targetQuality = 0.70;
+  } else if (
+    fLower.includes('inventory') ||
+    fLower.includes('product') ||
+    fLower.includes('sales') ||
+    fLower.includes('expenses') ||
+    fLower.includes('debts') ||
+    fLower.includes('shopping') ||
+    fLower.includes('customer') ||
+    fLower.includes('agent') ||
+    fLower.includes('worker')
+  ) {
+    // Product photos (inside app): target 100–150 KB, max 250 KB
+    maxBytes = 250 * 1024;
+    targetQuality = 0.72;
+  } else {
+    // QR menu photos (web): target 150–200 KB, max 250 KB
+    maxBytes = 250 * 1024;
+    targetQuality = 0.78;
+  }
+
+  const compressedDataUrl = await compressDataUrl(dataUrl, {
+    maxDimension: 1200,
+    quality: targetQuality,
+    mimeType: 'image/webp',
+    maxBytes,
+  });
+
+  let newFilename = filename;
+  if (newFilename) {
+    const lastDot = newFilename.lastIndexOf('.');
+    if (lastDot !== -1) {
+      newFilename = newFilename.substring(0, lastDot) + '.webp';
+    } else {
+      newFilename = `${newFilename}.webp`;
+    }
+  } else {
+    newFilename = `image_${Date.now()}.webp`;
+  }
+
+  return {
+    data: compressedDataUrl,
+    mimeType: 'image/webp',
+    filename: newFilename,
+  };
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
