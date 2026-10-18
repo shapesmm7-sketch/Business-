@@ -904,10 +904,24 @@ export const StorageService = {
 
     try {
       if (backupData.profile) {
-        this.saveProfile(backupData.profile);
+        if (replaceExisting) {
+          this.saveProfile(backupData.profile);
+        } else {
+          const currentProfile = this.getProfile();
+          this.saveProfile({
+            ...backupData.profile,
+            ...currentProfile,
+            name: currentProfile.name || backupData.profile.name || '',
+            phone: currentProfile.phone || backupData.profile.phone || '',
+            email: currentProfile.email || backupData.profile.email || '',
+            currency: currentProfile.currency || backupData.profile.currency || 'UGX',
+          });
+        }
       }
       if (backupData.settings) {
-        this.saveSettings(backupData.settings);
+        if (replaceExisting) {
+          this.saveSettings(backupData.settings);
+        }
       }
       // Import and merge deleted receipt ids so tombstones survive across devices/APK installs
       if (Array.isArray(backupData.deletedReceiptIds)) {
@@ -931,16 +945,11 @@ export const StorageService = {
           if (!r || typeof r !== 'object') return true;
           if (r.id && String(r.id).startsWith('sample-')) return true;
           const rId = String(r.id || '').trim().toLowerCase();
-          const rNum = String(r.receiptNumber || '').trim().toLowerCase();
-          const rCust = r.customerName ? `cust:${String(r.customerName).trim().toLowerCase()}` : '';
-          if (deletedSet.has(rId) || (rNum && deletedSet.has(rNum))) return true;
-          if (rCust && deletedSet.has(rCust)) return true;
-          return false;
+          return deletedSet.has(rId);
         };
 
         const cloudReceipts = backupData.receipts.filter((r) => !isDeleted(r));
         if (replaceExisting) {
-          // Strictly load this account's receipts without merging previous session receipts
           writeToStorage(STORAGE_KEYS.RECEIPTS, cloudReceipts);
         } else {
           const existing = this.getReceipts().filter((r) => !isDeleted(r));
@@ -1025,10 +1034,24 @@ export const StorageService = {
         }
       }
       if (Array.isArray(backupData.agents)) {
-        writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
+        } else {
+          const existing = this.getAgents();
+          const cloudIds = new Set(backupData.agents.map((a) => a.id));
+          const localOnly = existing.filter((a) => !cloudIds.has(a.id));
+          writeToStorage(STORAGE_KEYS.AGENTS, [...backupData.agents, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.workers)) {
-        writeToStorage(STORAGE_KEYS.WORKERS, backupData.workers);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.WORKERS, backupData.workers);
+        } else {
+          const existing = this.getWorkers();
+          const cloudIds = new Set(backupData.workers.map((w) => w.id));
+          const localOnly = existing.filter((w) => !cloudIds.has(w.id));
+          writeToStorage(STORAGE_KEYS.WORKERS, [...backupData.workers, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.staffAttendance)) {
         writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, backupData.staffAttendance);
@@ -1043,16 +1066,45 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, backupData.staffIncidents);
       }
       if (Array.isArray(backupData.qrHostedPages)) {
-        writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
+        } else {
+          const existing = this.getHostedQRPages();
+          const cloudIds = new Set(backupData.qrHostedPages.map((p) => p.id));
+          const localOnly = existing.filter((p) => !cloudIds.has(p.id));
+          const merged = [...backupData.qrHostedPages, ...localOnly];
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, merged.length > 0 ? merged : existing);
+        }
       }
       if (Array.isArray(backupData.websitesQrItems)) {
-        writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
+        } else {
+          const existing = this.getWebsitesQrItems();
+          const cloudIds = new Set(backupData.websitesQrItems.map((w) => w.id));
+          const localOnly = existing.filter((w) => !cloudIds.has(w.id));
+          writeToStorage(STORAGE_KEYS.WEBSITES_QR, [...backupData.websitesQrItems, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.socialsQrItems)) {
-        writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
+        } else {
+          const existing = this.getSocialsQrItems();
+          const cloudIds = new Set(backupData.socialsQrItems.map((s) => s.id));
+          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
+          writeToStorage(STORAGE_KEYS.SOCIALS_QR, [...backupData.socialsQrItems, ...localOnly]);
+        }
       }
       if (Array.isArray(backupData.eventsQrItems)) {
-        writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
+        if (replaceExisting) {
+          writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
+        } else {
+          const existing = this.getEventsQrItems();
+          const cloudIds = new Set(backupData.eventsQrItems.map((e) => e.id));
+          const localOnly = existing.filter((e) => !cloudIds.has(e.id));
+          writeToStorage(STORAGE_KEYS.EVENTS_QR, [...backupData.eventsQrItems, ...localOnly]);
+        }
       }
       return {
         success: true,
@@ -2088,73 +2140,97 @@ export const StorageService = {
   // ==================== QR CODE HOSTED PAGES (DIGITAL MENUS & BUSINESS SHOWCASES) ====================
 
   getHostedQRPages(): QRCodeHostedPage[] {
+    const profile = this.getProfile();
+    const createDefault = (): QRCodeHostedPage => ({
+      id: `qr-${Date.now().toString(36)}`,
+      title: profile.name || '',
+      tagline: profile.description || '',
+      description: '',
+      pageType: 'menu',
+      accentColor: '#059669',
+      theme: 'emerald',
+      phone: profile.phone || '',
+      whatsapp: profile.whatsapp || profile.phone || '',
+      email: profile.email || '',
+      address: profile.address || '',
+      googleMapsUrl: '',
+      wifiName: '',
+      wifiPassword: '',
+      openingHours: '',
+      currency: profile.currency || 'UGX',
+      announcement: '',
+      allowWhatsAppOrdering: true,
+      socialLinks: {
+        instagram: '',
+        facebook: '',
+        website: profile.website || '',
+      },
+      photos: [],
+      menuCategories: ['All'],
+      menuItems: [],
+      qrDarkColor: '#000000',
+      qrEyeColor: '#000000',
+      qrLightColor: '#ffffff',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#e2e8f0',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
     try {
       const data = localStorage.getItem(STORAGE_KEYS.QR_HOSTED_PAGES);
-      const profile = this.getProfile();
       if (!data) {
-        // Initialize clean default page without mock or sample data
-        const initial: QRCodeHostedPage = {
-          id: `qr-${Date.now().toString(36)}`,
-          title: profile.name || '',
-          tagline: profile.description || '',
-          description: '',
-          pageType: 'menu',
-          accentColor: '#059669',
-          theme: 'emerald',
-          phone: profile.phone || '',
-          whatsapp: profile.whatsapp || profile.phone || '',
-          email: profile.email || '',
-          address: profile.address || '',
-          googleMapsUrl: '',
-          wifiName: '',
-          wifiPassword: '',
-          openingHours: '',
-          currency: profile.currency || 'UGX',
-          announcement: '',
-          allowWhatsAppOrdering: true,
-          socialLinks: {
-            instagram: '',
-            facebook: '',
-            website: profile.website || '',
-          },
-          photos: [],
-          menuCategories: ['All'],
-          menuItems: [],
-          qrDarkColor: '#000000',
-          qrEyeColor: '#000000',
-          qrLightColor: '#ffffff',
-          qrBoxBgColor: '#ffffff',
-          qrBoxBorderColor: '#e2e8f0',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+        const initial = createDefault();
         try {
           writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initial]);
         } catch {}
         return [initial];
       }
 
-      const parsed = JSON.parse(data) as QRCodeHostedPage[];
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        return [];
+      let parsed: QRCodeHostedPage[] = [];
+      try {
+        parsed = JSON.parse(data) as QRCodeHostedPage[];
+      } catch {
+        parsed = [];
       }
-      // Business QR Pages only: strictly filter out any event, website, social or hub pages so business QR is never displaced or contaminated
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        const initial = createDefault();
+        try {
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initial]);
+        } catch {}
+        return [initial];
+      }
+
+      // Business QR Pages only: strictly filter out any event, website, social or hub pages
       const businessPages = parsed.filter(
         (p) =>
+          p &&
+          typeof p === 'object' &&
           !p.id.startsWith('event-') &&
           !p.id.startsWith('events-hub-') &&
           !p.id.startsWith('test-event-') &&
           !p.id.startsWith('web-') &&
           !p.id.startsWith('social-')
       );
-      if (businessPages.length !== parsed.length && businessPages.length > 0) {
+
+      if (businessPages.length === 0) {
+        const initial = createDefault();
+        try {
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initial]);
+        } catch {}
+        return [initial];
+      }
+
+      if (businessPages.length !== parsed.length) {
         try {
           writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, businessPages);
         } catch {}
       }
-      return businessPages.length > 0 ? businessPages : parsed;
+      return businessPages;
     } catch {
-      return [];
+      const initial = createDefault();
+      return [initial];
     }
   },
 
@@ -2820,34 +2896,8 @@ export const StorageService = {
       }
     }
 
-    // 2. Wipe active workspace to prevent any cross-account data leakage
-    this.clearActiveUserData();
-
-    // 3. Configure state for the incoming user
-    if (cleanNewEmail) {
-      writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
-      // Pre-set user email in business profile
-      const prof = this.getProfile();
-      this.saveProfile({
-        ...prof,
-        email: cleanNewEmail,
-      });
-
-      // Update cloudflare config to use this user's email as the key
-      const cf = this.getCloudflareConfig();
-      cf.apiKey = cleanNewEmail;
-      this.saveCloudflareConfig(cf);
-
-      // Check if this user has a local vault cached from a previous session on this device
-      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
-      if (vaultJson) {
-        try {
-          const vaultData = JSON.parse(vaultJson);
-          this.importBackup(vaultData, true);
-        } catch (_) {}
-      }
-    } else {
-      // User signed out completely
+    if (!cleanNewEmail) {
+      // User signed out: KEEP all local data intact on the phone so records, inventory, and QR pages never disappear!
       try {
         localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
         localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
@@ -2857,6 +2907,29 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.CLOUDFLARE, cf);
         }
       } catch {}
+      return;
+    }
+
+    // User signed in:
+    // Preserve all local records created offline or before logging in so they can be merged and uploaded to cloud
+    writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
+    const prof = this.getProfile();
+    this.saveProfile({
+      ...prof,
+      email: prof.email || cleanNewEmail,
+    });
+
+    const cf = this.getCloudflareConfig();
+    cf.apiKey = cleanNewEmail;
+    this.saveCloudflareConfig(cf);
+
+    // If this user has a local vault cached from a previous session on this device, merge it:
+    const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
+    if (vaultJson) {
+      try {
+        const vaultData = JSON.parse(vaultJson);
+        this.importBackup(vaultData, false);
+      } catch (_) {}
     }
   },
 

@@ -39,39 +39,15 @@ export class QRHostingService {
   }
 
   static resolveOwnerEmail(emailOverride?: string): string {
+    // CRITICAL: If the user has not signed in, NEVER attach any email ID to QR links
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email || !user.email.includes('@')) {
+      return '';
+    }
     if (emailOverride && emailOverride.includes('@')) {
       return emailOverride.toLowerCase().trim();
     }
-    const user = StorageService.getWorkOSUser();
-    if (user?.email && user.email.includes('@')) {
-      return user.email.toLowerCase().trim();
-    }
-    const profile = StorageService.getProfile();
-    if (profile?.email && profile.email.includes('@')) {
-      return profile.email.toLowerCase().trim();
-    }
-    const brivuId = StorageService.getBrivuUserId();
-    if (brivuId && brivuId.includes('@')) {
-      return brivuId.toLowerCase().trim();
-    }
-    const cf = StorageService.getCloudflareConfig();
-    if (cf?.apiKey && cf.apiKey.includes('@')) {
-      return cf.apiKey.toLowerCase().trim();
-    }
-    const pages = StorageService.getHostedQRPages();
-    for (const p of pages) {
-      const pEmail = (p.userEmail || p.email || '').toLowerCase().trim();
-      if (pEmail && pEmail.includes('@')) {
-        return pEmail;
-      }
-    }
-    try {
-      const vaultEmail = localStorage.getItem('brivu_user_email') || localStorage.getItem('quickreceipt_user_email');
-      if (vaultEmail && vaultEmail.includes('@')) {
-        return vaultEmail.toLowerCase().trim();
-      }
-    } catch {}
-    return 'tabsmrman@gmail.com';
+    return user.email.toLowerCase().trim();
   }
 
   /**

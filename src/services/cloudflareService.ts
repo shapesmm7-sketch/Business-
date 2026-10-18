@@ -720,11 +720,12 @@ export const CloudflareService = {
         };
       }
 
-      // Restoring for this specific user account: replace active workspace so previous user's records never leak
-      const importResult = StorageService.importBackup(rawBackupData, true);
+      // Merge cloud records with local records so offline & pre-login records are preserved and uploaded to cloud
+      const importResult = StorageService.importBackup(rawBackupData, false);
       if (importResult.success) {
         try {
-          localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(rawBackupData));
+          const combinedBackup = StorageService.exportBackup();
+          localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(combinedBackup));
         } catch (_) {}
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),

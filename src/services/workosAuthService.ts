@@ -153,14 +153,9 @@ export const WorkOSAuthService = {
       // Save user profile to Cloudflare
       await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
 
-      // Only push data to Cloudflare if this user has actual local records
-      const hasLocalData = StorageService.getReceipts().length > 0 ||
-        StorageService.getInventoryProducts().length > 0 ||
-        StorageService.getInventorySales().length > 0;
-
-      if (hasLocalData) {
-        await CloudflareService.syncAllToCloudflare().catch(() => {});
-      }
+      // CRITICAL: Always push all local records created offline or before logging in to Cloudflare!
+      // This ensures all offline records, inventory, receipts, debts, and QR items are securely saved to the cloud on login.
+      await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
     };
 
     runBackgroundSync().catch((err) => console.warn('Background sync note:', err));
