@@ -175,29 +175,9 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   const handleSaveToCloudflare = async () => {
     try {
       setIsUploadingCf(true);
-      const doc = await PdfGenerator.createPdfDoc(receipt);
-      const isInv = receipt.documentType === 'invoice';
-      const prefix = isInv ? 'Invoice' : 'Receipt';
-      const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `${prefix}_${cleanNum}.pdf`;
-      const arrayBuffer = doc.output('arraybuffer');
-
-      // 1. Upload PDF to Cloud Storage
-      const fileRes = await CloudflareService.uploadFile({
-        data: arrayBuffer,
-        filename,
-        mimeType: 'application/pdf',
-        folder: 'receipts',
-      });
-
-      // 2. Sync receipt record to Cloud
+      // Sync receipt/invoice record (JSON information) to Cloudflare
       await CloudflareService.saveSingleReceipt(receipt);
-
-      if (fileRes.success) {
-        showToast(`Saved to Cloud Storage & Synced!`);
-      } else {
-        showToast(fileRes.message || 'Saved to Cloud Storage');
-      }
+      showToast(`Receipt information synced to Cloud!`);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       showToast(`Cloud save error: ${errMsg}`);

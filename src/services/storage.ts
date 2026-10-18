@@ -545,34 +545,9 @@ export const StorageService = {
     const success = writeToStorage(STORAGE_KEYS.RECEIPTS, updated);
 
     if (success) {
-      // Background sync to Cloudflare D1 if configured
+      // Background sync receipt/invoice JSON information to Cloudflare D1
       this.syncReceiptToCloudflare(receipt);
       CloudflareService.syncAllToCloudflare().catch(() => {});
-
-      // Asynchronously upload PDF document to Cloudflare R2 so it is backed up in Cloud Files
-      if (typeof window !== 'undefined') {
-        const user = this.getWorkOSUser();
-        const cfConfig = this.getCloudflareConfig();
-        if ((user && user.email) || cfConfig.autoSaveFiles !== false) {
-          setTimeout(async () => {
-            try {
-              const { PdfGenerator } = await import('./pdfGenerator');
-              const doc = await PdfGenerator.createPdfDoc(receipt);
-              const isInv = receipt.documentType === 'invoice';
-              const pfx = isInv ? 'Invoice' : 'Receipt';
-              const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
-              const fname = `${pfx}_${cleanNum}.pdf`;
-              const arrayBuffer = doc.output('arraybuffer');
-              await CloudflareService.uploadFile({
-                data: arrayBuffer,
-                filename: fname,
-                mimeType: 'application/pdf',
-                folder: isInv ? 'invoices' : 'receipts',
-              });
-            } catch (_) {}
-          }, 800);
-        }
-      }
     }
 
     if (success && isNew) {
