@@ -2821,6 +2821,36 @@ export default {
           } catch (_) {}
         }
 
+        // 3. Enrich backupData with all live hosted QR pages stored in D1 qr_pages table for this user email
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            const qrRows = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ?').bind(userEmail).all();
+            const hostedPages: any[] = [];
+            if (qrRows?.results) {
+              for (const r of qrRows.results as any[]) {
+                if (r?.page_json) {
+                  try {
+                    const parsedPage = JSON.parse(r.page_json);
+                    if (parsedPage && parsedPage.id && parsedPage.id !== 'default' && parsedPage.id !== 'latest') {
+                      hostedPages.push(parsedPage);
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+            if (hostedPages.length > 0) {
+              if (!backupData) backupData = {};
+              const existingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
+              const pageMap = new Map();
+              for (const p of [...existingPages, ...hostedPages]) {
+                if (p?.id) pageMap.set(p.id, p);
+              }
+              backupData.qrHostedPages = Array.from(pageMap.values());
+            }
+          } catch (_) {}
+        }
+
         return new Response(
           JSON.stringify({
             ok: true,
