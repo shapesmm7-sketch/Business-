@@ -132,13 +132,11 @@ export const WorkOSAuthService = {
 
     // 5. Run cloud restoration & sync in background without blocking or delaying login!
     const runBackgroundSync = async () => {
-      let cloudRestored = false;
       if (cleanEmail) {
         try {
           const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
-          if (pullRes.success && pullRes.data) {
-            cloudRestored = true;
-            // Notify UI to refresh restored receipts and products
+          if (pullRes.success) {
+            // Notify UI to refresh restored receipts and products immediately
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
               window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
@@ -154,8 +152,12 @@ export const WorkOSAuthService = {
       await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
 
       // CRITICAL: Always push all local records created offline or before logging in to Cloudflare!
-      // This ensures all offline records, inventory, receipts, debts, and QR items are securely saved to the cloud on login.
       await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
+
+      // Final refresh dispatch
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+      }
     };
 
     runBackgroundSync().catch((err) => console.warn('Background sync note:', err));

@@ -383,43 +383,68 @@ export async function resolveHostedQrPage(
     };
   };
 
-  // 1. Prioritize D1 qr_pages by pageId (most recently updated) regardless of global vs user-scoped
-  if (db && pageId && pageId !== 'default' && pageId !== 'latest') {
-    try {
-      await ensureD1Tables(db);
-      const d1Row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
-      if (d1Row?.page_json) {
-        try {
-          const parsed = JSON.parse(d1Row.page_json);
-          if (parsed) return parsed;
-        } catch (_) {}
-      }
-    } catch (_) {}
-  }
-
-  // 2. If userEmail is known, check user's private storage in R2 & D1
-  if (userEmail) {
+  // 1. If userEmail is provided, strictly check user-scoped R2 and D1 for this pageId first
+  if (userEmail && pageId && pageId !== 'default' && pageId !== 'latest') {
     const userKey = encodeURIComponent(userEmail);
-    // 2a. User specific page from R2
+    // 1a. User specific page from R2
     if (bucket) {
       try {
-        if (pageId && pageId !== 'default' && pageId !== 'latest') {
-          const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
-          if (uObj) return JSON.parse(await uObj.text());
+        const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
+        if (uObj) {
+          const parsed = JSON.parse(await uObj.text());
+          if (parsed) return parsed;
         }
-        for (const k of [`users/${userKey}/latest_qr_page.json`, `users/${userKey}/default_qr_page.json`]) {
-          const lObj = await bucket.get(k);
-          if (lObj) {
-            const p = JSON.parse(await lObj.text());
-            if (p && ((p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0) || p.title !== 'Brivu Business')) {
-              return p;
+      } catch (_) {}
+    }
+    // 1b. User specific page from D1
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? AND id = ?').bind(userEmail, pageId).first();
+        if (row?.page_json) {
+          const parsed = JSON.parse(row.page_json);
+          if (parsed) return parsed;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. If pageId is requested (and not default/latest), check D1 for this exact pageId with tenant validation
+  if (pageId && pageId !== 'default' && pageId !== 'latest') {
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        const row: any = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
+        if (row?.page_json) {
+          const ownerEmail = (row.user_email || '').toLowerCase().trim();
+          if (userEmail && ownerEmail && ownerEmail !== userEmail) {
+            // Tenant mismatch - do not leak data across tenants!
+          } else {
+            const parsed = JSON.parse(row.page_json);
+            if (parsed) return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    if (bucket) {
+      try {
+        const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
+        if (obj) {
+          const text = await obj.text();
+          const parsed = JSON.parse(text);
+          if (parsed) {
+            const ownerEmail = (parsed.userEmail || parsed.email || '').toLowerCase().trim();
+            if (!userEmail || !ownerEmail || ownerEmail === userEmail) {
+              return parsed;
             }
           }
         }
       } catch (_) {}
     }
+  }
 
-    // 2b. User specific page from D1
+  // 3. If userEmail is known, check user's backup / general pages
+  if (userEmail) {
     if (db) {
       try {
         await ensureD1Tables(db);
@@ -430,23 +455,22 @@ export async function resolveHostedQrPage(
         if (latestUserRow?.page_json) return JSON.parse(latestUserRow.page_json);
       } catch (_) {}
     }
-
-    // 2c. User backup data
-    const uBackup = await getUserBackupData();
-    if (uBackup) {
-      const converted = convertBackupToPage(uBackup);
-      if (converted && (converted.title !== 'Brivu Business' || (converted.menuItems && converted.menuItems.length > 0) || (converted.photos && converted.photos.length > 0))) {
-        return converted;
-      }
-    }
   }
 
-  // 3. Direct fetch by pageId from global R2
-  if (bucket && pageId && pageId !== 'default' && pageId !== 'latest') {
-    try {
-      const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
-      if (obj) return JSON.parse(await obj.text());
-    } catch (_) {}
+  // 4. Default / Latest handlers
+  if (pageId === 'default' || pageId === 'latest') {
+    if (userEmail && db) {
+      try {
+        const latestUserRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? ORDER BY updated_at DESC LIMIT 1').bind(userEmail).first();
+        if (latestUserRow?.page_json) return JSON.parse(latestUserRow.page_json);
+      } catch (_) {}
+    }
+    if (bucket) {
+      try {
+        const obj = await bucket.get(`qr_pages/${pageId}.json`);
+        if (obj) return JSON.parse(await obj.text());
+      } catch (_) {}
+    }
   }
 
   // 3. Hub handlers (Websites, Socials, Events)
