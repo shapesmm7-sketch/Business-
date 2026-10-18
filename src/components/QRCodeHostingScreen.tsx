@@ -168,8 +168,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   onNavigateHome,
   onOpenCustomerView,
 }) => {
-  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' (defaults to 'business' so all QR sections are visible immediately)
-  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events'>('business');
+  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | null (defaults to null so the Quick Actions overview screen shows first)
+  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | null>(null);
 
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
   const [activePageId, setActivePageId] = useState<string>(() => {
@@ -1385,7 +1385,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between">
         <button
-          onClick={onNavigateHome}
+          onClick={qrCategory ? () => setQrCategory(null) : onNavigateHome}
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -1430,163 +1430,127 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         )}
       </div>
 
-      {/* TOP CATEGORY SELECTOR CARDS: Always visible so user can switch categories and sections never disappear */}
-      <div className="space-y-2 pt-1 animate-fadeIn">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            {t('quick_actions', business?.language) || 'QUICK ACTIONS'}
-          </h2>
-          <span className="text-[11px] font-medium text-slate-400">
-            {t('select_option', business?.language) || 'Select an option below'}
-          </span>
+      {/* OVERVIEW SCREEN: When qrCategory is null, show the clean Quick Actions dashboard matching screenshot */}
+      {qrCategory === null && (
+        <div className="space-y-3 pt-1 animate-fadeIn">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              {t('quick_actions', business?.language) || 'QUICK ACTIONS'}
+            </h2>
+            <span className="text-[11px] font-medium text-slate-400">
+              {t('select_option', business?.language) || 'Select an option below'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            {/* 1. BUSINESS QR BUTTON */}
+            <button
+              id="btn-main-qr-business"
+              type="button"
+              onClick={() => setQrCategory('business')}
+              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#059669] to-[#047857] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+            >
+              <div className="flex items-start justify-between w-full mb-0.5">
+                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <Store className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
+                  <span>Hub</span>
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Business QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] font-normal text-emerald-100/90 mt-0.5 leading-snug line-clamp-2">
+                  Host catalog, menu, photos, WiFi & info
+                </p>
+              </div>
+            </button>
+
+            {/* 2. WEBSITES / APPS QR BUTTON */}
+            <button
+              id="btn-main-qr-websites"
+              type="button"
+              onClick={() => setQrCategory('websites')}
+              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#2563eb] via-[#3b82f6] to-[#4338ca] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+            >
+              <div className="flex items-start justify-between w-full mb-0.5">
+                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <Globe className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
+                  <span>Links</span>
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Websites / Apps QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] font-normal text-blue-100/90 mt-0.5 leading-snug line-clamp-2">
+                  Websites, Google Play, App Store & links
+                </p>
+              </div>
+            </button>
+
+            {/* 3. SOCIALS QR BUTTON */}
+            <button
+              id="btn-main-qr-socials"
+              type="button"
+              onClick={() => setQrCategory('socials')}
+              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#0d9488] to-[#064e3b] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+            >
+              <div className="flex items-start justify-between w-full mb-0.5">
+                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
+                  <span>Socials</span>
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Socials QR
+                </div>
+                <p className="text-[10px] sm:text-[11px] font-normal text-teal-100/90 mt-0.5 leading-snug line-clamp-2">
+                  WhatsApp, Instagram, TikTok & Facebook
+                </p>
+              </div>
+            </button>
+
+            {/* 4. HOST EVENTS QR BUTTON */}
+            <button
+              id="btn-main-qr-events"
+              type="button"
+              onClick={() => setQrCategory('events')}
+              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#9333ea] via-[#7c3aed] to-[#4c1d95] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+            >
+              <div className="flex items-start justify-between w-full mb-0.5">
+                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <Calendar className="w-3.5 h-3.5 stroke-[2.5]" />
+                </div>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
+                  <span>Events</span>
+                  <ArrowUpRight className="w-2.5 h-2.5" />
+                </div>
+              </div>
+              <div className="mt-1.5">
+                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+                  Host Events
+                </div>
+                <p className="text-[10px] sm:text-[11px] font-normal text-purple-100/90 mt-0.5 leading-snug line-clamp-2">
+                  Conferences, parties & invitations
+                </p>
+              </div>
+            </button>
+          </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
-          {/* 1. BUSINESS QR BUTTON */}
-          <button
-            id="btn-main-qr-business"
-            type="button"
-            onClick={() => setQrCategory('business')}
-            className={`group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all overflow-hidden text-left min-h-[72px] sm:min-h-[84px] cursor-pointer ${
-              qrCategory === 'business'
-                ? 'bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-700 text-white shadow-md ring-2 ring-emerald-400 border border-emerald-500'
-                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-emerald-400'
-            }`}
-          >
-            <div className="flex items-start justify-between w-full mb-1">
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs ${
-                qrCategory === 'business' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-              }`}>
-                <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-              </div>
-              <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-semibold ${
-                qrCategory === 'business' ? 'bg-white/20 text-white' : 'bg-emerald-50 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-              }`}>
-                <span>Hub</span>
-                <ArrowUpRight className="w-2.5 h-2.5" />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm font-bold tracking-tight leading-tight">
-                Business QR
-              </div>
-              <p className={`text-[10px] sm:text-[11px] font-normal mt-0.5 leading-tight line-clamp-1 ${
-                qrCategory === 'business' ? 'text-emerald-100/90' : 'text-slate-500 dark:text-slate-400'
-              }`}>
-                Menu, photos, WiFi & info
-              </p>
-            </div>
-          </button>
 
-          {/* 2. WEBSITES / APPS QR BUTTON */}
-          <button
-            id="btn-main-qr-websites"
-            type="button"
-            onClick={() => setQrCategory('websites')}
-            className={`group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all overflow-hidden text-left min-h-[72px] sm:min-h-[84px] cursor-pointer ${
-              qrCategory === 'websites'
-                ? 'bg-gradient-to-br from-blue-600 via-indigo-600 to-slate-900 text-white shadow-md ring-2 ring-blue-400 border border-blue-500'
-                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-blue-400'
-            }`}
-          >
-            <div className="flex items-start justify-between w-full mb-1">
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs ${
-                qrCategory === 'websites' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400'
-              }`}>
-                <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-              </div>
-              <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-semibold ${
-                qrCategory === 'websites' ? 'bg-white/20 text-white' : 'bg-blue-50 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
-              }`}>
-                <span>Links</span>
-                <ArrowUpRight className="w-2.5 h-2.5" />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm font-bold tracking-tight leading-tight">
-                Websites / Apps QR
-              </div>
-              <p className={`text-[10px] sm:text-[11px] font-normal mt-0.5 leading-tight line-clamp-1 ${
-                qrCategory === 'websites' ? 'text-blue-100/90' : 'text-slate-500 dark:text-slate-400'
-              }`}>
-                Websites, Play & App Store
-              </p>
-            </div>
-          </button>
-
-          {/* 3. SOCIALS QR BUTTON */}
-          <button
-            id="btn-main-qr-socials"
-            type="button"
-            onClick={() => setQrCategory('socials')}
-            className={`group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all overflow-hidden text-left min-h-[72px] sm:min-h-[84px] cursor-pointer ${
-              qrCategory === 'socials'
-                ? 'bg-gradient-to-br from-teal-600 via-teal-700 to-emerald-800 text-white shadow-md ring-2 ring-teal-400 border border-teal-500'
-                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-teal-400'
-            }`}
-          >
-            <div className="flex items-start justify-between w-full mb-1">
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs ${
-                qrCategory === 'socials' ? 'bg-white/20 text-white' : 'bg-teal-100 dark:bg-teal-950 text-teal-600 dark:text-teal-400'
-              }`}>
-                <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-              </div>
-              <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-semibold ${
-                qrCategory === 'socials' ? 'bg-white/20 text-white' : 'bg-teal-50 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300'
-              }`}>
-                <span>Socials</span>
-                <ArrowUpRight className="w-2.5 h-2.5" />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm font-bold tracking-tight leading-tight">
-                Socials QR
-              </div>
-              <p className={`text-[10px] sm:text-[11px] font-normal mt-0.5 leading-tight line-clamp-1 ${
-                qrCategory === 'socials' ? 'text-teal-100/90' : 'text-slate-500 dark:text-slate-400'
-              }`}>
-                WhatsApp, Instagram, TikTok
-              </p>
-            </div>
-          </button>
-
-          {/* 4. HOST EVENTS QR BUTTON */}
-          <button
-            id="btn-main-qr-events"
-            type="button"
-            onClick={() => setQrCategory('events')}
-            className={`group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all overflow-hidden text-left min-h-[72px] sm:min-h-[84px] cursor-pointer ${
-              qrCategory === 'events'
-                ? 'bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-800 text-white shadow-md ring-2 ring-purple-400 border border-purple-500'
-                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 hover:border-purple-400'
-            }`}
-          >
-            <div className="flex items-start justify-between w-full mb-1">
-              <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs ${
-                qrCategory === 'events' ? 'bg-white/20 text-white' : 'bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400'
-              }`}>
-                <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-              </div>
-              <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] sm:text-[10px] font-semibold ${
-                qrCategory === 'events' ? 'bg-white/20 text-white' : 'bg-purple-50 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
-              }`}>
-                <span>Events</span>
-                <ArrowUpRight className="w-2.5 h-2.5" />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs sm:text-sm font-bold tracking-tight leading-tight">
-                Host Events
-              </div>
-              <p className={`text-[10px] sm:text-[11px] font-normal mt-0.5 leading-tight line-clamp-1 ${
-                qrCategory === 'events' ? 'text-purple-100/90' : 'text-slate-500 dark:text-slate-400'
-              }`}>
-                Conferences, passes, parties
-              </p>
-            </div>
-          </button>
-        </div>
-      </div>
 
       {/* WEBSITES / APPS QR SECTION */}
       {qrCategory === 'websites' && (
