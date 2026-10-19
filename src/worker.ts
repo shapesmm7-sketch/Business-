@@ -399,7 +399,12 @@ export async function resolveHostedQrPage(
     if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
+        let row: any = null;
+        if (userEmail) {
+          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = \'\') ORDER BY updated_at DESC LIMIT 1').bind(pageId, userEmail).first();
+        } else {
+          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
+        }
         if (row?.page_json) {
           const ownerEmail = (row.user_email || '').toLowerCase().trim();
           if (userEmail && ownerEmail && ownerEmail !== userEmail) {
@@ -416,17 +421,14 @@ export async function resolveHostedQrPage(
         }
       } catch (_) {}
     }
-    if (bucket) {
+    if (bucket && !userEmail) {
       try {
         const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
         if (obj) {
           const text = await obj.text();
           const parsed = JSON.parse(text);
           if (parsed) {
-            const ownerEmail = (parsed.userEmail || parsed.email || '').toLowerCase().trim();
-            if (!userEmail || !ownerEmail || ownerEmail === userEmail) {
-              return parsed;
-            }
+            return parsed;
           }
         }
       } catch (_) {}
@@ -2489,37 +2491,25 @@ export default {
                 ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
               `).bind(userEmail, backupJson, now).run();
 
-              // Also persist all business QR pages into D1 qr_pages table
+              // Also persist all business QR pages into D1 qr_pages table with strict user isolation
               if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
                 for (const p of backupData.qrHostedPages) {
                   if (p?.id) {
                     const pJson = JSON.stringify(p);
                     await db.prepare(`
-                      INSERT INTO qr_pages (id, page_json, updated_at)
-                      VALUES (?, ?, ?)
-                      ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
-                    `).bind(p.id, pJson, now).run();
+                      INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                      VALUES (?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                    `).bind(p.id, userEmail, pJson, now).run();
                   }
                 }
-                const bestPage = backupData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0)) || backupData.qrHostedPages[0];
-                const bestPJson = JSON.stringify(bestPage);
-                await db.prepare(`
-                  INSERT INTO qr_pages (id, page_json, updated_at)
-                  VALUES ('default', ?, ?)
-                  ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
-                `).bind(bestPJson, now).run();
-                await db.prepare(`
-                  INSERT INTO qr_pages (id, page_json, updated_at)
-                  VALUES ('latest', ?, ?)
-                  ON CONFLICT(id) DO UPDATE SET page_json = excluded.page_json, updated_at = excluded.updated_at
-                `).bind(bestPJson, now).run();
               }
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
             }
           }
 
-          // 2. Persist to R2 Object Storage Bucket
+          // 2. Persist to R2 Object Storage Bucket with strict tenant isolation
           if (bucket) {
             const userKey = encodeURIComponent(userEmail);
             await bucket.put(`users/${userKey}/backup.json`, backupJson, {
@@ -2528,27 +2518,16 @@ export default {
             await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
               httpMetadata: { contentType: 'application/json' },
             });
-            await bucket.put('sync/latest_backup.json', backupJson, {
-              httpMetadata: { contentType: 'application/json' },
-            });
 
-            // Also persist each business QR page into R2
+            // Persist each business QR page into user-scoped R2 path
             if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
               for (const p of backupData.qrHostedPages) {
                 if (p?.id) {
-                  await bucket.put(`qr_pages/${encodeURIComponent(p.id)}.json`, JSON.stringify(p), {
+                  await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(p.id)}.json`, JSON.stringify(p), {
                     httpMetadata: { contentType: 'application/json' },
                   });
                 }
               }
-              const bestPage = backupData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0)) || backupData.qrHostedPages[0];
-              const bestPJson = JSON.stringify(bestPage);
-              await bucket.put('qr_pages/default.json', bestPJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put('qr_pages/latest.json', bestPJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
             }
 
             // Also save websites hub page directly if websitesQrItems exist

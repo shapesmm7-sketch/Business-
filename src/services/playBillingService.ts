@@ -39,8 +39,8 @@ export const GOOGLE_PLAY_PRODUCTS: Record<SubscriptionPlanId, GooglePlaySubscrip
     accountHoldDays: 30,
   },
   '6-months': {
-    productId: 'brivu_pro_semi_annual',
-    basePlanId: 'brivu-pro-semi-annual-base',
+    productId: 'brivu_pro_semi_annual_v2',
+    basePlanId: 'brivu-pro-6months-base-v2',
     name: 'Brivu Pro 6 Months (Semi-Annual)',
     planId: '6-months',
     priceAmountMicros: 30000000,
@@ -70,6 +70,8 @@ export const GOOGLE_PLAY_PRODUCTS: Record<SubscriptionPlanId, GooglePlaySubscrip
   },
 };
 
+import { Browser } from '@capacitor/browser';
+
 export class PlayBillingService {
   private static isInitialized = false;
 
@@ -87,7 +89,6 @@ export class PlayBillingService {
     if (this.isInitialized) return true;
     try {
       if (this.isAndroid()) {
-        // Native Billing Client initialization
         this.isInitialized = true;
       } else {
         this.isInitialized = true;
@@ -120,7 +121,11 @@ export class PlayBillingService {
       try {
         const pkg = 'com.brivu.myapp';
         const storeUrl = `https://play.google.com/store/account/subscriptions?package=${pkg}&sku=${product.productId}`;
-        window.open(storeUrl, '_blank');
+        if (this.isAndroid()) {
+          await Browser.open({ url: storeUrl, presentationStyle: 'popover' });
+        } else {
+          window.open(storeUrl, '_blank');
+        }
       } catch (_) {}
 
       const now = new Date();
