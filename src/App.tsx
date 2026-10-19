@@ -143,10 +143,24 @@ export function App() {
   const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(null);
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
+      const emailParam = new URLSearchParams(window.location.search).get('email')?.toLowerCase().trim();
+      const initialPage = (window as any).__INITIAL_QR_PAGE__;
+      if (initialPage && initialPage.id) {
+        const initEmail = (initialPage.userEmail || initialPage.email || '').toLowerCase().trim();
+        if (!emailParam || initEmail === emailParam) {
+          return initialPage;
+        }
+      }
+
       const qrPageId = getQrPageIdFromUrl();
       if (qrPageId) {
         const found = StorageService.getHostedQRPage(qrPageId);
-        if (found) return found;
+        if (found) {
+          const foundEmail = (found.userEmail || found.email || '').toLowerCase().trim();
+          if (!emailParam || foundEmail === emailParam) {
+            return found;
+          }
+        }
       }
       const params = new URLSearchParams(window.location.search);
       const pathname = window.location.pathname || '';
@@ -196,6 +210,26 @@ export function App() {
         }
         return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
+
+      if (emailParam) {
+        const pages = StorageService.getHostedQRPages();
+        const userPage = pages.find((p) => (p.userEmail || p.email || '').toLowerCase().trim() === emailParam);
+        if (userPage) return userPage;
+        const prefix = emailParam.split('@')[0] || 'My Business';
+        return {
+          id: qrPageId || 'default',
+          title: prefix.charAt(0).toUpperCase() + prefix.slice(1),
+          pageType: 'business_showcase',
+          menuItems: [],
+          menuCategories: [],
+          photos: [],
+          email: emailParam,
+          userEmail: emailParam,
+          currency: 'UGX',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as QRCodeHostedPage;
+      }
     }
     const pages = StorageService.getHostedQRPages();
     return pages[0] || ({
@@ -205,7 +239,7 @@ export function App() {
       menuItems: [],
       menuCategories: [],
       photos: [],
-      currency: 'USD',
+      currency: 'UGX',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     } as QRCodeHostedPage);

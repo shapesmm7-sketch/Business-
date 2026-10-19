@@ -39,15 +39,15 @@ export class QRHostingService {
   }
 
   static resolveOwnerEmail(emailOverride?: string): string {
-    // CRITICAL: If the user has not signed in, NEVER attach any email ID to QR links
     const user = StorageService.getWorkOSUser();
-    if (!user || !user.email || !user.email.includes('@')) {
-      return '';
+    // If the user is currently signed in, their authenticated email MUST ALWAYS BE USED for QR links
+    if (user && user.email && user.email.includes('@')) {
+      return user.email.toLowerCase().trim();
     }
     if (emailOverride && emailOverride.includes('@')) {
       return emailOverride.toLowerCase().trim();
     }
-    return user.email.toLowerCase().trim();
+    return '';
   }
 
   /**

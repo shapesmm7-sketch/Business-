@@ -2886,25 +2886,75 @@ export const StorageService = {
     }
 
     // User signed in:
-    // Preserve all local records created offline or before logging in so they can be merged and uploaded to cloud
     writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
-    const prof = this.getProfile();
-    this.saveProfile({
-      ...prof,
-      email: prof.email || cleanNewEmail,
-    });
 
     const cf = this.getCloudflareConfig();
     cf.apiKey = cleanNewEmail;
     this.saveCloudflareConfig(cf);
 
-    // If this user has a local vault cached from a previous session on this device, merge it:
-    const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
-    if (vaultJson) {
-      try {
-        const vaultData = JSON.parse(vaultJson);
-        this.importBackup(vaultData, false);
-      } catch (_) {}
+    // If changing user accounts, isolate workspace so prevUser data doesn't leak into cleanNewEmail
+    if (prevEmail && cleanNewEmail && prevEmail !== cleanNewEmail) {
+      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
+      if (vaultJson) {
+        try {
+          const vaultData = JSON.parse(vaultJson);
+          this.importBackup(vaultData, true);
+        } catch (_) {}
+      } else {
+        // Fresh account on this device: reset workspace to fresh state for cleanNewEmail
+        const cleanName = cleanNewEmail.split('@')[0] || 'My Business';
+        const formattedTitle = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+        const freshProfile = {
+          ...this.getProfile(),
+          name: formattedTitle,
+          email: cleanNewEmail,
+          currency: 'UGX',
+        };
+        this.saveProfile(freshProfile);
+
+        const initialQr: QRCodeHostedPage = {
+          id: `qr-${Date.now().toString(36)}`,
+          title: formattedTitle,
+          tagline: '',
+          description: '',
+          pageType: 'menu',
+          accentColor: '#059669',
+          theme: 'emerald',
+          email: cleanNewEmail,
+          userEmail: cleanNewEmail,
+          currency: 'UGX',
+          allowWhatsAppOrdering: true,
+          photos: [],
+          menuCategories: ['All'],
+          menuItems: [],
+          qrDarkColor: '#000000',
+          qrEyeColor: '#000000',
+          qrLightColor: '#ffffff',
+          qrBoxBgColor: '#ffffff',
+          qrBoxBorderColor: '#e2e8f0',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initialQr]);
+        writeToStorage(STORAGE_KEYS.RECEIPTS, []);
+        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, []);
+        writeToStorage(STORAGE_KEYS.INVENTORY_SALES, []);
+        writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, []);
+        writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, []);
+      }
+    } else {
+      const prof = this.getProfile();
+      this.saveProfile({
+        ...prof,
+        email: cleanNewEmail,
+      });
+      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
+      if (vaultJson) {
+        try {
+          const vaultData = JSON.parse(vaultJson);
+          this.importBackup(vaultData, false);
+        } catch (_) {}
+      }
     }
   },
 
