@@ -255,7 +255,7 @@ export async function resolveHostedQrPage(
   const bucket = getR2Bucket(env);
   const db = getD1Database(env);
 
-  // If userEmail is not specified in query or headers, attempt to discover owner email from D1 or R2
+  // If userEmail is not specified in query or headers, attempt to discover owner email from D1
   if (!userEmail && pageId && pageId !== 'default' && pageId !== 'latest') {
     if (db) {
       try {
@@ -273,21 +273,9 @@ export async function resolveHostedQrPage(
         }
       } catch (_) {}
     }
-    if (!userEmail && bucket) {
-      try {
-        const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
-        if (obj) {
-          const text = await obj.text();
-          const parsed = JSON.parse(text);
-          if (parsed?.userEmail || parsed?.email) {
-            userEmail = (parsed.userEmail || parsed.email).toLowerCase().trim();
-          }
-        }
-      } catch (_) {}
-    }
   }
 
-  // Helper to fetch backup data for this user email (or latest backup)
+  // Helper to fetch backup data strictly for this user email (NO GLOBAL FALLBACK if userEmail is set)
   const getUserBackupData = async (): Promise<any | null> => {
     if (userEmail) {
       const userKey = encodeURIComponent(userEmail);
@@ -305,8 +293,9 @@ export async function resolveHostedQrPage(
           if (row?.backup_data) return JSON.parse(row.backup_data);
         } catch (_) {}
       }
+      return null; // Strict tenant isolation: never fall back to another user's backup!
     }
-    // Global fallback
+    // Global fallback ONLY when no userEmail is provided at all
     if (bucket) {
       try {
         const bObj = await bucket.get('sync/latest_backup.json');
@@ -318,8 +307,6 @@ export async function resolveHostedQrPage(
         await ensureD1Tables(db);
         const row: any = await db.prepare("SELECT backup_data FROM backups WHERE backup_data LIKE '%qrHostedPages%' AND backup_data NOT LIKE '%\"qrHostedPages\":[]%' ORDER BY updated_at DESC LIMIT 1").first();
         if (row?.backup_data) return JSON.parse(row.backup_data);
-        const anyRow: any = await db.prepare('SELECT backup_data FROM backups ORDER BY updated_at DESC LIMIT 1').first();
-        if (anyRow?.backup_data) return JSON.parse(anyRow.backup_data);
       } catch (_) {}
     }
     return null;
@@ -344,7 +331,7 @@ export async function resolveHostedQrPage(
 
     return {
       id: pageId || 'default',
-      title: profile.name || 'Brivu Business',
+      title: profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
       tagline: profile.description || 'Welcome to our official business page',
       description: profile.description || '',
       pageType: 'menu',
@@ -383,10 +370,9 @@ export async function resolveHostedQrPage(
     };
   };
 
-  // 1. If userEmail is provided, strictly check user-scoped R2 and D1 for this pageId first
+  // 1. If userEmail is provided, strictly check user-scoped R2 and D1 for this pageId
   if (userEmail && pageId && pageId !== 'default' && pageId !== 'latest') {
     const userKey = encodeURIComponent(userEmail);
-    // 1a. User specific page from R2
     if (bucket) {
       try {
         const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
@@ -396,7 +382,6 @@ export async function resolveHostedQrPage(
         }
       } catch (_) {}
     }
-    // 1b. User specific page from D1
     if (db) {
       try {
         await ensureD1Tables(db);
@@ -409,7 +394,7 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // 2. If pageId is requested (and not default/latest), check D1 for this exact pageId with tenant validation
+  // 2. If pageId is requested (and not default/latest), check D1/R2 with strict tenant validation
   if (pageId && pageId !== 'default' && pageId !== 'latest') {
     if (db) {
       try {
@@ -418,10 +403,15 @@ export async function resolveHostedQrPage(
         if (row?.page_json) {
           const ownerEmail = (row.user_email || '').toLowerCase().trim();
           if (userEmail && ownerEmail && ownerEmail !== userEmail) {
-            // Tenant mismatch - do not leak data across tenants!
+            // Tenant mismatch - reject!
           } else {
             const parsed = JSON.parse(row.page_json);
-            if (parsed) return parsed;
+            if (parsed) {
+              const parsedEmail = (parsed.userEmail || parsed.email || ownerEmail).toLowerCase().trim();
+              if (!userEmail || !parsedEmail || parsedEmail === userEmail) {
+                return parsed;
+              }
+            }
           }
         }
       } catch (_) {}
@@ -443,7 +433,7 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // 3. If userEmail is known, check user's backup / general pages
+  // 3. If userEmail is known, check user's backup / general pages (Strictly user-scoped)
   if (userEmail) {
     if (db) {
       try {
@@ -455,20 +445,47 @@ export async function resolveHostedQrPage(
         if (latestUserRow?.page_json) return JSON.parse(latestUserRow.page_json);
       } catch (_) {}
     }
+
+    const bData = await getUserBackupData();
+    if (bData) {
+      const p = convertBackupToPage(bData);
+      if (p) return p;
+    }
+
+    // Return clean user default page
+    return {
+      id: pageId || 'default',
+      title: `${userEmail.split('@')[0]}'s Business`,
+      pageType: 'menu',
+      email: userEmail,
+      userEmail: userEmail,
+      currency: 'UGX',
+      menuCategories: ['All'],
+      menuItems: [],
+      photos: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
-  // 4. Default / Latest handlers
+  // 4. Default / Latest handlers (ONLY when no userEmail is provided)
   if (pageId === 'default' || pageId === 'latest') {
-    if (userEmail && db) {
-      try {
-        const latestUserRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? ORDER BY updated_at DESC LIMIT 1').bind(userEmail).first();
-        if (latestUserRow?.page_json) return JSON.parse(latestUserRow.page_json);
-      } catch (_) {}
-    }
     if (bucket) {
       try {
-        const obj = await bucket.get(`qr_pages/${pageId}.json`);
-        if (obj) return JSON.parse(await obj.text());
+        for (const k of ['qr_pages/default.json', 'qr_pages/latest.json']) {
+          const obj = await bucket.get(k);
+          if (obj) {
+            const p = JSON.parse(await obj.text());
+            if (p) return p;
+          }
+        }
+      } catch (_) {}
+    }
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        const anyRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email IS NULL OR user_email = \'\' ORDER BY updated_at DESC LIMIT 1').first();
+        if (anyRow?.page_json) return JSON.parse(anyRow.page_json);
       } catch (_) {}
     }
   }
