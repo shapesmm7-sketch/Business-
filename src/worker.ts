@@ -366,18 +366,20 @@ export async function resolveHostedQrPage(
   };
 
   const normId = (pageId || '').toLowerCase().trim();
+  const isBusinessPageRequest = normId.startsWith('qr-') || (!normId.includes('hub') && !normId.includes('socials') && !normId.includes('websites') && !normId.includes('events') && normId !== 'social' && normId !== 'website' && normId !== 'event' && normId !== 'socials' && normId !== 'websites' && normId !== 'events');
 
   // ==========================================
   // CATEGORY 1: SOCIALS HUB REQUESTS
   // ==========================================
-  const isSocialsTarget =
+  const isSocialsTarget = !isBusinessPageRequest && (
     normId.includes('socials-hub') ||
     normId.includes('social-hub') ||
     normId === 'socials' ||
     normId === 'social' ||
     normId === 'socials-hub-all' ||
     normId.startsWith('social-') ||
-    normId.startsWith('socials-');
+    normId.startsWith('socials-')
+  );
 
   if (isSocialsTarget) {
     if (userEmail && bucket) {
@@ -464,14 +466,15 @@ export async function resolveHostedQrPage(
   // ==========================================
   // CATEGORY 2: EVENTS HUB REQUESTS
   // ==========================================
-  const isEventsTarget =
+  const isEventsTarget = !isBusinessPageRequest && (
     normId.includes('events-hub') ||
     normId.includes('event-hub') ||
     normId === 'events' ||
     normId === 'event' ||
     normId === 'events-hub-all' ||
     normId.startsWith('event-') ||
-    normId.startsWith('events-');
+    normId.startsWith('events-')
+  );
 
   if (isEventsTarget) {
     if (userEmail && bucket) {
@@ -616,14 +619,15 @@ export async function resolveHostedQrPage(
   // ==========================================
   // CATEGORY 3: WEBSITES & APPS HUB REQUESTS
   // ==========================================
-  const isWebsitesTarget =
+  const isWebsitesTarget = !isBusinessPageRequest && (
     normId.includes('websites-hub') ||
     normId.includes('web-hub') ||
     normId === 'websites' ||
     normId === 'website' ||
     normId === 'websites-hub-all' ||
     normId.startsWith('website-') ||
-    normId.startsWith('websites-');
+    normId.startsWith('websites-')
+  );
 
   if (isWebsitesTarget) {
     if (userEmail && bucket) {
@@ -827,6 +831,7 @@ export async function resolveHostedQrPage(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
