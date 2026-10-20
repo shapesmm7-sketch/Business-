@@ -251,6 +251,13 @@ export async function resolveHostedQrPage(
   rawUserEmail?: string
 ): Promise<any | null> {
   const pageId = (rawPageId || '').trim();
+  const rawIdBase = pageId.replace(/^business-/, '').replace(/^qr-/, '');
+  const possiblePageIds = Array.from(new Set([
+    pageId,
+    `business-${rawIdBase}`,
+    `qr-${rawIdBase}`,
+    rawIdBase
+  ]));
   let userEmail = (rawUserEmail || '').toLowerCase().trim();
   const bucket = getR2Bucket(env);
   const db = getD1Database(env);
@@ -400,6 +407,13 @@ export async function resolveHostedQrPage(
           const parsed = JSON.parse(row.page_json);
           if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) return parsed;
         }
+        if (userEmail) {
+          const fallbackRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE LOWER(user_email) = ? AND (page_json LIKE '%socials_hub%' OR id LIKE 'socials%') ORDER BY updated_at DESC LIMIT 1").bind(userEmail).first();
+          if (fallbackRow?.page_json) {
+            const parsed = JSON.parse(fallbackRow.page_json);
+            if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) return parsed;
+          }
+        }
       } catch (_) {}
     }
     const bData = await getUserBackupData();
@@ -494,6 +508,13 @@ export async function resolveHostedQrPage(
         if (row?.page_json) {
           const parsed = JSON.parse(row.page_json);
           if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event')) return parsed;
+        }
+        if (userEmail) {
+          const fallbackRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE LOWER(user_email) = ? AND (page_json LIKE '%events_hub%' OR id LIKE 'events%') ORDER BY updated_at DESC LIMIT 1").bind(userEmail).first();
+          if (fallbackRow?.page_json) {
+            const parsed = JSON.parse(fallbackRow.page_json);
+            if (parsed && (parsed.pageType === 'events_hub' || Array.isArray(parsed.eventsQrItems))) return parsed;
+          }
         }
       } catch (_) {}
     }
@@ -647,6 +668,13 @@ export async function resolveHostedQrPage(
         if (row?.page_json) {
           const parsed = JSON.parse(row.page_json);
           if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) return parsed;
+        }
+        if (userEmail) {
+          const fallbackRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE LOWER(user_email) = ? AND (page_json LIKE '%websites_hub%' OR id LIKE 'websites%') ORDER BY updated_at DESC LIMIT 1").bind(userEmail).first();
+          if (fallbackRow?.page_json) {
+            const parsed = JSON.parse(fallbackRow.page_json);
+            if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) return parsed;
+          }
         }
       } catch (_) {}
     }

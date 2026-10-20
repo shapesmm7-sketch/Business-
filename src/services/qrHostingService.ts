@@ -58,6 +58,16 @@ export class QRHostingService {
     return '';
   }
 
+  private static formatBusinessPageId(pageId: string): string {
+    const id = (pageId || '').trim();
+    if (!id || id === 'default' || id === 'latest' || id.includes('hub') || id.includes('socials') || id.includes('websites') || id.includes('events')) {
+      return id;
+    }
+    if (id.startsWith('business-')) return id;
+    if (id.startsWith('qr-')) return id.replace('qr-', 'business-');
+    return `business-${id}`;
+  }
+
   /**
    * Generates a clean Cloudflare-hosted URL for customer scanning with optional specific tab targeting and owner email
    */
@@ -72,7 +82,8 @@ export class QRHostingService {
       queryParts.push(`email=${encodeURIComponent(email)}`);
     }
     const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
-    return `${base}/qr/${encodeURIComponent(pageId)}${queryString}`;
+    const cleanId = this.formatBusinessPageId(pageId);
+    return `${base}/qr/${encodeURIComponent(cleanId)}${queryString}`;
   }
 
   /**
@@ -82,7 +93,8 @@ export class QRHostingService {
     const base = this.getWorkerBaseUrl();
     const email = this.resolveOwnerEmail(emailOverride);
     const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
-    return `${base}/qr/${encodeURIComponent(pageId)}?tab=menu&itemId=${encodeURIComponent(itemId)}${emailParam}`;
+    const cleanId = this.formatBusinessPageId(pageId);
+    return `${base}/qr/${encodeURIComponent(cleanId)}?tab=menu&itemId=${encodeURIComponent(itemId)}${emailParam}`;
   }
 
   /**
@@ -92,7 +104,8 @@ export class QRHostingService {
     const base = this.getWorkerBaseUrl();
     const email = this.resolveOwnerEmail(emailOverride);
     const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
-    return `${base}/qr/${encodeURIComponent(pageId)}?tab=photos&photoId=${encodeURIComponent(photoId)}${emailParam}`;
+    const cleanId = this.formatBusinessPageId(pageId);
+    return `${base}/qr/${encodeURIComponent(cleanId)}?tab=photos&photoId=${encodeURIComponent(photoId)}${emailParam}`;
   }
 
   /**
