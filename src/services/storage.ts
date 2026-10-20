@@ -65,6 +65,7 @@ const STORAGE_KEYS = {
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
   WORKOS_USER: 'quickreceipt_workos_user_v1',
+  ACTIVE_WORKSPACE_USER: 'quickreceipt_active_workspace_user_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -2857,11 +2858,12 @@ export const StorageService = {
    *    or starts with a clean empty slate.
    */
   switchUserSession(newUserEmail: string | null): void {
+    const activeWorkspaceUser = (localStorage.getItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER) || '').toLowerCase().trim();
     const prevUser = this.getWorkOSUser();
-    const prevEmail = (prevUser?.email || '').toLowerCase().trim();
+    const prevEmail = (prevUser?.email || activeWorkspaceUser || '').toLowerCase().trim();
     const cleanNewEmail = (newUserEmail || '').toLowerCase().trim();
 
-    // 1. If previous user had data, cache it into their private local vault
+    // 1. If previous user had data in active workspace, securely cache it into their private local vault
     if (prevEmail) {
       try {
         const backup = this.exportBackup();
@@ -2872,28 +2874,35 @@ export const StorageService = {
     }
 
     if (!cleanNewEmail) {
-      // User signed out: KEEP all local data intact on the phone so records, inventory, and QR pages never disappear!
+      // User signed out:
       try {
         localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
         localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER);
         const cf = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, null as any);
         if (cf) {
           cf.apiKey = '';
           writeToStorage(STORAGE_KEYS.CLOUDFLARE, cf);
         }
+        // Securely clear the active workspace so previous user's data never leaks to unauthorized viewers
+        this.clearActiveUserData();
       } catch {}
       return;
     }
 
     // User signed in:
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER, cleanNewEmail);
     writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
 
     const cf = this.getCloudflareConfig();
     cf.apiKey = cleanNewEmail;
     this.saveCloudflareConfig(cf);
 
-    // If changing user accounts, isolate workspace so prevUser data doesn't leak into cleanNewEmail
-    if (prevEmail && cleanNewEmail && prevEmail !== cleanNewEmail) {
+    // If changing user accounts or active workspace belonged to someone else (or no one):
+    if (prevEmail !== cleanNewEmail) {
+      // Clear active workspace completely to guarantee ZERO data leakage across users
+      this.clearActiveUserData();
+
       const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
       if (vaultJson) {
         try {
@@ -2901,11 +2910,11 @@ export const StorageService = {
           this.importBackup(vaultData, true);
         } catch (_) {}
       } else {
-        // Fresh account on this device: reset workspace to fresh state for cleanNewEmail
+        // Fresh account on this device: set up fresh slate for cleanNewEmail
         const cleanName = cleanNewEmail.split('@')[0] || 'My Business';
         const formattedTitle = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
         const freshProfile = {
-          ...this.getProfile(),
+          ...DEFAULT_BUSINESS_PROFILE,
           name: formattedTitle,
           email: cleanNewEmail,
           currency: 'UGX',
@@ -2936,11 +2945,6 @@ export const StorageService = {
           updatedAt: new Date().toISOString(),
         };
         writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initialQr]);
-        writeToStorage(STORAGE_KEYS.RECEIPTS, []);
-        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, []);
-        writeToStorage(STORAGE_KEYS.INVENTORY_SALES, []);
-        writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, []);
-        writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, []);
       }
     } else {
       const prof = this.getProfile();
@@ -2948,13 +2952,6 @@ export const StorageService = {
         ...prof,
         email: cleanNewEmail,
       });
-      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
-      if (vaultJson) {
-        try {
-          const vaultData = JSON.parse(vaultJson);
-          this.importBackup(vaultData, false);
-        } catch (_) {}
-      }
     }
   },
 

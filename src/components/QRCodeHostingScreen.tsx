@@ -327,7 +327,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const ownerEmail = useMemo(() => {
     const user = StorageService.getWorkOSUser();
-    if (!user || !user.email) return '';
+    if (user?.email) return user.email.toLowerCase().trim();
+    const profile = StorageService.getProfile();
+    if (profile?.email) return profile.email.toLowerCase().trim();
+    const brivuId = StorageService.getBrivuUserId();
+    if (brivuId && brivuId.includes('@')) return brivuId.toLowerCase().trim();
     return QRHostingService.resolveOwnerEmail(activePage?.email || activePage?.userEmail || business.email);
   }, [activePage?.email, activePage?.userEmail, business.email]);
 
@@ -445,6 +449,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCreateNewPage = () => {
     const newId = `qr-${Date.now().toString(36)}`;
+    const resolvedEmail = ownerEmail || activePage?.email || activePage?.userEmail || business.email;
     const newPage: QRCodeHostedPage = {
       id: newId,
       title: business.name || '',
@@ -455,7 +460,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       theme: 'emerald',
       phone: business.phone || '',
       whatsapp: business.whatsapp || business.phone || '',
-      email: business.email || '',
+      email: resolvedEmail || business.email || '',
+      userEmail: resolvedEmail || business.email || '',
       address: business.address || '',
       openingHours: '',
       currency: business.currency || 'UGX',
@@ -476,7 +482,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPages(newPages);
     setActivePageId(newPage.id);
     StorageService.saveHostedQRPage(newPage);
-    CloudflareService.saveSingleQrPage(newPage).catch(() => {});
+    CloudflareService.saveSingleQrPage(newPage, resolvedEmail).catch(() => {});
     CloudflareService.syncAllToCloudflare().catch(() => {});
   };
 
@@ -505,15 +511,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleRemoveLogo = () => {
     if (!activePage) return;
+    const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated: QRCodeHostedPage = {
       ...activePage,
       logo: undefined,
+      email: resolvedEmail || activePage.email,
+      userEmail: resolvedEmail || activePage.userEmail,
       updatedAt: new Date().toISOString(),
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
     CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
@@ -521,15 +530,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleRemoveCoverImage = () => {
     if (!activePage) return;
+    const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated: QRCodeHostedPage = {
       ...activePage,
       coverImage: undefined,
+      email: resolvedEmail || activePage.email,
+      userEmail: resolvedEmail || activePage.userEmail,
       updatedAt: new Date().toISOString(),
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
     StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated).catch(() => {});
+    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
     CloudflareService.syncAllToCloudflare().catch(() => {});
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);

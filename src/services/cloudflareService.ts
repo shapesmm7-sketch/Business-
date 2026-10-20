@@ -737,8 +737,8 @@ export const CloudflareService = {
         };
       }
 
-      // Merge cloud records with local records so offline & pre-login records are preserved and uploaded to cloud
-      const importResult = StorageService.importBackup(rawBackupData, false);
+      // Cleanly restore cloud records into user workspace to prevent cross-account residual pollution
+      const importResult = StorageService.importBackup(rawBackupData, true);
       if (importResult.success) {
         try {
           const combinedBackup = StorageService.exportBackup();

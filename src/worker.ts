@@ -275,37 +275,21 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // Helper to fetch backup data strictly for this user email (NO GLOBAL FALLBACK if userEmail is set)
+  // Helper to fetch backup data strictly for this user email (NO GLOBAL FALLBACK)
   const getUserBackupData = async (): Promise<any | null> => {
-    if (userEmail) {
-      const userKey = encodeURIComponent(userEmail);
-      if (bucket) {
-        try {
-          let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
-          if (!bObj) bObj = await bucket.get(`users/${userKey}/backup.json`);
-          if (bObj) return JSON.parse(await bObj.text());
-        } catch (_) {}
-      }
-      if (db) {
-        try {
-          await ensureD1Tables(db);
-          const row: any = await db.prepare('SELECT backup_data FROM backups WHERE user_email = ? OR id = ? ORDER BY updated_at DESC LIMIT 1').bind(userEmail, `user_${userEmail}`).first();
-          if (row?.backup_data) return JSON.parse(row.backup_data);
-        } catch (_) {}
-      }
-      return null; // Strict tenant isolation: never fall back to another user's backup!
-    }
-    // Global fallback ONLY when no userEmail is provided at all
+    if (!userEmail) return null;
+    const userKey = encodeURIComponent(userEmail);
     if (bucket) {
       try {
-        const bObj = await bucket.get('sync/latest_backup.json');
+        let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+        if (!bObj) bObj = await bucket.get(`users/${userKey}/backup.json`);
         if (bObj) return JSON.parse(await bObj.text());
       } catch (_) {}
     }
     if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare("SELECT backup_data FROM backups WHERE backup_data LIKE '%qrHostedPages%' AND backup_data NOT LIKE '%\"qrHostedPages\":[]%' ORDER BY updated_at DESC LIMIT 1").first();
+        const row: any = await db.prepare('SELECT backup_data FROM backups WHERE LOWER(user_email) = ? OR id = ? ORDER BY updated_at DESC LIMIT 1').bind(userEmail, `user_${userEmail}`).first();
         if (row?.backup_data) return JSON.parse(row.backup_data);
       } catch (_) {}
     }
@@ -470,27 +454,6 @@ export async function resolveHostedQrPage(
     };
   }
 
-  // 4. Default / Latest handlers (ONLY when no userEmail is provided)
-  if (pageId === 'default' || pageId === 'latest') {
-    if (bucket) {
-      try {
-        for (const k of ['qr_pages/default.json', 'qr_pages/latest.json']) {
-          const obj = await bucket.get(k);
-          if (obj) {
-            const p = JSON.parse(await obj.text());
-            if (p) return p;
-          }
-        }
-      } catch (_) {}
-    }
-    if (db) {
-      try {
-        await ensureD1Tables(db);
-        const anyRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email IS NULL OR user_email = \'\' ORDER BY updated_at DESC LIMIT 1').first();
-        if (anyRow?.page_json) return JSON.parse(anyRow.page_json);
-      } catch (_) {}
-    }
-  }
 
   // 3. Hub handlers (Websites, Socials, Events)
   const bData = await getUserBackupData();
@@ -696,35 +659,8 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // 4. Default / Latest in R2
-  if (bucket) {
-    try {
-      for (const k of ['qr_pages/default.json', 'qr_pages/latest.json']) {
-        const obj = await bucket.get(k);
-        if (obj) {
-          const p = JSON.parse(await obj.text());
-          if (p && ((p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0) || p.title !== 'Brivu Business')) {
-            return p;
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  // 5. Default / Latest in D1 prioritizing pages with menuItems or photos
-  if (db) {
-    try {
-      await ensureD1Tables(db);
-      const bestRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE page_json LIKE '%menuItems%' AND page_json NOT LIKE '%\"menuItems\":[]%' ORDER BY updated_at DESC LIMIT 1").first();
-      if (bestRow?.page_json) return JSON.parse(bestRow.page_json);
-
-      const anyRow: any = await db.prepare('SELECT page_json FROM qr_pages ORDER BY updated_at DESC LIMIT 1').first();
-      if (anyRow?.page_json) return JSON.parse(anyRow.page_json);
-    } catch (_) {}
-  }
-
-  // 6. Fallback to converting latest backup data
-  if (bData) {
+  // 4. Fallback to converting backup data strictly if belonging to this user
+  if (bData && userEmail) {
     return convertBackupToPage(bData);
   }
 
@@ -2345,21 +2281,12 @@ export default {
               await bucket.put(`qr_pages/${encodeURIComponent(page.id)}.json`, text, {
                 httpMetadata: { contentType: 'application/json' },
               });
-              await bucket.put('qr_pages/default.json', text, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put('qr_pages/latest.json', text, {
-                httpMetadata: { contentType: 'application/json' },
-              });
               if (userEmail) {
                 const userKey = encodeURIComponent(userEmail);
                 await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(page.id)}.json`, text, {
                   httpMetadata: { contentType: 'application/json' },
                 });
                 await bucket.put(`users/${userKey}/latest_qr_page.json`, text, {
-                  httpMetadata: { contentType: 'application/json' },
-                });
-                await bucket.put(`users/${userKey}/default_qr_page.json`, text, {
                   httpMetadata: { contentType: 'application/json' },
                 });
               }
@@ -2375,18 +2302,6 @@ export default {
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
               `).bind(page.id, userEmail || null, text, now).run();
-
-              await db.prepare(`
-                INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                VALUES ('default', ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-              `).bind(userEmail || null, text, now).run();
-
-              await db.prepare(`
-                INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                VALUES ('latest', ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-              `).bind(userEmail || null, text, now).run();
 
               if (userEmail) {
                 await db.prepare(`

@@ -324,54 +324,21 @@ export function App() {
         if (qrPageId) {
           found = StorageService.getHostedQRPage(qrPageId);
         }
-        if (
-          !found &&
-          !qrPageId?.startsWith('event') &&
-          !qrPageId?.startsWith('web') &&
-          !qrPageId?.startsWith('social') &&
-          tabParam !== 'events' &&
-          tabParam !== 'websites' &&
-          tabParam !== 'socials'
-        ) {
-          const pages = StorageService.getHostedQRPages();
-          found = pages[0];
-        }
 
-        if (found) {
+        if (found && qrPageId && found.id === qrPageId) {
           setActiveCustomerPage(found);
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
         }
+
         const emailFromUrl = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
-        const fetchId = qrPageId || (isCustomerPathFromUrl() ? 'latest' : null);
+        const fetchId = qrPageId;
         if (fetchId || emailFromUrl) {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
-          CloudflareService.getHostedQrPage(fetchId || 'latest', emailFromUrl).then(async (remotePage) => {
-            if (remotePage && (remotePage.title !== 'Brivu Business' || (remotePage.menuItems && remotePage.menuItems.length > 0) || (remotePage.photos && remotePage.photos.length > 0))) {
-              StorageService.saveHostedQRPage(remotePage);
+          CloudflareService.getHostedQrPage(fetchId || 'default', emailFromUrl).then((remotePage) => {
+            if (remotePage) {
               setActiveCustomerPage(remotePage);
-            } else if (emailFromUrl) {
-              const pulled = await CloudflareService.pullFromCloudflare(emailFromUrl);
-              if (pulled.success && pulled.data) {
-                const bData = pulled.data;
-                const bestPage = (Array.isArray(bData.qrHostedPages) && bData.qrHostedPages.find((p: any) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0))) || bData.qrHostedPages?.[0];
-                if (bestPage) {
-                  StorageService.saveHostedQRPage(bestPage);
-                  setActiveCustomerPage(bestPage);
-                } else if (bData.profile?.name) {
-                  const generated = QRHostingService.convertBackupToHostedPage(bData);
-                  StorageService.saveHostedQRPage(generated);
-                  setActiveCustomerPage(generated);
-                }
-              }
-            } else if (fetchId !== 'latest') {
-              CloudflareService.getHostedQrPage('latest', emailFromUrl).then((latestPage) => {
-                if (latestPage) {
-                  StorageService.saveHostedQRPage(latestPage);
-                  setActiveCustomerPage(latestPage);
-                }
-              }).catch(() => {});
             }
           }).catch(() => {});
         }

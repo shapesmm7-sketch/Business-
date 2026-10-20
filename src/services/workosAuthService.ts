@@ -151,8 +151,13 @@ export const WorkOSAuthService = {
       // Save user profile to Cloudflare
       await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
 
-      // CRITICAL: Always push all local records created offline or before logging in to Cloudflare!
-      await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
+      // Push records to Cloudflare only if active workspace has content
+      const receipts = StorageService.getReceipts();
+      const products = StorageService.getInventoryProducts();
+      const qrPages = StorageService.getHostedQRPages();
+      if (receipts.length > 0 || products.length > 0 || qrPages.some((p) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0))) {
+        await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
+      }
 
       // Final refresh dispatch
       if (typeof window !== 'undefined') {
