@@ -105,12 +105,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
 
   const eventsHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerEventsHubUrl(business.name);
-  }, [business.name]);
+    return QRHostingService.getCustomerEventsHubUrl(business.name, business.email);
+  }, [business.name, business.email]);
 
   const activeUrl = isAllSelected
     ? eventsHubUrl
-    : (activeItem ? QRHostingService.getCustomerEventUrl(activeItem.id) : '');
+    : (activeItem ? QRHostingService.getCustomerEventUrl(activeItem.id, business.email) : '');
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#7c3aed');
   const activeLightColor = isAllSelected ? allQrColors.lightColor : (activeItem?.lightColor || '#ffffff');
   const activeEyeColor = isAllSelected ? allQrColors.eyeColor : (activeItem?.eyeColor || activeDarkColor);

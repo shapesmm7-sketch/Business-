@@ -39,13 +39,21 @@ export class QRHostingService {
   }
 
   static resolveOwnerEmail(emailOverride?: string): string {
+    if (emailOverride && emailOverride.includes('@')) {
+      return emailOverride.toLowerCase().trim();
+    }
     const user = StorageService.getWorkOSUser();
     // If the user is currently signed in, their authenticated email MUST ALWAYS BE USED for QR links
     if (user && user.email && user.email.includes('@')) {
       return user.email.toLowerCase().trim();
     }
-    if (emailOverride && emailOverride.includes('@')) {
-      return emailOverride.toLowerCase().trim();
+    const profile = StorageService.getProfile();
+    if (profile && profile.email && profile.email.includes('@')) {
+      return profile.email.toLowerCase().trim();
+    }
+    const brivuId = StorageService.getBrivuUserId();
+    if (brivuId && brivuId.includes('@')) {
+      return brivuId.toLowerCase().trim();
     }
     return '';
   }

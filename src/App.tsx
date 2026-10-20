@@ -165,32 +165,34 @@ export function App() {
       const params = new URLSearchParams(window.location.search);
       const pathname = window.location.pathname || '';
       if (
-        params.get('tab') === 'websites' ||
-        params.get('tab') === 'website' ||
-        params.get('websites') ||
-        params.get('website') ||
-        pathname.includes('/qr/websites') ||
-        pathname.includes('/qr/web-') ||
-        qrPageId?.startsWith('web') ||
-        qrPageId?.includes('websites')
-      ) {
-        const websites = StorageService.getWebsitesQrItems();
-        const business = StorageService.getProfile();
-        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
-      }
-      if (
         params.get('tab') === 'socials' ||
         params.get('tab') === 'social' ||
         params.get('socials') ||
         params.get('social') ||
         pathname.includes('/qr/socials') ||
-        pathname.includes('/qr/social-') ||
-        qrPageId?.startsWith('social') ||
-        qrPageId?.includes('socials')
+        pathname.includes('/qr/socials-hub') ||
+        qrPageId?.startsWith('socials-hub') ||
+        qrPageId === 'socials' ||
+        qrPageId === 'socials-hub-all'
       ) {
         const socials = StorageService.getSocialsQrItems();
         const business = StorageService.getProfile();
         return QRHostingService.convertSocialsHubToHostedPage(socials, business);
+      }
+      if (
+        params.get('tab') === 'websites' ||
+        params.get('tab') === 'website' ||
+        params.get('websites') ||
+        params.get('website') ||
+        pathname.includes('/qr/websites') ||
+        pathname.includes('/qr/websites-hub') ||
+        qrPageId?.startsWith('websites-hub') ||
+        qrPageId === 'websites' ||
+        qrPageId === 'websites-hub-all'
+      ) {
+        const websites = StorageService.getWebsitesQrItems();
+        const business = StorageService.getProfile();
+        return QRHostingService.convertWebsitesHubToHostedPage(websites, business);
       }
       if (
         params.get('tab') === 'events' ||

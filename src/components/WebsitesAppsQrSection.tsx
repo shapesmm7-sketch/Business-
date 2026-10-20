@@ -110,8 +110,8 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
 
   const allHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerWebsitesHubUrl(business.name);
-  }, [business.name]);
+    return QRHostingService.getCustomerWebsitesHubUrl(business.name, business.email);
+  }, [business.name, business.email]);
 
   const activeUrl = isAllSelected ? allHubUrl : (activeItem?.url || '');
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#2563eb');

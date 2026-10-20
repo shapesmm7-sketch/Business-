@@ -296,17 +296,28 @@ export async function resolveHostedQrPage(
     return null;
   };
 
-  // Convert backup data to QRCodeHostedPage helper
+  // Convert backup data to QRCodeHostedPage helper (STRICTLY BUSINESS MENU / SHOWCASE)
   const convertBackupToPage = (bData: any): any => {
     if (!bData) return null;
     const pages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
+    // Only business pages!
+    const businessPages = pages.filter((p: any) =>
+      p &&
+      p.pageType !== 'websites_hub' &&
+      p.pageType !== 'socials_hub' &&
+      p.pageType !== 'events_hub' &&
+      !String(p.id).startsWith('websites') &&
+      !String(p.id).startsWith('socials') &&
+      !String(p.id).startsWith('events')
+    );
+
     if (pageId && pageId !== 'default' && pageId !== 'latest') {
-      const found = pages.find((p: any) => p?.id === pageId);
+      const found = businessPages.find((p: any) => p?.id === pageId);
       if (found) return found;
     }
-    const populated = pages.find((p: any) => (p?.menuItems && p.menuItems.length > 0) || (p?.photos && p.photos.length > 0));
+    const populated = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0));
     if (populated) return populated;
-    if (pages[0]) return pages[0];
+    if (businessPages[0]) return businessPages[0];
 
     const profile = bData.profile || {};
     const inventory = Array.isArray(bData.inventoryProducts) ? bData.inventoryProducts : (Array.isArray(bData.inventory) ? bData.inventory : []);
@@ -354,163 +365,46 @@ export async function resolveHostedQrPage(
     };
   };
 
-  // 1. If userEmail is provided, strictly check user-scoped R2 and D1 for this pageId
-  if (userEmail && pageId && pageId !== 'default' && pageId !== 'latest') {
-    const userKey = encodeURIComponent(userEmail);
-    if (bucket) {
+  const normId = (pageId || '').toLowerCase().trim();
+
+  // ==========================================
+  // CATEGORY 1: SOCIALS HUB REQUESTS
+  // ==========================================
+  const isSocialsTarget =
+    normId.includes('socials-hub') ||
+    normId.includes('social-hub') ||
+    normId === 'socials' ||
+    normId === 'social' ||
+    normId === 'socials-hub-all' ||
+    normId.startsWith('social-') ||
+    normId.startsWith('socials-');
+
+  if (isSocialsTarget) {
+    if (userEmail && bucket) {
       try {
+        const userKey = encodeURIComponent(userEmail);
         const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
         if (uObj) {
           const parsed = JSON.parse(await uObj.text());
-          if (parsed) return parsed;
+          if (parsed && parsed.pageType === 'socials_hub') return parsed;
         }
       } catch (_) {}
     }
     if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? AND id = ?').bind(userEmail, pageId).first();
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id = ? OR id LIKE 'socials-hub%') AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = '') ORDER BY updated_at DESC LIMIT 1").bind(pageId, userEmail).first();
         if (row?.page_json) {
           const parsed = JSON.parse(row.page_json);
-          if (parsed) return parsed;
+          if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) return parsed;
         }
       } catch (_) {}
     }
-  }
-
-  // 2. If pageId is requested (and not default/latest), check D1/R2 with strict tenant validation
-  if (pageId && pageId !== 'default' && pageId !== 'latest') {
-    if (db) {
-      try {
-        await ensureD1Tables(db);
-        let row: any = null;
-        if (userEmail) {
-          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = \'\') ORDER BY updated_at DESC LIMIT 1').bind(pageId, userEmail).first();
-        } else {
-          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
-        }
-        if (row?.page_json) {
-          const ownerEmail = (row.user_email || '').toLowerCase().trim();
-          if (userEmail && ownerEmail && ownerEmail !== userEmail) {
-            // Tenant mismatch - reject!
-          } else {
-            const parsed = JSON.parse(row.page_json);
-            if (parsed) {
-              const parsedEmail = (parsed.userEmail || parsed.email || ownerEmail).toLowerCase().trim();
-              if (!userEmail || !parsedEmail || parsedEmail === userEmail) {
-                return parsed;
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-    if (bucket && !userEmail) {
-      try {
-        const obj = await bucket.get(`qr_pages/${encodeURIComponent(pageId)}.json`);
-        if (obj) {
-          const text = await obj.text();
-          const parsed = JSON.parse(text);
-          if (parsed) {
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-  }
-
-  // 3. If userEmail is known, check user's backup / general pages (Strictly user-scoped)
-  if (userEmail) {
-    if (db) {
-      try {
-        await ensureD1Tables(db);
-        const bestRow: any = await db.prepare("SELECT page_json FROM qr_pages WHERE user_email = ? AND page_json LIKE '%menuItems%' AND page_json NOT LIKE '%\"menuItems\":[]%' ORDER BY updated_at DESC LIMIT 1").bind(userEmail).first();
-        if (bestRow?.page_json) return JSON.parse(bestRow.page_json);
-
-        const latestUserRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ? ORDER BY updated_at DESC LIMIT 1').bind(userEmail).first();
-        if (latestUserRow?.page_json) return JSON.parse(latestUserRow.page_json);
-      } catch (_) {}
-    }
-
     const bData = await getUserBackupData();
     if (bData) {
-      const p = convertBackupToPage(bData);
-      if (p) return p;
-    }
-
-    // Return clean user default page
-    return {
-      id: pageId || 'default',
-      title: `${userEmail.split('@')[0]}'s Business`,
-      pageType: 'menu',
-      email: userEmail,
-      userEmail: userEmail,
-      currency: 'UGX',
-      menuCategories: ['All'],
-      menuItems: [],
-      photos: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-
-  // 3. Hub handlers (Websites, Socials, Events)
-  const bData = await getUserBackupData();
-  if (bData) {
-    const profile = bData.profile || {};
-    const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-    // Websites Hub
-    if (pageId.includes('websites-hub') || pageId.startsWith('websites') || pageId === 'websites-hub-all' || pageId.startsWith('web-')) {
-      const websites = bData.websitesQrItems || [];
-      return {
-        id: pageId || 'websites-hub-all',
-        title: 'Our Sites',
-        description: `Official web links directory for ${profile.name || 'our company'}.`,
-        pageType: 'websites_hub',
-        accentColor: '#2563eb',
-        theme: 'indigo',
-        logo: profile.logo,
-        phone: profile.phone || '',
-        whatsapp: cleanWa,
-        email: profile.email || userEmail || '',
-        userEmail: userEmail || profile.email || '',
-        address: profile.address || '',
-        googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-        currency: profile.currency || 'USD',
-        announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
-        photos: [],
-        menuCategories: ['Our Sites'],
-        menuItems: websites.map((w: any) => ({
-          id: `web-${w.id}`,
-          name: w.title,
-          category: 'Our Sites',
-          price: 0,
-          description: w.description || w.url,
-          url: w.url,
-          ctaText: w.ctaText || 'Visit Website',
-          itemType: w.type,
-          phone: w.phone,
-          phoneAction: w.phoneAction,
-          tags: [w.type, w.ctaText || 'Visit Website'],
-          isSpecial: true,
-          isAvailable: true,
-        })),
-        websitesQrItems: websites,
-        qrDarkColor: '#2563eb',
-        qrLightColor: '#ffffff',
-        qrEyeColor: '#1d4ed8',
-        qrBoxBgColor: '#ffffff',
-        qrBoxBorderColor: '#cbd5e1',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    // Socials Hub
-    if (pageId.includes('socials-hub') || pageId.startsWith('socials') || pageId === 'socials-hub-all' || pageId.startsWith('social-')) {
-      const socials = bData.socialsQrItems || [];
+      const profile = bData.profile || {};
+      const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+      const socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
       return {
         id: pageId || 'socials-hub-all',
         title: 'our social media platforms',
@@ -553,11 +447,59 @@ export async function resolveHostedQrPage(
         updatedAt: new Date().toISOString(),
       };
     }
+    return {
+      id: pageId || 'socials-hub-all',
+      title: 'our social media platforms',
+      pageType: 'socials_hub',
+      email: userEmail,
+      userEmail: userEmail,
+      socialsQrItems: [],
+      menuItems: [],
+      photos: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
 
-    // Events Hub
-    if (pageId.includes('events-hub') || pageId.startsWith('events') || pageId === 'events-hub-all' || pageId.startsWith('event-')) {
-      const events = bData.eventsQrItems || [];
-      if (pageId.startsWith('event-') && !pageId.startsWith('events-hub')) {
+  // ==========================================
+  // CATEGORY 2: EVENTS HUB REQUESTS
+  // ==========================================
+  const isEventsTarget =
+    normId.includes('events-hub') ||
+    normId.includes('event-hub') ||
+    normId === 'events' ||
+    normId === 'event' ||
+    normId === 'events-hub-all' ||
+    normId.startsWith('event-') ||
+    normId.startsWith('events-');
+
+  if (isEventsTarget) {
+    if (userEmail && bucket) {
+      try {
+        const userKey = encodeURIComponent(userEmail);
+        const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
+        if (uObj) {
+          const parsed = JSON.parse(await uObj.text());
+          if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event')) return parsed;
+        }
+      } catch (_) {}
+    }
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = '') ORDER BY updated_at DESC LIMIT 1").bind(pageId, userEmail).first();
+        if (row?.page_json) {
+          const parsed = JSON.parse(row.page_json);
+          if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event')) return parsed;
+        }
+      } catch (_) {}
+    }
+    const bData = await getUserBackupData();
+    if (bData) {
+      const profile = bData.profile || {};
+      const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+      const events = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
+      if (normId.startsWith('event-') && !normId.startsWith('events-hub')) {
         const evt = events.find((e: any) => e.id === pageId);
         if (evt) {
           return {
@@ -657,15 +599,234 @@ export async function resolveHostedQrPage(
         updatedAt: new Date().toISOString(),
       };
     }
+    return {
+      id: pageId || 'events-hub-all',
+      title: 'Our Events',
+      pageType: 'events_hub',
+      email: userEmail,
+      userEmail: userEmail,
+      eventsQrItems: [],
+      menuItems: [],
+      photos: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
-  // 4. Fallback to converting backup data strictly if belonging to this user
-  if (bData && userEmail) {
-    return convertBackupToPage(bData);
+  // ==========================================
+  // CATEGORY 3: WEBSITES & APPS HUB REQUESTS
+  // ==========================================
+  const isWebsitesTarget =
+    normId.includes('websites-hub') ||
+    normId.includes('web-hub') ||
+    normId === 'websites' ||
+    normId === 'website' ||
+    normId === 'websites-hub-all' ||
+    normId.startsWith('website-') ||
+    normId.startsWith('websites-');
+
+  if (isWebsitesTarget) {
+    if (userEmail && bucket) {
+      try {
+        const userKey = encodeURIComponent(userEmail);
+        const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
+        if (uObj) {
+          const parsed = JSON.parse(await uObj.text());
+          if (parsed && parsed.pageType === 'websites_hub') return parsed;
+        }
+      } catch (_) {}
+    }
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id = ? OR id LIKE 'websites-hub%') AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = '') ORDER BY updated_at DESC LIMIT 1").bind(pageId, userEmail).first();
+        if (row?.page_json) {
+          const parsed = JSON.parse(row.page_json);
+          if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) return parsed;
+        }
+      } catch (_) {}
+    }
+    const bData = await getUserBackupData();
+    if (bData) {
+      const profile = bData.profile || {};
+      const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+      const websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
+      return {
+        id: pageId || 'websites-hub-all',
+        title: 'Our Sites',
+        description: `Official web links directory for ${profile.name || 'our company'}.`,
+        pageType: 'websites_hub',
+        accentColor: '#2563eb',
+        theme: 'indigo',
+        logo: profile.logo,
+        phone: profile.phone || '',
+        whatsapp: cleanWa,
+        email: profile.email || userEmail || '',
+        userEmail: userEmail || profile.email || '',
+        address: profile.address || '',
+        googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+        currency: profile.currency || 'USD',
+        announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
+        photos: [],
+        menuCategories: ['Our Sites'],
+        menuItems: websites.map((w: any) => ({
+          id: `web-${w.id}`,
+          name: w.title,
+          category: 'Our Sites',
+          price: 0,
+          description: w.description || w.url,
+          url: w.url,
+          ctaText: w.ctaText || 'Visit Website',
+          itemType: w.type,
+          phone: w.phone,
+          phoneAction: w.phoneAction,
+          tags: [w.type, w.ctaText || 'Visit Website'],
+          isSpecial: true,
+          isAvailable: true,
+        })),
+        websitesQrItems: websites,
+        qrDarkColor: '#2563eb',
+        qrLightColor: '#ffffff',
+        qrEyeColor: '#1d4ed8',
+        qrBoxBgColor: '#ffffff',
+        qrBoxBorderColor: '#cbd5e1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      id: pageId || 'websites-hub-all',
+      title: 'Our Sites',
+      pageType: 'websites_hub',
+      email: userEmail,
+      userEmail: userEmail,
+      websitesQrItems: [],
+      menuItems: [],
+      photos: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
-  return null;
-}
+  // ==========================================
+  // CATEGORY 4: BUSINESS QR CODE (DEFAULT / LATEST / CUSTOM PAGE ID)
+  // Must ALWAYS be a business showcase / menu page, NEVER websites or socials!
+  // ==========================================
+
+  // 1. If exact business pageId requested, check user-scoped R2 and D1
+  if (pageId && pageId !== 'default' && pageId !== 'latest') {
+    if (userEmail && bucket) {
+      try {
+        const userKey = encodeURIComponent(userEmail);
+        const uObj = await bucket.get(`users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`);
+        if (uObj) {
+          const parsed = JSON.parse(await uObj.text());
+          if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    if (db) {
+      try {
+        await ensureD1Tables(db);
+        let row: any = null;
+        if (userEmail) {
+          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? AND (LOWER(user_email) = ? OR user_email IS NULL OR user_email = \'\') ORDER BY updated_at DESC LIMIT 1').bind(pageId, userEmail).first();
+        } else {
+          row = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? ORDER BY updated_at DESC LIMIT 1').bind(pageId).first();
+        }
+        if (row?.page_json) {
+          const parsed = JSON.parse(row.page_json);
+          if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Check user's backup data for business pages
+  const bData = await getUserBackupData();
+  if (bData) {
+    const rawPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
+    const businessPages = rawPages.filter((p: any) =>
+      p &&
+      p.pageType !== 'websites_hub' &&
+      p.pageType !== 'socials_hub' &&
+      p.pageType !== 'events_hub' &&
+      !String(p.id).startsWith('websites') &&
+      !String(p.id).startsWith('socials') &&
+      !String(p.id).startsWith('events')
+    );
+
+    if (pageId && pageId !== 'default' && pageId !== 'latest') {
+      const found = businessPages.find((p: any) => p?.id === pageId);
+      if (found) return found;
+    }
+
+    // Best populated business page
+    const populated = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0));
+    if (populated) return populated;
+    if (businessPages[0]) return businessPages[0];
+
+    // If backup has profile or inventory or photos, convert them
+    const converted = convertBackupToPage(bData);
+    if (converted) return converted;
+  }
+
+  // 3. Check D1 for the user's latest business QR page
+  if (db && userEmail) {
+    try {
+      await ensureD1Tables(db);
+      const row: any = await db.prepare(`
+        SELECT page_json FROM qr_pages
+        WHERE (LOWER(user_email) = ? OR user_email IS NULL OR user_email = '')
+          AND id NOT LIKE 'websites%'
+          AND id NOT LIKE 'socials%'
+          AND id NOT LIKE 'events%'
+          AND page_json NOT LIKE '%"pageType":"websites_hub"%'
+          AND page_json NOT LIKE '%"pageType":"socials_hub"%'
+          AND page_json NOT LIKE '%"pageType":"events_hub"%'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `).bind(userEmail).first();
+      if (row?.page_json) {
+        const parsed = JSON.parse(row.page_json);
+        if (parsed) return parsed;
+      }
+    } catch (_) {}
+  }
+
+  // 4. Check user-scoped latest_qr_page.json in R2
+  if (bucket && userEmail) {
+    try {
+      const userKey = encodeURIComponent(userEmail);
+      const lObj = await bucket.get(`users/${userKey}/latest_qr_page.json`);
+      if (lObj) {
+        const parsed = JSON.parse(await lObj.text());
+        if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 5. Clean business page fallback
+  return {
+    id: pageId || 'default',
+    title: userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business',
+    tagline: 'Welcome to our official business page',
+    pageType: 'menu',
+    email: userEmail,
+    userEmail: userEmail,
+    currency: 'UGX',
+    menuCategories: ['All'],
+    menuItems: [],
+    photos: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -2276,6 +2437,14 @@ export default {
         if (page?.id) {
           const text = JSON.stringify(page);
           const now = new Date().toISOString();
+          const isBusinessQrPage =
+            page.pageType !== 'websites_hub' &&
+            page.pageType !== 'socials_hub' &&
+            page.pageType !== 'events_hub' &&
+            !String(page.id).startsWith('websites') &&
+            !String(page.id).startsWith('socials') &&
+            !String(page.id).startsWith('events');
+
           if (bucket) {
             try {
               await bucket.put(`qr_pages/${encodeURIComponent(page.id)}.json`, text, {
@@ -2286,9 +2455,11 @@ export default {
                 await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(page.id)}.json`, text, {
                   httpMetadata: { contentType: 'application/json' },
                 });
-                await bucket.put(`users/${userKey}/latest_qr_page.json`, text, {
-                  httpMetadata: { contentType: 'application/json' },
-                });
+                if (isBusinessQrPage) {
+                  await bucket.put(`users/${userKey}/latest_qr_page.json`, text, {
+                    httpMetadata: { contentType: 'application/json' },
+                  });
+                }
               }
             } catch (r2Err) {
               console.warn('R2 QR save note:', r2Err);
@@ -2303,7 +2474,7 @@ export default {
                 ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
               `).bind(page.id, userEmail || null, text, now).run();
 
-              if (userEmail) {
+              if (userEmail && isBusinessQrPage) {
                 await db.prepare(`
                   INSERT INTO qr_pages (id, user_email, page_json, updated_at)
                   VALUES (?, ?, ?, ?)
@@ -2408,6 +2579,15 @@ export default {
 
               // Also persist all business QR pages into D1 qr_pages table with strict user isolation
               if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+                const businessPages = backupData.qrHostedPages.filter((p: any) =>
+                  p &&
+                  p.pageType !== 'websites_hub' &&
+                  p.pageType !== 'socials_hub' &&
+                  p.pageType !== 'events_hub' &&
+                  !String(p.id).startsWith('websites') &&
+                  !String(p.id).startsWith('socials') &&
+                  !String(p.id).startsWith('events')
+                );
                 for (const p of backupData.qrHostedPages) {
                   if (p?.id) {
                     const pJson = JSON.stringify(p);
@@ -2417,6 +2597,14 @@ export default {
                       ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
                     `).bind(p.id, userEmail, pJson, now).run();
                   }
+                }
+                const bestBiz = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0)) || businessPages[0];
+                if (bestBiz) {
+                  await db.prepare(`
+                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                  `).bind(`user_${userEmail}_latest`, userEmail, JSON.stringify(bestBiz), now).run();
                 }
               }
             } catch (d1Err) {
@@ -2436,12 +2624,27 @@ export default {
 
             // Persist each business QR page into user-scoped R2 path
             if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+              const businessPages = backupData.qrHostedPages.filter((p: any) =>
+                p &&
+                p.pageType !== 'websites_hub' &&
+                p.pageType !== 'socials_hub' &&
+                p.pageType !== 'events_hub' &&
+                !String(p.id).startsWith('websites') &&
+                !String(p.id).startsWith('socials') &&
+                !String(p.id).startsWith('events')
+              );
               for (const p of backupData.qrHostedPages) {
                 if (p?.id) {
                   await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(p.id)}.json`, JSON.stringify(p), {
                     httpMetadata: { contentType: 'application/json' },
                   });
                 }
+              }
+              const bestBiz = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0)) || businessPages[0];
+              if (bestBiz) {
+                await bucket.put(`users/${userKey}/latest_qr_page.json`, JSON.stringify(bestBiz), {
+                  httpMetadata: { contentType: 'application/json' },
+                });
               }
             }
 
@@ -2494,12 +2697,28 @@ export default {
                 updatedAt: new Date().toISOString(),
               };
 
-              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(webHubPage), {
+              const webHubJson = JSON.stringify(webHubPage);
+              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, webHubJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
-              await bucket.put(`qr_pages/websites-hub-all.json`, JSON.stringify(webHubPage), {
+              await bucket.put(`qr_pages/websites-hub-all.json`, webHubJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
+              await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(hubId)}.json`, webHubJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`users/${userKey}/qr_pages/websites-hub-all.json`, webHubJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              if (db) {
+                try {
+                  await db.prepare(`
+                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                  `).bind(hubId, userEmail, webHubJson, now).run();
+                } catch (_) {}
+              }
             }
 
             // Also save socials hub page directly if socialsQrItems exist
@@ -2549,12 +2768,28 @@ export default {
                 updatedAt: new Date().toISOString(),
               };
 
-              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, JSON.stringify(socialHubPage), {
+              const socialHubJson = JSON.stringify(socialHubPage);
+              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, socialHubJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
-              await bucket.put(`qr_pages/socials-hub-all.json`, JSON.stringify(socialHubPage), {
+              await bucket.put(`qr_pages/socials-hub-all.json`, socialHubJson, {
                 httpMetadata: { contentType: 'application/json' },
               });
+              await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(hubId)}.json`, socialHubJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`users/${userKey}/qr_pages/socials-hub-all.json`, socialHubJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              if (db) {
+                try {
+                  await db.prepare(`
+                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                  `).bind(hubId, userEmail, socialHubJson, now).run();
+                } catch (_) {}
+              }
             }
 
             // Also save events hub and individual event pages directly if eventsQrItems exist

@@ -468,47 +468,34 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     page.id.startsWith('event-') ||
     pathname.includes('/qr/event-');
 
-  const isWebsitesHub =
-    !isEventPage && (
-      page.pageType === 'websites_hub' ||
-      page.pageType === 'websites' ||
-      page.pageType === 'website' ||
-      page.id.startsWith('websites-hub') ||
-      page.id.startsWith('web-hub') ||
-      page.id.startsWith('web-') ||
-      page.id.startsWith('website-') ||
-      page.id === 'websites-hub-all' ||
-      page.id === 'websites' ||
-      page.id.includes('websites-hub') ||
-      page.id.includes('web-hub') ||
-      pathname.includes('/qr/websites') ||
-      pathname.includes('/qr/web-') ||
-      searchParams.get('tab') === 'websites' ||
-      searchParams.get('tab') === 'website' ||
-      Boolean(searchParams.get('qr')?.includes('websites')) ||
-      Boolean(searchParams.get('qr')?.includes('web-'))
-    );
-
   const isSocialsHub =
-    !isEventPage && !isWebsitesHub && (
-      page.pageType === 'socials_hub' ||
+    !isEventPage &&
+    (page.pageType === 'socials_hub' ||
       page.pageType === 'socials' ||
-      page.pageType === 'social' ||
       page.id.startsWith('socials-hub') ||
       page.id.startsWith('social-hub') ||
-      page.id.startsWith('social-') ||
-      page.id.startsWith('socials-') ||
       page.id === 'socials-hub-all' ||
       page.id === 'socials' ||
-      page.id.includes('socials-hub') ||
-      page.id.includes('social-hub') ||
       pathname.includes('/qr/socials') ||
-      pathname.includes('/qr/social-') ||
+      pathname.includes('/qr/socials-hub') ||
       searchParams.get('tab') === 'socials' ||
       searchParams.get('tab') === 'social' ||
-      Boolean(searchParams.get('qr')?.includes('socials')) ||
-      Boolean(searchParams.get('qr')?.includes('social-'))
-    );
+      Boolean(searchParams.get('qr')?.includes('socials')));
+
+  const isWebsitesHub =
+    !isEventPage &&
+    !isSocialsHub &&
+    (page.pageType === 'websites_hub' ||
+      page.pageType === 'websites' ||
+      page.id.startsWith('websites-hub') ||
+      page.id.startsWith('web-hub') ||
+      page.id === 'websites-hub-all' ||
+      page.id === 'websites' ||
+      pathname.includes('/qr/websites') ||
+      pathname.includes('/qr/websites-hub') ||
+      searchParams.get('tab') === 'websites' ||
+      searchParams.get('tab') === 'website' ||
+      Boolean(searchParams.get('qr')?.includes('websites-hub')));
 
   const getSocialLinkIcon = (name: string) => {
     const n = (name || '').toLowerCase();

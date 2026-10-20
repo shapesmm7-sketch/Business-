@@ -391,8 +391,8 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
 
   const allHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerSocialsHubUrl(business.name);
-  }, [business.name]);
+    return QRHostingService.getCustomerSocialsHubUrl(business.name, business.email);
+  }, [business.name, business.email]);
 
   const activeUrl = isAllSelected ? allHubUrl : (activeItem?.fullUrl || '');
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : (activeItem?.darkColor || '#059669');
