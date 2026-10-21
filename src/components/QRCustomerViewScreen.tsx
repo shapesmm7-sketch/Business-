@@ -462,13 +462,29 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     searchParams.get('tab') === 'events' ||
     Boolean(searchParams.get('qr')?.includes('events'));
 
+  const isBusinessPage =
+    page.id.startsWith('qr-') ||
+    page.id.startsWith('business-') ||
+    page.id === 'default' ||
+    page.id === 'latest' ||
+    page.pageType === 'menu' ||
+    page.pageType === 'business_showcase' ||
+    page.pageType === 'business' ||
+    pathname.includes('/qr/qr-') ||
+    pathname.includes('/qr/business-') ||
+    searchParams.get('tab') === 'menu' ||
+    Boolean(searchParams.get('qr')?.startsWith('qr-')) ||
+    Boolean(searchParams.get('qr')?.startsWith('business-'));
+
   const isEventPage =
-    isEventsHub ||
-    page.pageType === 'event' ||
-    page.id.startsWith('event-') ||
-    pathname.includes('/qr/event-');
+    !isBusinessPage &&
+    (isEventsHub ||
+      page.pageType === 'event' ||
+      page.id.startsWith('event-') ||
+      pathname.includes('/qr/event-'));
 
   const isSocialsHub =
+    !isBusinessPage &&
     !isEventPage &&
     (page.pageType === 'socials_hub' ||
       page.pageType === 'socials' ||
@@ -483,6 +499,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
       Boolean(searchParams.get('qr')?.includes('socials')));
 
   const isWebsitesHub =
+    !isBusinessPage &&
     !isEventPage &&
     !isSocialsHub &&
     (page.pageType === 'websites_hub' ||

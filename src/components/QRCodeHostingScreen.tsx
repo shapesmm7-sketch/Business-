@@ -679,7 +679,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleShareLink = async (scope: QRScope) => {
     if (!activePage) return;
-    const url = QRHostingService.getCustomerPageUrl(activePage.id, scope);
+    const url = QRHostingService.getCustomerPageUrl(activePage.id, scope, ownerEmail);
     const scopeObj = SCOPE_OPTIONS.find((s) => s.id === scope);
     const title = `${activePage.title} - ${scopeObj?.label || 'QR Menu'}`;
     const text = `Scan or visit ${activePage.title} digital page:`;

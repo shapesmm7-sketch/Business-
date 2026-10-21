@@ -223,6 +223,7 @@ export class QRHostingService {
       cleanWa = cleanPhone.replace(/[^0-9]/g, '');
     }
 
+    const ownerEmail = this.resolveOwnerEmail(business.email);
     const dateParts: string[] = [];
     if (event.startDate) {
       dateParts.push(event.startDate + (event.endDate && event.endDate !== event.startDate ? ` to ${event.endDate}` : ''));
@@ -292,7 +293,8 @@ export class QRHostingService {
       logo: event.photos?.[0] || business.logo || undefined,
       phone: event.contactPhone || business.phone || '',
       whatsapp: cleanWa,
-      email: event.contactEmail || business.email || '',
+      email: event.contactEmail || ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
       address: event.location,
       googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`,
       currency: business.currency || 'UGX',
@@ -319,6 +321,7 @@ export class QRHostingService {
     const hubId = `events-hub-${cleanName}`;
     const cleanPhone = (business.phone || '').replace(/[^0-9+]/g, '');
     const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+    const ownerEmail = this.resolveOwnerEmail(business.email);
 
     const photos: QRBusinessPhoto[] = events.flatMap((evt) =>
       (evt.photos || []).map((url, idx) => ({
@@ -376,7 +379,8 @@ export class QRHostingService {
       logo: business.logo || photos[0]?.url || undefined,
       phone: business.phone || '',
       whatsapp: cleanWa,
-      email: business.email || '',
+      email: ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'UGX',
@@ -420,6 +424,8 @@ export class QRHostingService {
       isAvailable: true,
     }));
 
+    const ownerEmail = this.resolveOwnerEmail(business.email);
+
     return {
       id: hubId,
       title: 'Our Sites',
@@ -432,7 +438,8 @@ export class QRHostingService {
       logo: business.logo || undefined,
       phone: business.phone || '',
       whatsapp: cleanWa,
-      email: business.email || '',
+      email: ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'USD',
@@ -457,10 +464,11 @@ export class QRHostingService {
    */
   static async syncAllWebsitesPages(websites: WebsiteAppQrItem[], business: BusinessProfile): Promise<void> {
     try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
       const hubPage = this.convertWebsitesHubToHostedPage(websites, business);
-      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites-hub-all' }).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites-hub-all' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites' }, ownerEmail).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync websites hub page to Cloudflare:', err);
@@ -490,6 +498,8 @@ export class QRHostingService {
       isAvailable: true,
     }));
 
+    const ownerEmail = this.resolveOwnerEmail(business.email);
+
     return {
       id: hubId,
       title: 'our social media platforms',
@@ -502,7 +512,8 @@ export class QRHostingService {
       logo: business.logo || undefined,
       phone: business.phone || '',
       whatsapp: cleanWa,
-      email: business.email || '',
+      email: ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'USD',
@@ -527,10 +538,11 @@ export class QRHostingService {
    */
   static async syncAllSocialsPages(socials: SocialQrItem[], business: BusinessProfile): Promise<void> {
     try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
       const hubPage = this.convertSocialsHubToHostedPage(socials, business);
-      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials-hub-all' }).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials-hub-all' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials' }, ownerEmail).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync socials hub page to Cloudflare:', err);
@@ -542,15 +554,16 @@ export class QRHostingService {
    */
   static async syncEventPage(event: EventQrItem, business: BusinessProfile): Promise<void> {
     try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
       const page = this.convertEventToHostedPage(event, business);
-      await CloudflareService.saveSingleQrPage(page).catch(() => {});
+      await CloudflareService.saveSingleQrPage(page, ownerEmail).catch(() => {});
       // Also update the Events Hub page
       const allEvents = StorageService.getEventsQrItems();
       const updatedList = [event, ...allEvents.filter((e) => e.id !== event.id)];
       const hubPage = this.convertEventsHubToHostedPage(updatedList, business);
-      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }, ownerEmail).catch(() => {});
       // Trigger Cloudflare D1 full backup sync
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
@@ -563,14 +576,15 @@ export class QRHostingService {
    */
   static async syncAllEventsPages(events: EventQrItem[], business: BusinessProfile): Promise<void> {
     try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
       for (const evt of events) {
         const page = this.convertEventToHostedPage(evt, business);
-        await CloudflareService.saveSingleQrPage(page).catch(() => {});
+        await CloudflareService.saveSingleQrPage(page, ownerEmail).catch(() => {});
       }
       const hubPage = this.convertEventsHubToHostedPage(events, business);
-      await CloudflareService.saveSingleQrPage(hubPage).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }, ownerEmail).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync all event pages to Cloudflare:', err);
@@ -837,7 +851,7 @@ export class QRHostingService {
     currentY += 8;
 
     // QR Code generation for specific target URL with custom colors
-    const customerUrl = this.getCustomerPageUrl(page.id, targetTab);
+    const customerUrl = this.getCustomerPageUrl(page.id, targetTab, page.userEmail || page.email);
     const darkColor = page.qrDarkColor || '#000000';
     const lightColor = page.qrLightColor || '#ffffff';
     const eyeColor = page.qrEyeColor || darkColor;

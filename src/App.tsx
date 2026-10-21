@@ -146,10 +146,10 @@ export function App() {
       const emailParam = new URLSearchParams(window.location.search).get('email')?.toLowerCase().trim();
       const initialPage = (window as any).__INITIAL_QR_PAGE__;
       if (initialPage && initialPage.id) {
-        const initEmail = (initialPage.userEmail || initialPage.email || '').toLowerCase().trim();
-        if (!emailParam || initEmail === emailParam) {
-          return initialPage;
+        if (emailParam && !initialPage.userEmail) {
+          initialPage.userEmail = emailParam;
         }
+        return initialPage;
       }
 
       const qrPageId = getQrPageIdFromUrl();
