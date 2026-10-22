@@ -569,6 +569,7 @@ export interface QRCodeHostedPage {
   menuItems: QRMenuItem[];
   websitesQrItems?: WebsiteAppQrItem[];
   socialsQrItems?: SocialQrItem[];
+  eventsQrItems?: EventQrItem[];
   currency: string;
   announcement?: string;
   allowWhatsAppOrdering?: boolean;

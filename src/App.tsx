@@ -366,27 +366,21 @@ export function App() {
               try {
                 const bData = await CloudflareService.fetchUserBackupData(emailFromUrl);
                 if (bData) {
-                  const profile = bData.profile || {};
+                  const profile = bData.profile || { name: 'Business', currency: 'UGX', phone: '', address: '' };
                   if (isWebsites) {
-                    const websites = Array.isArray(bData.websitesQrItems)
-                      ? bData.websitesQrItems
-                      : (Array.isArray(bData.websites) ? bData.websites : []);
+                    const websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
                     if (websites.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
                       return;
                     }
                   } else if (isSocials) {
-                    const socials = Array.isArray(bData.socialsQrItems)
-                      ? bData.socialsQrItems
-                      : (Array.isArray(bData.socials) ? bData.socials : []);
+                    const socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
                     if (socials.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
                       return;
                     }
                   } else if (isEvents) {
-                    const events = Array.isArray(bData.eventsQrItems)
-                      ? bData.eventsQrItems
-                      : (Array.isArray(bData.events) ? bData.events : []);
+                    const events = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
                     if (events.length > 0) {
                       if (normFetchId.startsWith('event-') && !normFetchId.startsWith('events-hub')) {
                         const singleEvt = events.find((e: any) => e.id === fetchId || `event-${e.id}` === fetchId);
