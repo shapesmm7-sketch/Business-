@@ -288,10 +288,12 @@ export async function resolveHostedQrPage(
     }
   }
 
-  // Helper to fetch backup data for this user email (with fallbacks if email matches latest backup)
+  // Helper to fetch backup data strictly scoped for this user email
   const getUserBackupData = async (): Promise<any | null> => {
+    if (!userEmail) return null;
+
     // 1. Check R2 if bucket bound and userEmail available
-    if (bucket && userEmail) {
+    if (bucket) {
       try {
         const userKey = encodeURIComponent(userEmail);
         let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
@@ -303,73 +305,39 @@ export async function resolveHostedQrPage(
       } catch (_) {}
     }
 
-    // 2. Check D1 backups table
+    // 2. Check D1 backups table strictly for userEmail
     if (db) {
       try {
         await ensureD1Tables(db);
-        if (userEmail) {
-          // A. By user_email or id
-          const row: any = await db.prepare(`
-            SELECT backup_data FROM backups
-            WHERE LOWER(user_email) = ?
-               OR LOWER(user_email) LIKE ?
-               OR id = ?
-               OR id = ?
-               OR backup_data LIKE ?
-            ORDER BY updated_at DESC LIMIT 1
-          `).bind(userEmail, `%${userEmail}%`, `user_${userEmail}`, userEmail, `%"${userEmail}"%`).first();
+        const row: any = await db.prepare(`
+          SELECT backup_data FROM backups
+          WHERE LOWER(user_email) = ?
+             OR id = ?
+          ORDER BY updated_at DESC LIMIT 1
+        `).bind(userEmail, `user_${userEmail}`).first();
 
-          if (row?.backup_data) {
+        if (row?.backup_data) {
+          try {
+            const parsed = JSON.parse(row.backup_data);
+            if (parsed) return parsed;
+          } catch (_) {}
+        }
+
+        // By username prefix before '@'
+        const userPrefix = userEmail.split('@')[0];
+        if (userPrefix && userPrefix.length >= 3) {
+          const prefixRow: any = await db.prepare(`
+            SELECT backup_data FROM backups
+            WHERE LOWER(user_email) = ? OR LOWER(user_email) LIKE ?
+            ORDER BY updated_at DESC LIMIT 1
+          `).bind(userEmail, `%${userPrefix}%`).first();
+
+          if (prefixRow?.backup_data) {
             try {
-              const parsed = JSON.parse(row.backup_data);
+              const parsed = JSON.parse(prefixRow.backup_data);
               if (parsed) return parsed;
             } catch (_) {}
           }
-
-          // B. By username prefix before '@' (e.g. 'shapesmm7' or 'shapesmm')
-          const userPrefix = userEmail.split('@')[0];
-          if (userPrefix && userPrefix.length >= 3) {
-            const prefixRow: any = await db.prepare(`
-              SELECT backup_data FROM backups
-              WHERE backup_data LIKE ? OR user_email LIKE ?
-              ORDER BY updated_at DESC LIMIT 1
-            `).bind(`%"${userPrefix}"%`, `%${userPrefix}%`).first();
-
-            if (prefixRow?.backup_data) {
-              try {
-                const parsed = JSON.parse(prefixRow.backup_data);
-                if (parsed) return parsed;
-              } catch (_) {}
-            }
-          }
-        }
-
-        // C. Check 'latest_backup'
-        const latestRow: any = await db.prepare(
-          "SELECT backup_data FROM backups WHERE id = 'latest_backup' ORDER BY updated_at DESC LIMIT 1"
-        ).first();
-        if (latestRow?.backup_data) {
-          try {
-            const parsed = JSON.parse(latestRow.backup_data);
-            if (parsed) {
-              const bEmail = (parsed.profile?.email || parsed.userEmail || parsed.email || '').toLowerCase().trim();
-              if (!userEmail || bEmail === userEmail || latestRow.backup_data.includes(userEmail)) {
-                return parsed;
-              }
-              return parsed;
-            }
-          } catch (_) {}
-        }
-
-        // D. Most recently updated backup
-        const anyRow: any = await db.prepare(
-          "SELECT backup_data FROM backups ORDER BY updated_at DESC LIMIT 1"
-        ).first();
-        if (anyRow?.backup_data) {
-          try {
-            const parsed = JSON.parse(anyRow.backup_data);
-            if (parsed) return parsed;
-          } catch (_) {}
         }
       } catch (_) {}
     }
@@ -534,21 +502,14 @@ export async function resolveHostedQrPage(
           WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
              OR id = ?
              OR id = ?
-             OR id = 'websites-hub-all'
-             OR id = 'websites'
-             OR id LIKE 'websites%'
-             OR page_json LIKE '%"pageType":"websites_hub"%'
-             OR page_json LIKE '%websitesQrItems%'
           ORDER BY
             CASE
-              WHEN LOWER(user_email) = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 1
-              WHEN id = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 2
-              WHEN (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 3
-              ELSE 4
+              WHEN LOWER(user_email) = ? THEN 1
+              ELSE 2
             END ASC,
             updated_at DESC
           LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_websites`, userEmail, pageId).all();
+        `).bind(userEmail, pageId, `user_${userEmail}_websites`, userEmail).all();
 
         if (rows?.results && Array.isArray(rows.results)) {
           for (const row of rows.results as any[]) {
@@ -698,21 +659,14 @@ export async function resolveHostedQrPage(
           WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
              OR id = ?
              OR id = ?
-             OR id = 'socials-hub-all'
-             OR id = 'socials'
-             OR id LIKE 'socials%'
-             OR page_json LIKE '%"pageType":"socials_hub"%'
-             OR page_json LIKE '%socialsQrItems%'
           ORDER BY
             CASE
-              WHEN LOWER(user_email) = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 1
-              WHEN id = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 2
-              WHEN (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 3
-              ELSE 4
+              WHEN LOWER(user_email) = ? THEN 1
+              ELSE 2
             END ASC,
             updated_at DESC
           LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_socials`, userEmail, pageId).all();
+        `).bind(userEmail, pageId, `user_${userEmail}_socials`, userEmail).all();
 
         if (rows?.results && Array.isArray(rows.results)) {
           for (const row of rows.results as any[]) {
@@ -897,21 +851,15 @@ export async function resolveHostedQrPage(
           WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
              OR id = ?
              OR id = ?
-             OR id = 'events-hub-all'
-             OR id = 'events'
-             OR id LIKE 'events%'
-             OR id LIKE 'event-%'
-             OR page_json LIKE '%events_hub%'
-             OR page_json LIKE '%"pageType":"event"%'
+             OR id = ?
           ORDER BY
             CASE
-              WHEN LOWER(user_email) = ? AND (page_json LIKE '%eventsQrItems%' OR page_json LIKE '%menuItems%') THEN 1
-              WHEN id = ? THEN 2
-              ELSE 3
+              WHEN LOWER(user_email) = ? THEN 1
+              ELSE 2
             END ASC,
             updated_at DESC
           LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_events`, userEmail, pageId).all();
+        `).bind(userEmail, pageId, `user_${userEmail}_events`, `event-${rawIdBase}`, userEmail).all();
 
         if (rows?.results && Array.isArray(rows.results)) {
           for (const row of rows.results as any[]) {
@@ -2216,6 +2164,16 @@ export default {
             const obj = await bucket.get(`receipts/${encodeURIComponent(receiptId)}.json`);
             if (obj) {
               receipt = JSON.parse(await obj.text());
+              if (db && receipt) {
+                try {
+                  await ensureD1Tables(db);
+                  await db.prepare(`
+                    INSERT INTO receipts (id, user_email, receipt_number, total, data_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json
+                  `).bind(receiptId, receipt.userEmail || receipt.email || 'global', receipt.receiptNumber || receiptId, receipt.total || 0, JSON.stringify(receipt), receipt.createdAt || new Date().toISOString()).run();
+                } catch (_) {}
+              }
             }
           } catch (_) {}
         }
@@ -3026,6 +2984,19 @@ export default {
                 VALUES ('latest_backup', ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, user_email = excluded.user_email, updated_at = excluded.updated_at
               `).bind(userEmail, backupJson, now).run();
+
+              if (Array.isArray(backupData.receipts)) {
+                for (const r of backupData.receipts) {
+                  if (r && r.id) {
+                    const receiptJson = JSON.stringify(r);
+                    await db.prepare(`
+                      INSERT INTO receipts (id, user_email, receipt_number, total, data_json, created_at)
+                      VALUES (?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json
+                    `).bind(r.id, userEmail || 'global', r.receiptNumber || r.id, r.total || 0, receiptJson, r.createdAt || now).run();
+                  }
+                }
+              }
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
             }
