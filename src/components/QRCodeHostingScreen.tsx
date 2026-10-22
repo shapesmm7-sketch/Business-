@@ -266,11 +266,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const fallbackPage = useMemo<QRCodeHostedPage>(() => ({
-    id: `qr-${Date.now().toString(36)}`,
-    title: business.name || 'Brivu Business',
-    tagline: business.description || '',
-    description: '',
+  const fallbackPage = useMemo<QRCodeHostedPage>(() => {
+    const cleanBizName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    return {
+      id: `business-hub-${cleanBizName}`,
+      title: business.name || 'Brivu Business',
+      tagline: business.description || '',
+      description: '',
     pageType: 'menu',
     accentColor: '#059669',
     theme: 'emerald',
@@ -296,7 +298,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     qrBoxBorderColor: '#e2e8f0',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  }), [business]);
+  };
+}, [business]);
 
   const activePage: QRCodeHostedPage = (pages.find((p) => p.id === activePageId) || pages[0]) || fallbackPage;
 
@@ -338,13 +341,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   // Scoped URLs
   const customerPageUrl = useMemo(() => {
     if (!activePage) return '';
-    return QRHostingService.getCustomerPageUrl(activePage.id, qrScope, ownerEmail);
-  }, [activePage, qrScope, ownerEmail]);
+    const cleanBizName = (business.name || activePage.title || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const cleanId = activePage.id?.startsWith('business-') ? activePage.id : `business-hub-${cleanBizName}`;
+    return QRHostingService.getCustomerPageUrl(cleanId, qrScope, ownerEmail);
+  }, [activePage, qrScope, ownerEmail, business.name]);
 
   const quickQrCustomerUrl = useMemo(() => {
     if (!activePage) return '';
-    return QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail);
-  }, [activePage, quickQrScope, ownerEmail]);
+    const cleanBizName = (business.name || activePage.title || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const cleanId = activePage.id?.startsWith('business-') ? activePage.id : `business-hub-${cleanBizName}`;
+    return QRHostingService.getCustomerPageUrl(cleanId, quickQrScope, ownerEmail);
+  }, [activePage, quickQrScope, ownerEmail, business.name]);
 
   const itemQrCustomerUrl = useMemo(() => {
     if (!activePage || !itemQrModalItem) return '';
@@ -448,7 +455,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleCreateNewPage = () => {
-    const newId = `qr-${Date.now().toString(36)}`;
+    const newId = `business-${Date.now().toString(36)}`;
     const resolvedEmail = ownerEmail || activePage?.email || activePage?.userEmail || business.email;
     const newPage: QRCodeHostedPage = {
       id: newId,

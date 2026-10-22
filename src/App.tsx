@@ -334,11 +334,81 @@ export function App() {
         }
 
         const emailFromUrl = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
-        const fetchId = qrPageId;
+        const fetchId = qrPageId || 'default';
+        const normFetchId = fetchId.toLowerCase();
+        const isWebsites = normFetchId.includes('website') || normFetchId.includes('web-hub');
+        const isSocials = !isWebsites && normFetchId.includes('social');
+        const isEvents = !isWebsites && !isSocials && normFetchId.includes('event');
+        const isBiz = !isWebsites && !isSocials && !isEvents;
+
+        const hasItems = (p: any) => {
+          if (!p) return false;
+          if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
+          if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
+          if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
+          if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
+          if (Array.isArray(p.photos) && p.photos.length > 0) return true;
+          return false;
+        };
+
         if (fetchId || emailFromUrl) {
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
-          CloudflareService.getHostedQrPage(fetchId || 'default', emailFromUrl).then((remotePage) => {
+
+          CloudflareService.getHostedQrPage(fetchId, emailFromUrl).then(async (remotePage) => {
+            if (remotePage && hasItems(remotePage)) {
+              setActiveCustomerPage(remotePage);
+              return;
+            }
+
+            // Fallback recovery: fetch the user's complete cloud backup from Cloudflare and populate the requested hub/page
+            if (emailFromUrl) {
+              try {
+                const bData = await CloudflareService.fetchUserBackupData(emailFromUrl);
+                if (bData) {
+                  const profile = bData.profile || {};
+                  if (isWebsites) {
+                    const websites = Array.isArray(bData.websitesQrItems)
+                      ? bData.websitesQrItems
+                      : (Array.isArray(bData.websites) ? bData.websites : []);
+                    if (websites.length > 0) {
+                      setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
+                      return;
+                    }
+                  } else if (isSocials) {
+                    const socials = Array.isArray(bData.socialsQrItems)
+                      ? bData.socialsQrItems
+                      : (Array.isArray(bData.socials) ? bData.socials : []);
+                    if (socials.length > 0) {
+                      setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
+                      return;
+                    }
+                  } else if (isEvents) {
+                    const events = Array.isArray(bData.eventsQrItems)
+                      ? bData.eventsQrItems
+                      : (Array.isArray(bData.events) ? bData.events : []);
+                    if (events.length > 0) {
+                      if (normFetchId.startsWith('event-') && !normFetchId.startsWith('events-hub')) {
+                        const singleEvt = events.find((e: any) => e.id === fetchId || `event-${e.id}` === fetchId);
+                        if (singleEvt) {
+                          setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
+                          return;
+                        }
+                      }
+                      setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
+                      return;
+                    }
+                  } else if (isBiz) {
+                    const bizPage = QRHostingService.convertBackupToHostedPage(bData);
+                    if (bizPage) {
+                      setActiveCustomerPage({ ...bizPage, id: fetchId });
+                      return;
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
             if (remotePage) {
               setActiveCustomerPage(remotePage);
             }

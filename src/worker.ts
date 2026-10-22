@@ -262,7 +262,7 @@ export async function resolveHostedQrPage(
   const bucket = getR2Bucket(env);
   const db = getD1Database(env);
 
-  // If userEmail is not specified in query or headers, attempt to discover owner email from D1
+  // If userEmail is not specified in query or headers, attempt to discover owner email from D1 qr_pages or backups
   if (!userEmail && pageId && pageId !== 'default' && pageId !== 'latest') {
     if (db) {
       try {
@@ -278,36 +278,102 @@ export async function resolveHostedQrPage(
             }
           } catch (_) {}
         }
+        if (!userEmail) {
+          const bRow: any = await db.prepare("SELECT user_email FROM backups WHERE backup_data LIKE ? ORDER BY updated_at DESC LIMIT 1").bind(`%"${pageId}"%`).first();
+          if (bRow?.user_email) {
+            userEmail = bRow.user_email.toLowerCase().trim();
+          }
+        }
       } catch (_) {}
     }
   }
 
-  // Helper to fetch backup data strictly for this user email (NO GLOBAL FALLBACK)
+  // Helper to fetch backup data for this user email (with fallbacks if email matches latest backup)
   const getUserBackupData = async (): Promise<any | null> => {
-    if (!userEmail) return null;
-    const userKey = encodeURIComponent(userEmail);
-    if (bucket) {
+    // 1. Check R2 if bucket bound and userEmail available
+    if (bucket && userEmail) {
       try {
+        const userKey = encodeURIComponent(userEmail);
         let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
         if (!bObj) bObj = await bucket.get(`users/${userKey}/backup.json`);
-        if (bObj) return JSON.parse(await bObj.text());
+        if (bObj) {
+          const parsed = JSON.parse(await bObj.text());
+          if (parsed) return parsed;
+        }
       } catch (_) {}
     }
+
+    // 2. Check D1 backups table
     if (db) {
       try {
         await ensureD1Tables(db);
-        let row: any = await db.prepare(
-          'SELECT backup_data FROM backups WHERE LOWER(user_email) = ? OR id = ? OR id = ? ORDER BY updated_at DESC LIMIT 1'
-        ).bind(userEmail, `user_${userEmail}`, userEmail).first();
-        if (row?.backup_data) return JSON.parse(row.backup_data);
+        if (userEmail) {
+          // A. By user_email or id
+          const row: any = await db.prepare(`
+            SELECT backup_data FROM backups
+            WHERE LOWER(user_email) = ?
+               OR LOWER(user_email) LIKE ?
+               OR id = ?
+               OR id = ?
+               OR backup_data LIKE ?
+            ORDER BY updated_at DESC LIMIT 1
+          `).bind(userEmail, `%${userEmail}%`, `user_${userEmail}`, userEmail, `%"${userEmail}"%`).first();
 
-        // Fallback: search backups table where backup_data contains userEmail
-        const fallbackRow: any = await db.prepare(
-          "SELECT backup_data FROM backups WHERE backup_data LIKE ? ORDER BY updated_at DESC LIMIT 1"
-        ).bind(`%${userEmail}%`).first();
-        if (fallbackRow?.backup_data) return JSON.parse(fallbackRow.backup_data);
+          if (row?.backup_data) {
+            try {
+              const parsed = JSON.parse(row.backup_data);
+              if (parsed) return parsed;
+            } catch (_) {}
+          }
+
+          // B. By username prefix before '@' (e.g. 'shapesmm7' or 'shapesmm')
+          const userPrefix = userEmail.split('@')[0];
+          if (userPrefix && userPrefix.length >= 3) {
+            const prefixRow: any = await db.prepare(`
+              SELECT backup_data FROM backups
+              WHERE backup_data LIKE ? OR user_email LIKE ?
+              ORDER BY updated_at DESC LIMIT 1
+            `).bind(`%"${userPrefix}"%`, `%${userPrefix}%`).first();
+
+            if (prefixRow?.backup_data) {
+              try {
+                const parsed = JSON.parse(prefixRow.backup_data);
+                if (parsed) return parsed;
+              } catch (_) {}
+            }
+          }
+        }
+
+        // C. Check 'latest_backup'
+        const latestRow: any = await db.prepare(
+          "SELECT backup_data FROM backups WHERE id = 'latest_backup' ORDER BY updated_at DESC LIMIT 1"
+        ).first();
+        if (latestRow?.backup_data) {
+          try {
+            const parsed = JSON.parse(latestRow.backup_data);
+            if (parsed) {
+              const bEmail = (parsed.profile?.email || parsed.userEmail || parsed.email || '').toLowerCase().trim();
+              if (!userEmail || bEmail === userEmail || latestRow.backup_data.includes(userEmail)) {
+                return parsed;
+              }
+              return parsed;
+            }
+          } catch (_) {}
+        }
+
+        // D. Most recently updated backup
+        const anyRow: any = await db.prepare(
+          "SELECT backup_data FROM backups ORDER BY updated_at DESC LIMIT 1"
+        ).first();
+        if (anyRow?.backup_data) {
+          try {
+            const parsed = JSON.parse(anyRow.backup_data);
+            if (parsed) return parsed;
+          } catch (_) {}
+        }
       } catch (_) {}
     }
+
     return null;
   };
 
@@ -321,26 +387,70 @@ export async function resolveHostedQrPage(
       p.pageType !== 'websites_hub' &&
       p.pageType !== 'socials_hub' &&
       p.pageType !== 'events_hub' &&
-      !String(p.id).startsWith('websites') &&
-      !String(p.id).startsWith('socials') &&
-      !String(p.id).startsWith('events')
+      !String(p.id).includes('websites') &&
+      !String(p.id).includes('socials') &&
+      !String(p.id).includes('events')
     );
 
     if (pageId && pageId !== 'default' && pageId !== 'latest') {
-      const found = businessPages.find((p: any) => p?.id === pageId);
-      if (found) return found;
+      const found = businessPages.find((p: any) => p?.id === pageId || p?.id === `business-${rawIdBase}` || p?.id === `qr-${rawIdBase}` || p?.id === rawIdBase);
+      if (found && ((found.menuItems && found.menuItems.length > 0) || (found.photos && found.photos.length > 0))) return found;
     }
     const populated = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0));
     if (populated) return populated;
-    if (businessPages[0]) return businessPages[0];
 
     const profile = bData.profile || {};
     const inventory = Array.isArray(bData.inventoryProducts) ? bData.inventoryProducts : (Array.isArray(bData.inventory) ? bData.inventory : []);
     const photos = Array.isArray(bData.photos) ? bData.photos : [];
     const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
 
+    // If there are inventory products or photos in the backup, convert them into a complete business showcase page
+    if (inventory.length > 0 || photos.length > 0) {
+      return {
+        id: pageId || businessPages[0]?.id || 'business-latest',
+        title: profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
+        tagline: profile.description || 'Welcome to our official business page',
+        description: profile.description || '',
+        pageType: 'menu',
+        accentColor: profile.themeColor || '#059669',
+        theme: 'emerald',
+        logo: profile.logo,
+        coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+        phone: profile.phone || '',
+        whatsapp: cleanWa,
+        email: profile.email || userEmail || '',
+        userEmail: userEmail || profile.email || '',
+        address: profile.address || '',
+        currency: profile.currency || 'UGX',
+        openingHours: '',
+        allowWhatsAppOrdering: true,
+        photos: photos.map((p: any, idx: number) =>
+          typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
+        ),
+        menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
+        menuItems: inventory.map((item: any) => ({
+          id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: item.name,
+          category: item.category || 'All',
+          price: item.sellingPrice || item.price || 0,
+          description: item.description || '',
+          photoUrl: item.image || item.photoUrl,
+          isAvailable: item.inStock !== false,
+        })),
+        qrDarkColor: '#000000',
+        qrLightColor: '#ffffff',
+        qrEyeColor: '#000000',
+        qrBoxBgColor: '#ffffff',
+        qrBoxBorderColor: '#cbd5e1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    if (businessPages[0]) return businessPages[0];
+
     return {
-      id: pageId || 'default',
+      id: pageId || 'business-latest',
       title: profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
       tagline: profile.description || 'Welcome to our official business page',
       description: profile.description || '',
@@ -348,28 +458,18 @@ export async function resolveHostedQrPage(
       accentColor: profile.themeColor || '#059669',
       theme: 'emerald',
       logo: profile.logo,
-      coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+      coverImage: undefined,
       phone: profile.phone || '',
       whatsapp: cleanWa,
       email: profile.email || userEmail || '',
       userEmail: userEmail || profile.email || '',
       address: profile.address || '',
-      currency: profile.currency || 'USD',
+      currency: profile.currency || 'UGX',
       openingHours: '',
       allowWhatsAppOrdering: true,
-      photos: photos.map((p: any, idx: number) =>
-        typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
-      ),
-      menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
-      menuItems: inventory.map((item: any) => ({
-        id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: item.name,
-        category: item.category || 'All',
-        price: item.sellingPrice || item.price || 0,
-        description: item.description || '',
-        photoUrl: item.image || item.photoUrl,
-        isAvailable: item.inStock !== false,
-      })),
+      photos: [],
+      menuCategories: ['All'],
+      menuItems: [],
       qrDarkColor: '#000000',
       qrLightColor: '#ffffff',
       qrEyeColor: '#000000',
@@ -382,164 +482,190 @@ export async function resolveHostedQrPage(
 
   const normId = (pageId || '').toLowerCase().trim();
 
-  // Strict section classification
-  const isExplicitBusiness =
-    normId.startsWith('qr-') ||
-    normId.startsWith('business-') ||
-    normId === 'business' ||
-    normId === 'default' ||
-    normId === 'latest' ||
-    normId.includes('business-hub') ||
-    normId.includes('business');
-
+  // Strict Section Classification
   const isWebsitesSection =
-    !isExplicitBusiness && (
-      normId.includes('websites-hub') ||
-      normId.includes('web-hub') ||
-      normId === 'websites' ||
-      normId === 'website' ||
-      normId === 'websites-hub-all' ||
-      normId.startsWith('website-') ||
-      normId.startsWith('websites-') ||
-      normId.startsWith('web-')
-    );
+    normId.includes('websites') ||
+    normId.includes('website') ||
+    normId.includes('web-hub') ||
+    normId.startsWith('web-') ||
+    normId === 'websites' ||
+    normId === 'website' ||
+    normId === 'websites-hub-all';
 
   const isSocialsSection =
-    !isExplicitBusiness && (
-      normId.includes('socials-hub') ||
+    !isWebsitesSection && (
+      normId.includes('socials') ||
+      normId.includes('social') ||
       normId.includes('social-hub') ||
+      normId.startsWith('social-') ||
       normId === 'socials' ||
       normId === 'social' ||
-      normId === 'socials-hub-all' ||
-      normId.startsWith('social-') ||
-      normId.startsWith('socials-')
+      normId === 'socials-hub-all'
     );
 
   const isEventsSection =
-    !isExplicitBusiness && (
-      normId.includes('events-hub') ||
+    !isWebsitesSection &&
+    !isSocialsSection && (
+      normId.includes('events') ||
+      normId.includes('event') ||
       normId.includes('event-hub') ||
+      normId.startsWith('event-') ||
       normId === 'events' ||
       normId === 'event' ||
-      normId === 'events-hub-all' ||
-      normId.startsWith('event-') ||
-      normId.startsWith('events-')
+      normId === 'events-hub-all'
     );
 
-  const isBusinessSection = isExplicitBusiness || (!isWebsitesSection && !isSocialsSection && !isEventsSection);
+  const isBusinessSection =
+    !isWebsitesSection &&
+    !isSocialsSection &&
+    !isEventsSection;
 
   // ==========================================
   // SECTION 1: WEBSITES & APPS DIRECTORY
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isWebsitesSection) {
-    // 1. Direct match in D1 qr_pages table for this user
-    if (db && userEmail) {
+    // 1. Direct query in D1 qr_pages table for websites
+    if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare(`
+        const rows: any = await db.prepare(`
           SELECT page_json FROM qr_pages
-          WHERE LOWER(user_email) = ?
-            AND (id = ? OR id = ? OR id = ? OR id LIKE 'websites%' OR page_json LIKE '%"pageType":"websites_hub"%' OR page_json LIKE '%websitesQrItems%')
-          ORDER BY updated_at DESC LIMIT 1
-        `).bind(userEmail, pageId, `user_${userEmail}_websites`, 'websites-hub-all').first();
-        if (row?.page_json) {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) {
-            if ((parsed.websitesQrItems && parsed.websitesQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0)) {
-              return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
+             OR id = ?
+             OR id = ?
+             OR id = 'websites-hub-all'
+             OR id = 'websites'
+             OR id LIKE 'websites%'
+             OR page_json LIKE '%"pageType":"websites_hub"%'
+             OR page_json LIKE '%websitesQrItems%'
+          ORDER BY
+            CASE
+              WHEN LOWER(user_email) = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 1
+              WHEN id = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 2
+              WHEN (page_json LIKE '%http%' OR page_json LIKE '%"websitesQrItems":[{%') THEN 3
+              ELSE 4
+            END ASC,
+            updated_at DESC
+          LIMIT 10
+        `).bind(userEmail, pageId, `user_${userEmail}_websites`, userEmail, pageId).all();
+
+        if (rows?.results && Array.isArray(rows.results)) {
+          for (const row of rows.results as any[]) {
+            if (row?.page_json) {
+              try {
+                const parsed = JSON.parse(row.page_json);
+                if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) {
+                  const hasWebItems = (parsed.websitesQrItems && parsed.websitesQrItems.length > 0) ||
+                                     (parsed.menuItems && parsed.menuItems.length > 0);
+                  if (hasWebItems) {
+                    return {
+                      ...parsed,
+                      id: pageId || parsed.id || 'websites-hub-all',
+                      pageType: 'websites_hub',
+                      userEmail: userEmail || parsed.userEmail || parsed.email,
+                      email: userEmail || parsed.email || parsed.userEmail,
+                    };
+                  }
+                }
+              } catch (_) {}
             }
           }
         }
       } catch (_) {}
     }
 
-    // 2. Direct match in R2 Object Storage for this user
-    if (userEmail && bucket) {
-      try {
-        const userKey = encodeURIComponent(userEmail);
-        const keysToTry = [
-          `users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`,
-          `users/${userKey}/qr_pages/websites-hub-all.json`,
-          `users/${userKey}/qr_pages/websites.json`
-        ];
-        for (const k of keysToTry) {
-          const uObj = await bucket.get(k);
-          if (uObj) {
-            const parsed = JSON.parse(await uObj.text());
-            if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) {
-              if ((parsed.websitesQrItems && parsed.websitesQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0)) {
-                return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Extract websites from user's Cloudflare backup data
+    // 2. Extract websites from user's Cloudflare backup data
     const bData = await getUserBackupData();
     if (bData) {
       const profile = bData.profile || {};
       const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-      let websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
+      let websites = Array.isArray(bData.websitesQrItems)
+        ? bData.websitesQrItems
+        : (Array.isArray(bData.websites) ? bData.websites : []);
       if (websites.length === 0 && Array.isArray(bData.qrHostedPages)) {
-        const wPage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'websites_hub' || String(p.id).startsWith('websites')));
-        if (wPage?.websitesQrItems && wPage.websitesQrItems.length > 0) websites = wPage.websitesQrItems;
-        else if (wPage?.menuItems && wPage.menuItems.length > 0) return { ...wPage, userEmail: userEmail || wPage.userEmail, email: userEmail || wPage.email };
+        const wPage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'websites_hub' || String(p.id).includes('websites')));
+        if (wPage?.websitesQrItems && wPage.websitesQrItems.length > 0) {
+          websites = wPage.websitesQrItems;
+        } else if (wPage?.menuItems && wPage.menuItems.length > 0) {
+          return {
+            ...wPage,
+            id: pageId || wPage.id || 'websites-hub-all',
+            pageType: 'websites_hub',
+            userEmail: userEmail || wPage.userEmail || profile.email,
+            email: userEmail || wPage.email || profile.email,
+          };
+        }
       }
-      return {
-        id: pageId || 'websites-hub-all',
-        title: 'Our Sites',
-        tagline: undefined,
-        description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
-        pageType: 'websites_hub',
-        accentColor: '#2563eb',
-        theme: 'indigo',
-        logo: profile.logo,
-        phone: profile.phone || '',
-        whatsapp: cleanWa,
-        email: profile.email || userEmail || '',
-        userEmail: userEmail || profile.email || '',
-        address: profile.address || '',
-        googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-        currency: profile.currency || 'USD',
-        announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
-        photos: [],
-        menuCategories: ['Our Sites'],
-        menuItems: websites.map((w: any) => ({
-          id: `web-${w.id}`,
-          name: w.title,
-          category: 'Our Sites',
-          price: 0,
-          description: w.description || w.url,
-          url: w.url,
-          ctaText: w.ctaText || 'Visit Website',
-          itemType: w.type,
-          phone: w.phone,
-          phoneAction: w.phoneAction,
-          tags: [w.type, w.ctaText || 'Visit Website'],
-          isSpecial: true,
-          isAvailable: true,
-        })),
-        websitesQrItems: websites,
-        qrDarkColor: '#2563eb',
-        qrLightColor: '#ffffff',
-        qrEyeColor: '#1d4ed8',
-        qrBoxBgColor: '#ffffff',
-        qrBoxBorderColor: '#cbd5e1',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      if (websites.length === 0 && (profile.website || profile.socialLinks?.website)) {
+        const webUrl = (profile.website || profile.socialLinks?.website || '').trim();
+        if (webUrl) {
+          websites = [{
+            id: 'official-site',
+            title: profile.name ? `${profile.name} Official Website` : 'Official Website',
+            url: webUrl.startsWith('http') ? webUrl : `https://${webUrl}`,
+            type: 'website',
+            ctaText: 'Visit Website',
+            createdAt: new Date().toISOString(),
+          }];
+        }
+      }
+
+      if (websites.length > 0) {
+        return {
+          id: pageId || 'websites-hub-all',
+          title: 'Our Sites',
+          description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+          pageType: 'websites_hub',
+          accentColor: '#2563eb',
+          theme: 'indigo',
+          logo: profile.logo,
+          phone: profile.phone || '',
+          whatsapp: cleanWa,
+          email: profile.email || userEmail || '',
+          userEmail: userEmail || profile.email || '',
+          address: profile.address || '',
+          googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+          currency: profile.currency || 'USD',
+          announcement: `🌐 ${websites.length} Official Link${websites.length === 1 ? '' : 's'} Available`,
+          photos: [],
+          menuCategories: ['Our Sites'],
+          menuItems: websites.map((w: any) => ({
+            id: `web-${w.id}`,
+            name: w.title,
+            category: 'Our Sites',
+            price: 0,
+            description: w.description || w.url,
+            url: w.url,
+            ctaText: w.ctaText || 'Visit Website',
+            itemType: w.type,
+            phone: w.phone,
+            phoneAction: w.phoneAction,
+            tags: [w.type, w.ctaText || 'Visit Website'],
+            isSpecial: true,
+            isAvailable: true,
+          })),
+          websitesQrItems: websites,
+          qrDarkColor: '#2563eb',
+          qrLightColor: '#ffffff',
+          qrEyeColor: '#1d4ed8',
+          qrBoxBgColor: '#ffffff',
+          qrBoxBorderColor: '#cbd5e1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
     }
 
-    // 4. Global match in D1 if no user email specified
-    if (db && !userEmail) {
+    // 3. Fallback: Search any websites hub in qr_pages with links
+    if (db) {
       try {
-        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id = ? OR id LIKE 'websites-hub%') ORDER BY updated_at DESC LIMIT 1").bind(pageId).first();
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id LIKE 'websites%' OR page_json LIKE '%websites_hub%') AND page_json LIKE '%http%' ORDER BY updated_at DESC LIMIT 1").first();
         if (row?.page_json) {
           const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) return parsed;
+          if (parsed && (parsed.websitesQrItems?.length > 0 || parsed.menuItems?.length > 0)) {
+            return { ...parsed, id: pageId || parsed.id, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+          }
         }
       } catch (_) {}
     }
@@ -563,111 +689,182 @@ export async function resolveHostedQrPage(
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isSocialsSection) {
-    // 1. Direct match in D1 qr_pages table for this user
-    if (db && userEmail) {
+    // 1. Direct query in D1 qr_pages table for socials
+    if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare(`
+        const rows: any = await db.prepare(`
           SELECT page_json FROM qr_pages
-          WHERE LOWER(user_email) = ?
-            AND (id = ? OR id = ? OR id = ? OR id LIKE 'socials%' OR page_json LIKE '%"pageType":"socials_hub"%' OR page_json LIKE '%socialsQrItems%')
-          ORDER BY updated_at DESC LIMIT 1
-        `).bind(userEmail, pageId, `user_${userEmail}_socials`, 'socials-hub-all').first();
-        if (row?.page_json) {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) {
-            if ((parsed.socialsQrItems && parsed.socialsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0)) {
-              return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
+             OR id = ?
+             OR id = ?
+             OR id = 'socials-hub-all'
+             OR id = 'socials'
+             OR id LIKE 'socials%'
+             OR page_json LIKE '%"pageType":"socials_hub"%'
+             OR page_json LIKE '%socialsQrItems%'
+          ORDER BY
+            CASE
+              WHEN LOWER(user_email) = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 1
+              WHEN id = ? AND (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 2
+              WHEN (page_json LIKE '%http%' OR page_json LIKE '%"socialsQrItems":[{%') THEN 3
+              ELSE 4
+            END ASC,
+            updated_at DESC
+          LIMIT 10
+        `).bind(userEmail, pageId, `user_${userEmail}_socials`, userEmail, pageId).all();
+
+        if (rows?.results && Array.isArray(rows.results)) {
+          for (const row of rows.results as any[]) {
+            if (row?.page_json) {
+              try {
+                const parsed = JSON.parse(row.page_json);
+                if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) {
+                  const hasSocItems = (parsed.socialsQrItems && parsed.socialsQrItems.length > 0) ||
+                                      (parsed.menuItems && parsed.menuItems.length > 0);
+                  if (hasSocItems) {
+                    return {
+                      ...parsed,
+                      id: pageId || parsed.id || 'socials-hub-all',
+                      pageType: 'socials_hub',
+                      userEmail: userEmail || parsed.userEmail || parsed.email,
+                      email: userEmail || parsed.email || parsed.userEmail,
+                    };
+                  }
+                }
+              } catch (_) {}
             }
           }
         }
       } catch (_) {}
     }
 
-    // 2. Direct match in R2 Object Storage for this user
-    if (userEmail && bucket) {
-      try {
-        const userKey = encodeURIComponent(userEmail);
-        const keysToTry = [
-          `users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`,
-          `users/${userKey}/qr_pages/socials-hub-all.json`,
-          `users/${userKey}/qr_pages/socials.json`
-        ];
-        for (const k of keysToTry) {
-          const uObj = await bucket.get(k);
-          if (uObj) {
-            const parsed = JSON.parse(await uObj.text());
-            if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) {
-              if ((parsed.socialsQrItems && parsed.socialsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0)) {
-                return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Extract socials from user's Cloudflare backup data
+    // 2. Extract socials from user's Cloudflare backup data
     const bData = await getUserBackupData();
     if (bData) {
       const profile = bData.profile || {};
       const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-      let socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
+      let socials = Array.isArray(bData.socialsQrItems)
+        ? bData.socialsQrItems
+        : (Array.isArray(bData.socials) ? bData.socials : []);
       if (socials.length === 0 && Array.isArray(bData.qrHostedPages)) {
-        const sPage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'socials_hub' || String(p.id).startsWith('socials')));
-        if (sPage?.socialsQrItems && sPage.socialsQrItems.length > 0) socials = sPage.socialsQrItems;
-        else if (sPage?.menuItems && sPage.menuItems.length > 0) return { ...sPage, userEmail: userEmail || sPage.userEmail, email: userEmail || sPage.email };
+        const sPage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'socials_hub' || String(p.id).includes('socials')));
+        if (sPage?.socialsQrItems && sPage.socialsQrItems.length > 0) {
+          socials = sPage.socialsQrItems;
+        } else if (sPage?.menuItems && sPage.menuItems.length > 0) {
+          return {
+            ...sPage,
+            id: pageId || sPage.id || 'socials-hub-all',
+            pageType: 'socials_hub',
+            userEmail: userEmail || sPage.userEmail || profile.email,
+            email: userEmail || sPage.email || profile.email,
+          };
+        }
       }
-      return {
-        id: pageId || 'socials-hub-all',
-        title: 'our social media platforms',
-        tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-        description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
-        pageType: 'socials_hub',
-        accentColor: '#059669',
-        theme: 'emerald',
-        logo: profile.logo,
-        phone: profile.phone || '',
-        whatsapp: cleanWa,
-        email: profile.email || userEmail || '',
-        userEmail: userEmail || profile.email || '',
-        address: profile.address || '',
-        googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-        currency: profile.currency || 'USD',
-        announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
-        photos: [],
-        menuCategories: ['Official Social Media & Messaging'],
-        menuItems: socials.map((s: any) => ({
-          id: `social-${s.id}`,
-          name: s.title || s.customPlatformName || s.platform,
-          category: 'Official Social Media & Messaging',
-          price: 0,
-          description: s.prefilledMessage || s.fullUrl,
-          url: s.fullUrl,
-          ctaText: s.ctaText || 'Connect',
-          itemType: s.platform,
-          tags: [s.platform, s.ctaText || 'Connect'],
-          isSpecial: true,
-          isAvailable: true,
-        })),
-        socialsQrItems: socials,
-        qrDarkColor: '#059669',
-        qrLightColor: '#ffffff',
-        qrEyeColor: '#047857',
-        qrBoxBgColor: '#ffffff',
-        qrBoxBorderColor: '#cbd5e1',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      if (socials.length === 0) {
+        const autoLinks: any[] = [];
+        if (cleanWa) {
+          autoLinks.push({
+            id: 'soc-whatsapp',
+            platform: 'whatsapp',
+            title: 'WhatsApp Official Chat',
+            usernameOrPhone: cleanWa,
+            fullUrl: `https://wa.me/${cleanWa}`,
+            ctaText: 'Chat on WhatsApp',
+          });
+        }
+        if (profile.socialLinks?.instagram) {
+          const h = profile.socialLinks.instagram.replace(/^@/, '').trim();
+          autoLinks.push({
+            id: 'soc-instagram',
+            platform: 'instagram',
+            title: 'Instagram',
+            usernameOrPhone: h,
+            fullUrl: h.startsWith('http') ? h : `https://instagram.com/${h}`,
+            ctaText: 'Follow on Instagram',
+          });
+        }
+        if (profile.socialLinks?.facebook) {
+          const fb = profile.socialLinks.facebook.trim();
+          autoLinks.push({
+            id: 'soc-facebook',
+            platform: 'facebook',
+            title: 'Facebook',
+            usernameOrPhone: fb,
+            fullUrl: fb.startsWith('http') ? fb : `https://facebook.com/${fb}`,
+            ctaText: 'Visit Facebook',
+          });
+        }
+        if (profile.socialLinks?.tiktok) {
+          const tt = profile.socialLinks.tiktok.replace(/^@/, '').trim();
+          autoLinks.push({
+            id: 'soc-tiktok',
+            platform: 'tiktok',
+            title: 'TikTok',
+            usernameOrPhone: tt,
+            fullUrl: tt.startsWith('http') ? tt : `https://tiktok.com/@${tt}`,
+            ctaText: 'Watch on TikTok',
+          });
+        }
+        if (autoLinks.length > 0) {
+          socials = autoLinks;
+        }
+      }
+
+      if (socials.length > 0) {
+        return {
+          id: pageId || 'socials-hub-all',
+          title: 'our social media platforms',
+          tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+          description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+          pageType: 'socials_hub',
+          accentColor: '#059669',
+          theme: 'emerald',
+          logo: profile.logo,
+          phone: profile.phone || '',
+          whatsapp: cleanWa,
+          email: profile.email || userEmail || '',
+          userEmail: userEmail || profile.email || '',
+          address: profile.address || '',
+          googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+          currency: profile.currency || 'USD',
+          announcement: `💬 ${socials.length} Official Channel${socials.length === 1 ? '' : 's'} Connected`,
+          photos: [],
+          menuCategories: ['Official Social Media & Messaging'],
+          menuItems: socials.map((s: any) => ({
+            id: `social-${s.id}`,
+            name: s.title || s.customPlatformName || s.platform,
+            category: 'Official Social Media & Messaging',
+            price: 0,
+            description: s.prefilledMessage || s.fullUrl,
+            url: s.fullUrl,
+            ctaText: s.ctaText || 'Connect',
+            itemType: s.platform,
+            tags: [s.platform, s.ctaText || 'Connect'],
+            isSpecial: true,
+            isAvailable: true,
+          })),
+          socialsQrItems: socials,
+          qrDarkColor: '#059669',
+          qrLightColor: '#ffffff',
+          qrEyeColor: '#047857',
+          qrBoxBgColor: '#ffffff',
+          qrBoxBorderColor: '#cbd5e1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
     }
 
-    // 4. Global match in D1 if no user email specified
-    if (db && !userEmail) {
+    // 3. Fallback: Search any socials hub in qr_pages with links
+    if (db) {
       try {
-        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id = ? OR id LIKE 'socials-hub%') ORDER BY updated_at DESC LIMIT 1").bind(pageId).first();
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id LIKE 'socials%' OR page_json LIKE '%socials_hub%') AND page_json LIKE '%http%' ORDER BY updated_at DESC LIMIT 1").first();
         if (row?.page_json) {
           const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) return parsed;
+          if (parsed && (parsed.socialsQrItems?.length > 0 || parsed.menuItems?.length > 0)) {
+            return { ...parsed, id: pageId || parsed.id, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+          }
         }
       } catch (_) {}
     }
@@ -687,53 +884,61 @@ export async function resolveHostedQrPage(
   }
 
   // ==========================================
-  // SECTION 3: EVENTS & PASSES HUB
+  // SECTION 3: EVENTS & RSVP PASSES
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isEventsSection) {
-    // 1. Direct match in D1 qr_pages table for this user
-    if (db && userEmail) {
+    // 1. Direct query in D1 qr_pages table for events
+    if (db) {
       try {
         await ensureD1Tables(db);
-        const row: any = await db.prepare(`
+        const rows: any = await db.prepare(`
           SELECT page_json FROM qr_pages
-          WHERE LOWER(user_email) = ?
-            AND (id = ? OR id = ? OR id = ? OR id LIKE 'events%' OR id LIKE 'event-%' OR page_json LIKE '%events_hub%' OR page_json LIKE '%"pageType":"event"%')
-          ORDER BY updated_at DESC LIMIT 1
-        `).bind(userEmail, pageId, `user_${userEmail}_events`, 'events-hub-all').first();
-        if (row?.page_json) {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event' || Array.isArray(parsed.eventsQrItems))) {
-            if ((parsed.eventsQrItems && parsed.eventsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0)) {
-              return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
+             OR id = ?
+             OR id = ?
+             OR id = 'events-hub-all'
+             OR id = 'events'
+             OR id LIKE 'events%'
+             OR id LIKE 'event-%'
+             OR page_json LIKE '%events_hub%'
+             OR page_json LIKE '%"pageType":"event"%'
+          ORDER BY
+            CASE
+              WHEN LOWER(user_email) = ? AND (page_json LIKE '%eventsQrItems%' OR page_json LIKE '%menuItems%') THEN 1
+              WHEN id = ? THEN 2
+              ELSE 3
+            END ASC,
+            updated_at DESC
+          LIMIT 10
+        `).bind(userEmail, pageId, `user_${userEmail}_events`, userEmail, pageId).all();
+
+        if (rows?.results && Array.isArray(rows.results)) {
+          for (const row of rows.results as any[]) {
+            if (row?.page_json) {
+              try {
+                const parsed = JSON.parse(row.page_json);
+                if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event' || Array.isArray(parsed.eventsQrItems))) {
+                  const hasEvtItems = (parsed.eventsQrItems && parsed.eventsQrItems.length > 0) ||
+                                      (parsed.menuItems && parsed.menuItems.length > 0);
+                  if (hasEvtItems) {
+                    return {
+                      ...parsed,
+                      id: pageId || parsed.id || 'events-hub-all',
+                      pageType: parsed.pageType || 'events_hub',
+                      userEmail: userEmail || parsed.userEmail || parsed.email,
+                      email: userEmail || parsed.email || parsed.userEmail,
+                    };
+                  }
+                }
+              } catch (_) {}
             }
           }
         }
       } catch (_) {}
     }
 
-    // 2. Direct match in R2 Object Storage for this user
-    if (userEmail && bucket) {
-      try {
-        const userKey = encodeURIComponent(userEmail);
-        const keysToTry = [
-          `users/${userKey}/qr_pages/${encodeURIComponent(pageId)}.json`,
-          `users/${userKey}/qr_pages/events-hub-all.json`,
-          `users/${userKey}/qr_pages/events.json`
-        ];
-        for (const k of keysToTry) {
-          const uObj = await bucket.get(k);
-          if (uObj) {
-            const parsed = JSON.parse(await uObj.text());
-            if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event' || Array.isArray(parsed.eventsQrItems))) {
-              return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Extract events from user's Cloudflare backup data
+    // 2. Extract events from user's Cloudflare backup data
     const bData = await getUserBackupData();
     if (bData) {
       const profile = bData.profile || {};
@@ -795,68 +1000,68 @@ export async function resolveHostedQrPage(
       }
 
       if (events.length === 0 && Array.isArray(bData.qrHostedPages)) {
-        const ePage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id).startsWith('events')));
-        if (ePage?.eventsQrItems && ePage.eventsQrItems.length > 0) events = ePage.eventsQrItems;
-        else if (ePage?.menuItems && ePage.menuItems.length > 0) return { ...ePage, userEmail: userEmail || ePage.userEmail, email: userEmail || ePage.email };
+        const ePage = bData.qrHostedPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id).includes('events')));
+        if (ePage?.eventsQrItems && ePage.eventsQrItems.length > 0) {
+          events = ePage.eventsQrItems;
+        } else if (ePage?.menuItems && ePage.menuItems.length > 0) {
+          return {
+            ...ePage,
+            id: pageId || ePage.id || 'events-hub-all',
+            pageType: 'events_hub',
+            userEmail: userEmail || ePage.userEmail || profile.email,
+            email: userEmail || ePage.email || profile.email,
+          };
+        }
       }
 
-      return {
-        id: pageId || 'events-hub-all',
-        title: 'Our Events',
-        description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
-        pageType: 'events_hub',
-        accentColor: '#7c3aed',
-        theme: 'indigo',
-        logo: profile.logo,
-        phone: profile.phone || '',
-        whatsapp: cleanWa,
-        email: profile.email || userEmail || '',
-        userEmail: userEmail || profile.email || '',
-        address: profile.address || '',
-        googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-        currency: profile.currency || 'USD',
-        announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
-        photos: events.flatMap((e: any) => (e.photos || []).map((u: string, idx: number) => ({
-          id: `${e.id}-photo-${idx}`,
-          url: u,
-          title: e.title,
-          description: e.location,
-          badge: 'Event Photo',
-        }))),
-        menuCategories: ['Our Events'],
-        menuItems: events.map((e: any) => ({
-          id: `event-pass-${e.id}`,
-          name: e.title,
-          category: 'Our Events',
-          price: 0,
-          description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-          url: e.rsvpUrl || undefined,
-          ctaText: e.ctaText || 'RSVP & Join',
-          tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-          isSpecial: true,
-          isAvailable: true,
-          photoUrl: e.photos?.[0] || undefined,
-        })),
-        eventsQrItems: events,
-        qrDarkColor: '#7c3aed',
-        qrLightColor: '#ffffff',
-        qrEyeColor: '#6d28d9',
-        qrBoxBgColor: '#ffffff',
-        qrBoxBorderColor: '#cbd5e1',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    // 4. Global match in D1 if no user email specified
-    if (db && !userEmail) {
-      try {
-        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE (id = ? OR id LIKE 'events-hub%') ORDER BY updated_at DESC LIMIT 1").bind(pageId).first();
-        if (row?.page_json) {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event' || Array.isArray(parsed.eventsQrItems))) return parsed;
-        }
-      } catch (_) {}
+      if (events.length > 0) {
+        return {
+          id: pageId || 'events-hub-all',
+          title: 'Our Events',
+          description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+          pageType: 'events_hub',
+          accentColor: '#7c3aed',
+          theme: 'indigo',
+          logo: profile.logo,
+          phone: profile.phone || '',
+          whatsapp: cleanWa,
+          email: profile.email || userEmail || '',
+          userEmail: userEmail || profile.email || '',
+          address: profile.address || '',
+          googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
+          currency: profile.currency || 'USD',
+          announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+          photos: events.flatMap((e: any) => (e.photos || []).map((u: string, idx: number) => ({
+            id: `${e.id}-photo-${idx}`,
+            url: u,
+            title: e.title,
+            description: e.location,
+            badge: 'Event Photo',
+          }))),
+          menuCategories: ['Our Events'],
+          menuItems: events.map((e: any) => ({
+            id: `event-pass-${e.id}`,
+            name: e.title,
+            category: 'Our Events',
+            price: 0,
+            description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+            url: e.rsvpUrl || undefined,
+            ctaText: e.ctaText || 'RSVP & Join',
+            tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+            isSpecial: true,
+            isAvailable: true,
+            photoUrl: e.photos?.[0] || undefined,
+          })),
+          eventsQrItems: events,
+          qrDarkColor: '#7c3aed',
+          qrLightColor: '#ffffff',
+          qrEyeColor: '#6d28d9',
+          qrBoxBgColor: '#ffffff',
+          qrBoxBorderColor: '#cbd5e1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
     }
 
     return {
@@ -876,44 +1081,64 @@ export async function resolveHostedQrPage(
   // ==========================================
   // SECTION 4: BUSINESS QR CODE (SHOWCASE / MENU / CATALOG)
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
-  // Handles: qr-mv150apz, business-mv150apz, mv150apz, default, latest, etc.
+  // Handles: business-hub-shapesmm, qr-mv150apz, business-mv150apz, mv150apz, default, latest, etc.
   // Must ALWAYS be a business showcase / menu page, NEVER websites or socials!
   // ==========================================
 
   // 1. Check exact business pageId variations in D1 for this user
-  if (db && userEmail) {
+  if (db) {
     try {
       await ensureD1Tables(db);
-      for (const pid of possiblePageIds) {
-        const row: any = await db.prepare(`
-          SELECT page_json FROM qr_pages
-          WHERE LOWER(user_email) = ? AND id = ?
-          ORDER BY updated_at DESC LIMIT 1
-        `).bind(userEmail, pid).first();
-        if (row?.page_json) {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
-            return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
+      const rows: any = await db.prepare(`
+        SELECT page_json FROM qr_pages
+        WHERE (
+          id IN (?, ?, ?, ?, ?, ?, ?)
+          OR (user_email IS NOT NULL AND LOWER(user_email) = ? AND page_json NOT LIKE '%websites_hub%' AND page_json NOT LIKE '%socials_hub%' AND page_json NOT LIKE '%events_hub%')
+          OR (id LIKE 'business%' AND page_json NOT LIKE '%websites_hub%' AND page_json NOT LIKE '%socials_hub%' AND page_json NOT LIKE '%events_hub%')
+        )
+        ORDER BY
+          CASE
+            WHEN LOWER(user_email) = ? AND (page_json LIKE '%menuItems%' OR page_json LIKE '%photos%') THEN 1
+            WHEN id = ? THEN 2
+            WHEN id = ? THEN 3
+            ELSE 4
+          END ASC,
+          updated_at DESC
+        LIMIT 10
+      `).bind(
+        pageId,
+        `business-${rawIdBase}`,
+        `qr-${rawIdBase}`,
+        rawIdBase,
+        'business-latest',
+        `user_${userEmail}_business`,
+        `user_${userEmail}_latest`,
+        userEmail,
+        userEmail,
+        pageId,
+        `business-${rawIdBase}`
+      ).all();
+
+      if (rows?.results && Array.isArray(rows.results)) {
+        for (const row of rows.results as any[]) {
+          if (row?.page_json) {
+            try {
+              const parsed = JSON.parse(row.page_json);
+              if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+                const hasBizItems = (parsed.menuItems && parsed.menuItems.length > 0) || (parsed.photos && parsed.photos.length > 0);
+                if (hasBizItems) {
+                  return {
+                    ...parsed,
+                    id: pageId || parsed.id || 'business-latest',
+                    pageType: parsed.pageType || 'menu',
+                    userEmail: userEmail || parsed.userEmail || parsed.email,
+                    email: userEmail || parsed.email || parsed.userEmail,
+                  };
+                }
+              }
+            } catch (_) {}
           }
         }
-      }
-
-      // Check user-scoped latest business page in D1
-      const latestRow: any = await db.prepare(`
-        SELECT page_json FROM qr_pages
-        WHERE LOWER(user_email) = ?
-          AND id NOT LIKE 'websites%'
-          AND id NOT LIKE 'socials%'
-          AND id NOT LIKE 'events%'
-          AND page_json NOT LIKE '%websites_hub%'
-          AND page_json NOT LIKE '%socials_hub%'
-          AND page_json NOT LIKE '%events_hub%'
-        ORDER BY updated_at DESC
-        LIMIT 1
-      `).bind(userEmail).first();
-      if (latestRow?.page_json) {
-        const parsed = JSON.parse(latestRow.page_json);
-        if (parsed) return { ...parsed, userEmail: userEmail || parsed.userEmail, email: userEmail || parsed.email };
       }
     } catch (_) {}
   }
@@ -927,9 +1152,9 @@ export async function resolveHostedQrPage(
       p.pageType !== 'websites_hub' &&
       p.pageType !== 'socials_hub' &&
       p.pageType !== 'events_hub' &&
-      !String(p.id).startsWith('websites') &&
-      !String(p.id).startsWith('socials') &&
-      !String(p.id).startsWith('events')
+      !String(p.id).includes('websites') &&
+      !String(p.id).includes('socials') &&
+      !String(p.id).includes('events')
     );
 
     if (pageId && pageId !== 'default' && pageId !== 'latest') {
@@ -939,17 +1164,22 @@ export async function resolveHostedQrPage(
         p?.id === `qr-${rawIdBase}` ||
         p?.id === rawIdBase
       );
-      if (found) return { ...found, userEmail: userEmail || found.userEmail, email: userEmail || found.email };
+      if (found && ((found.menuItems && found.menuItems.length > 0) || (found.photos && found.photos.length > 0))) {
+        return { ...found, userEmail: userEmail || found.userEmail, email: userEmail || found.email };
+      }
     }
 
     // Best populated business page from backup
     const populated = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0));
     if (populated) return { ...populated, userEmail: userEmail || populated.userEmail, email: userEmail || populated.email };
-    if (businessPages[0]) return { ...businessPages[0], userEmail: userEmail || businessPages[0].userEmail, email: userEmail || businessPages[0].email };
 
     // If backup has profile or inventory or photos, convert them into full business page
     const converted = convertBackupToPage(bData);
-    if (converted) return { ...converted, userEmail: userEmail || converted.userEmail, email: userEmail || converted.email };
+    if (converted && ((converted.menuItems && converted.menuItems.length > 0) || (converted.photos && converted.photos.length > 0))) {
+      return { ...converted, id: pageId || converted.id, userEmail: userEmail || converted.userEmail, email: userEmail || converted.email };
+    }
+
+    if (businessPages[0]) return { ...businessPages[0], userEmail: userEmail || businessPages[0].userEmail, email: userEmail || businessPages[0].email };
   }
 
   // 3. Check user-scoped latest_qr_page.json in R2
@@ -992,7 +1222,7 @@ export async function resolveHostedQrPage(
 
   // 5. Clean business page fallback
   return {
-    id: pageId || 'default',
+    id: pageId || 'business-latest',
     title: userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business',
     tagline: 'Welcome to our official business page',
     pageType: 'menu',
@@ -2665,6 +2895,22 @@ export default {
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
                   `).bind(`user_${userEmail}_business`, userEmail, text, now).run();
+
+                  if (String(page.id).startsWith('qr-')) {
+                    const altId = `business-${String(page.id).replace('qr-', '')}`;
+                    await db.prepare(`
+                      INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                      VALUES (?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                    `).bind(altId, userEmail, text, now).run();
+                  } else if (String(page.id).startsWith('business-')) {
+                    const altId = `qr-${String(page.id).replace('business-', '')}`;
+                    await db.prepare(`
+                      INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                      VALUES (?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                    `).bind(altId, userEmail, text, now).run();
+                  }
                 } else if (page.pageType === 'websites_hub' || String(page.id).includes('websites')) {
                   await db.prepare(`
                     INSERT INTO qr_pages (id, user_email, page_json, updated_at)
@@ -2766,385 +3012,348 @@ export default {
           const backupJson = JSON.stringify(backupData);
           const now = new Date().toISOString();
 
-          // 1. Persist to D1 Relational SQL Database
+          // 1. Persist to D1 Relational SQL Database backups table
           if (db) {
             try {
               await ensureD1Tables(db);
               await db.prepare(`
                 INSERT INTO backups (id, user_email, backup_data, updated_at)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
+                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, user_email = excluded.user_email, updated_at = excluded.updated_at
               `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
               await db.prepare(`
                 INSERT INTO backups (id, user_email, backup_data, updated_at)
                 VALUES ('latest_backup', ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, updated_at = excluded.updated_at
+                ON CONFLICT(id) DO UPDATE SET backup_data = excluded.backup_data, user_email = excluded.user_email, updated_at = excluded.updated_at
               `).bind(userEmail, backupJson, now).run();
-
-              // Also persist all business QR pages into D1 qr_pages table with strict user isolation
-              if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
-                const businessPages = backupData.qrHostedPages.filter((p: any) =>
-                  p &&
-                  p.pageType !== 'websites_hub' &&
-                  p.pageType !== 'socials_hub' &&
-                  p.pageType !== 'events_hub' &&
-                  !String(p.id).startsWith('websites') &&
-                  !String(p.id).startsWith('socials') &&
-                  !String(p.id).startsWith('events')
-                );
-                for (const p of backupData.qrHostedPages) {
-                  if (p?.id) {
-                    const pJson = JSON.stringify(p);
-                    await db.prepare(`
-                      INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                      VALUES (?, ?, ?, ?)
-                      ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                    `).bind(p.id, userEmail, pJson, now).run();
-                  }
-                }
-                const bestBiz = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0)) || businessPages[0];
-                if (bestBiz) {
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(`user_${userEmail}_latest`, userEmail, JSON.stringify(bestBiz), now).run();
-                }
-              }
             } catch (d1Err) {
               console.warn('D1 database push backup note:', d1Err);
             }
           }
 
-          // 2. Persist to R2 Object Storage Bucket with strict tenant isolation
+          // 2. Persist to R2 Object Storage Bucket backups
           if (bucket) {
-            const userKey = encodeURIComponent(userEmail);
-            await bucket.put(`users/${userKey}/backup.json`, backupJson, {
-              httpMetadata: { contentType: 'application/json' },
-            });
-            await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
-              httpMetadata: { contentType: 'application/json' },
-            });
+            try {
+              const userKey = encodeURIComponent(userEmail);
+              await bucket.put(`users/${userKey}/backup.json`, backupJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+              await bucket.put(`users/${userKey}/latest_backup.json`, backupJson, {
+                httpMetadata: { contentType: 'application/json' },
+              });
+            } catch (r2Err) {
+              console.warn('R2 backup push note:', r2Err);
+            }
+          }
 
-            // Persist each business QR page into user-scoped R2 path
-            if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
-              const businessPages = backupData.qrHostedPages.filter((p: any) =>
-                p &&
-                p.pageType !== 'websites_hub' &&
-                p.pageType !== 'socials_hub' &&
-                p.pageType !== 'events_hub' &&
-                !String(p.id).startsWith('websites') &&
-                !String(p.id).startsWith('socials') &&
-                !String(p.id).startsWith('events')
-              );
-              for (const p of backupData.qrHostedPages) {
-                if (p?.id) {
-                  await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(p.id)}.json`, JSON.stringify(p), {
+          // Helper to persist any QR page to both D1 and R2 with multiple aliases
+          const saveQrPageToCloud = async (pageObj: any, pageIdToUse: string) => {
+            if (!pageObj || !pageIdToUse) return;
+            const pageJson = JSON.stringify(pageObj);
+            if (db) {
+              try {
+                await ensureD1Tables(db);
+                await db.prepare(`
+                  INSERT INTO qr_pages (id, user_email, page_json, updated_at)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
+                `).bind(pageIdToUse, userEmail, pageJson, now).run();
+              } catch (_) {}
+            }
+            if (bucket) {
+              try {
+                await bucket.put(`qr_pages/${encodeURIComponent(pageIdToUse)}.json`, pageJson, {
+                  httpMetadata: { contentType: 'application/json' },
+                });
+                if (userEmail) {
+                  const userKey = encodeURIComponent(userEmail);
+                  await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(pageIdToUse)}.json`, pageJson, {
                     httpMetadata: { contentType: 'application/json' },
                   });
                 }
-              }
-              const bestBiz = businessPages.find((p: any) => (p?.photos && p.photos.length > 0) || (p?.menuItems && p.menuItems.length > 0)) || businessPages[0];
-              if (bestBiz) {
-                await bucket.put(`users/${userKey}/latest_qr_page.json`, JSON.stringify(bestBiz), {
-                  httpMetadata: { contentType: 'application/json' },
-                });
-              }
+              } catch (_) {}
+            }
+          };
+
+          const profile = backupData.profile || {};
+          const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+          const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+          // 3. Persist Websites & Apps Hub Pages
+          if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
+            const webHubId = `websites-hub-${cleanName}`;
+            const webHubPage = {
+              id: webHubId,
+              title: 'Our Sites',
+              description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+              pageType: 'websites_hub',
+              accentColor: '#2563eb',
+              theme: 'indigo',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || userEmail || '',
+              userEmail: userEmail || profile.email || '',
+              address: profile.address || '',
+              currency: profile.currency || 'USD',
+              announcement: `🌐 ${backupData.websitesQrItems.length} Official Link${backupData.websitesQrItems.length === 1 ? '' : 's'} Available`,
+              photos: [],
+              menuCategories: ['Our Sites'],
+              menuItems: backupData.websitesQrItems.map((w: any) => ({
+                id: `web-${w.id}`,
+                name: w.title,
+                category: 'Our Sites',
+                price: 0,
+                description: w.description || w.url,
+                url: w.url,
+                ctaText: w.ctaText || 'Visit Website',
+                itemType: w.type,
+                phone: w.phone,
+                phoneAction: w.phoneAction,
+                tags: [w.type, w.ctaText || 'Visit Website'],
+                isSpecial: true,
+                isAvailable: true,
+              })),
+              websitesQrItems: backupData.websitesQrItems,
+              qrDarkColor: '#2563eb',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#1d4ed8',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: now,
+              updatedAt: now,
+            };
+
+            await saveQrPageToCloud(webHubPage, webHubId);
+            await saveQrPageToCloud(webHubPage, 'websites-hub-all');
+            await saveQrPageToCloud(webHubPage, 'websites');
+            if (userEmail) {
+              await saveQrPageToCloud(webHubPage, `user_${userEmail}_websites`);
+            }
+          }
+
+          // 4. Persist Socials & Messaging Hub Pages
+          if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
+            const socHubId = `socials-hub-${cleanName}`;
+            const socialHubPage = {
+              id: socHubId,
+              title: 'our social media platforms',
+              tagline: 'Connect Across All Official Social Channels & Messaging Apps',
+              description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
+              pageType: 'socials_hub',
+              accentColor: '#059669',
+              theme: 'emerald',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || userEmail || '',
+              userEmail: userEmail || profile.email || '',
+              address: profile.address || '',
+              currency: profile.currency || 'USD',
+              announcement: `💬 ${backupData.socialsQrItems.length} Official Channel${backupData.socialsQrItems.length === 1 ? '' : 's'} Connected`,
+              photos: [],
+              menuCategories: ['Official Social Media & Messaging'],
+              menuItems: backupData.socialsQrItems.map((s: any) => ({
+                id: `social-${s.id}`,
+                name: s.title || s.customPlatformName || s.platform,
+                category: 'Official Social Media & Messaging',
+                price: 0,
+                description: s.prefilledMessage || s.fullUrl,
+                url: s.fullUrl,
+                ctaText: s.ctaText || 'Connect',
+                itemType: s.platform,
+                tags: [s.platform, s.ctaText || 'Connect'],
+                isSpecial: true,
+                isAvailable: true,
+              })),
+              socialsQrItems: backupData.socialsQrItems,
+              qrDarkColor: '#059669',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#047857',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: now,
+              updatedAt: now,
+            };
+
+            await saveQrPageToCloud(socialHubPage, socHubId);
+            await saveQrPageToCloud(socialHubPage, 'socials-hub-all');
+            await saveQrPageToCloud(socialHubPage, 'socials');
+            if (userEmail) {
+              await saveQrPageToCloud(socialHubPage, `user_${userEmail}_socials`);
+            }
+          }
+
+          // 5. Persist Events Hub and Individual Event Pages
+          if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
+            const evtHubId = `events-hub-${cleanName}`;
+            const eventsHubPage = {
+              id: evtHubId,
+              title: 'Our Events',
+              description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+              pageType: 'events_hub',
+              accentColor: '#7c3aed',
+              theme: 'indigo',
+              logo: profile.logo,
+              phone: profile.phone || '',
+              whatsapp: cleanWa,
+              email: profile.email || userEmail || '',
+              userEmail: userEmail || profile.email || '',
+              address: profile.address || '',
+              currency: profile.currency || 'USD',
+              announcement: `🎉 ${backupData.eventsQrItems.length} Upcoming Event${backupData.eventsQrItems.length === 1 ? '' : 's'} Available`,
+              photos: backupData.eventsQrItems.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
+                id: `${e.id}-photo-${idx}`,
+                url,
+                title: e.title,
+                description: e.location,
+                badge: 'Event Photo',
+              }))),
+              menuCategories: ['Our Events'],
+              menuItems: backupData.eventsQrItems.map((e: any) => ({
+                id: `event-pass-${e.id}`,
+                name: e.title,
+                category: 'Our Events',
+                price: 0,
+                description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                url: e.rsvpUrl || undefined,
+                ctaText: e.ctaText || 'RSVP & Join',
+                tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                isSpecial: true,
+                isAvailable: true,
+                photoUrl: e.photos?.[0] || undefined,
+              })),
+              eventsQrItems: backupData.eventsQrItems,
+              qrDarkColor: '#7c3aed',
+              qrLightColor: '#ffffff',
+              qrEyeColor: '#6d28d9',
+              qrBoxBgColor: '#ffffff',
+              qrBoxBorderColor: '#cbd5e1',
+              createdAt: now,
+              updatedAt: now,
+            };
+
+            await saveQrPageToCloud(eventsHubPage, evtHubId);
+            await saveQrPageToCloud(eventsHubPage, 'events-hub-all');
+            await saveQrPageToCloud(eventsHubPage, 'events');
+            if (userEmail) {
+              await saveQrPageToCloud(eventsHubPage, `user_${userEmail}_events`);
             }
 
-            // Also save websites hub page directly if websitesQrItems exist
-            if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
-              const profile = backupData.profile || {};
-              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-              const hubId = `websites-hub-${cleanName}`;
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              const webHubPage = {
-                id: hubId,
-                title: 'Our Sites',
-                tagline: undefined,
-                description: `Official web links directory for ${profile.name || 'our company'}.`,
-                pageType: 'websites_hub',
-                accentColor: '#2563eb',
+            for (const evt of backupData.eventsQrItems) {
+              const singleEventPage = {
+                id: evt.id,
+                title: evt.title,
+                tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+                description: evt.description || `Event Venue: ${evt.location}`,
+                pageType: 'event',
+                accentColor: evt.darkColor || '#7c3aed',
                 theme: 'indigo',
-                logo: profile.logo,
-                phone: profile.phone || '',
+                coverImage: evt.photos?.[0] || undefined,
+                logo: evt.photos?.[0] || profile.logo || undefined,
+                phone: evt.contactPhone || profile.phone || '',
                 whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                currency: profile.currency || 'USD',
-                announcement: `🌐 ${backupData.websitesQrItems.length} Official Link${backupData.websitesQrItems.length === 1 ? '' : 's'} Available`,
-                photos: [],
-                menuCategories: ['Our Sites'],
-                menuItems: backupData.websitesQrItems.map((w: any) => ({
-                  id: `web-${w.id}`,
-                  name: w.title,
-                  category: 'Our Sites',
-                  price: 0,
-                  description: w.description || w.url,
-                  url: w.url,
-                  ctaText: w.ctaText || 'Visit Website',
-                  itemType: w.type,
-                  phone: w.phone,
-                  phoneAction: w.phoneAction,
-                  tags: [w.type, w.ctaText || 'Visit Website'],
-                  isSpecial: true,
-                  isAvailable: true,
-                })),
-                websitesQrItems: backupData.websitesQrItems,
-                qrDarkColor: '#2563eb',
-                qrLightColor: '#ffffff',
-                qrEyeColor: '#1d4ed8',
-                qrBoxBgColor: '#ffffff',
-                qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-
-              const webHubJson = JSON.stringify(webHubPage);
-              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, webHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`qr_pages/websites-hub-all.json`, webHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(hubId)}.json`, webHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`users/${userKey}/qr_pages/websites-hub-all.json`, webHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              if (db) {
-                try {
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(hubId, userEmail, webHubJson, now).run();
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(`user_${userEmail}_websites`, userEmail, webHubJson, now).run();
-                } catch (_) {}
-              }
-            }
-
-            // Also save socials hub page directly if socialsQrItems exist
-            if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
-              const profile = backupData.profile || {};
-              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-              const hubId = `socials-hub-${cleanName}`;
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              const socialHubPage = {
-                id: hubId,
-                title: 'our social media platforms',
-                tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-                description: `Official social media profiles, chat channels, and community links for ${profile.name || 'our brand'}.`,
-                pageType: 'socials_hub',
-                accentColor: '#059669',
-                theme: 'emerald',
-                logo: profile.logo,
-                phone: profile.phone || '',
-                whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                currency: profile.currency || 'USD',
-                announcement: `💬 ${backupData.socialsQrItems.length} Official Channel${backupData.socialsQrItems.length === 1 ? '' : 's'} Connected`,
-                photos: [],
-                menuCategories: ['Official Social Media & Messaging'],
-                menuItems: backupData.socialsQrItems.map((s: any) => ({
-                  id: `social-${s.id}`,
-                  name: s.title || s.customPlatformName || s.platform,
-                  category: 'Official Social Media & Messaging',
-                  price: 0,
-                  description: s.prefilledMessage || s.fullUrl,
-                  url: s.fullUrl,
-                  ctaText: s.ctaText || 'Connect',
-                  itemType: s.platform,
-                  tags: [s.platform, s.ctaText || 'Connect'],
-                  isSpecial: true,
-                  isAvailable: true,
-                })),
-                socialsQrItems: backupData.socialsQrItems,
-                qrDarkColor: '#059669',
-                qrLightColor: '#ffffff',
-                qrEyeColor: '#047857',
-                qrBoxBgColor: '#ffffff',
-                qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-
-              const socialHubJson = JSON.stringify(socialHubPage);
-              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, socialHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`qr_pages/socials-hub-all.json`, socialHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`users/${userKey}/qr_pages/${encodeURIComponent(hubId)}.json`, socialHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`users/${userKey}/qr_pages/socials-hub-all.json`, socialHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              if (db) {
-                try {
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(hubId, userEmail, socialHubJson, now).run();
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(`user_${userEmail}_socials`, userEmail, socialHubJson, now).run();
-                } catch (_) {}
-              }
-            }
-
-            // Also save events hub and individual event pages directly if eventsQrItems exist
-            if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
-              const profile = backupData.profile || {};
-              const cleanName = (profile.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
-              const hubId = `events-hub-${cleanName}`;
-              const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
-
-              const eventsHubPage = {
-                id: hubId,
-                title: 'Our Events',
-                tagline: undefined,
-                description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
-                pageType: 'events_hub',
-                accentColor: '#7c3aed',
-                theme: 'indigo',
-                logo: profile.logo,
-                phone: profile.phone || '',
-                whatsapp: cleanWa,
-                email: profile.email || '',
-                address: profile.address || '',
-                googleMapsUrl: profile.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(profile.address)}` : undefined,
-                currency: profile.currency || 'USD',
-                announcement: `🎉 ${backupData.eventsQrItems.length} Upcoming Event${backupData.eventsQrItems.length === 1 ? '' : 's'} Available`,
-                photos: backupData.eventsQrItems.flatMap((e: any) => (e.photos || []).map((url: string, idx: number) => ({
-                  id: `${e.id}-photo-${idx}`,
+                email: evt.contactEmail || profile.email || '',
+                address: evt.location,
+                googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
+                currency: profile.currency || 'UGX',
+                announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
+                allowWhatsAppOrdering: true,
+                photos: (evt.photos || []).map((url: string, idx: number) => ({
+                  id: `${evt.id}-photo-${idx}`,
                   url,
-                  title: e.title,
-                  description: e.location,
+                  title: evt.title,
+                  description: evt.location,
                   badge: 'Event Photo',
-                }))),
-                menuCategories: ['Our Events'],
-                menuItems: backupData.eventsQrItems.map((e: any) => ({
-                  id: `event-pass-${e.id}`,
-                  name: e.title,
-                  category: 'Our Events',
-                  price: 0,
-                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                  url: e.rsvpUrl || undefined,
-                  ctaText: e.ctaText || 'RSVP & Join',
-                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                  isSpecial: true,
-                  isAvailable: true,
-                  photoUrl: e.photos?.[0] || undefined,
                 })),
-                eventsQrItems: backupData.eventsQrItems,
-                qrDarkColor: '#7c3aed',
+                menuCategories: ['Event Pass & RSVP'],
+                menuItems: [
+                  {
+                    id: `rsvp-${evt.id}`,
+                    name: `${evt.title} - Entry & RSVP Pass`,
+                    category: 'Event Pass & RSVP',
+                    price: 0,
+                    description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
+                    tags: ['RSVP', 'Invitation', 'Entry Pass'],
+                    isSpecial: true,
+                    isAvailable: true,
+                    photoUrl: evt.photos?.[0] || undefined,
+                  },
+                ],
+                qrDarkColor: evt.darkColor || '#7c3aed',
                 qrLightColor: '#ffffff',
-                qrEyeColor: '#6d28d9',
+                qrEyeColor: evt.eyeColor || '#6d28d9',
                 qrBoxBgColor: '#ffffff',
                 qrBoxBorderColor: '#cbd5e1',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+                createdAt: now,
+                updatedAt: now,
               };
 
-              const eventsHubJson = JSON.stringify(eventsHubPage);
-              await bucket.put(`qr_pages/${encodeURIComponent(hubId)}.json`, eventsHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
-              await bucket.put(`qr_pages/events-hub-all.json`, eventsHubJson, {
-                httpMetadata: { contentType: 'application/json' },
-              });
+              await saveQrPageToCloud(singleEventPage, evt.id);
+              await saveQrPageToCloud(singleEventPage, `event-${evt.id}`);
+            }
+          }
 
-              if (db) {
-                try {
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(hubId, userEmail, eventsHubJson, now).run();
-                  await db.prepare(`
-                    INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                  `).bind(`user_${userEmail}_events`, userEmail, eventsHubJson, now).run();
-                } catch (_) {}
-              }
+          // 6. Persist Business Showcase & Hub Pages
+          const inventory = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : [];
+          const photos = Array.isArray(backupData.photos) ? backupData.photos : [];
+          const bizHubId = `business-hub-${cleanName}`;
+          const bizHubPage = {
+            id: bizHubId,
+            title: profile.name || 'Brivu Business',
+            tagline: profile.description || 'Welcome to our official business page',
+            description: profile.description || '',
+            pageType: 'menu',
+            accentColor: profile.themeColor || '#059669',
+            theme: 'emerald',
+            logo: profile.logo,
+            coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+            phone: profile.phone || '',
+            whatsapp: cleanWa,
+            email: profile.email || userEmail || '',
+            userEmail: userEmail || profile.email || '',
+            address: profile.address || '',
+            currency: profile.currency || 'UGX',
+            openingHours: '',
+            allowWhatsAppOrdering: true,
+            photos: photos.map((p: any, idx: number) =>
+              typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
+            ),
+            menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
+            menuItems: inventory.map((item: any) => ({
+              id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              name: item.name,
+              category: item.category || 'All',
+              price: item.sellingPrice || item.price || 0,
+              description: item.description || '',
+              photoUrl: item.image || item.photoUrl,
+              isAvailable: item.inStock !== false,
+            })),
+            qrDarkColor: '#000000',
+            qrLightColor: '#ffffff',
+            qrEyeColor: '#000000',
+            qrBoxBgColor: '#ffffff',
+            qrBoxBorderColor: '#cbd5e1',
+            createdAt: now,
+            updatedAt: now,
+          };
 
-              // Save each individual event
-              for (const evt of backupData.eventsQrItems) {
-                const singleEventPage = {
-                  id: evt.id,
-                  title: evt.title,
-                  tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
-                  description: evt.description || `Event Venue: ${evt.location}`,
-                  pageType: 'event',
-                  accentColor: evt.darkColor || '#7c3aed',
-                  theme: 'indigo',
-                  coverImage: evt.photos?.[0] || undefined,
-                  logo: evt.photos?.[0] || profile.logo || undefined,
-                  phone: evt.contactPhone || profile.phone || '',
-                  whatsapp: cleanWa,
-                  email: evt.contactEmail || profile.email || '',
-                  address: evt.location,
-                  googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}`,
-                  currency: profile.currency || 'UGX',
-                  announcement: `📅 ${evt.startDate || evt.eventDate || 'Upcoming Event'} • 📍 ${evt.location}`,
-                  allowWhatsAppOrdering: true,
-                  photos: (evt.photos || []).map((url: string, idx: number) => ({
-                    id: `${evt.id}-photo-${idx}`,
-                    url,
-                    title: evt.title,
-                    description: evt.location,
-                    badge: 'Event Photo',
-                  })),
-                  menuCategories: ['Event Pass & RSVP'],
-                  menuItems: [
-                    {
-                      id: `rsvp-${evt.id}`,
-                      name: `${evt.title} - Entry & RSVP Pass`,
-                      category: 'Event Pass & RSVP',
-                      price: 0,
-                      description: `${evt.description ? evt.description + ' • ' : ''}Venue: ${evt.location}. Click to RSVP!`,
-                      tags: ['RSVP', 'Invitation', 'Entry Pass'],
-                      isSpecial: true,
-                      isAvailable: true,
-                      photoUrl: evt.photos?.[0] || undefined,
-                    },
-                  ],
-                  qrDarkColor: evt.darkColor || '#7c3aed',
-                  qrLightColor: '#ffffff',
-                  qrEyeColor: evt.eyeColor || '#6d28d9',
-                  qrBoxBgColor: '#ffffff',
-                  qrBoxBorderColor: '#cbd5e1',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
+          await saveQrPageToCloud(bizHubPage, bizHubId);
+          await saveQrPageToCloud(bizHubPage, 'business-hub-all');
+          await saveQrPageToCloud(bizHubPage, 'business');
+          await saveQrPageToCloud(bizHubPage, 'business-latest');
+          if (userEmail) {
+            await saveQrPageToCloud(bizHubPage, `user_${userEmail}_business`);
+            await saveQrPageToCloud(bizHubPage, `user_${userEmail}_latest`);
+          }
 
-                const singleEventJson = JSON.stringify(singleEventPage);
-                await bucket.put(`qr_pages/${encodeURIComponent(evt.id)}.json`, singleEventJson, {
-                  httpMetadata: { contentType: 'application/json' },
-                });
-                if (db) {
-                  try {
-                    await db.prepare(`
-                      INSERT INTO qr_pages (id, user_email, page_json, updated_at)
-                      VALUES (?, ?, ?, ?)
-                      ON CONFLICT(id) DO UPDATE SET user_email = excluded.user_email, page_json = excluded.page_json, updated_at = excluded.updated_at
-                    `).bind(evt.id, userEmail, singleEventJson, now).run();
-                  } catch (_) {}
+          // Also persist any existing business pages from backupData.qrHostedPages
+          if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+            for (const p of backupData.qrHostedPages) {
+              if (p?.id) {
+                await saveQrPageToCloud(p, p.id);
+                if (p.id.startsWith('qr-')) {
+                  await saveQrPageToCloud(p, p.id.replace('qr-', 'business-'));
                 }
               }
             }

@@ -107,6 +107,9 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
       logo: page.logo,
       photos: (page.photos || []).filter((photo) => Boolean(photo && photo.url)),
       menuItems: page.menuItems || [],
+      websitesQrItems: page.websitesQrItems || [],
+      socialsQrItems: page.socialsQrItems || [],
+      eventsQrItems: page.eventsQrItems || [],
     })),
     eventsQrItems: (data.eventsQrItems || []).map((evt) => ({
       ...evt,
@@ -932,6 +935,44 @@ export const CloudflareService = {
   },
 
   /**
+   * Fetches user's complete cloud backup directly from Cloudflare without importing into local state
+   */
+  async fetchUserBackupData(email: string): Promise<AppBackupData | null> {
+    const cleanEmail = (email || '').toLowerCase().trim();
+    if (!cleanEmail) return null;
+
+    const config = this.getConfig();
+    const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
+      ? window.location.origin
+      : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
+
+    try {
+      const headers = this.getAuthHeaders();
+      headers['X-User-Email'] = cleanEmail;
+      headers['X-User-Id'] = cleanEmail;
+      const query = `?email=${encodeURIComponent(cleanEmail)}&user_id=${encodeURIComponent(cleanEmail)}`;
+      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/sync/pull${query}`;
+
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!res.ok) return null;
+      const rawText = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+      if (!parsed.ok) return null;
+
+      const result = parsed.data || {};
+      const backupData: AppBackupData | undefined =
+        result?.backupData || result?.data?.backupData || (result?.receipts ? result : undefined);
+      return backupData || null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Saves or updates a hosted QR page directly in Cloudflare D1 and R2, indexed by owner email
    */
   async saveSingleQrPage(page: any, emailOverride?: string): Promise<{ success: boolean; message: string }> {
@@ -961,7 +1002,10 @@ export const CloudflareService = {
       }
 
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
-      const targetUrl = `${config.workerUrl}/api/qr${query}`;
+      const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
+        ? window.location.origin
+        : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
+      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr${query}`;
 
       const cleanPage = {
         ...page,
@@ -973,6 +1017,7 @@ export const CloudflareService = {
         menuItems: page.menuItems || [],
         websitesQrItems: page.websitesQrItems || [],
         socialsQrItems: page.socialsQrItems || [],
+        eventsQrItems: page.eventsQrItems || [],
       };
 
       const response = await fetch(targetUrl, {

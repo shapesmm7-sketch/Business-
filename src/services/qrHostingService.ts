@@ -58,14 +58,29 @@ export class QRHostingService {
     return '';
   }
 
-  private static formatBusinessPageId(pageId: string): string {
+  static formatBusinessPageId(pageId: string): string {
     const id = (pageId || '').trim();
-    if (!id || id === 'default' || id === 'latest' || id.includes('hub') || id.includes('socials') || id.includes('websites') || id.includes('events')) {
-      return id;
+    if (!id || id === 'default' || id === 'latest') {
+      return 'business-latest';
     }
     if (id.startsWith('business-')) return id;
-    if (id.startsWith('qr-')) return id.replace('qr-', 'business-');
+    if (id.startsWith('qr-')) return id.replace(/^qr-/, 'business-');
+    if (id.includes('socials') || id.includes('websites') || id.includes('events')) {
+      return id;
+    }
     return `business-${id}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Business Hub page with owner email
+   */
+  static getCustomerBusinessHubUrl(businessName?: string, emailOverride?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `business-hub-${cleanName}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(hubId)}${emailParam}`;
   }
 
   /**
@@ -159,16 +174,36 @@ export class QRHostingService {
    */
   static convertBackupToHostedPage(bData: any): QRCodeHostedPage {
     const pages = Array.isArray(bData?.qrHostedPages) ? bData.qrHostedPages : [];
-    const bestPage = pages.find((p: any) => (p?.menuItems && p.menuItems.length > 0) || (p?.photos && p.photos.length > 0)) || pages[0];
-    if (bestPage) return bestPage;
+    const populated = pages.find((p: any) =>
+      p &&
+      p.pageType !== 'websites_hub' &&
+      p.pageType !== 'socials_hub' &&
+      p.pageType !== 'events_hub' &&
+      ((p?.menuItems && p.menuItems.length > 0) || (p?.photos && p.photos.length > 0))
+    );
+    if (populated) return populated;
 
     const profile = bData?.profile || {};
-    const inventory = Array.isArray(bData?.inventory) ? bData.inventory : [];
+    const inventory = Array.isArray(bData?.inventoryProducts)
+      ? bData.inventoryProducts
+      : (Array.isArray(bData?.inventory) ? bData.inventory : []);
     const photos = Array.isArray(bData?.photos) ? bData.photos : [];
     const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
 
+    const firstBusinessPage = pages.find((p: any) =>
+      p &&
+      p.pageType !== 'websites_hub' &&
+      p.pageType !== 'socials_hub' &&
+      p.pageType !== 'events_hub'
+    );
+    if (inventory.length === 0 && photos.length === 0 && firstBusinessPage) {
+      return firstBusinessPage;
+    }
+
+    const email = profile.email || bData?.userEmail || bData?.email || '';
+
     return {
-      id: 'default',
+      id: firstBusinessPage?.id || 'default',
       title: profile.name || 'Brivu Business',
       tagline: profile.description || 'Welcome to our official business page',
       description: profile.description || '',
@@ -179,9 +214,10 @@ export class QRHostingService {
       coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
       phone: profile.phone || '',
       whatsapp: cleanWa,
-      email: profile.email || '',
+      email,
+      userEmail: email,
       address: profile.address || '',
-      currency: profile.currency || 'USD',
+      currency: profile.currency || 'UGX',
       openingHours: '',
       allowWhatsAppOrdering: true,
       photos: photos.map((p: any, idx: number) =>
@@ -192,7 +228,7 @@ export class QRHostingService {
         id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name: item.name,
         category: item.category || 'All',
-        price: item.price || 0,
+        price: item.sellingPrice || item.price || 0,
         description: item.description || '',
         photoUrl: item.image || item.photoUrl,
         isAvailable: item.inStock !== false,

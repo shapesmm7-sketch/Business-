@@ -310,9 +310,19 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     return item.price;
   };
 
+  // Effective menu items with fallback to pre-injected window.__INITIAL_QR_PAGE__
+  const effectiveMenuItems = useMemo(() => {
+    if (page.menuItems && page.menuItems.length > 0) return page.menuItems;
+    try {
+      const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+      if (initial?.menuItems && initial.menuItems.length > 0) return initial.menuItems;
+    } catch {}
+    return [];
+  }, [page.menuItems]);
+
   // Filter menu items
   const filteredItems = useMemo(() => {
-    return page.menuItems.filter((item) => {
+    return effectiveMenuItems.filter((item) => {
       const matchesCategory =
         selectedCategory === 'All' || item.category.toLowerCase() === selectedCategory.toLowerCase();
       const matchesSearch =
@@ -321,7 +331,17 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesCategory && matchesSearch;
     });
-  }, [page.menuItems, selectedCategory, searchQuery]);
+  }, [effectiveMenuItems, selectedCategory, searchQuery]);
+
+  // Effective photos with fallback to pre-injected window.__INITIAL_QR_PAGE__
+  const effectivePhotos = useMemo(() => {
+    if (page.photos && page.photos.length > 0) return page.photos;
+    try {
+      const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+      if (initial?.photos && initial.photos.length > 0) return initial.photos;
+    } catch {}
+    return [];
+  }, [page.photos]);
 
   // Total in tray
   const trayList = useMemo(() => Object.values(trayItems) as TrayItem[], [trayItems]);
@@ -439,13 +459,13 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         set.add(c.trim());
       }
     });
-    (page.menuItems || []).forEach((i) => {
+    effectiveMenuItems.forEach((i) => {
       if (i.category && i.category.trim()) {
         set.add(i.category.trim());
       }
     });
     return Array.from(set);
-  }, [page.menuCategories, page.menuItems]);
+  }, [page.menuCategories, effectiveMenuItems]);
 
   const pathname = typeof window !== 'undefined' ? (window.location.pathname || '').toLowerCase() : '';
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -681,28 +701,92 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         )}
 
         {/* Main Event Content */}
-        <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-6">
-          <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
-            <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <span>Events</span>
-            </h2>
-            <span className="text-xs font-bold text-slate-500">
-              {isEventsHub ? page.menuItems.length : 1} Event{isEventsHub && page.menuItems.length !== 1 ? 's' : ''}
-            </span>
-          </div>
+        {(() => {
+          let effectiveEventsList = (page.menuItems && page.menuItems.length > 0)
+            ? page.menuItems
+            : (page.eventsQrItems && page.eventsQrItems.length > 0)
+              ? page.eventsQrItems.map((e: any) => ({
+                  id: `event-pass-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                  url: e.rsvpUrl || undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                  isSpecial: true,
+                  isAvailable: true,
+                  photoUrl: e.photos?.[0] || undefined,
+                }))
+              : [];
 
-          {/* Facebook-style Card Renderer */}
-          {isEventsHub ? (
-            <div className="space-y-6">
-              {page.menuItems.map((evtItem) => {
-                const evtRsvpMsg = encodeURIComponent(
-                  `👋 Hello,\nI would like to RSVP for *${evtItem.name}*!\n\nPlease confirm ticket availability and booking. Thank you!`
-                );
-                const evtWaUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${evtRsvpMsg}` : '';
+          if (effectiveEventsList.length === 0) {
+            try {
+              const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+              if (initial?.eventsQrItems && initial.eventsQrItems.length > 0) {
+                effectiveEventsList = initial.eventsQrItems.map((e: any) => ({
+                  id: `event-pass-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                  url: e.rsvpUrl || undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                  isSpecial: true,
+                  isAvailable: true,
+                  photoUrl: e.photos?.[0] || undefined,
+                }));
+              } else if (initial?.menuItems && initial.menuItems.length > 0 && (initial.pageType === 'events_hub' || String(initial.id).includes('events'))) {
+                effectiveEventsList = initial.menuItems;
+              }
+            } catch {}
+          }
+          if (effectiveEventsList.length === 0) {
+            try {
+              const stored = StorageService.getEventsQrItems();
+              if (stored && stored.length > 0) {
+                effectiveEventsList = stored.map((e: any) => ({
+                  id: `event-pass-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
+                  url: e.rsvpUrl || undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+                  isSpecial: true,
+                  isAvailable: true,
+                  photoUrl: e.photos?.[0] || undefined,
+                }));
+              }
+            } catch {}
+          }
 
-                return (
-                  <div key={evtItem.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
+          return (
+            <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-6">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+                <h2 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  <span>Events</span>
+                </h2>
+                <span className="text-xs font-bold text-slate-500">
+                  {isEventsHub ? effectiveEventsList.length : 1} Event{isEventsHub && effectiveEventsList.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {/* Facebook-style Card Renderer */}
+              {isEventsHub ? (
+                effectiveEventsList.length > 0 ? (
+                  <div className="space-y-6">
+                    {effectiveEventsList.map((evtItem) => {
+                      const evtRsvpMsg = encodeURIComponent(
+                        `👋 Hello,\nI would like to RSVP for *${evtItem.name}*!\n\nPlease confirm ticket availability and booking. Thank you!`
+                      );
+                      const evtWaUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${evtRsvpMsg}` : '';
+
+                      return (
+                        <div key={evtItem.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
                     {/* Post Header */}
                     <div className="flex items-center gap-3 px-4 pt-4">
                       {page.logo ? (
@@ -824,6 +908,17 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               })}
             </div>
           ) : (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
+              <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                No Events Scheduled Yet
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Upcoming events and official RSVP invitation passes will appear here.
+              </p>
+            </div>
+          )
+        ) : (
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
               {/* Post Header */}
               <div className="flex items-center gap-3 px-4 pt-4">
@@ -949,6 +1044,8 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
           </div>
         </main>
+          );
+        })()}
 
         {/* Lightbox Modal */}
         {lightboxImage && (
@@ -1021,6 +1118,25 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
           : [];
 
     let finalWebsites = rawWebsites;
+    if (finalWebsites.length === 0) {
+      try {
+        const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+        if (initial?.websitesQrItems && initial.websitesQrItems.length > 0) {
+          finalWebsites = initial.websitesQrItems;
+        } else if (initial?.menuItems && initial.menuItems.length > 0 && (initial.pageType === 'websites_hub' || String(initial.id).includes('websites'))) {
+          finalWebsites = initial.menuItems.map((item: any) => ({
+            id: item.id,
+            title: item.name || 'Official Link',
+            url: item.url || '#',
+            type: (item.itemType || item.tags?.[0] || 'website') as any,
+            description: item.description,
+            ctaText: item.ctaText || 'Visit Website',
+            phone: item.phone,
+            phoneAction: item.phoneAction,
+          }));
+        }
+      } catch {}
+    }
     if (finalWebsites.length === 0) {
       try {
         const stored = StorageService.getWebsitesQrItems();
@@ -1410,6 +1526,28 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
           : [];
 
     let finalSocials = rawSocials;
+    if (finalSocials.length === 0) {
+      try {
+        const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+        if (initial?.socialsQrItems && initial.socialsQrItems.length > 0) {
+          finalSocials = initial.socialsQrItems;
+        } else if (initial?.menuItems && initial.menuItems.length > 0 && (initial.pageType === 'socials_hub' || String(initial.id).includes('socials'))) {
+          finalSocials = initial.menuItems.map((item: any) => ({
+            id: item.id,
+            platform: (item.itemType || item.tags?.[0] || 'custom') as any,
+            customPlatformName: item.name,
+            title: item.name || 'Social Media',
+            usernameOrPhone: item.usernameOrPhone || '',
+            fullUrl: item.url || '#',
+            prefilledMessage: item.description,
+            ctaText: item.ctaText || 'Connect',
+            darkColor: '#059669',
+            lightColor: '#ffffff',
+            createdAt: new Date().toISOString(),
+          }));
+        }
+      } catch {}
+    }
     if (finalSocials.length === 0) {
       try {
         const stored = StorageService.getSocialsQrItems();
@@ -2187,10 +2325,10 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Photos</h2>
-              <span className="text-xs text-slate-400">{page.photos.length} Photos</span>
+              <span className="text-xs text-slate-400">{effectivePhotos.length} Photos</span>
             </div>
 
-            {page.photos.length === 0 ? (
+            {effectivePhotos.length === 0 ? (
               <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <Camera className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No photos uploaded yet</p>
@@ -2198,7 +2336,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {page.photos.map((photo, idx) => (
+                {effectivePhotos.map((photo, idx) => (
                   <div
                     key={photo.id}
                     onClick={() => {
