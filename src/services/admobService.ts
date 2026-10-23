@@ -11,17 +11,17 @@ import {
 import { StorageService } from './storage';
 
 /**
- * Production Google AdMob Unit IDs
+ * Google AdMob Test Ad Unit IDs (Official Google Test Ad IDs)
  */
-export const ADMOB_UNITS = {
-  APP_ID: 'ca-app-pub-8582659585800553~8957324812',
-  BANNER: 'ca-app-pub-8582659585800553/3301762743',
-  ADAPTIVE_BANNER: 'ca-app-pub-8582659585800553/3301762743',
-  INTERSTITIAL: 'ca-app-pub-8582659585800553/1482159477',
-  NATIVE_ADVANCED: 'ca-app-pub-8582659585800553/9630358215',
+export const ADMOB_TEST_UNITS = {
+  APP_ID: 'ca-app-pub-394025609942544~3347511713',
+  BANNER: 'ca-app-pub-394025609942544/6300978111',
+  ADAPTIVE_BANNER: 'ca-app-pub-394025609942544/9214589741',
+  INTERSTITIAL: 'ca-app-pub-394025609942544/1033173712',
+  NATIVE_ADVANCED: 'ca-app-pub-394025609942544/2247696110',
 } as const;
 
-export const ADMOB_TEST_UNITS = ADMOB_UNITS;
+export const ADMOB_UNITS = ADMOB_TEST_UNITS;
 
 export interface InterstitialAdConfig {
   unitId: string;
@@ -88,7 +88,7 @@ class AdMobManager {
       await this.initNativeAdMob();
       await AdMob.prepareInterstitial({
         adId: ADMOB_UNITS.INTERSTITIAL,
-        isTesting: false,
+        isTesting: true,
       });
       console.info('[AdMob Native] Interstitial ad prepared (AdMob request registered).');
     } catch (err) {
@@ -125,10 +125,10 @@ class AdMobManager {
     if (Capacitor.isNativePlatform()) {
       try {
         await AdMob.initialize({
-          initializeForTesting: false,
+          initializeForTesting: true,
         });
         this.isInitialized = true;
-        console.info('[AdMob Native] Initialized successfully with Google AdMob production configuration.');
+        console.info('[AdMob Native] Initialized successfully with Google AdMob test configuration.');
 
         // Listen for AdMob banner events
         try {
@@ -187,7 +187,7 @@ class AdMobManager {
           adSize: BannerAdSize.ADAPTIVE_BANNER,
           position: position === 'bottom' ? BannerAdPosition.BOTTOM_CENTER : BannerAdPosition.TOP_CENTER,
           margin: calculatedMargin,
-          isTesting: false,
+          isTesting: true,
         };
 
         if (this.isBannerCreated) {
@@ -278,7 +278,7 @@ class AdMobManager {
         await this.initNativeAdMob();
         const options: AdOptions = {
           adId: ADMOB_UNITS.INTERSTITIAL,
-          isTesting: false,
+          isTesting: true,
         };
         await AdMob.prepareInterstitial(options);
         await AdMob.showInterstitial();
