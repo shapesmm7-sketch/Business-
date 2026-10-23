@@ -292,20 +292,7 @@ export async function resolveHostedQrPage(
   const getUserBackupData = async (): Promise<any | null> => {
     if (!userEmail) return null;
 
-    // 1. Check R2 if bucket bound and userEmail available
-    if (bucket) {
-      try {
-        const userKey = encodeURIComponent(userEmail);
-        let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
-        if (!bObj) bObj = await bucket.get(`users/${userKey}/backup.json`);
-        if (bObj) {
-          const parsed = JSON.parse(await bObj.text());
-          if (parsed) return parsed;
-        }
-      } catch (_) {}
-    }
-
-    // 2. Check D1 backups table strictly for userEmail
+    // 1. Check D1 backups table first (sub-millisecond SQLite edge lookup)
     if (db) {
       try {
         await ensureD1Tables(db);
@@ -338,6 +325,19 @@ export async function resolveHostedQrPage(
               if (parsed) return parsed;
             } catch (_) {}
           }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Check R2 only if D1 did not have the backup
+    if (bucket) {
+      try {
+        const userKey = encodeURIComponent(userEmail);
+        let bObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+        if (!bObj) bObj = await bucket.get(`users/${userKey}/backup.json`);
+        if (bObj) {
+          const parsed = JSON.parse(await bObj.text());
+          if (parsed) return parsed;
         }
       } catch (_) {}
     }
@@ -493,33 +493,44 @@ export async function resolveHostedQrPage(
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isWebsitesSection) {
-    // 1. Direct query in D1 qr_pages table for websites
+    // 1. Direct targeted query in D1 qr_pages table for websites
     if (db) {
       try {
         await ensureD1Tables(db);
-        const rows: any = await db.prepare(`
-          SELECT page_json FROM qr_pages
-          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
-             OR id = ?
-             OR id = ?
-          ORDER BY
-            CASE
-              WHEN LOWER(user_email) = ? THEN 1
-              ELSE 2
-            END ASC,
-            updated_at DESC
-          LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_websites`, userEmail).all();
+        const directKeys = [pageId, `user_${userEmail}_websites`, 'websites-hub-all', 'websites'].filter(Boolean);
+        for (const k of directKeys) {
+          const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1").bind(k).first();
+          if (row?.page_json) {
+            try {
+              const parsed = JSON.parse(row.page_json);
+              if (parsed && ((parsed.websitesQrItems && parsed.websitesQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
+                return {
+                  ...parsed,
+                  id: pageId || parsed.id || 'websites-hub-all',
+                  pageType: 'websites_hub',
+                  userEmail: userEmail || parsed.userEmail || parsed.email,
+                  email: userEmail || parsed.email || parsed.userEmail,
+                };
+              }
+            } catch (_) {}
+          }
+        }
 
-        if (rows?.results && Array.isArray(rows.results)) {
-          for (const row of rows.results as any[]) {
-            if (row?.page_json) {
-              try {
-                const parsed = JSON.parse(row.page_json);
-                if (parsed && (parsed.pageType === 'websites_hub' || Array.isArray(parsed.websitesQrItems))) {
-                  const hasWebItems = (parsed.websitesQrItems && parsed.websitesQrItems.length > 0) ||
-                                     (parsed.menuItems && parsed.menuItems.length > 0);
-                  if (hasWebItems) {
+        if (userEmail) {
+          const rows: any = await db.prepare(`
+            SELECT page_json FROM qr_pages
+            WHERE LOWER(user_email) = ?
+              AND (id LIKE '%websites%' OR page_json LIKE '%websites_hub%' OR page_json LIKE '%websitesQrItems%')
+            ORDER BY updated_at DESC
+            LIMIT 5
+          `).bind(userEmail).all();
+
+          if (rows?.results && Array.isArray(rows.results)) {
+            for (const row of rows.results as any[]) {
+              if (row?.page_json) {
+                try {
+                  const parsed = JSON.parse(row.page_json);
+                  if (parsed && ((parsed.websitesQrItems && parsed.websitesQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
                     return {
                       ...parsed,
                       id: pageId || parsed.id || 'websites-hub-all',
@@ -528,8 +539,8 @@ export async function resolveHostedQrPage(
                       email: userEmail || parsed.email || parsed.userEmail,
                     };
                   }
-                }
-              } catch (_) {}
+                } catch (_) {}
+              }
             }
           }
         }
@@ -650,33 +661,44 @@ export async function resolveHostedQrPage(
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isSocialsSection) {
-    // 1. Direct query in D1 qr_pages table for socials
+    // 1. Direct targeted query in D1 qr_pages table for socials
     if (db) {
       try {
         await ensureD1Tables(db);
-        const rows: any = await db.prepare(`
-          SELECT page_json FROM qr_pages
-          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
-             OR id = ?
-             OR id = ?
-          ORDER BY
-            CASE
-              WHEN LOWER(user_email) = ? THEN 1
-              ELSE 2
-            END ASC,
-            updated_at DESC
-          LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_socials`, userEmail).all();
+        const directKeys = [pageId, `user_${userEmail}_socials`, 'socials-hub-all', 'socials'].filter(Boolean);
+        for (const k of directKeys) {
+          const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1").bind(k).first();
+          if (row?.page_json) {
+            try {
+              const parsed = JSON.parse(row.page_json);
+              if (parsed && ((parsed.socialsQrItems && parsed.socialsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
+                return {
+                  ...parsed,
+                  id: pageId || parsed.id || 'socials-hub-all',
+                  pageType: 'socials_hub',
+                  userEmail: userEmail || parsed.userEmail || parsed.email,
+                  email: userEmail || parsed.email || parsed.userEmail,
+                };
+              }
+            } catch (_) {}
+          }
+        }
 
-        if (rows?.results && Array.isArray(rows.results)) {
-          for (const row of rows.results as any[]) {
-            if (row?.page_json) {
-              try {
-                const parsed = JSON.parse(row.page_json);
-                if (parsed && (parsed.pageType === 'socials_hub' || Array.isArray(parsed.socialsQrItems))) {
-                  const hasSocItems = (parsed.socialsQrItems && parsed.socialsQrItems.length > 0) ||
-                                      (parsed.menuItems && parsed.menuItems.length > 0);
-                  if (hasSocItems) {
+        if (userEmail) {
+          const rows: any = await db.prepare(`
+            SELECT page_json FROM qr_pages
+            WHERE LOWER(user_email) = ?
+              AND (id LIKE '%socials%' OR page_json LIKE '%socials_hub%' OR page_json LIKE '%socialsQrItems%')
+            ORDER BY updated_at DESC
+            LIMIT 5
+          `).bind(userEmail).all();
+
+          if (rows?.results && Array.isArray(rows.results)) {
+            for (const row of rows.results as any[]) {
+              if (row?.page_json) {
+                try {
+                  const parsed = JSON.parse(row.page_json);
+                  if (parsed && ((parsed.socialsQrItems && parsed.socialsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
                     return {
                       ...parsed,
                       id: pageId || parsed.id || 'socials-hub-all',
@@ -685,8 +707,8 @@ export async function resolveHostedQrPage(
                       email: userEmail || parsed.email || parsed.userEmail,
                     };
                   }
-                }
-              } catch (_) {}
+                } catch (_) {}
+              }
             }
           }
         }
@@ -842,34 +864,52 @@ export async function resolveHostedQrPage(
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isEventsSection) {
-    // 1. Direct query in D1 qr_pages table for events
+    // 1. Direct targeted query in D1 qr_pages table for events
     if (db) {
       try {
         await ensureD1Tables(db);
-        const rows: any = await db.prepare(`
-          SELECT page_json FROM qr_pages
-          WHERE (user_email IS NOT NULL AND LOWER(user_email) = ?)
-             OR id = ?
-             OR id = ?
-             OR id = ?
-          ORDER BY
-            CASE
-              WHEN LOWER(user_email) = ? THEN 1
-              ELSE 2
-            END ASC,
-            updated_at DESC
-          LIMIT 10
-        `).bind(userEmail, pageId, `user_${userEmail}_events`, `event-${rawIdBase}`, userEmail).all();
+        const directKeys = [
+          pageId,
+          `user_${userEmail}_events`,
+          `event-${rawIdBase}`,
+          rawIdBase,
+          'events-hub-all',
+          'events'
+        ].filter(Boolean);
 
-        if (rows?.results && Array.isArray(rows.results)) {
-          for (const row of rows.results as any[]) {
-            if (row?.page_json) {
-              try {
-                const parsed = JSON.parse(row.page_json);
-                if (parsed && (parsed.pageType === 'events_hub' || parsed.pageType === 'event' || Array.isArray(parsed.eventsQrItems))) {
-                  const hasEvtItems = (parsed.eventsQrItems && parsed.eventsQrItems.length > 0) ||
-                                      (parsed.menuItems && parsed.menuItems.length > 0);
-                  if (hasEvtItems) {
+        for (const k of directKeys) {
+          const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1").bind(k).first();
+          if (row?.page_json) {
+            try {
+              const parsed = JSON.parse(row.page_json);
+              if (parsed && ((parsed.eventsQrItems && parsed.eventsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
+                return {
+                  ...parsed,
+                  id: pageId || parsed.id || 'events-hub-all',
+                  pageType: parsed.pageType || 'events_hub',
+                  userEmail: userEmail || parsed.userEmail || parsed.email,
+                  email: userEmail || parsed.email || parsed.userEmail,
+                };
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (userEmail) {
+          const rows: any = await db.prepare(`
+            SELECT page_json FROM qr_pages
+            WHERE LOWER(user_email) = ?
+              AND (id LIKE '%event%' OR page_json LIKE '%events_hub%' OR page_json LIKE '%eventsQrItems%')
+            ORDER BY updated_at DESC
+            LIMIT 5
+          `).bind(userEmail).all();
+
+          if (rows?.results && Array.isArray(rows.results)) {
+            for (const row of rows.results as any[]) {
+              if (row?.page_json) {
+                try {
+                  const parsed = JSON.parse(row.page_json);
+                  if (parsed && ((parsed.eventsQrItems && parsed.eventsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
                     return {
                       ...parsed,
                       id: pageId || parsed.id || 'events-hub-all',
@@ -878,8 +918,8 @@ export async function resolveHostedQrPage(
                       email: userEmail || parsed.email || parsed.userEmail,
                     };
                   }
-                }
-              } catch (_) {}
+                } catch (_) {}
+              }
             }
           }
         }
@@ -1033,58 +1073,74 @@ export async function resolveHostedQrPage(
   // Must ALWAYS be a business showcase / menu page, NEVER websites or socials!
   // ==========================================
 
-  // 1. Check exact business pageId variations in D1 for this user
+  // 1. Direct targeted query in D1 qr_pages table for business showcase
   if (db) {
     try {
       await ensureD1Tables(db);
-      const rows: any = await db.prepare(`
-        SELECT page_json FROM qr_pages
-        WHERE (
-          id IN (?, ?, ?, ?, ?, ?, ?)
-          OR (user_email IS NOT NULL AND LOWER(user_email) = ? AND page_json NOT LIKE '%websites_hub%' AND page_json NOT LIKE '%socials_hub%' AND page_json NOT LIKE '%events_hub%')
-          OR (id LIKE 'business%' AND page_json NOT LIKE '%websites_hub%' AND page_json NOT LIKE '%socials_hub%' AND page_json NOT LIKE '%events_hub%')
-        )
-        ORDER BY
-          CASE
-            WHEN LOWER(user_email) = ? AND (page_json LIKE '%menuItems%' OR page_json LIKE '%photos%') THEN 1
-            WHEN id = ? THEN 2
-            WHEN id = ? THEN 3
-            ELSE 4
-          END ASC,
-          updated_at DESC
-        LIMIT 10
-      `).bind(
+      const directKeys = [
         pageId,
         `business-${rawIdBase}`,
         `qr-${rawIdBase}`,
         rawIdBase,
-        'business-latest',
-        `user_${userEmail}_business`,
         `user_${userEmail}_latest`,
-        userEmail,
-        userEmail,
-        pageId,
-        `business-${rawIdBase}`
-      ).all();
+        `user_${userEmail}_business`,
+        'business-latest',
+        'default',
+        'latest'
+      ].filter(Boolean);
 
-      if (rows?.results && Array.isArray(rows.results)) {
-        for (const row of rows.results as any[]) {
-          if (row?.page_json) {
-            try {
-              const parsed = JSON.parse(row.page_json);
-              if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
-                const hasBizItems = (parsed.menuItems && parsed.menuItems.length > 0) || (parsed.photos && parsed.photos.length > 0);
-                if (hasBizItems) {
-                  return {
-                    ...parsed,
-                    id: pageId || parsed.id || 'business-latest',
-                    pageType: parsed.pageType || 'menu',
-                    userEmail: userEmail || parsed.userEmail || parsed.email,
-                    email: userEmail || parsed.email || parsed.userEmail,
-                  };
-                }
+      for (const k of directKeys) {
+        const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1").bind(k).first();
+        if (row?.page_json) {
+          try {
+            const parsed = JSON.parse(row.page_json);
+            if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+              const hasBizItems = (parsed.menuItems && parsed.menuItems.length > 0) || (parsed.photos && parsed.photos.length > 0);
+              if (hasBizItems) {
+                return {
+                  ...parsed,
+                  id: pageId || parsed.id || 'business-latest',
+                  pageType: parsed.pageType || 'menu',
+                  userEmail: userEmail || parsed.userEmail || parsed.email,
+                  email: userEmail || parsed.email || parsed.userEmail,
+                };
               }
-            } catch (_) {}
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (userEmail) {
+        const rows: any = await db.prepare(`
+          SELECT page_json FROM qr_pages
+          WHERE LOWER(user_email) = ?
+            AND (page_json LIKE '%menuItems%' OR page_json LIKE '%photos%')
+            AND page_json NOT LIKE '%websites_hub%'
+            AND page_json NOT LIKE '%socials_hub%'
+            AND page_json NOT LIKE '%events_hub%'
+          ORDER BY updated_at DESC
+          LIMIT 5
+        `).bind(userEmail).all();
+
+        if (rows?.results && Array.isArray(rows.results)) {
+          for (const row of rows.results as any[]) {
+            if (row?.page_json) {
+              try {
+                const parsed = JSON.parse(row.page_json);
+                if (parsed && parsed.pageType !== 'websites_hub' && parsed.pageType !== 'socials_hub' && parsed.pageType !== 'events_hub') {
+                  const hasBizItems = (parsed.menuItems && parsed.menuItems.length > 0) || (parsed.photos && parsed.photos.length > 0);
+                  if (hasBizItems) {
+                    return {
+                      ...parsed,
+                      id: pageId || parsed.id || 'business-latest',
+                      pageType: parsed.pageType || 'menu',
+                      userEmail: userEmail || parsed.userEmail || parsed.email,
+                      email: userEmail || parsed.email || parsed.userEmail,
+                    };
+                  }
+                }
+              } catch (_) {}
+            }
           }
         }
       }
@@ -3518,7 +3574,17 @@ export default {
       if (isQrRoute) {
         try {
           const preloadedPage = await resolveHostedQrPage(env, pageIdParam, emailParam);
-          if (preloadedPage) {
+          const hasItems = (p: any): boolean => {
+            if (!p) return false;
+            if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
+            if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
+            if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
+            if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
+            if (Array.isArray(p.photos) && p.photos.length > 0) return true;
+            return false;
+          };
+
+          if (preloadedPage && hasItems(preloadedPage)) {
             const resolvedEmail = emailParam || preloadedPage.userEmail || preloadedPage.email || '';
             const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${JSON.stringify(preloadedPage)};window.__OWNER_EMAIL__=${JSON.stringify(resolvedEmail)};</script>`;
             if (html.includes('</head>')) {

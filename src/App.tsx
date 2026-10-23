@@ -30,7 +30,7 @@ import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { WorkOSAuthService } from './services/workosAuthService';
-import { AlertCircle, Ticket } from 'lucide-react';
+import { AlertCircle, Ticket, Sparkles, Loader2 } from 'lucide-react';
 import {
   ActiveScreen,
   AppSettings,
@@ -119,6 +119,16 @@ export function isCustomerPathFromUrl(): boolean {
   return Boolean(pathname.includes('/qr/') || pathname === '/qr' || pathname.startsWith('/qr/'));
 }
 
+export function hasCustomerQrItems(p: any): boolean {
+  if (!p) return false;
+  if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
+  if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
+  if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
+  if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
+  if (Array.isArray(p.photos) && p.photos.length > 0) return true;
+  return false;
+}
+
 export function App() {
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
@@ -141,6 +151,14 @@ export function App() {
   const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>('stock');
   const [inventoryShowAddInline, setInventoryShowAddInline] = useState<boolean>(false);
   const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(null);
+
+  const [isCustomerDataResolving, setIsCustomerDataResolving] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (!isCustomerPathFromUrl()) return false;
+    const initialPage = (window as any).__INITIAL_QR_PAGE__;
+    return !hasCustomerQrItems(initialPage);
+  });
+
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
       const emailParam = new URLSearchParams(window.location.search).get('email')?.toLowerCase().trim();
@@ -356,8 +374,9 @@ export function App() {
           setActiveScreen('qr-customer-view');
 
           CloudflareService.getHostedQrPage(fetchId, emailFromUrl).then(async (remotePage) => {
-            if (remotePage && hasItems(remotePage)) {
+            if (remotePage && hasCustomerQrItems(remotePage)) {
               setActiveCustomerPage(remotePage);
+              setIsCustomerDataResolving(false);
               return;
             }
 
@@ -371,12 +390,14 @@ export function App() {
                     const websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
                     if (websites.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
+                      setIsCustomerDataResolving(false);
                       return;
                     }
                   } else if (isSocials) {
                     const socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
                     if (socials.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
+                      setIsCustomerDataResolving(false);
                       return;
                     }
                   } else if (isEvents) {
@@ -386,16 +407,19 @@ export function App() {
                         const singleEvt = events.find((e: any) => e.id === fetchId || `event-${e.id}` === fetchId);
                         if (singleEvt) {
                           setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
+                          setIsCustomerDataResolving(false);
                           return;
                         }
                       }
                       setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
+                      setIsCustomerDataResolving(false);
                       return;
                     }
                   } else if (isBiz) {
                     const bizPage = QRHostingService.convertBackupToHostedPage(bData);
                     if (bizPage) {
                       setActiveCustomerPage({ ...bizPage, id: fetchId });
+                      setIsCustomerDataResolving(false);
                       return;
                     }
                   }
@@ -406,7 +430,10 @@ export function App() {
             if (remotePage) {
               setActiveCustomerPage(remotePage);
             }
-          }).catch(() => {});
+            setIsCustomerDataResolving(false);
+          }).catch(() => {
+            setIsCustomerDataResolving(false);
+          });
         }
       }
     }
@@ -1310,24 +1337,39 @@ export function App() {
         )}
 
         {activeScreen === 'qr-customer-view' && (
-          <QRCustomerViewScreen
-            page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
-            initialTab={customerInitialTab}
-            initialItemId={customerInitialItemId}
-            initialPhotoId={customerInitialPhotoId}
-            onBackToApp={() => {
-              if (isCustomerViewMode) {
-                if (typeof window !== 'undefined' && window.history) {
-                  window.history.replaceState({}, document.title, window.location.pathname);
+          isCustomerDataResolving && !hasCustomerQrItems(activeCustomerPage) ? (
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center animate-pulse">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center mb-4 text-emerald-600 dark:text-emerald-400 shadow-sm">
+                <Sparkles className="w-8 h-8 animate-spin" />
+              </div>
+              <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Loading verified items...</h2>
+              <p className="text-xs text-slate-500 mt-1 max-w-xs">Connecting to Cloudflare edge records...</p>
+              <div className="w-full max-w-sm mt-6 space-y-3">
+                <div className="h-16 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl"></div>
+                <div className="h-16 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl"></div>
+                <div className="h-16 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl"></div>
+              </div>
+            </div>
+          ) : (
+            <QRCustomerViewScreen
+              page={activeCustomerPage || StorageService.getHostedQRPages()[0]}
+              initialTab={customerInitialTab}
+              initialItemId={customerInitialItemId}
+              initialPhotoId={customerInitialPhotoId}
+              onBackToApp={() => {
+                if (isCustomerViewMode) {
+                  if (typeof window !== 'undefined' && window.history) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }
+                  setIsCustomerViewMode(false);
+                  handleNavigate('home');
+                } else {
+                  handleNavigate('qr-hosting');
                 }
-                setIsCustomerViewMode(false);
-                handleNavigate('home');
-              } else {
-                handleNavigate('qr-hosting');
-              }
-            }}
-            isMerchantPreview={!isCustomerViewMode}
-          />
+              }}
+              isMerchantPreview={!isCustomerViewMode}
+            />
+          )
         )}
 
         {activeScreen === 'upgrade' && (
