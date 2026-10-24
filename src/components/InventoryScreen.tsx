@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { saveJsPdf } from '../services/fileSaver';
+import { saveJsPdf, saveFile } from '../services/fileSaver';
+import html2canvas from 'html2canvas';
 import { t } from '../utils/i18n';
 import {
   PlusCircle,
@@ -2328,6 +2329,116 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     return 'All Time Debts';
   };
 
+  const handleSaveShoppingListPhoto = async () => {
+    let tempContainer: HTMLElement | null = null;
+    try {
+      showToast('Generating shopping list photo...');
+      tempContainer = document.createElement('div');
+      tempContainer.style.position = 'fixed';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.top = '0';
+      tempContainer.style.width = '600px';
+      tempContainer.style.backgroundColor = '#ffffff';
+      tempContainer.style.color = '#0f172a';
+      tempContainer.style.padding = '24px';
+      tempContainer.style.fontFamily = 'Helvetica, Arial, sans-serif';
+      tempContainer.style.borderRadius = '16px';
+      tempContainer.style.zIndex = '-9999';
+
+      const totalEstimated = shoppingBudgetSummary.totalEstimated;
+      const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
+      const toBuyCount = shoppingList.filter((item) => !item.checked).length;
+      const boughtCount = shoppingList.filter((item) => item.checked).length;
+
+      let itemsHtml = '';
+      if (shoppingList.length === 0) {
+        itemsHtml = '<div style="text-align: center; color: #64748b; padding: 20px;">No shopping list items recorded.</div>';
+      } else {
+        shoppingList.forEach((item) => {
+          const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || '';
+          const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : '-';
+          const statusStr = item.checked ? 'BOUGHT' : 'TO BUY';
+          const statusColor = item.checked ? '#10b981' : '#f59e0b';
+          itemsHtml += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+              <div>
+                <div style="font-weight: bold; font-size: 14px; color: #0f172a;">${item.name}</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                  ${cat ? `Category: ${cat} • ` : ''}Qty: ${item.quantity || '-'} ${item.notes ? `• Note: ${item.notes}` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: bold; font-size: 13px; color: #0284c7;">${priceStr}</div>
+                <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; margin-top: 2px;">${statusStr}</div>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      tempContainer.innerHTML = `
+        <div style="text-align: center; margin-bottom: 16px;">
+          <h2 style="font-size: 18px; font-weight: 900; color: #0284c7; margin: 0; text-transform: uppercase;">Shopping List Report</h2>
+          ${business?.name ? `<div style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 4px;">${business.name}</div>` : ''}
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 16px; display: flex; justify-content: space-around; text-align: center;">
+          <div>
+            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Total Budget</div>
+            <div style="font-size: 13px; font-weight: bold; color: #0284c7; margin-top: 2px;">${currency} ${totalEstimated.toLocaleString()}</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Completed</div>
+            <div style="font-size: 13px; font-weight: bold; color: #10b981; margin-top: 2px;">${currency} ${checkedEstimated.toLocaleString()}</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">To Buy</div>
+            <div style="font-size: 13px; font-weight: bold; color: #f59e0b; margin-top: 2px;">${toBuyCount} items</div>
+          </div>
+        </div>
+        <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 8px; text-transform: uppercase;">Items Checklist (${shoppingList.length})</div>
+        <div>${itemsHtml}</div>
+        <div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px;">Powered by Brivu Business Manager</div>
+      `;
+
+      document.body.appendChild(tempContainer);
+
+      const canvas = await html2canvas(tempContainer, {
+        scale: 2.5,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `Shopping_List_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: 'image/png',
+        title: 'Shopping List Photo',
+        destination: 'photos',
+        folder: 'reports',
+      });
+
+      if (res.success) {
+        showToast('Shopping list photo saved successfully!');
+        AdMobService.showInterstitial('shopping_list_photo_saved');
+      } else {
+        showToast('Failed to save photo');
+      }
+    } catch (err) {
+      console.warn('Error saving shopping list photo:', err);
+      showToast('Could not save shopping list photo');
+    } finally {
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+    }
+  };
+
   // Section-specific PDF export: Each section exports strictly its own report
   const handleExportReport = async (targetSection?: 'stock' | 'sales' | 'expense' | 'debts' | 'shoppingList' | 'report' | 'customers' | 'agents' | 'workers') => {
     try {
@@ -2655,6 +2766,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         );
         y += 10;
 
+        // Check if any item uses categories
+        const hasCategories = shoppingList.some((item) => item.categoryId && item.categoryId.trim() !== '');
+
         // Shopping List Table
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
@@ -2664,10 +2778,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         doc.setFontSize(8);
 
         doc.text('ITEM NAME', margin, y);
-        doc.text('CATEGORY', margin + 55, y);
-        doc.text('QTY', margin + 95, y);
-        doc.text('EST. PRICE', margin + 120, y);
-        doc.text('STATUS', margin + 155, y);
+        if (hasCategories) {
+          doc.text('CATEGORY', margin + 55, y);
+          doc.text('QTY', margin + 95, y);
+          doc.text('EST. PRICE', margin + 120, y);
+          doc.text('STATUS', margin + 155, y);
+        } else {
+          doc.text('QTY', margin + 90, y);
+          doc.text('EST. PRICE', margin + 125, y);
+          doc.text('STATUS', margin + 160, y);
+        }
 
         y += 2;
         doc.line(margin, y, pageWidth - margin, y);
@@ -2685,16 +2805,22 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               y = 20;
               doc.setFont('courier', 'bold');
               doc.text('ITEM NAME', margin, y);
-              doc.text('CATEGORY', margin + 55, y);
-              doc.text('QTY', margin + 95, y);
-              doc.text('EST. PRICE', margin + 120, y);
-              doc.text('STATUS', margin + 155, y);
+              if (hasCategories) {
+                doc.text('CATEGORY', margin + 55, y);
+                doc.text('QTY', margin + 95, y);
+                doc.text('EST. PRICE', margin + 120, y);
+                doc.text('STATUS', margin + 155, y);
+              } else {
+                doc.text('QTY', margin + 90, y);
+                doc.text('EST. PRICE', margin + 125, y);
+                doc.text('STATUS', margin + 160, y);
+              }
               y += 2;
               doc.line(margin, y, pageWidth - margin, y);
               y += 4;
               doc.setFont('courier', 'normal');
             }
-            const itemName = item.name.length > 27 ? item.name.substring(0, 25) + '..' : item.name;
+            const itemName = item.name.length > (hasCategories ? 27 : 45) ? item.name.substring(0, hasCategories ? 25 : 43) + '..' : item.name;
             const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || 'General';
             const catName = cat.length > 20 ? cat.substring(0, 18) + '..' : cat;
             const qtyStr = (item.quantity || '-').length > 12 ? (item.quantity || '-').substring(0, 10) + '..' : (item.quantity || '-');
@@ -2702,15 +2828,39 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             const statusStr = item.checked ? '[X] BOUGHT' : '[ ] TO BUY';
 
             doc.text(itemName, margin, y);
-            doc.text(catName, margin + 55, y);
-            doc.text(qtyStr, margin + 95, y);
-            doc.text(priceStr, margin + 120, y);
-            doc.text(statusStr, margin + 155, y);
+            if (hasCategories) {
+              doc.text(catName, margin + 55, y);
+              doc.text(qtyStr, margin + 95, y);
+              doc.text(priceStr, margin + 120, y);
+              doc.text(statusStr, margin + 155, y);
+            } else {
+              doc.text(qtyStr, margin + 90, y);
+              doc.text(priceStr, margin + 125, y);
+              doc.text(statusStr, margin + 160, y);
+            }
             y += 4;
+
+            // Render notes if present
+            if (item.notes && item.notes.trim() !== '') {
+              if (y > 270) {
+                doc.addPage();
+                y = 20;
+              }
+              doc.setFont('courier', 'italic');
+              doc.setFontSize(7.5);
+              doc.setTextColor(100, 116, 139);
+              const noteText = `Note: ${item.notes.trim()}`;
+              const splitNotes = doc.splitTextToSize(noteText, pageWidth - margin * 2 - 10);
+              doc.text(splitNotes, margin + 4, y);
+              y += splitNotes.length * 3.5 + 2;
+              doc.setFont('courier', 'normal');
+              doc.setTextColor(0, 0, 0);
+            }
           });
         }
 
-        const pdfFilename = `Shopping_List_${new Date().toISOString().split('T')[0]}.pdf`;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const pdfFilename = `Shopping_List_${timestamp}.pdf`;
         const res = await saveJsPdf(doc, pdfFilename, 'Shopping List', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -6604,7 +6754,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         {/* SECTION 7: SHOPPING LIST TAB                                         */}
         {/* ==================================================================== */}
         {currentCategory === 'products' && activeTab === 'shoppingList' && (
-          <div className="space-y-3 animate-fadeIn">
+          <div id="shopping-list-main-card" className="space-y-3 animate-fadeIn bg-white dark:bg-slate-900 p-2 rounded-2xl">
             {/* Header Title */}
             <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-xl px-4 py-3 shadow-xs border border-sky-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
@@ -6621,15 +6771,26 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleExportReport('shoppingList')}
-                className="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-extrabold text-xs flex items-center gap-1.5 transition border border-sky-100 dark:border-sky-800 shadow-2xs"
-                title="Export Shopping List (PDF)"
-              >
-                <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                <span>Export List</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleSaveShoppingListPhoto}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-1 transition border border-emerald-100 dark:border-emerald-800 shadow-2xs"
+                  title="Save Shopping List as Photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Save Photo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportReport('shoppingList')}
+                  className="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 font-extrabold text-xs flex items-center gap-1.5 transition border border-sky-100 dark:border-sky-800 shadow-2xs"
+                  title="Export Shopping List (PDF)"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                  <span>Export PDF</span>
+                </button>
+              </div>
             </div>
 
             {/* If no items have been added yet, show only the Add Shopping Item button */}
