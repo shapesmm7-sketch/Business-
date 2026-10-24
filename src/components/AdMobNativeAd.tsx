@@ -19,9 +19,10 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   const shouldShow = AdMobService.shouldShowAds();
 
   useEffect(() => {
-    // When running inside Android native application, keep requests active
+    // When running inside Android native application, keep live test native advanced requests active
     if (Capacitor.isNativePlatform() && shouldShow) {
       AdMobService.initNativeAdMob().catch(() => {});
+      AdMobService.preloadNativeAdvanced().catch(() => {});
     }
   }, [unitId, variant, context, shouldShow]);
 

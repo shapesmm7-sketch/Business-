@@ -81,6 +81,16 @@ class AdMobManager {
     }
   }
 
+  async preloadNativeAdvanced() {
+    if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
+    try {
+      await this.initNativeAdMob();
+      console.info(`[AdMob Native] Live Test Native Advanced Ad Registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
+    } catch (err) {
+      console.warn('[AdMob Native] Preload native advanced note:', err);
+    }
+  }
+
   recordInteraction() {
     if (!this.shouldShowAds()) return;
     this.userTapCount++;
