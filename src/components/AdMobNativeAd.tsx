@@ -25,7 +25,7 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     }
   }, [unitId, variant, context, shouldShow]);
 
-  if (!shouldShow) return null;
+  if (!shouldShow || !Capacitor.isNativePlatform()) return null;
 
   const isBottom = variant === 'bottom';
   const isCompact = variant === 'compact';
