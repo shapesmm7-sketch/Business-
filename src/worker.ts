@@ -864,31 +864,52 @@ export async function resolveHostedQrPage(
   // Scoped to userEmail (e.g. shapesmm7@gmail.com)
   // ==========================================
   if (isEventsSection) {
-    // 1. Direct targeted query in D1 qr_pages table for events
+    // 1. Direct targeted query in D1 qr_pages table for events (strictly scoped by userEmail if known)
     if (db) {
       try {
         await ensureD1Tables(db);
-        const directKeys = [
-          pageId,
-          `user_${userEmail}_events`,
-          `event-${rawIdBase}`,
-          rawIdBase,
-          'events-hub-all',
-          'events'
-        ].filter(Boolean);
+        if (userEmail) {
+          const scopedKeys = [
+            pageId,
+            `user_${userEmail}_events`,
+            `event-${rawIdBase}`,
+            rawIdBase,
+            `events-hub-${userEmail.split('@')[0]}`,
+          ].filter(Boolean);
 
-        for (const k of directKeys) {
-          const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1").bind(k).first();
-          if (row?.page_json) {
+          for (const k of scopedKeys) {
+            const row: any = await db.prepare("SELECT page_json FROM qr_pages WHERE id = ? AND LOWER(user_email) = ? LIMIT 1").bind(k, userEmail).first();
+            if (row?.page_json) {
+              try {
+                const parsed = JSON.parse(row.page_json);
+                if (parsed && ((parsed.eventsQrItems && parsed.eventsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
+                  return {
+                    ...parsed,
+                    id: pageId || parsed.id || 'events-hub-all',
+                    pageType: parsed.pageType || 'events_hub',
+                    userEmail: userEmail,
+                    email: userEmail,
+                  };
+                }
+              } catch (_) {}
+            }
+          }
+        }
+
+        // Direct lookup by pageId if it is a specific event ID
+        if (pageId && pageId !== 'events' && pageId !== 'events-hub-all' && pageId !== 'default' && pageId !== 'latest') {
+          const directRow: any = await db.prepare("SELECT page_json, user_email FROM qr_pages WHERE id = ? LIMIT 1").bind(pageId).first();
+          if (directRow?.page_json) {
             try {
-              const parsed = JSON.parse(row.page_json);
+              const parsed = JSON.parse(directRow.page_json);
               if (parsed && ((parsed.eventsQrItems && parsed.eventsQrItems.length > 0) || (parsed.menuItems && parsed.menuItems.length > 0))) {
+                const resolvedOwner = userEmail || directRow.user_email || parsed.userEmail || parsed.email;
                 return {
                   ...parsed,
-                  id: pageId || parsed.id || 'events-hub-all',
+                  id: pageId || parsed.id,
                   pageType: parsed.pageType || 'events_hub',
-                  userEmail: userEmail || parsed.userEmail || parsed.email,
-                  email: userEmail || parsed.email || parsed.userEmail,
+                  userEmail: resolvedOwner,
+                  email: resolvedOwner,
                 };
               }
             } catch (_) {}
@@ -926,15 +947,21 @@ export async function resolveHostedQrPage(
       } catch (_) {}
     }
 
-    // 2. Extract events from user's Cloudflare backup data
+    // 2. Extract events from user's latest Cloudflare backup data
     const bData = await getUserBackupData();
     if (bData) {
       const profile = bData.profile || {};
       const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
       let events = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
 
-      if (normId.startsWith('event-') && !normId.startsWith('events-hub')) {
-        const evt = events.find((e: any) => e.id === pageId || `event-${e.id}` === pageId || e.id === pageId.replace('event-', ''));
+      const isSingleEvent = normId.includes('event') && !normId.includes('events-hub') && normId !== 'events' && normId !== 'events-hub-all';
+      if (isSingleEvent) {
+        const rawTarget = pageId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
+        const evt = events.find((e: any) => {
+          const eId = String(e.id || '').toLowerCase();
+          const eRaw = eId.replace(/^event-/, '').replace(/^qr-/, '');
+          return eId === pageId.toLowerCase() || eRaw === rawTarget || `event-${eId}` === pageId.toLowerCase();
+        });
         if (evt) {
           return {
             id: evt.id,

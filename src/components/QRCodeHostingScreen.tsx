@@ -4150,6 +4150,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       )}
         </>
       )}
+
+      {/* Bottom Native Advanced Ad */}
+      <div className="pt-4 pb-6">
+        <AdMobNativeAd
+          context="qr"
+          variant="bottom"
+          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+        />
+      </div>
     </div>
   );
 };

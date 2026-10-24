@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { saveJsPdf, saveFile } from '../services/fileSaver';
-import html2canvas from 'html2canvas';
+import { saveJsPdf, saveFile, ensureStoragePermission } from '../services/fileSaver';
 import { t } from '../utils/i18n';
 import {
   PlusCircle,
@@ -61,12 +60,14 @@ import {
   Image as ImageIcon,
   ArrowUpRight,
   Boxes,
+  Eye,
+  EyeOff,
+  RotateCcw,
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobService, ADMOB_UNITS } from '../services/admobService';
-import { AdMobBanner } from './AdMobBanner';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -160,7 +161,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [shoppingItemNotes, setShoppingItemNotes] = useState<string>('');
   const [shoppingItemCategoryId, setShoppingItemCategoryId] = useState<string>('');
   const [shoppingSearchQuery, setShoppingSearchQuery] = useState<string>('');
-  const [shoppingFilter, setShoppingFilter] = useState<'all' | 'unchecked' | 'checked'>('all');
+  const [shoppingFilter, setShoppingFilter] = useState<'all' | 'unchecked' | 'checked' | 'hidden'>('all');
   const [shoppingCategoryFilter, setShoppingCategoryFilter] = useState<string>('all');
   const [editingShoppingId, setEditingShoppingId] = useState<string | null>(null);
   const [showShoppingForm, setShowShoppingForm] = useState<boolean>(false);
@@ -177,6 +178,31 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [newProductCategoryColor, setNewProductCategoryColor] = useState<string>('#64748b');
   const [showAddProductInline, setShowAddProductInline] = useState<boolean>(initialShowAddInline);
   const [isAddProductBarcodeScannerOpen, setIsAddProductBarcodeScannerOpen] = useState<boolean>(false);
+
+  // Edit Sale States
+  const [editingSale, setEditingSale] = useState<InventorySale | null>(null);
+  const [editSaleQuantity, setEditSaleQuantity] = useState<number>(1);
+  const [editSalePrice, setEditSalePrice] = useState<number>(0);
+  const [editSaleCustomer, setEditSaleCustomer] = useState<string>('');
+
+  const handleStartEditSale = (sale: InventorySale) => {
+    setEditingSale(sale);
+    setEditSaleQuantity(sale.quantity);
+    setEditSalePrice(sale.sellingPrice);
+    setEditSaleCustomer(sale.customerName || '');
+  };
+
+  const handleSaveEditSale = () => {
+    if (!editingSale) return;
+    StorageService.updateInventorySale(editingSale.id, {
+      quantity: editSaleQuantity,
+      sellingPrice: editSalePrice,
+      customerName: editSaleCustomer,
+    });
+    setSales(StorageService.getInventorySales());
+    setEditingSale(null);
+    setToastMessage('Sale updated successfully');
+  };
 
   // Toast / notification feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1830,9 +1856,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   // Filter and search shopping list items
   const filteredShoppingList = useMemo(() => {
     return shoppingList.filter((item) => {
-      // Check checkbox status filter
-      if (shoppingFilter === 'checked' && !item.checked) return false;
-      if (shoppingFilter === 'unchecked' && item.checked) return false;
+      // Hidden filter handling
+      if (shoppingFilter === 'hidden') {
+        if (!item.hidden) return false;
+      } else {
+        // Active views: strictly exclude hidden items
+        if (item.hidden) return false;
+        if (shoppingFilter === 'checked' && !item.checked) return false;
+        if (shoppingFilter === 'unchecked' && item.checked) return false;
+      }
 
       // Check category filter
       if (shoppingCategoryFilter !== 'all') {
@@ -1851,12 +1883,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     });
   }, [shoppingList, shoppingFilter, shoppingCategoryFilter, shoppingSearchQuery]);
 
-  // Calculate total budget
+  // Calculate total budget (strictly active non-hidden items)
   const shoppingBudgetSummary = useMemo(() => {
     let totalEstimated = 0;
     let checkedEstimated = 0;
 
-    shoppingList.forEach((item) => {
+    shoppingList.filter((item) => !item.hidden).forEach((item) => {
       const price = item.estimatedPrice || 0;
       // Extract numeric prefix from quantity e.g. "5 kg" -> 5
       const qtyNum = parseFloat(item.quantity) || 1;
@@ -2330,87 +2362,248 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   };
 
   const handleSaveShoppingListPhoto = async () => {
-    let tempContainer: HTMLElement | null = null;
     try {
       showToast('Generating shopping list photo...');
-      tempContainer = document.createElement('div');
-      tempContainer.style.position = 'fixed';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '0';
-      tempContainer.style.width = '600px';
-      tempContainer.style.backgroundColor = '#ffffff';
-      tempContainer.style.color = '#0f172a';
-      tempContainer.style.padding = '24px';
-      tempContainer.style.fontFamily = 'Helvetica, Arial, sans-serif';
-      tempContainer.style.borderRadius = '16px';
-      tempContainer.style.zIndex = '-9999';
+      await ensureStoragePermission();
 
+      const activeItems = shoppingList.filter((item) => !item.hidden);
       const totalEstimated = shoppingBudgetSummary.totalEstimated;
       const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
-      const toBuyCount = shoppingList.filter((item) => !item.checked).length;
-      const boughtCount = shoppingList.filter((item) => item.checked).length;
+      const toBuyCount = activeItems.filter((item) => !item.checked).length;
 
-      let itemsHtml = '';
-      if (shoppingList.length === 0) {
-        itemsHtml = '<div style="text-align: center; color: #64748b; padding: 20px;">No shopping list items recorded.</div>';
+      // High DPI Canvas setup
+      const canvas = document.createElement('canvas');
+      const width = 800;
+      let estimatedHeight = 330;
+      if (activeItems.length === 0) {
+        estimatedHeight += 100;
       } else {
-        shoppingList.forEach((item) => {
+        activeItems.forEach((item) => {
+          estimatedHeight += item.notes ? 72 : 54;
+        });
+      }
+      estimatedHeight += 60; // footer
+
+      canvas.width = width;
+      canvas.height = estimatedHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        showToast('Could not initialize canvas');
+        return;
+      }
+
+      // 1. Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, estimatedHeight);
+
+      // Top gradient bar
+      const grad = ctx.createLinearGradient(0, 0, width, 0);
+      grad.addColorStop(0, '#0284c7');
+      grad.addColorStop(1, '#0ea5e9');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, 8);
+
+      let curY = 40;
+
+      // 2. Title
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0284c7';
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText('SHOPPING LIST REPORT', width / 2, curY);
+
+      curY += 26;
+      if (business?.name) {
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
+        ctx.fillText(business.name, width / 2, curY);
+        curY += 22;
+      }
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px system-ui, -apple-system, sans-serif';
+      const dateStr = new Date().toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      ctx.fillText(`Generated: ${dateStr}`, width / 2, curY);
+
+      curY += 25;
+
+      // 3. Summary Cards Box
+      const boxX = 36;
+      const boxWidth = width - boxX * 2;
+      const boxHeight = 74;
+
+      const drawRoundRect = (x: number, y: number, w: number, h: number, r: number, fill: string, stroke?: string) => {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+        if (stroke) {
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      };
+
+      drawRoundRect(boxX, curY, boxWidth, boxHeight, 14, '#f8fafc', '#e2e8f0');
+
+      const colWidth = boxWidth / 3;
+
+      // Col 1: Total Budget
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+      ctx.fillText('TOTAL BUDGET', boxX + colWidth * 0.5, curY + 28);
+      ctx.fillStyle = '#0284c7';
+      ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`${currency} ${totalEstimated.toLocaleString()}`, boxX + colWidth * 0.5, curY + 52);
+
+      // Divider 1
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.beginPath();
+      ctx.moveTo(boxX + colWidth, curY + 16);
+      ctx.lineTo(boxX + colWidth, curY + boxHeight - 16);
+      ctx.stroke();
+
+      // Col 2: Completed / Bought
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+      ctx.fillText('COMPLETED', boxX + colWidth * 1.5, curY + 28);
+      ctx.fillStyle = '#10b981';
+      ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`${currency} ${checkedEstimated.toLocaleString()}`, boxX + colWidth * 1.5, curY + 52);
+
+      // Divider 2
+      ctx.beginPath();
+      ctx.moveTo(boxX + colWidth * 2, curY + 16);
+      ctx.lineTo(boxX + colWidth * 2, curY + boxHeight - 16);
+      ctx.stroke();
+
+      // Col 3: To Buy
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+      ctx.fillText('TO BUY', boxX + colWidth * 2.5, curY + 28);
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`${toBuyCount} items`, boxX + colWidth * 2.5, curY + 52);
+
+      curY += boxHeight + 30;
+
+      // 4. Section Header: ITEMS CHECKLIST
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`ITEMS CHECKLIST (${activeItems.length})`, boxX, curY);
+
+      curY += 12;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(boxX, curY);
+      ctx.lineTo(boxX + boxWidth, curY);
+      ctx.stroke();
+
+      curY += 20;
+
+      if (activeItems.length === 0) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'italic 13px system-ui, -apple-system, sans-serif';
+        ctx.fillText('No shopping list items recorded.', width / 2, curY + 30);
+        curY += 60;
+      } else {
+        activeItems.forEach((item) => {
           const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || '';
           const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : '-';
-          const statusStr = item.checked ? 'BOUGHT' : 'TO BUY';
-          const statusColor = item.checked ? '#10b981' : '#f59e0b';
-          itemsHtml += `
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
-              <div>
-                <div style="font-weight: bold; font-size: 14px; color: #0f172a;">${item.name}</div>
-                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-                  ${cat ? `Category: ${cat} • ` : ''}Qty: ${item.quantity || '-'} ${item.notes ? `• Note: ${item.notes}` : ''}
-                </div>
-              </div>
-              <div style="text-align: right;">
-                <div style="font-weight: bold; font-size: 13px; color: #0284c7;">${priceStr}</div>
-                <div style="font-size: 10px; font-weight: bold; color: ${statusColor}; margin-top: 2px;">${statusStr}</div>
-              </div>
-            </div>
-          `;
+          const isDone = Boolean(item.checked);
+
+          // Checkbox circle
+          ctx.beginPath();
+          ctx.arc(boxX + 10, curY + 2, 7, 0, Math.PI * 2);
+          if (isDone) {
+            ctx.fillStyle = '#10b981';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(boxX + 7, curY + 2);
+            ctx.lineTo(boxX + 9.5, curY + 5);
+            ctx.lineTo(boxX + 13.5, curY - 1);
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+
+          // Item Name
+          ctx.textAlign = 'left';
+          ctx.fillStyle = isDone ? '#64748b' : '#0f172a';
+          ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+          ctx.fillText(item.name, boxX + 26, curY + 6);
+
+          // Details: Category, Qty, Note
+          let detailParts: string[] = [];
+          if (cat) detailParts.push(`Category: ${cat}`);
+          if (item.quantity) detailParts.push(`Qty: ${item.quantity}`);
+          if (item.notes) detailParts.push(`Note: ${item.notes}`);
+
+          if (detailParts.length > 0) {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '11px system-ui, -apple-system, sans-serif';
+            ctx.fillText(detailParts.join('  •  '), boxX + 26, curY + 24);
+          }
+
+          // Price (Right side)
+          ctx.textAlign = 'right';
+          ctx.fillStyle = isDone ? '#0284c7' : '#0f172a';
+          ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText(priceStr, boxX + boxWidth, curY + 6);
+
+          // Status Badge Pill
+          const statusText = isDone ? 'BOUGHT' : 'TO BUY';
+          const statusColor = isDone ? '#10b981' : '#f59e0b';
+          const statusBg = isDone ? '#ecfdf5' : '#fffbeb';
+          const badgeWidth = 62;
+          drawRoundRect(boxX + boxWidth - badgeWidth, curY + 12, badgeWidth, 18, 6, statusBg, statusColor);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = statusColor;
+          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
+          ctx.fillText(statusText, boxX + boxWidth - badgeWidth / 2, curY + 24);
+
+          // Line separator
+          curY += item.notes ? 46 : 38;
+          ctx.strokeStyle = '#f1f5f9';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX, curY);
+          ctx.lineTo(boxX + boxWidth, curY);
+          ctx.stroke();
+          curY += 12;
         });
       }
 
-      tempContainer.innerHTML = `
-        <div style="text-align: center; margin-bottom: 16px;">
-          <h2 style="font-size: 18px; font-weight: 900; color: #0284c7; margin: 0; text-transform: uppercase;">Shopping List Report</h2>
-          ${business?.name ? `<div style="font-size: 13px; font-weight: bold; color: #334155; margin-top: 4px;">${business.name}</div>` : ''}
-          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-        </div>
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 16px; display: flex; justify-content: space-around; text-align: center;">
-          <div>
-            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Total Budget</div>
-            <div style="font-size: 13px; font-weight: bold; color: #0284c7; margin-top: 2px;">${currency} ${totalEstimated.toLocaleString()}</div>
-          </div>
-          <div>
-            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Completed</div>
-            <div style="font-size: 13px; font-weight: bold; color: #10b981; margin-top: 2px;">${currency} ${checkedEstimated.toLocaleString()}</div>
-          </div>
-          <div>
-            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">To Buy</div>
-            <div style="font-size: 13px; font-weight: bold; color: #f59e0b; margin-top: 2px;">${toBuyCount} items</div>
-          </div>
-        </div>
-        <div style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 8px; text-transform: uppercase;">Items Checklist (${shoppingList.length})</div>
-        <div>${itemsHtml}</div>
-        <div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px;">Powered by Brivu Business Manager</div>
-      `;
+      // 5. Footer
+      curY += 10;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Powered by Brivu Business Manager', width / 2, curY);
 
-      document.body.appendChild(tempContainer);
-
-      const canvas = await html2canvas(tempContainer, {
-        scale: 2.5,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-      });
-
+      // Save image
       const dataUrl = canvas.toDataURL('image/png', 1.0);
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `Shopping_List_${timestamp}.png`;
@@ -2424,18 +2617,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
 
       if (res.success) {
-        showToast('Shopping list photo saved successfully!');
+        showToast('Shopping list photo saved to Gallery / Pictures!');
         AdMobService.showInterstitial('shopping_list_photo_saved');
       } else {
-        showToast('Failed to save photo');
+        showToast(res.message || 'Failed to save photo');
       }
     } catch (err) {
       console.warn('Error saving shopping list photo:', err);
       showToast('Could not save shopping list photo');
-    } finally {
-      if (tempContainer && tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer);
-      }
     }
   };
 
@@ -2746,16 +2935,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         doc.text(`Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, pageWidth / 2, y, { align: 'center' });
         y += 10;
 
-        // Shopping List Summary
+        // Shopping List Summary (strictly active non-hidden items)
+        const activeShoppingList = shoppingList.filter((item) => !item.hidden);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
         doc.text('Shopping Summary', margin, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        const toBuyCount = shoppingList.filter((item) => !item.checked).length;
-        const boughtCount = shoppingList.filter((item) => item.checked).length;
-        doc.text(`Total Planned Items: ${shoppingList.length} (${toBuyCount} to buy, ${boughtCount} completed)`, margin, y);
+        const toBuyCount = activeShoppingList.filter((item) => !item.checked).length;
+        const boughtCount = activeShoppingList.filter((item) => item.checked).length;
+        doc.text(`Total Planned Items: ${activeShoppingList.length} (${toBuyCount} to buy, ${boughtCount} completed)`, margin, y);
         y += 5;
         doc.text(`Total Estimated Budget: ${currency} ${shoppingBudgetSummary.totalEstimated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, margin, y);
         y += 5;
@@ -2766,8 +2956,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         );
         y += 10;
 
-        // Check if any item uses categories
-        const hasCategories = shoppingList.some((item) => item.categoryId && item.categoryId.trim() !== '');
+        // Check if any active item uses categories
+        const hasCategories = activeShoppingList.some((item) => item.categoryId && item.categoryId.trim() !== '');
 
         // Shopping List Table
         doc.setFont('helvetica', 'bold');
@@ -2795,11 +2985,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         doc.setFont('courier', 'normal');
 
-        if (shoppingList.length === 0) {
+        if (activeShoppingList.length === 0) {
           doc.text('No shopping list items recorded.', margin, y);
           y += 6;
         } else {
-          shoppingList.forEach((item) => {
+          activeShoppingList.forEach((item) => {
             if (y > 270) {
               doc.addPage();
               y = 20;
@@ -5166,10 +5356,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             {sale.quantity > 1 && <span>({currency} {sale.sellingPrice.toLocaleString()} each)</span>}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2">
                           <span className="font-extrabold text-sm font-mono text-slate-900 dark:text-white">
                             {currency} {sale.totalPrice.toLocaleString()}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditSale(sale)}
+                            className="p-1.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 transition rounded-lg"
+                            title="Edit sale"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteSale(sale.id)}
@@ -7252,7 +7450,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      All ({shoppingList.length})
+                      All ({shoppingList.filter((i) => !i.hidden).length})
                     </button>
                     <button
                       type="button"
@@ -7263,7 +7461,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      To Buy ({shoppingList.filter((i) => !i.checked).length})
+                      To Buy ({shoppingList.filter((i) => !i.checked && !i.hidden).length})
                     </button>
                     <button
                       type="button"
@@ -7274,7 +7472,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      Completed ({shoppingList.filter((i) => i.checked).length})
+                      Completed ({shoppingList.filter((i) => i.checked && !i.hidden).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShoppingFilter('hidden')}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${
+                        shoppingFilter === 'hidden'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
+                      }`}
+                    >
+                      Hidden ({shoppingList.filter((i) => i.hidden).length})
                     </button>
                   </div>
 
@@ -7364,12 +7573,65 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                 )}
 
+                {/* Sub-actions for Checked & Hidden views */}
+                {shoppingFilter === 'checked' && filteredShoppingList.length > 0 && (
+                  <div className="flex justify-end pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        showConfirm(
+                          'Hide Completed Lists',
+                          'Move all completed lists to the Hidden section? They will not appear on exported PDFs or saved photos, but can be restored anytime from the Hidden tab.',
+                          () => {
+                            filteredShoppingList.forEach((i) => {
+                              StorageService.updateShoppingListItem(i.id, { hidden: true, hiddenAt: new Date().toISOString() });
+                            });
+                            refreshData();
+                            showToast('Completed lists moved to Hidden section');
+                          }
+                        );
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[11px] font-bold flex items-center gap-1.5 transition border border-purple-200 dark:border-purple-800/50"
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                      <span>Hide All Completed</span>
+                    </button>
+                  </div>
+                )}
+
+                {shoppingFilter === 'hidden' && (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-900/40 text-purple-900 dark:text-purple-200 text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-[11px]">
+                      <EyeOff className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                      <span>Hidden lists are archived and will not appear on PDFs or saved photos</span>
+                    </div>
+                    {filteredShoppingList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          filteredShoppingList.forEach((i) => {
+                            StorageService.updateShoppingListItem(i.id, { hidden: false });
+                          });
+                          refreshData();
+                          showToast('All hidden lists restored to active shopping list');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs transition"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Restore All</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Items List */}
                 {filteredShoppingList.length === 0 ? (
                   <div className="bg-white/10 dark:bg-slate-900/50 rounded-2xl p-5 text-center text-white/90 border border-white/15 dark:border-slate-800">
                     <p className="text-xs font-medium">
                       {shoppingSearchQuery
                         ? 'No shopping items match your search.'
+                        : shoppingFilter === 'hidden'
+                        ? 'No hidden lists found. Completed lists marked as hidden will appear here.'
                         : shoppingFilter === 'unchecked'
                         ? 'All items bought! Good job.'
                         : shoppingFilter === 'checked'
@@ -7389,36 +7651,53 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         <React.Fragment key={item.id}>
                           <div
                             className={`bg-white dark:bg-slate-900 rounded-xl p-2.5 sm:p-3 border transition flex items-center justify-between gap-3 ${
-                            item.checked
+                            item.hidden
+                              ? 'border-purple-200 dark:border-purple-950/60 bg-purple-50/20 dark:bg-purple-950/10'
+                              : item.checked
                               ? 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/20 dark:bg-emerald-950/5 opacity-75'
                               : 'border-slate-100 dark:border-slate-800'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             {/* Checked Checkbox Icon */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleShoppingItemChecked(item.id, !item.checked)}
-                              className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
-                                item.checked
-                                  ? 'bg-emerald-500 border-emerald-500 text-white'
-                                  : 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 hover:border-sky-500'
-                              }`}
-                            >
-                              {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                            </button>
+                            {!item.hidden && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleShoppingItemChecked(item.id, !item.checked)}
+                                className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                                  item.checked
+                                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                                    : 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 hover:border-sky-500'
+                                }`}
+                              >
+                                {item.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </button>
+                            )}
+
+                            {item.hidden && (
+                              <div className="w-5 h-5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                <EyeOff className="w-3.5 h-3.5" />
+                              </div>
+                            )}
 
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
                                   className={`text-xs font-bold block truncate ${
-                                    item.checked
+                                    item.hidden
+                                      ? 'text-purple-900 dark:text-purple-200'
+                                      : item.checked
                                       ? 'line-through text-slate-400 dark:text-slate-500'
                                       : 'text-slate-800 dark:text-white'
                                   }`}
                                 >
                                   {item.name}
                                 </span>
+                                {item.hidden && (
+                                  <span className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 uppercase tracking-wider inline-block">
+                                    HIDDEN
+                                  </span>
+                                )}
                                 {catObj && (
                                   <span
                                     className="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-full text-white uppercase tracking-wider inline-block transform scale-95"
@@ -7446,12 +7725,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 sm:gap-3">
                             {/* Estimated Total Cost */}
                             {item.estimatedPrice !== undefined && (
                               <span
                                 className={`text-xs font-black font-mono text-right whitespace-nowrap ${
-                                  item.checked
+                                  item.hidden
+                                    ? 'text-purple-700 dark:text-purple-300'
+                                    : item.checked
                                     ? 'text-emerald-600/70 dark:text-emerald-400/70 line-through'
                                     : 'text-slate-700 dark:text-slate-200'
                                 }`}
@@ -7460,15 +7741,51 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                               </span>
                             )}
 
-                            <div className="flex items-center gap-1 border-l border-slate-100 dark:border-slate-800 pl-2">
+                            {/* Hide List button for completed items */}
+                            {item.checked && !item.hidden && (
                               <button
                                 type="button"
-                                onClick={() => startEditShoppingItem(item)}
-                                className="p-1 text-slate-400 hover:text-[#0284c7] transition rounded-lg"
-                                title="Edit item"
+                                onClick={() => {
+                                  StorageService.updateShoppingListItem(item.id, { hidden: true, hiddenAt: new Date().toISOString() });
+                                  refreshData();
+                                  showToast(`"${item.name}" moved to Hidden lists`);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-[10px] font-bold flex items-center gap-1 transition border border-purple-200 dark:border-purple-800/60 shrink-0"
+                                title="Hide list from active view & PDFs"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <EyeOff className="w-3 h-3" />
+                                <span>Hide List</span>
                               </button>
+                            )}
+
+                            {/* Restore button for hidden items */}
+                            {item.hidden && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  StorageService.updateShoppingListItem(item.id, { hidden: false });
+                                  refreshData();
+                                  showToast(`"${item.name}" restored to active list`);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold flex items-center gap-1 transition border border-emerald-200 dark:border-emerald-800/60 shrink-0"
+                                title="Restore list to active view"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Restore</span>
+                              </button>
+                            )}
+
+                            <div className="flex items-center gap-1 border-l border-slate-100 dark:border-slate-800 pl-2">
+                              {!item.hidden && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditShoppingItem(item)}
+                                  className="p-1 text-slate-400 hover:text-[#0284c7] transition rounded-lg"
+                                  title="Edit item"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleDeleteShoppingItem(item.id, item.name)}
@@ -10050,6 +10367,105 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           categories={productCategories}
         />
       )}
+
+      {/* EDIT SALE MODAL */}
+      {editingSale && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-scaleUp p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-sky-600 text-white flex items-center justify-center">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Edit Sale: {editingSale.productName}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Quantity Sold
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editSaleQuantity}
+                  onChange={(e) => setEditSaleQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-sm text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Selling Price ({currency})
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editSalePrice}
+                  onChange={(e) => setEditSalePrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-sm text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Customer / Client Name
+                </label>
+                <input
+                  type="text"
+                  value={editSaleCustomer}
+                  onChange={(e) => setEditSaleCustomer(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold text-sm text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-200">
+                <span>Updated Total:</span>
+                <span className="text-sky-600 dark:text-sky-400 font-mono text-sm">
+                  {currency} {(editSaleQuantity * editSalePrice).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSale(null)}
+                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs text-slate-600 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditSale}
+                  className="flex-1 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 font-bold text-xs text-white shadow-md"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Native Advanced Ad */}
+      <div className="pt-4 pb-8">
+        <AdMobNativeAd
+          context="inventory"
+          variant="bottom"
+          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+        />
+      </div>
 
     </div>
   );

@@ -740,12 +740,14 @@ export const CloudflareService = {
         };
       }
 
-      // Cleanly restore cloud records into user workspace to prevent cross-account residual pollution
-      const importResult = StorageService.importBackup(rawBackupData, true);
+      // Non-destructive merge: preserve local records and combine with user's cloud backup
+      const importResult = StorageService.importBackup(rawBackupData, false);
       if (importResult.success) {
         try {
           const combinedBackup = StorageService.exportBackup();
           localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(combinedBackup));
+          // Immediately sync merged state back to Cloudflare so local offline data is uploaded
+          this.syncAllToCloudflare().catch(() => {});
         } catch (_) {}
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),

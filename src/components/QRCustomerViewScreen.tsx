@@ -742,7 +742,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               }
             } catch {}
           }
-          if (effectiveEventsList.length === 0) {
+          if (effectiveEventsList.length === 0 && isMerchantPreview) {
             try {
               const stored = StorageService.getEventsQrItems();
               if (stored && stored.length > 0) {

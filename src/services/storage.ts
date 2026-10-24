@@ -987,7 +987,7 @@ export const StorageService = {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.SHOPPING_LIST, backupData.shoppingListItems);
         } else {
-          const existing = this.getShoppingList();
+          const existing = this.getShoppingListItems();
           const cloudIds = new Set(backupData.shoppingListItems.map((s) => s.id));
           const localOnly = existing.filter((s) => !cloudIds.has(s.id));
           writeToStorage(STORAGE_KEYS.SHOPPING_LIST, [...backupData.shoppingListItems, ...localOnly]);
@@ -1278,6 +1278,31 @@ export const StorageService = {
     CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
+  updateInventorySale(id: string, updates: Partial<InventorySale>): boolean {
+    const sales = this.getInventorySales();
+    const index = sales.findIndex((s) => s.id === id);
+    if (index === -1) return false;
+    const oldSale = sales[index];
+    const newQty = updates.quantity !== undefined ? updates.quantity : oldSale.quantity;
+    const newPrice = updates.sellingPrice !== undefined ? updates.sellingPrice : oldSale.sellingPrice;
+    const updated: InventorySale = {
+      ...oldSale,
+      ...updates,
+      totalPrice: newQty * newPrice,
+      profit: (newPrice - oldSale.costPrice) * newQty,
+    };
+
+    if (updates.quantity !== undefined && updates.quantity !== oldSale.quantity && oldSale.productId) {
+      const diff = updates.quantity - oldSale.quantity;
+      this.adjustInventoryProductStock(oldSale.productId, -diff);
+    }
+
+    sales[index] = updated;
+    writeToStorage(STORAGE_KEYS.INVENTORY_SALES, sales);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+    return true;
+  },
+
   getInventoryExpenses(): InventoryExpense[] {
     return readFromStorage<InventoryExpense[]>(STORAGE_KEYS.INVENTORY_EXPENSES, []);
   },
@@ -1430,6 +1455,10 @@ export const StorageService = {
 
   getShoppingListItems(): ShoppingListItem[] {
     return readFromStorage<ShoppingListItem[]>(STORAGE_KEYS.SHOPPING_LIST, []);
+  },
+
+  getShoppingList(): ShoppingListItem[] {
+    return this.getShoppingListItems();
   },
 
   addShoppingListItem(itemData: Omit<ShoppingListItem, 'id' | 'createdAt' | 'checked'> & { checked?: boolean }): ShoppingListItem {
@@ -2898,8 +2927,8 @@ export const StorageService = {
     cf.apiKey = cleanNewEmail;
     this.saveCloudflareConfig(cf);
 
-    // If changing user accounts or active workspace belonged to someone else (or no one):
-    if (prevEmail !== cleanNewEmail) {
+    // If switching between two registered user accounts (User A -> User B):
+    if (prevEmail && prevEmail !== cleanNewEmail) {
       // Clear active workspace completely to guarantee ZERO data leakage across users
       this.clearActiveUserData();
 
@@ -2945,6 +2974,24 @@ export const StorageService = {
           updatedAt: new Date().toISOString(),
         };
         writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initialQr]);
+      }
+    } else if (!prevEmail) {
+      // User created data locally/offline before logging in:
+      // PRESERVE all existing local receipts, products, shopping lists, and debts!
+      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
+      if (vaultJson) {
+        try {
+          const vaultData = JSON.parse(vaultJson);
+          // Non-destructive merge: preserve local records and combine with user's vault
+          this.importBackup(vaultData, false);
+        } catch (_) {}
+      }
+      const prof = this.getProfile();
+      if (!prof.email) {
+        this.saveProfile({
+          ...prof,
+          email: cleanNewEmail,
+        });
       }
     } else {
       const prof = this.getProfile();

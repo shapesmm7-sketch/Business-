@@ -37,7 +37,6 @@ import { PdfGenerator } from '../services/pdfGenerator';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { StorageService } from '../services/storage';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
-import { AdMobBanner } from './AdMobBanner';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
 
@@ -1002,7 +1001,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                   </div>
                 )}
               </div>
-              {(index + 1) % 5 === 0 && (
+              {(index + 1) % 6 === 0 && (
                 <div key={`inline-admob-${receipt.id}`} className="py-1">
                   <AdMobNativeAd
                     context={isInvoiceMode ? 'invoices' : 'receipts'}
@@ -1056,6 +1055,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bottom Native Advanced Ad */}
+      <AdMobNativeAd
+        variant="bottom"
+        context={isInvoiceMode ? 'invoices' : 'receipts'}
+        unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+      />
 
       <DownloadSuccessModal
         isOpen={downloadModalData.isOpen}

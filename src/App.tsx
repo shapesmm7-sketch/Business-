@@ -19,7 +19,6 @@ import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
-import { AdMobBanner } from './components/AdMobBanner';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
@@ -403,8 +402,13 @@ export function App() {
                   } else if (isEvents) {
                     const events = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
                     if (events.length > 0) {
-                      if (normFetchId.startsWith('event-') && !normFetchId.startsWith('events-hub')) {
-                        const singleEvt = events.find((e: any) => e.id === fetchId || `event-${e.id}` === fetchId);
+                      if (normFetchId.includes('event') && !normFetchId.includes('events-hub') && normFetchId !== 'events') {
+                        const rawTarget = fetchId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
+                        const singleEvt = events.find((e: any) => {
+                          const eId = String(e.id || '').toLowerCase();
+                          const eRaw = eId.replace(/^event-/, '').replace(/^qr-/, '');
+                          return eId === fetchId.toLowerCase() || eRaw === rawTarget || `event-${eId}` === fetchId.toLowerCase();
+                        });
                         if (singleEvt) {
                           setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
                           setIsCustomerDataResolving(false);
@@ -1342,8 +1346,7 @@ export function App() {
               <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center mb-4 text-emerald-600 dark:text-emerald-400 shadow-sm">
                 <Sparkles className="w-8 h-8 animate-spin" />
               </div>
-              <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Loading verified items...</h2>
-              <p className="text-xs text-slate-500 mt-1 max-w-xs">Connecting to Cloudflare edge records...</p>
+              <h2 className="text-base font-black text-slate-800 dark:text-slate-100">Loading...</h2>
               <div className="w-full max-w-sm mt-6 space-y-3">
                 <div className="h-16 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl"></div>
                 <div className="h-16 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl"></div>
@@ -1438,15 +1441,7 @@ export function App() {
         )}
       </main>
 
-      {/* Google AdMob Bottom Banner - Displayed on Android for unsubscribed users */}
-      {!StorageService.isSubscribed() && (
-        <AdMobBanner
-          placement="bottom_sticky"
-          hasBottomNav={!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen)}
-          bottomMargin={!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen) ? 84 : 12}
-          unitId={ADMOB_UNITS.ADAPTIVE_BANNER}
-        />
-      )}
+
 
       {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
       <AdMobModalOverlay />

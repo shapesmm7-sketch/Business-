@@ -277,6 +277,8 @@ export interface ShoppingListItem {
   checked: boolean;
   notes?: string;
   categoryId?: string; // category referencing ShoppingCategory
+  hidden?: boolean;
+  hiddenAt?: string;
   createdAt: string;
 }
 

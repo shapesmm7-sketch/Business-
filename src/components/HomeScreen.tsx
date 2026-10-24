@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, Receipt, InventoryTab } from '../types';
 import { t } from '../utils/i18n';
+import { AdMobNativeAd } from './AdMobNativeAd';
+import { ADMOB_UNITS } from '../services/admobService';
 
 interface HomeScreenProps {
   business: BusinessProfile;
@@ -142,7 +144,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </div>
 
-      {/* (Receipts & Invoices option navigates to 'receipts-invoices' page) */}
+      {/* Bottom Native Advanced Ad */}
+      <div className="pt-2">
+        <AdMobNativeAd
+          context="home"
+          variant="bottom"
+          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+        />
+      </div>
     </div>
   );
 };
