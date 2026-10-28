@@ -7,7 +7,8 @@ import {
 import { StorageService } from './storage';
 
 /**
- * Google AdMob Ad Unit IDs (Live & Test IDs)
+ * Official Google AdMob Test Ad Unit IDs for Android
+ * https://developers.google.com/admob/android/test-ads
  */
 export const ADMOB_TEST_UNITS = {
   APP_ID: 'ca-app-pub-394025609942544~3347511713',
@@ -17,28 +18,10 @@ export const ADMOB_TEST_UNITS = {
 
 export const ADMOB_UNITS = ADMOB_TEST_UNITS;
 
-export interface InterstitialAdConfig {
-  unitId: string;
-  actionSource?: string;
-  onClosed?: () => void;
-}
-
-type AdListener = (state: {
-  activeAd: 'interstitial' | null;
-  interstitialConfig?: InterstitialAdConfig;
-}) => void;
-
 class AdMobManager {
   private isInitialized = false;
-  private listeners: Set<AdListener> = new Set();
   private lastInterstitialTime = 0;
   private userTapCount = 0;
-  private currentAdState: {
-    activeAd: 'interstitial' | null;
-    interstitialConfig?: InterstitialAdConfig;
-  } = {
-    activeAd: null,
-  };
 
   constructor() {
     this.initNativeAdMob();
@@ -55,6 +38,7 @@ class AdMobManager {
     setInterval(() => {
       if (Capacitor.isNativePlatform() && this.shouldShowAds()) {
         this.preloadInterstitial().catch(() => {});
+        this.preloadNativeAdvanced().catch(() => {});
       }
     }, 30000);
   }
@@ -64,6 +48,7 @@ class AdMobManager {
       try {
         await this.initNativeAdMob();
         await this.preloadInterstitial();
+        await this.preloadNativeAdvanced();
       } catch (_) {}
     }
   }
@@ -85,9 +70,19 @@ class AdMobManager {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await this.initNativeAdMob();
-      console.info(`[AdMob Native] Live Test Native Advanced Ad Registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
+      console.info(`[AdMob Native] Real AdMob Native Advanced Test Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
     } catch (err) {
       console.warn('[AdMob Native] Preload native advanced note:', err);
+    }
+  }
+
+  async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
+    if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
+    try {
+      await this.initNativeAdMob();
+      console.info(`[AdMob Native] Requesting live test Native Advanced Ad from AdMob SDK: ${unitId}`);
+    } catch (err) {
+      console.warn('[AdMob Native] Native ad request note:', err);
     }
   }
 
@@ -114,12 +109,14 @@ class AdMobManager {
         this.isInitialized = true;
 
         try {
-          AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {});
+          AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
+            console.info('[AdMob Native] Real Test Interstitial Ad loaded from Google AdMob servers');
+          });
           AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
             this.preloadInterstitial().catch(() => {});
           });
           AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-            console.warn('[AdMob Native] Interstitial failed to load:', err);
+            console.warn('[AdMob Native] Interstitial load status:', err);
           });
         } catch (_) {}
 
@@ -133,24 +130,6 @@ class AdMobManager {
   shouldShowAds(): boolean {
     const isSubscribed = StorageService.isSubscribed();
     return !isSubscribed;
-  }
-
-  subscribe(listener: AdListener): () => void {
-    this.listeners.add(listener);
-    listener(this.currentAdState);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-
-  private notify() {
-    this.listeners.forEach((listener) => {
-      try {
-        listener(this.currentAdState);
-      } catch (err) {
-        console.warn('[AdMob] Notification listener error:', err);
-      }
-    });
   }
 
   async showInterstitial(actionSource = 'save', onClosed?: () => void): Promise<boolean> {
@@ -181,36 +160,17 @@ class AdMobManager {
         }, 1500);
         return true;
       } catch (err) {
-        console.warn('[AdMob Native] Fallback to overlay interstitial:', err);
+        console.warn('[AdMob Native] Interstitial display note:', err);
       }
     }
 
-    this.currentAdState = {
-      activeAd: 'interstitial',
-      interstitialConfig: {
-        unitId: ADMOB_TEST_UNITS.INTERSTITIAL,
-        actionSource,
-        onClosed,
-      },
-    };
-    this.notify();
+    // On web / preview, execute callback directly without any mock HTML overlay
+    onClosed?.();
     return true;
   }
 
   closeAd() {
-    const prevConfig = this.currentAdState.interstitialConfig;
-    this.currentAdState = {
-      activeAd: null,
-    };
-    this.notify();
-
-    if (prevConfig?.onClosed) {
-      try {
-        prevConfig.onClosed();
-      } catch (err) {
-        console.warn('[AdMob] Interstitial onClosed error:', err);
-      }
-    }
+    // No-op for web preview since no mock overlays exist
   }
 }
 

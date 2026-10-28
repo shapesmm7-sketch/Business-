@@ -8,20 +8,24 @@ import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.community.admob.AdMob;
 import com.google.android.gms.ads.AdListener;
+import com.google.android.gms.ads.AdLoader;
 import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.AdSize;
-import com.google.android.gms.ads.AdView;
 import com.google.android.gms.ads.LoadAdError;
 import com.google.android.gms.ads.MobileAds;
 import com.google.android.gms.ads.initialization.InitializationStatus;
 import com.google.android.gms.ads.initialization.OnInitializationCompleteListener;
 import com.google.android.gms.ads.interstitial.InterstitialAd;
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback;
+import com.google.android.gms.ads.nativead.NativeAd;
+import com.google.android.gms.ads.nativead.NativeAdOptions;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "AdMobNative";
-    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-8582659585800553/1482159477";
-    private static final String BANNER_UNIT_ID = "ca-app-pub-8582659585800553/3301762743";
+    // Official Google AdMob Test Ad Units for Android
+    // https://developers.google.com/admob/android/test-ads
+    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-394025609942544/1033173712";
+    private static final String NATIVE_ADVANCED_UNIT_ID = "ca-app-pub-394025609942544/2247696110";
+
     private Handler adHandler;
     private Runnable adPingRunnable;
 
@@ -37,7 +41,7 @@ public class MainActivity extends BridgeActivity {
             MobileAds.initialize(this, new OnInitializationCompleteListener() {
                 @Override
                 public void onInitializationComplete(@NonNull InitializationStatus initializationStatus) {
-                    Log.i(TAG, "Google MobileAds initialized successfully. Sending live AdRequests...");
+                    Log.i(TAG, "Google MobileAds initialized. Requesting live AdMob test ads...");
                     sendAdMobRequests();
                     startPeriodicAdPings();
                 }
@@ -53,9 +57,31 @@ public class MainActivity extends BridgeActivity {
         sendAdMobRequests();
     }
 
+    /**
+     * Request test ads directly from Google AdMob servers for Native Advanced and Interstitial
+     */
     private void sendAdMobRequests() {
         try {
-            // 1. Send live Interstitial AdRequest
+            // 1. Request Google AdMob Native Advanced Test Ad via AdLoader
+            AdLoader adLoader = new AdLoader.Builder(this, NATIVE_ADVANCED_UNIT_ID)
+                .forNativeAd(new NativeAd.OnNativeAdLoadedListener() {
+                    @Override
+                    public void onNativeAdLoaded(@NonNull NativeAd nativeAd) {
+                        Log.i(TAG, "AdMob Real Test Native Advanced Ad Loaded Successfully: " + nativeAd.getHeadline());
+                    }
+                })
+                .withAdListener(new AdListener() {
+                    @Override
+                    public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
+                        Log.w(TAG, "AdMob Native Advanced Ad load status: " + loadAdError.getMessage() + " (Code: " + loadAdError.getCode() + ")");
+                    }
+                })
+                .withNativeAdOptions(new NativeAdOptions.Builder().build())
+                .build();
+
+            adLoader.loadAd(new AdRequest.Builder().build());
+
+            // 2. Request Google AdMob Interstitial Test Ad
             AdRequest interstitialRequest = new AdRequest.Builder().build();
             InterstitialAd.load(
                 this,
@@ -64,32 +90,15 @@ public class MainActivity extends BridgeActivity {
                 new InterstitialAdLoadCallback() {
                     @Override
                     public void onAdLoaded(@NonNull InterstitialAd interstitialAd) {
-                        Log.i(TAG, "AdMob Live Interstitial Ad Request SUCCESSFUL!");
+                        Log.i(TAG, "AdMob Real Test Interstitial Ad Loaded Successfully from Google Servers!");
                     }
 
                     @Override
                     public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
-                        Log.w(TAG, "AdMob Interstitial Ad Request registered, response code: " + loadAdError.getCode() + ", message: " + loadAdError.getMessage());
+                        Log.w(TAG, "AdMob Interstitial Ad load status: " + loadAdError.getMessage() + " (Code: " + loadAdError.getCode() + ")");
                     }
                 }
             );
-
-            // 2. Send live Banner AdRequest
-            AdView bannerView = new AdView(this);
-            bannerView.setAdUnitId(BANNER_UNIT_ID);
-            bannerView.setAdSize(AdSize.BANNER);
-            bannerView.setAdListener(new AdListener() {
-                @Override
-                public void onAdLoaded() {
-                    Log.i(TAG, "AdMob Live Banner Ad Request SUCCESSFUL!");
-                }
-
-                @Override
-                public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
-                    Log.w(TAG, "AdMob Banner Ad Request registered, response code: " + loadAdError.getCode() + ", message: " + loadAdError.getMessage());
-                }
-            });
-            bannerView.loadAd(new AdRequest.Builder().build());
         } catch (Exception e) {
             Log.w(TAG, "sendAdMobRequests note: " + e.getMessage());
         }
@@ -101,7 +110,7 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void run() {
                 sendAdMobRequests();
-                adHandler.postDelayed(this, 30000); // Send ad requests every 30 seconds while app is active
+                adHandler.postDelayed(this, 30000); // Check ad requests every 30 seconds
             }
         };
         adHandler.postDelayed(adPingRunnable, 30000);
