@@ -153,14 +153,42 @@ export function App() {
 
   const [isCustomerDataResolving, setIsCustomerDataResolving] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    if (!isCustomerPathFromUrl()) return false;
-    const initialPage = (window as any).__INITIAL_QR_PAGE__;
-    return !hasCustomerQrItems(initialPage);
+    const params = new URLSearchParams(window.location.search);
+    const pathname = window.location.pathname || '';
+    return Boolean(
+      isCustomerPathFromUrl() ||
+      params.get('qr') ||
+      params.get('page') ||
+      params.get('email') ||
+      params.get('tab') ||
+      params.get('events') ||
+      params.get('event') ||
+      params.get('itemId') ||
+      params.get('item') ||
+      params.get('photoId') ||
+      params.get('photo') ||
+      pathname.includes('/qr/')
+    );
   });
 
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
-      const emailParam = new URLSearchParams(window.location.search).get('email')?.toLowerCase().trim();
+      const params = new URLSearchParams(window.location.search);
+      const pathname = window.location.pathname || '';
+      const hasQrLink = Boolean(
+        isCustomerPathFromUrl() ||
+        params.get('qr') ||
+        params.get('page') ||
+        params.get('email') ||
+        params.get('tab') ||
+        params.get('events') ||
+        params.get('event') ||
+        pathname.includes('/qr/')
+      );
+      if (hasQrLink) {
+        return null;
+      }
+      const emailParam = params.get('email')?.toLowerCase().trim();
       const initialPage = (window as any).__INITIAL_QR_PAGE__;
       if (initialPage && initialPage.id) {
         if (emailParam && !initialPage.userEmail) {
@@ -179,8 +207,6 @@ export function App() {
           }
         }
       }
-      const params = new URLSearchParams(window.location.search);
-      const pathname = window.location.pathname || '';
       if (
         params.get('tab') === 'socials' ||
         params.get('tab') === 'social' ||
@@ -344,11 +370,9 @@ export function App() {
           found = StorageService.getHostedQRPage(qrPageId);
         }
 
-        if (found && qrPageId && found.id === qrPageId) {
-          setActiveCustomerPage(found);
-          setIsCustomerViewMode(true);
-          setActiveScreen('qr-customer-view');
-        }
+        setIsCustomerDataResolving(true);
+        setIsCustomerViewMode(true);
+        setActiveScreen('qr-customer-view');
 
         const emailFromUrl = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
         const fetchId = qrPageId || 'default';
@@ -369,6 +393,7 @@ export function App() {
         };
 
         if (fetchId || emailFromUrl) {
+          setIsCustomerDataResolving(true);
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
 
@@ -433,11 +458,19 @@ export function App() {
 
             if (remotePage) {
               setActiveCustomerPage(remotePage);
+            } else if (found) {
+              setActiveCustomerPage(found);
             }
             setIsCustomerDataResolving(false);
           }).catch(() => {
+            if (found) {
+              setActiveCustomerPage(found);
+            }
             setIsCustomerDataResolving(false);
           });
+        } else if (found) {
+          setActiveCustomerPage(found);
+          setIsCustomerDataResolving(false);
         }
       }
     }
@@ -1341,7 +1374,7 @@ export function App() {
         )}
 
         {activeScreen === 'qr-customer-view' && (
-          isCustomerDataResolving && !hasCustomerQrItems(activeCustomerPage) ? (
+          isCustomerDataResolving ? (
             <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center animate-pulse">
               <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center mb-4 text-emerald-600 dark:text-emerald-400 shadow-sm">
                 <Sparkles className="w-8 h-8 animate-spin" />

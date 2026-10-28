@@ -915,12 +915,14 @@ export const CloudflareService = {
         headers['X-User-Id'] = userEmail;
       }
 
+      const separator = userEmail ? '&' : '?';
       const emailParam = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
-      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}${emailParam}`;
+      const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}${emailParam}${separator}_t=${Date.now()}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',
         headers,
+        cache: 'no-store',
       });
 
       if (!res.ok) return null;
@@ -952,12 +954,13 @@ export const CloudflareService = {
       const headers = this.getAuthHeaders();
       headers['X-User-Email'] = cleanEmail;
       headers['X-User-Id'] = cleanEmail;
-      const query = `?email=${encodeURIComponent(cleanEmail)}&user_id=${encodeURIComponent(cleanEmail)}`;
+      const query = `?email=${encodeURIComponent(cleanEmail)}&user_id=${encodeURIComponent(cleanEmail)}&_t=${Date.now()}`;
       const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/sync/pull${query}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',
         headers,
+        cache: 'no-store',
       });
 
       if (!res.ok) return null;
