@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-YH_dqHkd.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-BaX6iN8m.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-B1J0FpeO.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-jE2PUZRi.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-DaBDyur1.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-BDz3ZT5i.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-DNSeunkN.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-OZmlxojM.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73170,7 +73170,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-D_K33nbX.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-Dg3u5kTs.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -73181,12 +73181,12 @@ const NativeAdBridge = registerPlugin("NativeAdPlugin", {
     updatePosition: async () => ({ success: false })
   })
 });
-const ADMOB_TEST_UNITS = {
-  APP_ID: "ca-app-pub-394025609942544~3347511713",
-  INTERSTITIAL: "ca-app-pub-394025609942544/1033173712",
-  NATIVE_ADVANCED: "ca-app-pub-3940256099942544/2247696110"
+const ADMOB_LIVE_UNITS = {
+  APP_ID: "ca-app-pub-8582659585800553~8957324812",
+  INTERSTITIAL: "ca-app-pub-8582659585800553/1482159477",
+  NATIVE_ADVANCED: "ca-app-pub-8582659585800553/9630358215"
 };
-const ADMOB_UNITS = ADMOB_TEST_UNITS;
+const ADMOB_UNITS = ADMOB_LIVE_UNITS;
 class AdMobManager {
   constructor() {
     __publicField(this, "isInitialized", false);
@@ -73228,7 +73228,7 @@ class AdMobManager {
       await this.initNativeAdMob();
       await AdMob.prepareInterstitial({
         adId: ADMOB_UNITS.INTERSTITIAL,
-        isTesting: true
+        isTesting: false
       });
     } catch (err) {
       console.warn("[AdMob Native] Preload interstitial note:", err);
@@ -73240,7 +73240,7 @@ class AdMobManager {
       await NativeAdBridge.loadNativeAd({
         adUnitId: ADMOB_UNITS.NATIVE_ADVANCED
       });
-      console.info(`[AdMob Native] Real AdMob Native Advanced Test Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
+      console.info(`[AdMob Native] Live AdMob Native Advanced Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
     } catch (err) {
       console.warn("[AdMob Native] Preload native advanced note:", err);
     }
@@ -73249,7 +73249,7 @@ class AdMobManager {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await NativeAdBridge.showNativeAd();
-      console.info(`[AdMob Native] Real AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
+      console.info(`[AdMob Native] Live AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
     } catch (err) {
       console.warn("[AdMob Native] Native ad request note:", err);
     }
@@ -73270,12 +73270,12 @@ class AdMobManager {
     if (Capacitor.isNativePlatform()) {
       try {
         await AdMob.initialize({
-          initializeForTesting: true
+          initializeForTesting: false
         });
         this.isInitialized = true;
         try {
           AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-            console.info("[AdMob Native] Real Test Interstitial Ad loaded from Google AdMob servers");
+            console.info("[AdMob Native] Live Interstitial Ad loaded from Google AdMob servers");
           });
           AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
             this.preloadInterstitial().catch(() => {
@@ -73312,7 +73312,7 @@ class AdMobManager {
         await this.initNativeAdMob();
         const options = {
           adId: ADMOB_UNITS.INTERSTITIAL,
-          isTesting: true
+          isTesting: false
         };
         await AdMob.prepareInterstitial(options);
         await AdMob.showInterstitial();
@@ -147418,7 +147418,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-GHlcEi9T.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-CZAwy570.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

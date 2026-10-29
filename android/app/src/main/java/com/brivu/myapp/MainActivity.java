@@ -17,8 +17,8 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "AdMobNative";
-    // Official Google AdMob Test Interstitial Unit ID for Android
-    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-394025609942544/1033173712";
+    // Live Google AdMob Interstitial Unit ID for Android
+    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-8582659585800553/1482159477";
 
     private Handler adHandler;
     private Runnable adPingRunnable;

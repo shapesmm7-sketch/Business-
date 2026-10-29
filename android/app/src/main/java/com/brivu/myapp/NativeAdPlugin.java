@@ -33,10 +33,8 @@ import com.google.android.gms.ads.nativead.NativeAdView;
 public class NativeAdPlugin extends Plugin {
     private static final String TAG = "AdMobNativeAdvanced";
 
-    // Official Google AdMob Native Test Ad Unit ID specified in requirements
-    public static final String NATIVE_TEST_UNIT_ID = "ca-app-pub-3940256099942544/2247696110";
-    // Standard Google Demo fallback ID in case of network rejection
-    public static final String NATIVE_DEMO_FALLBACK_ID = "ca-app-pub-394025609942544/2247696110";
+    // Live Google AdMob Native Ad Unit ID
+    public static final String NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/9630358215";
 
     private FrameLayout adContainer;
     private NativeAd currentNativeAd;
@@ -103,7 +101,7 @@ public class NativeAdPlugin extends Plugin {
             }
 
             // Begin loading ad
-            requestAdMobNativeAd(NATIVE_TEST_UNIT_ID, false);
+            requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
         } catch (Exception e) {
             Log.e(TAG, "Error initializing ad container", e);
         }
@@ -145,11 +143,7 @@ public class NativeAdPlugin extends Plugin {
                             + ", Message=" + loadAdError.getMessage()
                             + ", Domain=" + loadAdError.getDomain());
 
-                        // If primary test ID failed, attempt standard demo unit ID once
-                        if (!isRetry && !adUnitId.equals(NATIVE_DEMO_FALLBACK_ID)) {
-                            Log.i(TAG, "Retrying AdMob Native Ad with standard demo unit ID: " + NATIVE_DEMO_FALLBACK_ID);
-                            requestAdMobNativeAd(NATIVE_DEMO_FALLBACK_ID, true);
-                        }
+
                     }
                 })
                 .withNativeAdOptions(new NativeAdOptions.Builder().build())
@@ -354,7 +348,7 @@ public class NativeAdPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             applyAdPosition(x, y, width, height, visible);
             if (visible && currentNativeAd == null && !isLoading) {
-                requestAdMobNativeAd(NATIVE_TEST_UNIT_ID, false);
+                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
             }
         });
 
@@ -365,7 +359,7 @@ public class NativeAdPlugin extends Plugin {
 
     @PluginMethod
     public void loadNativeAd(PluginCall call) {
-        String unitId = call.getString("adUnitId", NATIVE_TEST_UNIT_ID);
+        String unitId = call.getString("adUnitId", NATIVE_AD_UNIT_ID);
         requestAdMobNativeAd(unitId, false);
         JSObject ret = new JSObject();
         ret.put("success", true);
@@ -385,7 +379,7 @@ public class NativeAdPlugin extends Plugin {
                 adContainer.setVisibility(View.VISIBLE);
                 isVisible = true;
             } else if (currentNativeAd == null && !isLoading) {
-                requestAdMobNativeAd(NATIVE_TEST_UNIT_ID, false);
+                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
             }
             JSObject ret = new JSObject();
             ret.put("success", true);
