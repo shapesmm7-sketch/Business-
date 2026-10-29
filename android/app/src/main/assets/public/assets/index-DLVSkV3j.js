@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-COPCZ8-D.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-B2QbhqeD.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-CxR2Bs6D.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DfXII7kJ.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-yo1HyqB6.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-Czk52xGH.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-BffK0gmR.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-C-wcXrR8.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73170,14 +73170,15 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-DZ0cCRd1.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-BU0cZEKf.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
     loadNativeAd: async () => ({ success: false }),
     showNativeAd: async () => ({ success: false }),
     hideNativeAd: async () => ({ success: false }),
-    isAdLoaded: async () => ({ loaded: false, visible: false })
+    isAdLoaded: async () => ({ loaded: false, visible: false }),
+    updatePosition: async () => ({ success: false })
   })
 });
 const ADMOB_TEST_UNITS = {
@@ -73333,15 +73334,56 @@ class AdMobManager {
 }
 const AdMobService = new AdMobManager();
 const AdMobNativeAd = ({
-  unitId = ADMOB_UNITS.NATIVE_ADVANCED
+  unitId = ADMOB_UNITS.NATIVE_ADVANCED,
+  context = "general",
+  className = ""
 }) => {
+  const slotRef = reactExports.useRef(null);
+  const syncSlotPosition = reactExports.useCallback(() => {
+    if (!Capacitor.isNativePlatform() || !slotRef.current) return;
+    const rect = slotRef.current.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const isVisibleInViewport = rect.bottom > 60 && // Not tucked completely under top header
+    rect.top < window.innerHeight - 60 && // Not tucked completely under bottom navigation
+    rect.width > 0 && rect.height > 0;
+    NativeAdBridge.updatePosition({
+      x: Math.round(rect.left * dpr),
+      y: Math.round(rect.top * dpr),
+      width: Math.round(rect.width * dpr),
+      height: Math.round(rect.height * dpr),
+      visible: isVisibleInViewport
+    }).catch(() => {
+    });
+  }, []);
   reactExports.useEffect(() => {
-    if (Capacitor.isNativePlatform() && AdMobService.shouldShowAds()) {
-      AdMobService.requestNativeAd(unitId).catch(() => {
+    if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) return;
+    AdMobService.requestNativeAd(unitId).catch(() => {
+    });
+    const t1 = setTimeout(syncSlotPosition, 80);
+    const t22 = setTimeout(syncSlotPosition, 300);
+    window.addEventListener("scroll", syncSlotPosition, { passive: true });
+    window.addEventListener("resize", syncSlotPosition, { passive: true });
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t22);
+      window.removeEventListener("scroll", syncSlotPosition);
+      window.removeEventListener("resize", syncSlotPosition);
+      NativeAdBridge.hideNativeAd().catch(() => {
       });
+    };
+  }, [unitId, syncSlotPosition]);
+  if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) {
+    return null;
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      ref: slotRef,
+      "data-admob-slot": context,
+      className: `w-full h-[74px] rounded-2xl pointer-events-none transition-all ${className}`,
+      "aria-hidden": "true"
     }
-  }, [unitId]);
-  return null;
+  );
 };
 const HomeScreen = ({
   business,
@@ -118608,14 +118650,6 @@ const ReceiptsHistoryScreen = ({
       ] })
     ] }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
-      AdMobNativeAd,
-      {
-        variant: "bottom",
-        context: isInvoiceMode ? "invoices" : "receipts",
-        unitId: ADMOB_UNITS.NATIVE_ADVANCED
-      }
-    ),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(
       DownloadSuccessModal,
       {
         isOpen: downloadModalData.isOpen,
@@ -134995,15 +135029,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           )
         ] })
       ] })
-    ] }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-4 pb-8", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      AdMobNativeAd,
-      {
-        context: "inventory",
-        variant: "bottom",
-        unitId: ADMOB_UNITS.NATIVE_ADVANCED
-      }
-    ) })
+    ] }) })
   ] });
 };
 const QR_COLOR_PRESETS = [
@@ -147342,7 +147368,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-CdkhNw0c.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-D7MDUPkW.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

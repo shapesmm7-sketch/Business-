@@ -43,6 +43,13 @@ public class NativeAdPlugin extends Plugin {
     private boolean isLoading = false;
     private boolean isVisible = false;
 
+    // Last requested slot coordinates for inline positioning
+    private int lastX = 0;
+    private int lastY = 0;
+    private int lastWidth = 0;
+    private int lastHeight = 0;
+    private boolean targetVisible = false;
+
     @Override
     public void load() {
         super.load();
@@ -50,7 +57,7 @@ public class NativeAdPlugin extends Plugin {
     }
 
     /**
-     * Set up the container layout above the bottom navigation bar
+     * Set up the container layout for dynamic inline placement
      */
     private void initAdContainer() {
         try {
@@ -72,30 +79,27 @@ public class NativeAdPlugin extends Plugin {
                 adContainer.setId(View.generateViewId());
                 adContainer.setVisibility(View.GONE);
 
-                float density = activity.getResources().getDisplayMetrics().density;
-                int bottomMargin = (int) (62 * density); // Above 5-tab bottom navigation
-                int horizontalMargin = (int) (10 * density);
-
+                // Use TOP | START gravity so setX() and setY() place the ad exactly at inline slot coordinates
                 if (parentLayout instanceof CoordinatorLayout) {
                     CoordinatorLayout.LayoutParams params = new CoordinatorLayout.LayoutParams(
-                        CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                        CoordinatorLayout.LayoutParams.WRAP_CONTENT
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                     );
-                    params.gravity = Gravity.BOTTOM;
-                    params.setMargins(horizontalMargin, 0, horizontalMargin, bottomMargin);
+                    params.gravity = Gravity.TOP | Gravity.START;
+                    params.setMargins(0, 0, 0, 0);
                     adContainer.setLayoutParams(params);
                 } else {
                     FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.WRAP_CONTENT
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                     );
-                    params.gravity = Gravity.BOTTOM;
-                    params.setMargins(horizontalMargin, 0, horizontalMargin, bottomMargin);
+                    params.gravity = Gravity.TOP | Gravity.START;
+                    params.setMargins(0, 0, 0, 0);
                     adContainer.setLayoutParams(params);
                 }
 
                 parentLayout.addView(adContainer);
-                Log.i(TAG, "AdMob Native ad container initialized successfully");
+                Log.i(TAG, "AdMob Native ad container initialized for dynamic inline placement");
             }
 
             // Begin loading ad
@@ -184,11 +188,10 @@ public class NativeAdPlugin extends Plugin {
                 if (advertiserView != null) {
                     if (nativeAd.getAdvertiser() != null && !nativeAd.getAdvertiser().isEmpty()) {
                         advertiserView.setText(nativeAd.getAdvertiser());
-                        advertiserView.setVisibility(View.VISIBLE);
                     } else {
                         advertiserView.setText("Google AdMob Test Partner");
-                        advertiserView.setVisibility(View.VISIBLE);
                     }
+                    advertiserView.setVisibility(View.VISIBLE);
                     adView.setAdvertiserView(advertiserView);
                 }
 
@@ -209,40 +212,32 @@ public class NativeAdPlugin extends Plugin {
                 if (ctaButton != null) {
                     if (nativeAd.getCallToAction() != null && !nativeAd.getCallToAction().isEmpty()) {
                         ctaButton.setText(nativeAd.getCallToAction());
-                        ctaButton.setVisibility(View.VISIBLE);
-                        adView.setCallToActionView(ctaButton);
                     } else {
                         ctaButton.setText("Learn More");
-                        ctaButton.setVisibility(View.VISIBLE);
-                        adView.setCallToActionView(ctaButton);
                     }
+                    ctaButton.setVisibility(View.VISIBLE);
+                    adView.setCallToActionView(ctaButton);
                 }
 
-                // 5. Icon
+                // 5. Compact Icon & Media thumbnail
                 ImageView iconView = adView.findViewById(R.id.ad_app_icon);
-                if (iconView != null) {
-                    if (nativeAd.getIcon() != null && nativeAd.getIcon().getDrawable() != null) {
-                        iconView.setImageDrawable(nativeAd.getIcon().getDrawable());
-                        iconView.setVisibility(View.VISIBLE);
-                        adView.setIconView(iconView);
-                    } else {
-                        iconView.setVisibility(View.GONE);
-                    }
-                }
-
-                // 6. Media View
                 MediaView mediaView = adView.findViewById(R.id.ad_media);
-                if (mediaView != null) {
-                    if (nativeAd.getMediaContent() != null) {
-                        mediaView.setMediaContent(nativeAd.getMediaContent());
-                        mediaView.setVisibility(View.VISIBLE);
-                        adView.setMediaView(mediaView);
-                    } else {
-                        mediaView.setVisibility(View.GONE);
-                    }
+
+                if (iconView != null && nativeAd.getIcon() != null && nativeAd.getIcon().getDrawable() != null) {
+                    iconView.setImageDrawable(nativeAd.getIcon().getDrawable());
+                    iconView.setVisibility(View.VISIBLE);
+                    adView.setIconView(iconView);
+                    if (mediaView != null) mediaView.setVisibility(View.GONE);
+                } else if (mediaView != null && nativeAd.getMediaContent() != null) {
+                    mediaView.setMediaContent(nativeAd.getMediaContent());
+                    mediaView.setVisibility(View.VISIBLE);
+                    adView.setMediaView(mediaView);
+                    if (iconView != null) iconView.setVisibility(View.GONE);
+                } else if (iconView != null) {
+                    iconView.setVisibility(View.GONE);
                 }
 
-                // 7. Star rating
+                // 6. Star rating (optional)
                 RatingBar ratingBar = adView.findViewById(R.id.ad_stars);
                 if (ratingBar != null) {
                     if (nativeAd.getStarRating() != null && nativeAd.getStarRating() > 0) {
@@ -254,7 +249,7 @@ public class NativeAdPlugin extends Plugin {
                     }
                 }
 
-                // 8. Price & Store
+                // 7. Price & Store (optional)
                 TextView priceView = adView.findViewById(R.id.ad_price);
                 if (priceView != null) {
                     if (nativeAd.getPrice() != null && !nativeAd.getPrice().isEmpty()) {
@@ -277,7 +272,7 @@ public class NativeAdPlugin extends Plugin {
                     }
                 }
 
-                // 9. Close button
+                // 8. Close button
                 View closeBtn = adView.findViewById(R.id.ad_close_btn);
                 if (closeBtn != null) {
                     closeBtn.setOnClickListener(v -> hideAdContainer());
@@ -287,25 +282,82 @@ public class NativeAdPlugin extends Plugin {
                 adView.setNativeAd(nativeAd);
 
                 adContainer.addView(adView);
-                adContainer.setVisibility(View.VISIBLE);
-                isVisible = true;
 
-                Log.i(TAG, "AdMob Native Advanced Ad successfully attached to view hierarchy!");
+                // Apply target placement if one was already requested
+                if (targetVisible && lastWidth > 0) {
+                    applyAdPosition(lastX, lastY, lastWidth, lastHeight, true);
+                } else {
+                    adContainer.setVisibility(View.GONE);
+                    isVisible = false;
+                }
+
+                Log.i(TAG, "AdMob Native Advanced Ad successfully configured in compact view");
             } catch (Exception e) {
                 Log.e(TAG, "Error displaying Native Ad view", e);
             }
         });
     }
 
+    private void applyAdPosition(int x, int y, int width, int height, boolean visible) {
+        if (adContainer == null) return;
+        if (!visible || currentNativeAd == null) {
+            adContainer.setVisibility(View.GONE);
+            isVisible = false;
+            return;
+        }
+
+        ViewGroup.LayoutParams lp = adContainer.getLayoutParams();
+        if (lp != null) {
+            if (width > 0) lp.width = width;
+            if (height > 0) lp.height = height;
+            adContainer.setLayoutParams(lp);
+        }
+
+        adContainer.setX((float) x);
+        adContainer.setY((float) y);
+        adContainer.setVisibility(View.VISIBLE);
+        isVisible = true;
+    }
+
     private void hideAdContainer() {
         Activity activity = getActivity();
         if (activity == null) return;
         activity.runOnUiThread(() -> {
+            targetVisible = false;
             if (adContainer != null) {
                 adContainer.setVisibility(View.GONE);
                 isVisible = false;
             }
         });
+    }
+
+    @PluginMethod
+    public void updatePosition(PluginCall call) {
+        final int x = call.getInt("x", 0);
+        final int y = call.getInt("y", 0);
+        final int width = call.getInt("width", 0);
+        final int height = call.getInt("height", 0);
+        final boolean visible = call.getBoolean("visible", false);
+
+        lastX = x;
+        lastY = y;
+        lastWidth = width;
+        lastHeight = height;
+        targetVisible = visible;
+
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.resolve();
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            applyAdPosition(x, y, width, height, visible);
+        });
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -326,7 +378,7 @@ public class NativeAdPlugin extends Plugin {
         }
 
         activity.runOnUiThread(() -> {
-            if (adContainer != null && currentNativeAd != null) {
+            if (adContainer != null && currentNativeAd != null && targetVisible) {
                 adContainer.setVisibility(View.VISIBLE);
                 isVisible = true;
             } else if (currentNativeAd == null && !isLoading) {

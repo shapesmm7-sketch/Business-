@@ -1056,12 +1056,6 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         </div>
       )}
 
-      {/* Bottom Native Advanced Ad */}
-      <AdMobNativeAd
-        variant="bottom"
-        context={isInvoiceMode ? 'invoices' : 'receipts'}
-        unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-      />
 
       <DownloadSuccessModal
         isOpen={downloadModalData.isOpen}

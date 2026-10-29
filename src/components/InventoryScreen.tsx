@@ -10611,14 +10611,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         </div>
       )}
 
-      {/* Bottom Native Advanced Ad */}
-      <div className="pt-4 pb-8">
-        <AdMobNativeAd
-          context="inventory"
-          variant="bottom"
-          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-        />
-      </div>
 
     </div>
   );

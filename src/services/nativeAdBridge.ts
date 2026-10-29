@@ -1,10 +1,17 @@
-import { registerPlugin, Capacitor } from '@capacitor/core';
+import { registerPlugin } from '@capacitor/core';
 
 export interface NativeAdPluginInterface {
   loadNativeAd(options?: { adUnitId?: string }): Promise<{ success: boolean }>;
   showNativeAd(options?: { marginBottom?: number }): Promise<{ success: boolean }>;
   hideNativeAd(): Promise<{ success: boolean }>;
   isAdLoaded(): Promise<{ loaded: boolean; visible: boolean }>;
+  updatePosition(options: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    visible: boolean;
+  }): Promise<{ success: boolean }>;
 }
 
 /**
@@ -18,5 +25,6 @@ export const NativeAdBridge = registerPlugin<NativeAdPluginInterface>('NativeAdP
     showNativeAd: async () => ({ success: false }),
     hideNativeAd: async () => ({ success: false }),
     isAdLoaded: async () => ({ loaded: false, visible: false }),
+    updatePosition: async () => ({ success: false }),
   }),
 });
