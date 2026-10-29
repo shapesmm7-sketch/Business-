@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, Receipt } from '../types';
 import { t } from '../utils/i18n';
+import { AdMobNativeAd } from './AdMobNativeAd';
+import { ADMOB_UNITS } from '../services/admobService';
 
 interface ReceiptsInvoicesScreenProps {
   business: BusinessProfile;
@@ -46,7 +48,7 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:white tracking-tight">
               {t('receipts_and_invoices', lang)}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -121,6 +123,15 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
               </p>
             </div>
           </button>
+        </div>
+
+        {/* Compact Native Advanced Ad below options */}
+        <div className="pt-2">
+          <AdMobNativeAd
+            context="receipts"
+            variant="compact"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
         </div>
       </div>
     </div>

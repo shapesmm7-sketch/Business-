@@ -66,6 +66,11 @@
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-8582659585800553~8957324812" />
+
+        <!-- Disable AdMob Native Ad Validator Debugger Popup Overlay -->
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.NATIVE_AD_DEBUGGER_ENABLED"
+            android:value="false" />
     </application>
 
     <!-- Permissions -->

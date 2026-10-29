@@ -4696,6 +4696,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
               </button>
             </div>
+
+            {/* Native Advanced Ad below main inventory boxes */}
+            <div className="pt-2">
+              <AdMobNativeAd
+                context="inventory"
+                variant="compact"
+                unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+              />
+            </div>
           </div>
         )}
         {/* ==================================================================== */}
@@ -10611,6 +10620,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         </div>
       )}
 
+      {/* Bottom Native Advanced Ad when inside inventory category tabs */}
+      {currentCategory !== null && (
+        <div className="max-w-xl mx-auto w-full px-4 pt-3 pb-8">
+          <AdMobNativeAd
+            context="inventory"
+            variant="compact"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
+        </div>
+      )}
 
     </div>
   );

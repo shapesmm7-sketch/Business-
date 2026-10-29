@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-B2QbhqeD.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-YH_dqHkd.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DfXII7kJ.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-B1J0FpeO.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-Czk52xGH.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-DaBDyur1.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-C-wcXrR8.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-DNSeunkN.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73170,7 +73170,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-BU0cZEKf.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-D_K33nbX.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -73343,9 +73343,7 @@ const AdMobNativeAd = ({
     if (!Capacitor.isNativePlatform() || !slotRef.current) return;
     const rect = slotRef.current.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const isVisibleInViewport = rect.bottom > 60 && // Not tucked completely under top header
-    rect.top < window.innerHeight - 60 && // Not tucked completely under bottom navigation
-    rect.width > 0 && rect.height > 0;
+    const isVisibleInViewport = rect.bottom > 10 && rect.top < window.innerHeight && rect.width > 0 && rect.height > 0;
     NativeAdBridge.updatePosition({
       x: Math.round(rect.left * dpr),
       y: Math.round(rect.top * dpr),
@@ -73359,15 +73357,33 @@ const AdMobNativeAd = ({
     if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) return;
     AdMobService.requestNativeAd(unitId).catch(() => {
     });
-    const t1 = setTimeout(syncSlotPosition, 80);
-    const t22 = setTimeout(syncSlotPosition, 300);
+    const t1 = setTimeout(syncSlotPosition, 50);
+    const t22 = setTimeout(syncSlotPosition, 150);
+    const t32 = setTimeout(syncSlotPosition, 400);
+    const t4 = setTimeout(syncSlotPosition, 800);
     window.addEventListener("scroll", syncSlotPosition, { passive: true });
     window.addEventListener("resize", syncSlotPosition, { passive: true });
+    let io = null;
+    let ro = null;
+    if (typeof IntersectionObserver !== "undefined" && slotRef.current) {
+      io = new IntersectionObserver(() => syncSlotPosition(), {
+        threshold: [0, 0.5, 1]
+      });
+      io.observe(slotRef.current);
+    }
+    if (typeof ResizeObserver !== "undefined" && slotRef.current) {
+      ro = new ResizeObserver(() => syncSlotPosition());
+      ro.observe(slotRef.current);
+    }
     return () => {
       clearTimeout(t1);
       clearTimeout(t22);
+      clearTimeout(t32);
+      clearTimeout(t4);
       window.removeEventListener("scroll", syncSlotPosition);
       window.removeEventListener("resize", syncSlotPosition);
+      if (io) io.disconnect();
+      if (ro) ro.disconnect();
       NativeAdBridge.hideNativeAd().catch(() => {
       });
     };
@@ -118611,6 +118627,14 @@ const ReceiptsHistoryScreen = ({
         ) }, `inline-admob-${receipt.id}`)
       ] }, receipt.id);
     }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-3 pb-8", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+      AdMobNativeAd,
+      {
+        context: isInvoiceMode ? "invoices" : "receipts",
+        variant: "compact",
+        unitId: ADMOB_UNITS.NATIVE_ADVANCED
+      }
+    ) }),
     deletingReceipt && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800 animate-scaleUp", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(TriangleAlert, { className: "w-6 h-6" }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { className: "text-base font-bold text-slate-900 dark:text-white", children: [
@@ -129642,83 +129666,93 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-xl mx-auto w-full px-4 pt-4 flex-1", children: [
-      currentCategory === null && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "space-y-4 py-2 animate-fadeIn pb-8", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "button",
-          {
-            id: "btn-main-products",
-            type: "button",
-            onClick: () => {
-              setCurrentCategory("products");
-              setActiveTab("stock");
-            },
-            className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm shadow-sky-600/20 active:scale-[0.99] transition-all overflow-hidden border border-sky-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Package, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition", children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+      currentCategory === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4 py-2 animate-fadeIn pb-8", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              id: "btn-main-products",
+              type: "button",
+              onClick: () => {
+                setCurrentCategory("products");
+                setActiveTab("stock");
+              },
+              className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm shadow-sky-600/20 active:scale-[0.99] transition-all overflow-hidden border border-sky-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Package, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "PRODUCTS" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug", children: "Stock, Sales, List" })
                 ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "PRODUCTS" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug", children: "Stock, Sales, List" })
-              ] })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "button",
-          {
-            id: "btn-main-money",
-            type: "button",
-            onClick: () => {
-              setCurrentCategory("money");
-              setActiveTab("expense");
-            },
-            className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold shadow-sm shadow-emerald-600/20 active:scale-[0.99] transition-all overflow-hidden border border-emerald-500/40 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(DollarSign, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition", children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              id: "btn-main-money",
+              type: "button",
+              onClick: () => {
+                setCurrentCategory("money");
+                setActiveTab("expense");
+              },
+              className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold shadow-sm shadow-emerald-600/20 active:scale-[0.99] transition-all overflow-hidden border border-emerald-500/40 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(DollarSign, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "MONEY" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug", children: "Expenses, Debts, Report" })
                 ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "MONEY" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug", children: "Expenses, Debts, Report" })
-              ] })
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "button",
-          {
-            id: "btn-main-people",
-            type: "button",
-            onClick: () => {
-              setCurrentCategory("people");
-              setActiveTab("customers");
-            },
-            className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow-sm shadow-teal-600/20 active:scale-[0.99] transition-all overflow-hidden border border-teal-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Users, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition", children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              id: "btn-main-people",
+              type: "button",
+              onClick: () => {
+                setCurrentCategory("people");
+                setActiveTab("customers");
+              },
+              className: "group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow-sm shadow-teal-600/20 active:scale-[0.99] transition-all overflow-hidden border border-teal-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start justify-between w-full mb-2", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Users, { className: "w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" }) }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Open" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpRight, { className: "w-3 h-3 text-white" })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "PEOPLE" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug", children: "Clients, Agent, Staff" })
                 ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase", children: "PEOPLE" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug", children: "Clients, Agent, Staff" })
-              ] })
-            ]
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          AdMobNativeAd,
+          {
+            context: "inventory",
+            variant: "compact",
+            unitId: ADMOB_UNITS.NATIVE_ADVANCED
           }
-        )
-      ] }) }),
+        ) })
+      ] }),
       currentCategory === "products" && activeTab === "sales" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3 animate-fadeIn", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
@@ -135029,7 +135063,15 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           )
         ] })
       ] })
-    ] }) })
+    ] }) }),
+    currentCategory !== null && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "max-w-xl mx-auto w-full px-4 pt-3 pb-8", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+      AdMobNativeAd,
+      {
+        context: "inventory",
+        variant: "compact",
+        unitId: ADMOB_UNITS.NATIVE_ADVANCED
+      }
+    ) })
   ] });
 };
 const QR_COLOR_PRESETS = [
@@ -145276,7 +145318,7 @@ const ReceiptsInvoicesScreen = ({
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight", children: t3("receipts_and_invoices", lang) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-lg sm:text-xl font-bold text-slate-900 dark:white tracking-tight", children: t3("receipts_and_invoices", lang) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500 dark:text-slate-400", children: t3("issue_receipts_invoices", lang) })
       ] })
     ] }) }),
@@ -145330,7 +145372,15 @@ const ReceiptsInvoicesScreen = ({
             ]
           }
         )
-      ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "pt-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        AdMobNativeAd,
+        {
+          context: "receipts",
+          variant: "compact",
+          unitId: ADMOB_UNITS.NATIVE_ADVANCED
+        }
+      ) })
     ] })
   ] });
 };
@@ -147368,7 +147418,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-D7MDUPkW.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-GHlcEi9T.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

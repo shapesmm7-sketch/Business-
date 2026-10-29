@@ -33,8 +33,8 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
 
     // Check if slot is within visible viewport area
     const isVisibleInViewport =
-      rect.bottom > 60 && // Not tucked completely under top header
-      rect.top < (window.innerHeight - 60) && // Not tucked completely under bottom navigation
+      rect.bottom > 10 &&
+      rect.top < window.innerHeight &&
       rect.width > 0 &&
       rect.height > 0;
 
@@ -53,19 +53,39 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     // Request/preload real AdMob test native ad
     AdMobService.requestNativeAd(unitId).catch(() => {});
 
-    // Sync position once layout stabilizes
-    const t1 = setTimeout(syncSlotPosition, 80);
-    const t2 = setTimeout(syncSlotPosition, 300);
+    // Sync position as DOM settles
+    const t1 = setTimeout(syncSlotPosition, 50);
+    const t2 = setTimeout(syncSlotPosition, 150);
+    const t3 = setTimeout(syncSlotPosition, 400);
+    const t4 = setTimeout(syncSlotPosition, 800);
 
     // Sync position on scroll or screen resize
     window.addEventListener('scroll', syncSlotPosition, { passive: true });
     window.addEventListener('resize', syncSlotPosition, { passive: true });
 
+    // Observers for instant detection when screen transitions or layout shifts
+    let io: IntersectionObserver | null = null;
+    let ro: ResizeObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined' && slotRef.current) {
+      io = new IntersectionObserver(() => syncSlotPosition(), {
+        threshold: [0, 0.5, 1],
+      });
+      io.observe(slotRef.current);
+    }
+    if (typeof ResizeObserver !== 'undefined' && slotRef.current) {
+      ro = new ResizeObserver(() => syncSlotPosition());
+      ro.observe(slotRef.current);
+    }
+
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
       window.removeEventListener('scroll', syncSlotPosition);
       window.removeEventListener('resize', syncSlotPosition);
+      if (io) io.disconnect();
+      if (ro) ro.disconnect();
       // Hide native view overlay when this specific slot unmounts
       NativeAdBridge.hideNativeAd().catch(() => {});
     };

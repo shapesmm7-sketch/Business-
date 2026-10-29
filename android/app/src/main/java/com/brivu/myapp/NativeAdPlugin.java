@@ -353,6 +353,9 @@ public class NativeAdPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             applyAdPosition(x, y, width, height, visible);
+            if (visible && currentNativeAd == null && !isLoading) {
+                requestAdMobNativeAd(NATIVE_TEST_UNIT_ID, false);
+            }
         });
 
         JSObject ret = new JSObject();

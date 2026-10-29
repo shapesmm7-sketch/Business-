@@ -1016,6 +1016,15 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         </div>
       )}
 
+      {/* Native Advanced Ad at bottom of Receipts & Invoices */}
+      <div className="pt-3 pb-8">
+        <AdMobNativeAd
+          context={isInvoiceMode ? 'invoices' : 'receipts'}
+          variant="compact"
+          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+        />
+      </div>
+
       {/* CONFIRMATION MODAL BEFORE PERMANENT DELETION */}
       {deletingReceipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
