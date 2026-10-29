@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-GCTAMSW-.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-COPCZ8-D.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-Cmbr4BLD.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-CxR2Bs6D.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-DlDlt2Fj.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-yo1HyqB6.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-QKAXCrgm.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-BffK0gmR.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73170,12 +73170,20 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-CaQXdA-v.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-DZ0cCRd1.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+});
+const NativeAdBridge = registerPlugin("NativeAdPlugin", {
+  web: () => ({
+    loadNativeAd: async () => ({ success: false }),
+    showNativeAd: async () => ({ success: false }),
+    hideNativeAd: async () => ({ success: false }),
+    isAdLoaded: async () => ({ loaded: false, visible: false })
+  })
 });
 const ADMOB_TEST_UNITS = {
   APP_ID: "ca-app-pub-394025609942544~3347511713",
   INTERSTITIAL: "ca-app-pub-394025609942544/1033173712",
-  NATIVE_ADVANCED: "ca-app-pub-394025609942544/2247696110"
+  NATIVE_ADVANCED: "ca-app-pub-3940256099942544/2247696110"
 };
 const ADMOB_UNITS = ADMOB_TEST_UNITS;
 class AdMobManager {
@@ -73228,7 +73236,9 @@ class AdMobManager {
   async preloadNativeAdvanced() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
-      await this.initNativeAdMob();
+      await NativeAdBridge.loadNativeAd({
+        adUnitId: ADMOB_UNITS.NATIVE_ADVANCED
+      });
       console.info(`[AdMob Native] Real AdMob Native Advanced Test Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
     } catch (err) {
       console.warn("[AdMob Native] Preload native advanced note:", err);
@@ -73237,8 +73247,8 @@ class AdMobManager {
   async requestNativeAd(unitId = ADMOB_UNITS.NATIVE_ADVANCED) {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
-      await this.initNativeAdMob();
-      console.info(`[AdMob Native] Requesting live test Native Advanced Ad from AdMob SDK: ${unitId}`);
+      await NativeAdBridge.showNativeAd();
+      console.info(`[AdMob Native] Real AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
     } catch (err) {
       console.warn("[AdMob Native] Native ad request note:", err);
     }
@@ -127687,12 +127697,13 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       const toBuyCount = activeItems.filter((item) => !item.checked).length;
       const canvas2 = document.createElement("canvas");
       const width = 800;
-      let estimatedHeight = 330;
+      let estimatedHeight = 350;
       if (activeItems.length === 0) {
         estimatedHeight += 100;
       } else {
+        estimatedHeight += 35;
         activeItems.forEach((item) => {
-          estimatedHeight += item.notes ? 72 : 54;
+          estimatedHeight += item.notes ? 65 : 52;
         });
       }
       estimatedHeight += 60;
@@ -127798,7 +127809,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       ctx.moveTo(boxX, curY);
       ctx.lineTo(boxX + boxWidth, curY);
       ctx.stroke();
-      curY += 20;
+      curY += 18;
       if (activeItems.length === 0) {
         ctx.textAlign = "center";
         ctx.fillStyle = "#94a3b8";
@@ -127806,10 +127817,34 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         ctx.fillText("No shopping list items recorded.", width / 2, curY + 30);
         curY += 60;
       } else {
+        ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+        ctx.fillStyle = "#64748b";
+        ctx.textAlign = "left";
+        ctx.fillText("ITEM NAME", boxX + 26, curY);
+        ctx.textAlign = "center";
+        ctx.fillText("QTY", boxX + 310, curY);
+        ctx.textAlign = "right";
+        ctx.fillText("EST. PRICE", boxX + 440, curY);
+        ctx.fillText("TOTAL BUDGET", boxX + 580, curY);
+        ctx.textAlign = "center";
+        ctx.fillText("STATUS", boxX + 695, curY);
+        curY += 6;
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(boxX, curY);
+        ctx.lineTo(boxX + boxWidth, curY);
+        ctx.stroke();
+        curY += 18;
         activeItems.forEach((item) => {
           var _a4;
           const cat = ((_a4 = shoppingCategories.find((c3) => c3.id === item.categoryId)) == null ? void 0 : _a4.name) || "";
+          const qtyNum = parseFloat(item.quantity) || 1;
+          const unitPrice = item.estimatedPrice || 0;
+          const totalCost = unitPrice * qtyNum;
           const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : "-";
+          const totalStr = totalCost > 0 ? `${currency} ${totalCost.toLocaleString()}` : "-";
+          const qtyDisplay = item.quantity && item.quantity.trim() !== "" ? item.quantity : "1";
           const isDone = Boolean(item.checked);
           ctx.beginPath();
           ctx.arc(boxX + 10, curY + 2, 7, 0, Math.PI * 2);
@@ -127830,38 +127865,45 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           }
           ctx.textAlign = "left";
           ctx.fillStyle = isDone ? "#64748b" : "#0f172a";
-          ctx.font = "bold 14px system-ui, -apple-system, sans-serif";
+          ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
           ctx.fillText(item.name, boxX + 26, curY + 6);
           let detailParts = [];
           if (cat) detailParts.push(`Category: ${cat}`);
-          if (item.quantity) detailParts.push(`Qty: ${item.quantity}`);
           if (item.notes) detailParts.push(`Note: ${item.notes}`);
           if (detailParts.length > 0) {
             ctx.fillStyle = "#64748b";
             ctx.font = "11px system-ui, -apple-system, sans-serif";
-            ctx.fillText(detailParts.join("  •  "), boxX + 26, curY + 24);
+            ctx.fillText(detailParts.join("  •  "), boxX + 26, curY + 22);
           }
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#334155";
+          ctx.font = "12px system-ui, -apple-system, sans-serif";
+          ctx.fillText(qtyDisplay, boxX + 310, curY + 6);
           ctx.textAlign = "right";
-          ctx.fillStyle = isDone ? "#0284c7" : "#0f172a";
+          ctx.fillStyle = "#475569";
+          ctx.font = "12px system-ui, -apple-system, sans-serif";
+          ctx.fillText(priceStr, boxX + 440, curY + 6);
+          ctx.textAlign = "right";
+          ctx.fillStyle = isDone ? "#10b981" : "#0284c7";
           ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
-          ctx.fillText(priceStr, boxX + boxWidth, curY + 6);
+          ctx.fillText(totalStr, boxX + 580, curY + 6);
           const statusText = isDone ? "BOUGHT" : "TO BUY";
           const statusColor = isDone ? "#10b981" : "#f59e0b";
           const statusBg = isDone ? "#ecfdf5" : "#fffbeb";
           const badgeWidth = 62;
-          drawRoundRect(boxX + boxWidth - badgeWidth, curY + 12, badgeWidth, 18, 6, statusBg, statusColor);
+          drawRoundRect(boxX + 664, curY - 6, badgeWidth, 20, 6, statusBg, statusColor);
           ctx.textAlign = "center";
           ctx.fillStyle = statusColor;
           ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
-          ctx.fillText(statusText, boxX + boxWidth - badgeWidth / 2, curY + 24);
-          curY += item.notes ? 46 : 38;
+          ctx.fillText(statusText, boxX + 664 + badgeWidth / 2, curY + 7);
+          curY += item.notes || cat ? 46 : 38;
           ctx.strokeStyle = "#f1f5f9";
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(boxX, curY);
           ctx.lineTo(boxX + boxWidth, curY);
           ctx.stroke();
-          curY += 12;
+          curY += 14;
         });
       }
       curY += 10;
@@ -128132,123 +128174,202 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         return;
       }
       if (section === "shoppingList") {
-        const reportTitle2 = "SHOPPING LIST REPORT";
-        doc2.setFont("helvetica", "bold");
-        doc2.setFontSize(16);
-        doc2.text(reportTitle2, pageWidth / 2, y3, { align: "center" });
-        y3 += 7;
-        if (business == null ? void 0 : business.name) {
-          doc2.setFontSize(11);
-          doc2.setFont("helvetica", "bold");
-          doc2.text(business.name, pageWidth / 2, y3, { align: "center" });
-          y3 += 5;
-        }
-        doc2.setFontSize(9);
-        doc2.setFont("helvetica", "normal");
-        doc2.text(`Generated: ${(/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, pageWidth / 2, y3, { align: "center" });
-        y3 += 10;
         const activeShoppingList = shoppingList.filter((item) => !item.hidden);
-        doc2.setFont("helvetica", "bold");
-        doc2.setFontSize(11);
-        doc2.text("Shopping Summary", margin, y3);
-        y3 += 6;
-        doc2.setFont("helvetica", "normal");
-        doc2.setFontSize(9);
         const toBuyCount = activeShoppingList.filter((item) => !item.checked).length;
-        const boughtCount = activeShoppingList.filter((item) => item.checked).length;
-        doc2.text(`Total Planned Items: ${activeShoppingList.length} (${toBuyCount} to buy, ${boughtCount} completed)`, margin, y3);
-        y3 += 5;
-        doc2.text(`Total Estimated Budget: ${currency} ${shoppingBudgetSummary.totalEstimated.toLocaleString(void 0, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, margin, y3);
-        y3 += 5;
-        doc2.text(
-          `Purchased: ${currency} ${shoppingBudgetSummary.checkedEstimated.toLocaleString(void 0, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}  |  Remaining Needed: ${currency} ${(shoppingBudgetSummary.totalEstimated - shoppingBudgetSummary.checkedEstimated).toLocaleString(void 0, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
-          margin,
-          y3
-        );
-        y3 += 10;
-        const hasCategories = activeShoppingList.some((item) => item.categoryId && item.categoryId.trim() !== "");
-        doc2.setFont("helvetica", "bold");
-        doc2.setFontSize(11);
-        doc2.text("Items Checklist", margin, y3);
-        y3 += 6;
-        doc2.setFont("courier", "bold");
-        doc2.setFontSize(8);
-        doc2.text("ITEM NAME", margin, y3);
-        if (hasCategories) {
-          doc2.text("CATEGORY", margin + 55, y3);
-          doc2.text("QTY", margin + 95, y3);
-          doc2.text("EST. PRICE", margin + 120, y3);
-          doc2.text("STATUS", margin + 155, y3);
-        } else {
-          doc2.text("QTY", margin + 90, y3);
-          doc2.text("EST. PRICE", margin + 125, y3);
-          doc2.text("STATUS", margin + 160, y3);
-        }
-        y3 += 2;
-        doc2.line(margin, y3, pageWidth - margin, y3);
-        y3 += 4;
-        doc2.setFont("courier", "normal");
+        const totalEstimated = shoppingBudgetSummary.totalEstimated;
+        const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
+        const dateStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        const boxX = margin;
+        const boxWidth = pageWidth - margin * 2;
+        const drawPageHeader = (isFirstPage) => {
+          doc2.setFillColor(2, 132, 199);
+          doc2.rect(0, 0, pageWidth, 3.5, "F");
+          if (isFirstPage) {
+            y3 = 15;
+            doc2.setFont("helvetica", "bold");
+            doc2.setFontSize(16);
+            doc2.setTextColor(2, 132, 199);
+            doc2.text("SHOPPING LIST REPORT", pageWidth / 2, y3, { align: "center" });
+            y3 += 6;
+            if (business == null ? void 0 : business.name) {
+              doc2.setFont("helvetica", "bold");
+              doc2.setFontSize(12);
+              doc2.setTextColor(30, 41, 59);
+              doc2.text(business.name, pageWidth / 2, y3, { align: "center" });
+              y3 += 5.5;
+            }
+            doc2.setFont("helvetica", "normal");
+            doc2.setFontSize(8.5);
+            doc2.setTextColor(100, 116, 139);
+            doc2.text(`Generated: ${dateStr}`, pageWidth / 2, y3, { align: "center" });
+            y3 += 6.5;
+            const boxHeight = 17;
+            doc2.setFillColor(248, 250, 252);
+            doc2.setDrawColor(226, 232, 240);
+            doc2.setLineWidth(0.35);
+            doc2.roundedRect(boxX, y3, boxWidth, boxHeight, 3, 3, "FD");
+            const colW = boxWidth / 3;
+            doc2.setFont("helvetica", "bold");
+            doc2.setFontSize(7);
+            doc2.setTextColor(100, 116, 139);
+            doc2.text("TOTAL BUDGET", boxX + colW * 0.5, y3 + 6, { align: "center" });
+            doc2.setFontSize(10.5);
+            doc2.setTextColor(2, 132, 199);
+            doc2.text(`${currency} ${totalEstimated.toLocaleString()}`, boxX + colW * 0.5, y3 + 12.5, { align: "center" });
+            doc2.setDrawColor(226, 232, 240);
+            doc2.line(boxX + colW, y3 + 3, boxX + colW, y3 + boxHeight - 3);
+            doc2.setFontSize(7);
+            doc2.setTextColor(100, 116, 139);
+            doc2.text("COMPLETED", boxX + colW * 1.5, y3 + 6, { align: "center" });
+            doc2.setFontSize(10.5);
+            doc2.setTextColor(16, 185, 129);
+            doc2.text(`${currency} ${checkedEstimated.toLocaleString()}`, boxX + colW * 1.5, y3 + 12.5, { align: "center" });
+            doc2.line(boxX + colW * 2, y3 + 3, boxX + colW * 2, y3 + boxHeight - 3);
+            doc2.setFontSize(7);
+            doc2.setTextColor(100, 116, 139);
+            doc2.text("TO BUY", boxX + colW * 2.5, y3 + 6, { align: "center" });
+            doc2.setFontSize(10.5);
+            doc2.setTextColor(245, 158, 11);
+            doc2.text(`${toBuyCount} items`, boxX + colW * 2.5, y3 + 12.5, { align: "center" });
+            y3 += boxHeight + 8;
+            doc2.setFont("helvetica", "bold");
+            doc2.setFontSize(10.5);
+            doc2.setTextColor(51, 65, 85);
+            doc2.text(`ITEMS CHECKLIST (${activeShoppingList.length})`, boxX, y3);
+            y3 += 2.5;
+            doc2.setDrawColor(203, 213, 225);
+            doc2.setLineWidth(0.4);
+            doc2.line(boxX, y3, boxX + boxWidth, y3);
+            y3 += 5;
+          } else {
+            y3 = 14;
+          }
+          doc2.setFont("helvetica", "bold");
+          doc2.setFontSize(7.5);
+          doc2.setTextColor(100, 116, 139);
+          doc2.text("ITEM NAME", boxX + 6, y3);
+          doc2.text("QTY", boxX + 78, y3, { align: "center" });
+          doc2.text("EST. PRICE", boxX + 114, y3, { align: "right" });
+          doc2.text("TOTAL BUDGET", boxX + 152, y3, { align: "right" });
+          doc2.text("STATUS", boxX + 172, y3, { align: "center" });
+          y3 += 2;
+          doc2.setDrawColor(226, 232, 240);
+          doc2.setLineWidth(0.25);
+          doc2.line(boxX, y3, boxX + boxWidth, y3);
+          y3 += 4.5;
+        };
+        drawPageHeader(true);
         if (activeShoppingList.length === 0) {
-          doc2.text("No shopping list items recorded.", margin, y3);
-          y3 += 6;
+          doc2.setFont("helvetica", "italic");
+          doc2.setFontSize(9);
+          doc2.setTextColor(148, 163, 184);
+          doc2.text("No shopping list items recorded.", pageWidth / 2, y3 + 8, { align: "center" });
+          y3 += 20;
         } else {
           activeShoppingList.forEach((item) => {
             var _a4;
-            if (y3 > 270) {
+            if (y3 > 265) {
               doc2.addPage();
-              y3 = 20;
-              doc2.setFont("courier", "bold");
-              doc2.text("ITEM NAME", margin, y3);
-              if (hasCategories) {
-                doc2.text("CATEGORY", margin + 55, y3);
-                doc2.text("QTY", margin + 95, y3);
-                doc2.text("EST. PRICE", margin + 120, y3);
-                doc2.text("STATUS", margin + 155, y3);
-              } else {
-                doc2.text("QTY", margin + 90, y3);
-                doc2.text("EST. PRICE", margin + 125, y3);
-                doc2.text("STATUS", margin + 160, y3);
-              }
-              y3 += 2;
-              doc2.line(margin, y3, pageWidth - margin, y3);
-              y3 += 4;
-              doc2.setFont("courier", "normal");
+              drawPageHeader(false);
             }
-            const itemName = item.name.length > (hasCategories ? 27 : 45) ? item.name.substring(0, hasCategories ? 25 : 43) + ".." : item.name;
-            const cat = ((_a4 = shoppingCategories.find((c3) => c3.id === item.categoryId)) == null ? void 0 : _a4.name) || "General";
-            const catName = cat.length > 20 ? cat.substring(0, 18) + ".." : cat;
-            const qtyStr = (item.quantity || "-").length > 12 ? (item.quantity || "-").substring(0, 10) + ".." : item.quantity || "-";
+            const cat = ((_a4 = shoppingCategories.find((c3) => c3.id === item.categoryId)) == null ? void 0 : _a4.name) || "";
+            const qtyNum = parseFloat(item.quantity) || 1;
+            const unitPrice = item.estimatedPrice || 0;
+            const totalCost = unitPrice * qtyNum;
             const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : "-";
-            const statusStr = item.checked ? "[X] BOUGHT" : "[ ] TO BUY";
-            doc2.text(itemName, margin, y3);
-            if (hasCategories) {
-              doc2.text(catName, margin + 55, y3);
-              doc2.text(qtyStr, margin + 95, y3);
-              doc2.text(priceStr, margin + 120, y3);
-              doc2.text(statusStr, margin + 155, y3);
+            const totalStr = totalCost > 0 ? `${currency} ${totalCost.toLocaleString()}` : "-";
+            const qtyDisplay = item.quantity && item.quantity.trim() !== "" ? item.quantity : "1";
+            const isDone = Boolean(item.checked);
+            const circleX = boxX + 2.5;
+            const circleY = y3 - 1;
+            if (isDone) {
+              doc2.setFillColor(16, 185, 129);
+              doc2.circle(circleX, circleY, 1.6, "F");
+              doc2.setDrawColor(255, 255, 255);
+              doc2.setLineWidth(0.4);
+              doc2.line(circleX - 0.7, circleY, circleX - 0.1, circleY + 0.7);
+              doc2.line(circleX - 0.1, circleY + 0.7, circleX + 0.8, circleY - 0.6);
             } else {
-              doc2.text(qtyStr, margin + 90, y3);
-              doc2.text(priceStr, margin + 125, y3);
-              doc2.text(statusStr, margin + 160, y3);
+              doc2.setDrawColor(203, 213, 225);
+              doc2.setLineWidth(0.3);
+              doc2.circle(circleX, circleY, 1.6, "S");
             }
-            y3 += 4;
-            if (item.notes && item.notes.trim() !== "") {
-              if (y3 > 270) {
-                doc2.addPage();
-                y3 = 20;
-              }
-              doc2.setFont("courier", "italic");
-              doc2.setFontSize(7.5);
+            doc2.setFont("helvetica", "bold");
+            doc2.setFontSize(9);
+            if (isDone) {
               doc2.setTextColor(100, 116, 139);
-              const noteText = `Note: ${item.notes.trim()}`;
-              const splitNotes = doc2.splitTextToSize(noteText, pageWidth - margin * 2 - 10);
-              doc2.text(splitNotes, margin + 4, y3);
-              y3 += splitNotes.length * 3.5 + 2;
-              doc2.setFont("courier", "normal");
-              doc2.setTextColor(0, 0, 0);
+            } else {
+              doc2.setTextColor(15, 23, 42);
             }
+            const nameLine = doc2.splitTextToSize(item.name, 68)[0];
+            doc2.text(nameLine, boxX + 6, y3);
+            let detailParts = [];
+            if (cat && cat !== "General") detailParts.push(`Category: ${cat}`);
+            if (item.notes && item.notes.trim() !== "") detailParts.push(`Note: ${item.notes.trim()}`);
+            const hasDetails = detailParts.length > 0;
+            if (hasDetails) {
+              doc2.setFont("helvetica", "italic");
+              doc2.setFontSize(7.2);
+              doc2.setTextColor(100, 116, 139);
+              const detailLine = doc2.splitTextToSize(detailParts.join("  •  "), 68)[0];
+              doc2.text(detailLine, boxX + 6, y3 + 3.8);
+            }
+            doc2.setFont("helvetica", "normal");
+            doc2.setFontSize(8.5);
+            doc2.setTextColor(51, 65, 85);
+            doc2.text(qtyDisplay, boxX + 78, y3, { align: "center" });
+            doc2.setFont("helvetica", "normal");
+            doc2.setFontSize(8.5);
+            doc2.setTextColor(71, 85, 105);
+            doc2.text(priceStr, boxX + 114, y3, { align: "right" });
+            doc2.setFont("helvetica", "bold");
+            doc2.setFontSize(9);
+            if (isDone) {
+              doc2.setTextColor(16, 185, 129);
+            } else {
+              doc2.setTextColor(2, 132, 199);
+            }
+            doc2.text(totalStr, boxX + 152, y3, { align: "right" });
+            const badgeW = 19;
+            const badgeH = 4.8;
+            const badgeX = boxX + 162.5;
+            const badgeY = y3 - 3.4;
+            if (isDone) {
+              doc2.setFillColor(236, 253, 245);
+              doc2.setDrawColor(16, 185, 129);
+              doc2.setLineWidth(0.25);
+              doc2.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.4, 1.4, "FD");
+              doc2.setFont("helvetica", "bold");
+              doc2.setFontSize(6.8);
+              doc2.setTextColor(16, 185, 129);
+              doc2.text("BOUGHT", badgeX + badgeW / 2, y3 - 0.2, { align: "center" });
+            } else {
+              doc2.setFillColor(255, 251, 235);
+              doc2.setDrawColor(245, 158, 11);
+              doc2.setLineWidth(0.25);
+              doc2.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.4, 1.4, "FD");
+              doc2.setFont("helvetica", "bold");
+              doc2.setFontSize(6.8);
+              doc2.setTextColor(245, 158, 11);
+              doc2.text("TO BUY", badgeX + badgeW / 2, y3 - 0.2, { align: "center" });
+            }
+            const rowBottom = y3 + (hasDetails ? 6.5 : 4.5);
+            doc2.setDrawColor(241, 245, 249);
+            doc2.setLineWidth(0.2);
+            doc2.line(boxX, rowBottom, boxX + boxWidth, rowBottom);
+            y3 = rowBottom + 4.5;
           });
         }
+        doc2.setFont("helvetica", "normal");
+        doc2.setFontSize(8.5);
+        doc2.setTextColor(148, 163, 184);
+        doc2.text("Powered by Brivu Business Manager", pageWidth / 2, 287, { align: "center" });
         const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
         const pdfFilename2 = `Shopping_List_${timestamp}.pdf`;
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Shopping List", { folder: "reports" });
@@ -147221,7 +147342,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-BNNbnOw7.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-CdkhNw0c.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

@@ -2374,12 +2374,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       // High DPI Canvas setup
       const canvas = document.createElement('canvas');
       const width = 800;
-      let estimatedHeight = 330;
+      let estimatedHeight = 350;
       if (activeItems.length === 0) {
         estimatedHeight += 100;
       } else {
+        estimatedHeight += 35; // table headers row
         activeItems.forEach((item) => {
-          estimatedHeight += item.notes ? 72 : 54;
+          estimatedHeight += item.notes ? 65 : 52;
         });
       }
       estimatedHeight += 60; // footer
@@ -2516,7 +2517,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       ctx.lineTo(boxX + boxWidth, curY);
       ctx.stroke();
 
-      curY += 20;
+      curY += 18;
 
       if (activeItems.length === 0) {
         ctx.textAlign = 'center';
@@ -2525,9 +2526,37 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         ctx.fillText('No shopping list items recorded.', width / 2, curY + 30);
         curY += 60;
       } else {
+        // Table Header Row: ITEM NAME | QTY | EST. PRICE | TOTAL BUDGET | STATUS
+        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'left';
+        ctx.fillText('ITEM NAME', boxX + 26, curY);
+        ctx.textAlign = 'center';
+        ctx.fillText('QTY', boxX + 310, curY);
+        ctx.textAlign = 'right';
+        ctx.fillText('EST. PRICE', boxX + 440, curY);
+        ctx.fillText('TOTAL BUDGET', boxX + 580, curY);
+        ctx.textAlign = 'center';
+        ctx.fillText('STATUS', boxX + 695, curY);
+
+        curY += 6;
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(boxX, curY);
+        ctx.lineTo(boxX + boxWidth, curY);
+        ctx.stroke();
+
+        curY += 18;
+
         activeItems.forEach((item) => {
           const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || '';
+          const qtyNum = parseFloat(item.quantity) || 1;
+          const unitPrice = item.estimatedPrice || 0;
+          const totalCost = unitPrice * qtyNum;
           const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : '-';
+          const totalStr = totalCost > 0 ? `${currency} ${totalCost.toLocaleString()}` : '-';
+          const qtyDisplay = item.quantity && item.quantity.trim() !== '' ? item.quantity : '1';
           const isDone = Boolean(item.checked);
 
           // Checkbox circle
@@ -2552,47 +2581,58 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           // Item Name
           ctx.textAlign = 'left';
           ctx.fillStyle = isDone ? '#64748b' : '#0f172a';
-          ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+          ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
           ctx.fillText(item.name, boxX + 26, curY + 6);
 
-          // Details: Category, Qty, Note
+          // Details: Category, Note
           let detailParts: string[] = [];
           if (cat) detailParts.push(`Category: ${cat}`);
-          if (item.quantity) detailParts.push(`Qty: ${item.quantity}`);
           if (item.notes) detailParts.push(`Note: ${item.notes}`);
 
           if (detailParts.length > 0) {
             ctx.fillStyle = '#64748b';
             ctx.font = '11px system-ui, -apple-system, sans-serif';
-            ctx.fillText(detailParts.join('  •  '), boxX + 26, curY + 24);
+            ctx.fillText(detailParts.join('  •  '), boxX + 26, curY + 22);
           }
 
-          // Price (Right side)
+          // QTY (Centered)
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#334155';
+          ctx.font = '12px system-ui, -apple-system, sans-serif';
+          ctx.fillText(qtyDisplay, boxX + 310, curY + 6);
+
+          // EST. PRICE (Unit Price, right-aligned)
           ctx.textAlign = 'right';
-          ctx.fillStyle = isDone ? '#0284c7' : '#0f172a';
+          ctx.fillStyle = '#475569';
+          ctx.font = '12px system-ui, -apple-system, sans-serif';
+          ctx.fillText(priceStr, boxX + 440, curY + 6);
+
+          // TOTAL BUDGET (Line Total, right-aligned, bold)
+          ctx.textAlign = 'right';
+          ctx.fillStyle = isDone ? '#10b981' : '#0284c7';
           ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
-          ctx.fillText(priceStr, boxX + boxWidth, curY + 6);
+          ctx.fillText(totalStr, boxX + 580, curY + 6);
 
           // Status Badge Pill
           const statusText = isDone ? 'BOUGHT' : 'TO BUY';
           const statusColor = isDone ? '#10b981' : '#f59e0b';
           const statusBg = isDone ? '#ecfdf5' : '#fffbeb';
           const badgeWidth = 62;
-          drawRoundRect(boxX + boxWidth - badgeWidth, curY + 12, badgeWidth, 18, 6, statusBg, statusColor);
+          drawRoundRect(boxX + 664, curY - 6, badgeWidth, 20, 6, statusBg, statusColor);
           ctx.textAlign = 'center';
           ctx.fillStyle = statusColor;
           ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
-          ctx.fillText(statusText, boxX + boxWidth - badgeWidth / 2, curY + 24);
+          ctx.fillText(statusText, boxX + 664 + badgeWidth / 2, curY + 7);
 
           // Line separator
-          curY += item.notes ? 46 : 38;
+          curY += (item.notes || cat) ? 46 : 38;
           ctx.strokeStyle = '#f1f5f9';
           ctx.lineWidth = 1;
           ctx.beginPath();
           ctx.moveTo(boxX, curY);
           ctx.lineTo(boxX + boxWidth, curY);
           ctx.stroke();
-          curY += 12;
+          curY += 14;
         });
       }
 
@@ -2917,137 +2957,250 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       // 1. SHOPPING LIST REPORT (ONLY SHOPPING LIST ITEMS)
       // -------------------------------------------------------------
       if (section === 'shoppingList') {
-        const reportTitle = 'SHOPPING LIST REPORT';
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(16);
-        doc.text(reportTitle, pageWidth / 2, y, { align: 'center' });
-        y += 7;
-
-        if (business?.name) {
-          doc.setFontSize(11);
-          doc.setFont('helvetica', 'bold');
-          doc.text(business.name, pageWidth / 2, y, { align: 'center' });
-          y += 5;
-        }
-
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, pageWidth / 2, y, { align: 'center' });
-        y += 10;
-
-        // Shopping List Summary (strictly active non-hidden items)
         const activeShoppingList = shoppingList.filter((item) => !item.hidden);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('Shopping Summary', margin, y);
-        y += 6;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
         const toBuyCount = activeShoppingList.filter((item) => !item.checked).length;
-        const boughtCount = activeShoppingList.filter((item) => item.checked).length;
-        doc.text(`Total Planned Items: ${activeShoppingList.length} (${toBuyCount} to buy, ${boughtCount} completed)`, margin, y);
-        y += 5;
-        doc.text(`Total Estimated Budget: ${currency} ${shoppingBudgetSummary.totalEstimated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, margin, y);
-        y += 5;
-        doc.text(
-          `Purchased: ${currency} ${shoppingBudgetSummary.checkedEstimated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}  |  Remaining Needed: ${currency} ${(shoppingBudgetSummary.totalEstimated - shoppingBudgetSummary.checkedEstimated).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
-          margin,
-          y
-        );
-        y += 10;
+        const totalEstimated = shoppingBudgetSummary.totalEstimated;
+        const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
+        const dateStr = new Date().toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
 
-        // Check if any active item uses categories
-        const hasCategories = activeShoppingList.some((item) => item.categoryId && item.categoryId.trim() !== '');
+        const boxX = margin;
+        const boxWidth = pageWidth - margin * 2;
 
-        // Shopping List Table
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('Items Checklist', margin, y);
-        y += 6;
-        doc.setFont('courier', 'bold');
-        doc.setFontSize(8);
+        const drawPageHeader = (isFirstPage: boolean) => {
+          // Top accent bar
+          doc.setFillColor(2, 132, 199);
+          doc.rect(0, 0, pageWidth, 3.5, 'F');
 
-        doc.text('ITEM NAME', margin, y);
-        if (hasCategories) {
-          doc.text('CATEGORY', margin + 55, y);
-          doc.text('QTY', margin + 95, y);
-          doc.text('EST. PRICE', margin + 120, y);
-          doc.text('STATUS', margin + 155, y);
-        } else {
-          doc.text('QTY', margin + 90, y);
-          doc.text('EST. PRICE', margin + 125, y);
-          doc.text('STATUS', margin + 160, y);
-        }
+          if (isFirstPage) {
+            y = 15;
+            // Title
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(16);
+            doc.setTextColor(2, 132, 199);
+            doc.text('SHOPPING LIST REPORT', pageWidth / 2, y, { align: 'center' });
+            y += 6;
 
-        y += 2;
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 4;
+            // Business name
+            if (business?.name) {
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(12);
+              doc.setTextColor(30, 41, 59);
+              doc.text(business.name, pageWidth / 2, y, { align: 'center' });
+              y += 5.5;
+            }
 
-        doc.setFont('courier', 'normal');
+            // Generated date
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Generated: ${dateStr}`, pageWidth / 2, y, { align: 'center' });
+            y += 6.5;
+
+            // 3-Column Summary Cards Box
+            const boxHeight = 17;
+            doc.setFillColor(248, 250, 252);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.35);
+            doc.roundedRect(boxX, y, boxWidth, boxHeight, 3, 3, 'FD');
+
+            const colW = boxWidth / 3;
+
+            // Col 1: Total Budget
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text('TOTAL BUDGET', boxX + colW * 0.5, y + 6, { align: 'center' });
+            doc.setFontSize(10.5);
+            doc.setTextColor(2, 132, 199);
+            doc.text(`${currency} ${totalEstimated.toLocaleString()}`, boxX + colW * 0.5, y + 12.5, { align: 'center' });
+
+            // Divider 1
+            doc.setDrawColor(226, 232, 240);
+            doc.line(boxX + colW, y + 3, boxX + colW, y + boxHeight - 3);
+
+            // Col 2: Completed
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text('COMPLETED', boxX + colW * 1.5, y + 6, { align: 'center' });
+            doc.setFontSize(10.5);
+            doc.setTextColor(16, 185, 129);
+            doc.text(`${currency} ${checkedEstimated.toLocaleString()}`, boxX + colW * 1.5, y + 12.5, { align: 'center' });
+
+            // Divider 2
+            doc.line(boxX + colW * 2, y + 3, boxX + colW * 2, y + boxHeight - 3);
+
+            // Col 3: To Buy
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text('TO BUY', boxX + colW * 2.5, y + 6, { align: 'center' });
+            doc.setFontSize(10.5);
+            doc.setTextColor(245, 158, 11);
+            doc.text(`${toBuyCount} items`, boxX + colW * 2.5, y + 12.5, { align: 'center' });
+
+            y += boxHeight + 8;
+
+            // Section Header
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.setTextColor(51, 65, 85);
+            doc.text(`ITEMS CHECKLIST (${activeShoppingList.length})`, boxX, y);
+            y += 2.5;
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.4);
+            doc.line(boxX, y, boxX + boxWidth, y);
+            y += 5;
+          } else {
+            y = 14;
+          }
+
+          // Table Headers Row: ITEM NAME | QTY | EST. PRICE | TOTAL BUDGET | STATUS
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text('ITEM NAME', boxX + 6, y);
+          doc.text('QTY', boxX + 78, y, { align: 'center' });
+          doc.text('EST. PRICE', boxX + 114, y, { align: 'right' });
+          doc.text('TOTAL BUDGET', boxX + 152, y, { align: 'right' });
+          doc.text('STATUS', boxX + 172, y, { align: 'center' });
+
+          y += 2;
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.25);
+          doc.line(boxX, y, boxX + boxWidth, y);
+          y += 4.5;
+        };
+
+        drawPageHeader(true);
 
         if (activeShoppingList.length === 0) {
-          doc.text('No shopping list items recorded.', margin, y);
-          y += 6;
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(9);
+          doc.setTextColor(148, 163, 184);
+          doc.text('No shopping list items recorded.', pageWidth / 2, y + 8, { align: 'center' });
+          y += 20;
         } else {
           activeShoppingList.forEach((item) => {
-            if (y > 270) {
+            if (y > 265) {
               doc.addPage();
-              y = 20;
-              doc.setFont('courier', 'bold');
-              doc.text('ITEM NAME', margin, y);
-              if (hasCategories) {
-                doc.text('CATEGORY', margin + 55, y);
-                doc.text('QTY', margin + 95, y);
-                doc.text('EST. PRICE', margin + 120, y);
-                doc.text('STATUS', margin + 155, y);
-              } else {
-                doc.text('QTY', margin + 90, y);
-                doc.text('EST. PRICE', margin + 125, y);
-                doc.text('STATUS', margin + 160, y);
-              }
-              y += 2;
-              doc.line(margin, y, pageWidth - margin, y);
-              y += 4;
-              doc.setFont('courier', 'normal');
+              drawPageHeader(false);
             }
-            const itemName = item.name.length > (hasCategories ? 27 : 45) ? item.name.substring(0, hasCategories ? 25 : 43) + '..' : item.name;
-            const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || 'General';
-            const catName = cat.length > 20 ? cat.substring(0, 18) + '..' : cat;
-            const qtyStr = (item.quantity || '-').length > 12 ? (item.quantity || '-').substring(0, 10) + '..' : (item.quantity || '-');
+
+            const cat = shoppingCategories.find((c) => c.id === item.categoryId)?.name || '';
+            const qtyNum = parseFloat(item.quantity) || 1;
+            const unitPrice = item.estimatedPrice || 0;
+            const totalCost = unitPrice * qtyNum;
             const priceStr = item.estimatedPrice ? `${currency} ${item.estimatedPrice.toLocaleString()}` : '-';
-            const statusStr = item.checked ? '[X] BOUGHT' : '[ ] TO BUY';
+            const totalStr = totalCost > 0 ? `${currency} ${totalCost.toLocaleString()}` : '-';
+            const qtyDisplay = item.quantity && item.quantity.trim() !== '' ? item.quantity : '1';
+            const isDone = Boolean(item.checked);
 
-            doc.text(itemName, margin, y);
-            if (hasCategories) {
-              doc.text(catName, margin + 55, y);
-              doc.text(qtyStr, margin + 95, y);
-              doc.text(priceStr, margin + 120, y);
-              doc.text(statusStr, margin + 155, y);
+            // Checkbox Circle
+            const circleX = boxX + 2.5;
+            const circleY = y - 1;
+            if (isDone) {
+              doc.setFillColor(16, 185, 129);
+              doc.circle(circleX, circleY, 1.6, 'F');
+              doc.setDrawColor(255, 255, 255);
+              doc.setLineWidth(0.4);
+              doc.line(circleX - 0.7, circleY, circleX - 0.1, circleY + 0.7);
+              doc.line(circleX - 0.1, circleY + 0.7, circleX + 0.8, circleY - 0.6);
             } else {
-              doc.text(qtyStr, margin + 90, y);
-              doc.text(priceStr, margin + 125, y);
-              doc.text(statusStr, margin + 160, y);
+              doc.setDrawColor(203, 213, 225);
+              doc.setLineWidth(0.3);
+              doc.circle(circleX, circleY, 1.6, 'S');
             }
-            y += 4;
 
-            // Render notes if present
-            if (item.notes && item.notes.trim() !== '') {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.setFont('courier', 'italic');
-              doc.setFontSize(7.5);
+            // Item Name (Max width 68mm)
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            if (isDone) {
               doc.setTextColor(100, 116, 139);
-              const noteText = `Note: ${item.notes.trim()}`;
-              const splitNotes = doc.splitTextToSize(noteText, pageWidth - margin * 2 - 10);
-              doc.text(splitNotes, margin + 4, y);
-              y += splitNotes.length * 3.5 + 2;
-              doc.setFont('courier', 'normal');
-              doc.setTextColor(0, 0, 0);
+            } else {
+              doc.setTextColor(15, 23, 42);
             }
+            const nameLine = doc.splitTextToSize(item.name, 68)[0];
+            doc.text(nameLine, boxX + 6, y);
+
+            // Subtitle: Category & Note
+            let detailParts: string[] = [];
+            if (cat && cat !== 'General') detailParts.push(`Category: ${cat}`);
+            if (item.notes && item.notes.trim() !== '') detailParts.push(`Note: ${item.notes.trim()}`);
+            const hasDetails = detailParts.length > 0;
+            if (hasDetails) {
+              doc.setFont('helvetica', 'italic');
+              doc.setFontSize(7.2);
+              doc.setTextColor(100, 116, 139);
+              const detailLine = doc.splitTextToSize(detailParts.join('  •  '), 68)[0];
+              doc.text(detailLine, boxX + 6, y + 3.8);
+            }
+
+            // QTY (Centered)
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(51, 65, 85);
+            doc.text(qtyDisplay, boxX + 78, y, { align: 'center' });
+
+            // EST. PRICE (Unit Price, right-aligned)
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(priceStr, boxX + 114, y, { align: 'right' });
+
+            // TOTAL BUDGET (Line Total, bold, right-aligned)
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            if (isDone) {
+              doc.setTextColor(16, 185, 129);
+            } else {
+              doc.setTextColor(2, 132, 199);
+            }
+            doc.text(totalStr, boxX + 152, y, { align: 'right' });
+
+            // STATUS (Rounded Pill Badge)
+            const badgeW = 19;
+            const badgeH = 4.8;
+            const badgeX = boxX + 162.5;
+            const badgeY = y - 3.4;
+            if (isDone) {
+              doc.setFillColor(236, 253, 245);
+              doc.setDrawColor(16, 185, 129);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.4, 1.4, 'FD');
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(6.8);
+              doc.setTextColor(16, 185, 129);
+              doc.text('BOUGHT', badgeX + badgeW / 2, y - 0.2, { align: 'center' });
+            } else {
+              doc.setFillColor(255, 251, 235);
+              doc.setDrawColor(245, 158, 11);
+              doc.setLineWidth(0.25);
+              doc.roundedRect(badgeX, badgeY, badgeW, badgeH, 1.4, 1.4, 'FD');
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(6.8);
+              doc.setTextColor(245, 158, 11);
+              doc.text('TO BUY', badgeX + badgeW / 2, y - 0.2, { align: 'center' });
+            }
+
+            // Row divider line
+            const rowBottom = y + (hasDetails ? 6.5 : 4.5);
+            doc.setDrawColor(241, 245, 249);
+            doc.setLineWidth(0.2);
+            doc.line(boxX, rowBottom, boxX + boxWidth, rowBottom);
+            y = rowBottom + 4.5;
           });
         }
+
+        // Footer on bottom of current page
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Powered by Brivu Business Manager', pageWidth / 2, 287, { align: 'center' });
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const pdfFilename = `Shopping_List_${timestamp}.pdf`;

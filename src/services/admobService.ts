@@ -5,15 +5,18 @@ import {
   InterstitialAdPluginEvents,
 } from '@capacitor-community/admob';
 import { StorageService } from './storage';
+import { NativeAdBridge } from './nativeAdBridge';
 
 /**
  * Official Google AdMob Test Ad Unit IDs for Android
- * https://developers.google.com/admob/android/test-ads
+ * As specified in user requirements:
+ * Native Advanced Demo ID: ca-app-pub-3940256099942544/2247696110
+ * Interstitial Demo ID: ca-app-pub-394025609942544/1033173712
  */
 export const ADMOB_TEST_UNITS = {
   APP_ID: 'ca-app-pub-394025609942544~3347511713',
   INTERSTITIAL: 'ca-app-pub-394025609942544/1033173712',
-  NATIVE_ADVANCED: 'ca-app-pub-394025609942544/2247696110',
+  NATIVE_ADVANCED: 'ca-app-pub-3940256099942544/2247696110',
 } as const;
 
 export const ADMOB_UNITS = ADMOB_TEST_UNITS;
@@ -69,7 +72,9 @@ class AdMobManager {
   async preloadNativeAdvanced() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
-      await this.initNativeAdMob();
+      await NativeAdBridge.loadNativeAd({
+        adUnitId: ADMOB_UNITS.NATIVE_ADVANCED,
+      });
       console.info(`[AdMob Native] Real AdMob Native Advanced Test Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
     } catch (err) {
       console.warn('[AdMob Native] Preload native advanced note:', err);
@@ -79,8 +84,8 @@ class AdMobManager {
   async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
-      await this.initNativeAdMob();
-      console.info(`[AdMob Native] Requesting live test Native Advanced Ad from AdMob SDK: ${unitId}`);
+      await NativeAdBridge.showNativeAd();
+      console.info(`[AdMob Native] Real AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
     } catch (err) {
       console.warn('[AdMob Native] Native ad request note:', err);
     }
