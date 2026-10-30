@@ -1,4 +1,4 @@
-import { W as WebPlugin, A as AdmobConsentStatus } from "./index-D1C3U4Zq.js";
+import { W as WebPlugin, A as AdmobConsentStatus } from "./index-BPOhE_CS.js";
 var PrivacyOptionsRequirementStatus;
 (function(PrivacyOptionsRequirementStatus2) {
   PrivacyOptionsRequirementStatus2["NOT_REQUIRED"] = "NOT_REQUIRED";

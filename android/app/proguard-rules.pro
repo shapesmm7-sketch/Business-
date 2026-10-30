@@ -32,14 +32,16 @@
 -keep class com.android.vending.billing.** { *; }
 -dontwarn com.android.billingclient.**
 
-# 5. Google Mobile Ads (AdMob)
--keep public class com.google.android.gms.ads.** {
-   public *;
-}
--keep public class com.google.ads.** {
-   public *;
-}
+# 5. Google Mobile Ads (AdMob) & UMP
+-keep class com.google.android.gms.ads.** { *; }
+-keep interface com.google.android.gms.ads.** { *; }
+-keep class com.google.ads.** { *; }
+-keep class com.google.android.ump.** { *; }
 -dontwarn com.google.android.gms.ads.**
+-dontwarn com.google.android.ump.**
+
+# App Native Ad Plugin, Views & Layouts
+-keep class com.brivu.myapp.** { *; }
 
 # 6. AndroidX & WebKit
 -keep public class * extends android.app.Activity

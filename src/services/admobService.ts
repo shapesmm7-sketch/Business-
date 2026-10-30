@@ -29,9 +29,10 @@ class AdMobManager {
   constructor() {
     this.initNativeAdMob();
     if (typeof window !== 'undefined') {
+      this.preloadNativeAdvanced().catch(() => {});
       setTimeout(() => {
         this.pingAdMobRequests().catch(() => {});
-      }, 1000);
+      }, 100);
       this.startAdMobHeartbeat();
     }
   }
@@ -108,18 +109,20 @@ class AdMobManager {
     if (this.isInitialized) return;
     if (Capacitor.isNativePlatform()) {
       try {
-        await AdMob.initialize();
+        await AdMob.initialize({
+          initializeForTesting: false,
+        });
         this.isInitialized = true;
 
         try {
           AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-            console.info('[AdMob Native] Live Interstitial Ad loaded from Google AdMob servers');
+            console.info('[AdMob Live] Interstitial Ad loaded from Google AdMob servers');
           });
           AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
             this.preloadInterstitial().catch(() => {});
           });
           AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-            console.warn('[AdMob Native] Interstitial load status:', err);
+            console.warn('[AdMob Live] Interstitial load note:', err);
           });
         } catch (_) {}
 

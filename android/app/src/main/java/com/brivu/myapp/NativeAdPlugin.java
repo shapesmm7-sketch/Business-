@@ -36,6 +36,17 @@ public class NativeAdPlugin extends Plugin {
     // Live Google AdMob Native Ad Unit ID
     public static final String NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/9630358215";
 
+    private static volatile NativeAdPlugin instance;
+
+    public static NativeAdPlugin getInstance() {
+        return instance;
+    }
+
+    public NativeAdPlugin() {
+        super();
+        instance = this;
+    }
+
     private FrameLayout adContainer;
     private NativeAd currentNativeAd;
     private boolean isLoading = false;
@@ -51,6 +62,7 @@ public class NativeAdPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
+        instance = this;
         new Handler(Looper.getMainLooper()).post(this::initAdContainer);
     }
 
@@ -100,8 +112,12 @@ public class NativeAdPlugin extends Plugin {
                 Log.i(TAG, "AdMob Native ad container initialized for dynamic inline placement");
             }
 
-            // Begin loading ad
-            requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
+            if (currentNativeAd != null) {
+                displayNativeAd(currentNativeAd);
+            } else {
+                // Begin loading native ad on startup
+                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error initializing ad container", e);
         }
@@ -118,7 +134,7 @@ public class NativeAdPlugin extends Plugin {
             if (isLoading) return;
             isLoading = true;
 
-            Log.i(TAG, "Requesting Real AdMob Native Advanced Test Ad with Unit ID: " + adUnitId);
+            Log.i(TAG, "Requesting Live Google AdMob Native Advanced Ad with Unit ID: " + adUnitId);
 
             AdLoader adLoader = new AdLoader.Builder(activity, adUnitId)
                 .forNativeAd(new NativeAd.OnNativeAdLoadedListener() {
@@ -166,7 +182,12 @@ public class NativeAdPlugin extends Plugin {
      */
     private void displayNativeAd(final NativeAd nativeAd) {
         final Activity activity = getActivity();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed() || adContainer == null) return;
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+
+        if (adContainer == null) {
+            initAdContainer();
+        }
+        if (adContainer == null) return;
 
         activity.runOnUiThread(() -> {
             try {

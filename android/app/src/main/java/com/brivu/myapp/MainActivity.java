@@ -39,6 +39,7 @@ public class MainActivity extends BridgeActivity {
                 public void onInitializationComplete(@NonNull InitializationStatus initializationStatus) {
                     Log.i(TAG, "Google MobileAds initialized successfully on Android. Ready for Interstitial and Native Advanced ads.");
                     preloadInterstitial();
+                    preloadNativeAd();
                     startPeriodicAdPings();
                 }
             });
@@ -51,6 +52,21 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         preloadInterstitial();
+        preloadNativeAd();
+    }
+
+    /**
+     * Request authentic Native Advanced ad on startup
+     */
+    private void preloadNativeAd() {
+        try {
+            if (NativeAdPlugin.getInstance() != null) {
+                NativeAdPlugin.getInstance().requestAdMobNativeAd(NativeAdPlugin.NATIVE_AD_UNIT_ID, false);
+                Log.i(TAG, "Native Advanced ad requested on startup from MainActivity.");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "preloadNativeAd note: " + e.getMessage());
+        }
     }
 
     /**
@@ -86,7 +102,8 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void run() {
                 preloadInterstitial();
-                adHandler.postDelayed(this, 60000); // Check interstitial status every 60s
+                preloadNativeAd();
+                adHandler.postDelayed(this, 60000); // Check interstitial & native status every 60s
             }
         };
         adHandler.postDelayed(adPingRunnable, 60000);

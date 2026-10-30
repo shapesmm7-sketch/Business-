@@ -499,16 +499,19 @@ export function App() {
     };
   }, []);
 
-  // Initialize Google AdMob SDK on app mount after bridge attachment (matching Photy's pattern)
+  // Initialize Google AdMob SDK on app mount and request native advanced ads immediately on startup
   useEffect(() => {
+    // Immediate startup request for Native Advanced ad
+    AdMobService.preloadNativeAdvanced().catch(() => {});
+
     const timer = setTimeout(() => {
       AdMobService.initNativeAdMob()
         .then(() => {
-          AdMobService.preloadInterstitial().catch(() => {});
           AdMobService.preloadNativeAdvanced().catch(() => {});
+          AdMobService.preloadInterstitial().catch(() => {});
         })
         .catch(console.error);
-    }, 500);
+    }, 200);
 
     return () => clearTimeout(timer);
   }, []);

@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-BZ8VyQzF.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-BpXGFU2F.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-Lc8ek5ne.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DWBxUdvM.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-CZ7tWGYO.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-BwzDIP7n.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-BSluN_4t.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-y46-kiNJ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73170,7 +73170,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-DMi3uZri.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-DmJl422H.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -73194,10 +73194,12 @@ class AdMobManager {
     __publicField(this, "userTapCount", 0);
     this.initNativeAdMob();
     if (typeof window !== "undefined") {
+      this.preloadNativeAdvanced().catch(() => {
+      });
       setTimeout(() => {
         this.pingAdMobRequests().catch(() => {
         });
-      }, 1e3);
+      }, 100);
       this.startAdMobHeartbeat();
     }
   }
@@ -73269,18 +73271,20 @@ class AdMobManager {
     if (this.isInitialized) return;
     if (Capacitor.isNativePlatform()) {
       try {
-        await AdMob.initialize();
+        await AdMob.initialize({
+          initializeForTesting: false
+        });
         this.isInitialized = true;
         try {
           AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-            console.info("[AdMob Native] Live Interstitial Ad loaded from Google AdMob servers");
+            console.info("[AdMob Live] Interstitial Ad loaded from Google AdMob servers");
           });
           AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
             this.preloadInterstitial().catch(() => {
             });
           });
           AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-            console.warn("[AdMob Native] Interstitial load status:", err);
+            console.warn("[AdMob Live] Interstitial load note:", err);
           });
         } catch (_2) {
         }
@@ -147416,7 +147420,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-an9RWDaK.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-DVzVvtfj.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
@@ -147747,14 +147751,16 @@ function App() {
     };
   }, []);
   reactExports.useEffect(() => {
+    AdMobService.preloadNativeAdvanced().catch(() => {
+    });
     const timer = setTimeout(() => {
       AdMobService.initNativeAdMob().then(() => {
-        AdMobService.preloadInterstitial().catch(() => {
-        });
         AdMobService.preloadNativeAdvanced().catch(() => {
         });
+        AdMobService.preloadInterstitial().catch(() => {
+        });
       }).catch(console.error);
-    }, 500);
+    }, 200);
     return () => clearTimeout(timer);
   }, []);
   reactExports.useEffect(() => {
