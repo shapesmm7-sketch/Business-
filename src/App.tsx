@@ -18,6 +18,7 @@ import { AppLockScreen } from './components/AppLockScreen';
 import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
+import { QrCodeScannerModal } from './components/QrCodeScannerModal';
 import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
@@ -331,6 +332,7 @@ export function App() {
   // Current receipt or invoice for preview or editing
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
+  const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -1109,6 +1111,7 @@ export function App() {
             setLockConfig(StorageService.getAppLockConfig());
             setIsAppLocked(true);
           }}
+          onOpenQrScanner={() => setIsQrScannerOpen(true)}
         />
       )}
 
@@ -1128,6 +1131,7 @@ export function App() {
               setIsCustomerViewMode(false);
               setActiveScreen('qr-customer-view');
             }}
+            onOpenQrScanner={() => setIsQrScannerOpen(true)}
           />
         )}
 
@@ -1382,6 +1386,7 @@ export function App() {
               setIsCustomerViewMode(false);
               setActiveScreen('qr-customer-view');
             }}
+            onOpenQrScanner={() => setIsQrScannerOpen(true)}
           />
         )}
 
@@ -1509,6 +1514,61 @@ export function App() {
         folderName={appDownloadModal.folderName}
         documentType={appDownloadModal.documentType}
         documentNumber={appDownloadModal.documentNumber}
+      />
+
+      {/* Unified QR Code Scanner Modal (Camera & Live Viewfinder) */}
+      <QrCodeScannerModal
+        isOpen={isQrScannerOpen}
+        onClose={() => setIsQrScannerOpen(false)}
+        onOpenReceipt={(rec) => {
+          setSelectedReceipt(rec);
+          setActiveScreen('preview-receipt');
+        }}
+        onOpenCustomerPage={(page, tab, itemId, photoId) => {
+          setActiveCustomerPage(page);
+          setCustomerInitialTab(tab || 'menu');
+          setCustomerInitialItemId(itemId);
+          setCustomerInitialPhotoId(photoId);
+          setIsCustomerViewMode(false);
+          setActiveScreen('qr-customer-view');
+        }}
+        onOpenInventoryProduct={(_prod) => {
+          handleNavigateToInventory('stock');
+        }}
+        onCreateReceiptWithItem={(item) => {
+          const draftReceipt: Partial<Receipt> = {
+            items: [
+              {
+                id: `item-${Date.now()}`,
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                subtotal: item.unitPrice * item.quantity,
+              },
+            ],
+            subtotal: item.unitPrice * item.quantity,
+            total: item.unitPrice * item.quantity,
+          };
+          setDuplicateSeed(draftReceipt as Receipt);
+          setActiveScreen('create-receipt');
+        }}
+        onCreateInvoiceWithItem={(item) => {
+          const draftInvoice: Partial<Receipt> = {
+            items: [
+              {
+                id: `item-${Date.now()}`,
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                subtotal: item.unitPrice * item.quantity,
+              },
+            ],
+            subtotal: item.unitPrice * item.quantity,
+            total: item.unitPrice * item.quantity,
+          };
+          setDuplicateSeed(draftInvoice as Receipt);
+          setActiveScreen('create-invoice');
+        }}
       />
 
     </div>

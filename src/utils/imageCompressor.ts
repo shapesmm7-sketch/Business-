@@ -176,7 +176,7 @@ export async function optimizeImageForR2(
   const nameLower = (filename || '').toLowerCase();
 
   let maxBytes = 250 * 1024;
-  let targetQuality = 0.75;
+  let targetQuality = 0.80;
 
   if (
     fLower.includes('logo') ||
@@ -187,13 +187,15 @@ export async function optimizeImageForR2(
     nameLower.includes('signature') ||
     nameLower.includes('favicon')
   ) {
-    // Business logos (inside app): target 30–80 KB, max 100 KB
+    // Business logos (inside app): target 30–80 KB, maximum 100 KB
     maxBytes = 100 * 1024;
-    targetQuality = 0.70;
+    targetQuality = 0.80;
   } else if (
     fLower.includes('inventory') ||
     fLower.includes('product') ||
     fLower.includes('sales') ||
+    fLower.includes('item') ||
+    fLower.includes('stock') ||
     fLower.includes('expenses') ||
     fLower.includes('debts') ||
     fLower.includes('shopping') ||
@@ -201,13 +203,13 @@ export async function optimizeImageForR2(
     fLower.includes('agent') ||
     fLower.includes('worker')
   ) {
-    // Product photos (inside app): target 100–150 KB, max 250 KB
-    maxBytes = 250 * 1024;
-    targetQuality = 0.72;
-  } else {
-    // QR menu photos (web): target 150–200 KB, max 250 KB
+    // Product photos (inside app): target 100–150 KB, maximum 250 KB
     maxBytes = 250 * 1024;
     targetQuality = 0.78;
+  } else {
+    // QR menu photos (web): target 150–200 KB, maximum 250 KB
+    maxBytes = 250 * 1024;
+    targetQuality = 0.82;
   }
 
   const compressedDataUrl = await compressDataUrl(dataUrl, {

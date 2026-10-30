@@ -43,6 +43,7 @@ import {
   Smartphone,
   Store,
   ArrowUpRight,
+  Scan,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -66,6 +67,7 @@ interface QRCodeHostingScreenProps {
     initialItemId?: string,
     initialPhotoId?: string
   ) => void;
+  onOpenQrScanner?: () => void;
 }
 
 export type QRScope = 'all' | 'menu' | 'about' | 'photos';
@@ -167,6 +169,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   business,
   onNavigateHome,
   onOpenCustomerView,
+  onOpenQrScanner,
 }) => {
   // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | null (defaults to null so the Quick Actions overview screen shows first)
   const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | null>(null);
@@ -896,28 +899,28 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setUploadProgressText('Uploading...');
 
     try {
-      const compressed = await compressImageFile(file, options);
-      if (compressed) {
-        // Direct upload to Cloud Storage first
-        try {
-          const uploadRes = await CloudflareService.uploadFile({
-            data: compressed,
-            filename: `qr_${label.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.jpg`,
-            mimeType: 'image/jpeg',
-            folder: 'photos',
-          });
-          if (uploadRes.success && uploadRes.url) {
-            callback(uploadRes.url);
-            showToast('Saved');
-            return;
-          }
-        } catch (cfErr) {
-          console.warn('Cloudflare upload note:', cfErr);
-        }
-        // Fallback to compressed image string so user is never blocked
-        callback(compressed);
+      // CloudflareService.uploadFile automatically runs optimizeImageForR2 on device before network upload
+      const uploadRes = await CloudflareService.uploadFile({
+        data: file,
+        filename: `qr_${label.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.${file.type.split('/')[1] || 'jpg'}`,
+        mimeType: file.type || 'image/jpeg',
+        folder: label.toLowerCase().includes('logo') ? 'logo' : label.toLowerCase().includes('item') ? 'product' : 'photos',
+      });
+
+      if (uploadRes.success && uploadRes.url) {
+        callback(uploadRes.url);
         showToast('Saved');
+        return;
       }
+
+      // Local fallback with compressed WebP data URL
+      const compressed = await compressImageFile(file, {
+        maxDimension: 1200,
+        mimeType: 'image/webp',
+        maxBytes: label.toLowerCase().includes('logo') ? 100 * 1024 : 250 * 1024,
+      });
+      callback(compressed);
+      showToast('Saved');
     } catch (err) {
       console.warn('Image compression failed, trying lightweight fallback:', err);
       try {
@@ -1351,28 +1354,28 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1920, quality: 0.95, maxBytes: 1500 * 1024, fileTypeLabel: 'Photo' })}
+        onChange={(e) => handleFileUpload(e, handlePhotoFileUploaded, { maxDimension: 1200, fileTypeLabel: 'Photo' })}
       />
       <input
         ref={itemPhotoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1600, quality: 0.95, fileTypeLabel: 'Item Photo' })}
+        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1200, fileTypeLabel: 'Item Photo' })}
       />
       <input
         ref={coverInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1920, quality: 0.95, fileTypeLabel: 'Cover Banner' })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1200, fileTypeLabel: 'Cover Banner' })}
       />
       <input
         ref={logoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1024, quality: 0.95, fileTypeLabel: 'Business Logo' })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1200, fileTypeLabel: 'Business Logo' })}
       />
 
       {/* Uploading Overlay */}
@@ -1411,47 +1414,63 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           <span>Home</span>
         </button>
 
-        {qrCategory === 'business' && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          {onOpenQrScanner && (
             <button
               type="button"
-              onClick={() => {
-                const freshPages = StorageService.getHostedQRPages();
-                setPages(freshPages);
-                if (activePage) {
-                  CloudflareService.saveSingleQrPage(activePage, ownerEmail).catch(() => {});
-                }
-                CloudflareService.syncAllToCloudflare().catch(() => {});
-                showToast('Data synced & saved!');
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
-              title="Save and sync all QR code files, stand PDFs, photos, and items"
+              onClick={onOpenQrScanner}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800/80 text-teal-700 dark:text-teal-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-2xs"
+              title="Scan QR Code using Capacitor Camera"
             >
-              <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Cloud Sync</span>
+              <Scan className="w-3.5 h-3.5" />
+              <span>Scan QR</span>
             </button>
+          )}
 
-            {isSaved && (
-              <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Saved!
-              </span>
-            )}
+          {qrCategory === 'business' && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  const freshPages = StorageService.getHostedQRPages();
+                  setPages(freshPages);
+                  if (activePage) {
+                    CloudflareService.saveSingleQrPage(activePage, ownerEmail).catch(() => {});
+                  }
+                  CloudflareService.syncAllToCloudflare().catch(() => {});
+                  showToast('Data synced & saved!');
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
+                title="Save and sync all QR code files, stand PDFs, photos, and items"
+              >
+                <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Cloud Sync</span>
+              </button>
 
-            <button
-              onClick={() => onOpenCustomerView(activePage)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition cursor-pointer"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Preview</span>
-            </button>
-          </div>
-        )}
+              {isSaved && (
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Saved!
+                </span>
+              )}
+
+              <button
+                onClick={() => onOpenCustomerView(activePage)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Preview</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* OVERVIEW SCREEN: When qrCategory is null, show the clean Quick Actions dashboard matching screenshot */}
       {qrCategory === null && (
         <div className="space-y-3 pt-1 animate-fadeIn">
+
+
           <div className="flex items-center justify-between px-1">
             <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               {t('quick_actions', business?.language) || 'QUICK ACTIONS'}

@@ -10,6 +10,7 @@ import {
   ArrowRight,
   CheckCircle2,
 } from 'lucide-react';
+import { Scan } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, Receipt, InventoryTab } from '../types';
 import { t } from '../utils/i18n';
 import { AdMobNativeAd } from './AdMobNativeAd';
@@ -32,6 +33,7 @@ interface HomeScreenProps {
   onSelectReceipt: (receipt: Receipt) => void;
   onShareReceipt: (receipt: Receipt) => void;
   onOpenCustomerView?: (page: any) => void;
+  onOpenQrScanner?: () => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -39,6 +41,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   stats,
   onNavigate,
   onNavigateToInventory,
+  onOpenQrScanner,
 }) => {
   const lang = business?.language;
 

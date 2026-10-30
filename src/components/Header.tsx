@@ -23,6 +23,7 @@ import {
   LogIn,
   LogOut,
   User as UserIcon,
+  Scan,
 } from 'lucide-react';
 import { ActiveScreen, BusinessProfile, AppLockConfig, WorkOSUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -48,6 +49,7 @@ interface HeaderProps {
   onNavigate: (screen: ActiveScreen) => void;
   onUpdateBusiness?: (business: BusinessProfile) => void;
   onLockApp?: () => void;
+  onOpenQrScanner?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -62,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   onUpdateBusiness,
   onLockApp,
+  onOpenQrScanner,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -365,6 +368,8 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
 
+
+
             {/* Notifications Button with numeric badge */}
             <button
               id="btn-header-notifications"
@@ -558,6 +563,8 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1 pt-1">
                 {t('sections_and_management', lang)}
               </div>
+
+
 
               {menuSections.map((sec) => {
                 const Icon = sec.icon;
