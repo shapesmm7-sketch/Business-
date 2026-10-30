@@ -108,9 +108,7 @@ class AdMobManager {
     if (this.isInitialized) return;
     if (Capacitor.isNativePlatform()) {
       try {
-        await AdMob.initialize({
-          initializeForTesting: false,
-        });
+        await AdMob.initialize();
         this.isInitialized = true;
 
         try {

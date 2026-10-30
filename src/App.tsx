@@ -499,9 +499,18 @@ export function App() {
     };
   }, []);
 
-  // Initialize Google AdMob SDK immediately on app mount to send live ad requests
+  // Initialize Google AdMob SDK on app mount after bridge attachment (matching Photy's pattern)
   useEffect(() => {
-    AdMobService.initNativeAdMob().catch(() => {});
+    const timer = setTimeout(() => {
+      AdMobService.initNativeAdMob()
+        .then(() => {
+          AdMobService.preloadInterstitial().catch(() => {});
+          AdMobService.preloadNativeAdvanced().catch(() => {});
+        })
+        .catch(console.error);
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Setup global interaction tracking on mount

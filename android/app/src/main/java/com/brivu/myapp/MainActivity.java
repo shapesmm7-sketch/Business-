@@ -6,7 +6,6 @@ import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
-import com.getcapacitor.community.admob.AdMob;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.LoadAdError;
 import com.google.android.gms.ads.MobileAds;
@@ -25,8 +24,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Register AdMob and NativeAd plugins with Capacitor Bridge
-        registerPlugin(AdMob.class);
+        // Register custom NativeAd plugin with Capacitor Bridge
+        // Note: @capacitor-community/admob is auto-registered by Capacitor
         registerPlugin(NativeAdPlugin.class);
 
         super.onCreate(savedInstanceState);

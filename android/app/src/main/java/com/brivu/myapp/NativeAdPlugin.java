@@ -143,7 +143,15 @@ public class NativeAdPlugin extends Plugin {
                             + ", Message=" + loadAdError.getMessage()
                             + ", Domain=" + loadAdError.getDomain());
 
-
+                        // Automatically retry once after 5s if failed on cold launch
+                        if (!isRetry) {
+                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                if (currentNativeAd == null && !isLoading) {
+                                    Log.i(TAG, "Retrying AdMob Native Advanced request...");
+                                    requestAdMobNativeAd(adUnitId, true);
+                                }
+                            }, 5000);
+                        }
                     }
                 })
                 .withNativeAdOptions(new NativeAdOptions.Builder().build())
