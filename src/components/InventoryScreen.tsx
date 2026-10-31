@@ -2366,76 +2366,127 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       showToast('Generating shopping list photo...');
       await ensureStoragePermission();
 
-      const activeItems = shoppingList.filter((item) => !item.hidden);
-      const totalEstimated = shoppingBudgetSummary.totalEstimated;
-      const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
+      const activeItems = shoppingList.filter((item) => {
+        if (item.hidden) return false;
+        if (shoppingCategoryFilter !== 'all' && item.categoryId !== shoppingCategoryFilter) return false;
+        if (shoppingFilter === 'unchecked' && item.checked) return false;
+        if (shoppingFilter === 'checked' && !item.checked) return false;
+        if (shoppingSearchQuery.trim()) {
+          const q = shoppingSearchQuery.toLowerCase().trim();
+          const matchName = item.name.toLowerCase().includes(q);
+          const matchNotes = item.notes && item.notes.toLowerCase().includes(q);
+          if (!matchName && !matchNotes) return false;
+        }
+        return true;
+      });
+
+      const activeCategoryObj = shoppingCategoryFilter !== 'all' ? shoppingCategories.find(c => c.id === shoppingCategoryFilter) : null;
+      const categoryName = activeCategoryObj ? activeCategoryObj.name.toUpperCase() : null;
+
+      const totalEstimated = activeItems.reduce((acc, item) => acc + ((item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1)), 0);
+      const checkedEstimated = activeItems.filter(i => i.checked).reduce((acc, item) => acc + ((item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1)), 0);
       const toBuyCount = activeItems.filter((item) => !item.checked).length;
 
-      // High DPI Canvas setup
+      // Ultra-High Resolution Canvas setup (3x scale factor: 2400px width for crystal clear photo quality)
       const canvas = document.createElement('canvas');
-      const width = 800;
-      let estimatedHeight = 350;
+      const scale = 3;
+      const baseWidth = 800;
+      const width = baseWidth * scale; // 2400px
+      
+      let baseHeight = 350;
+      if (categoryName) baseHeight += 30; // space for category banner
       if (activeItems.length === 0) {
-        estimatedHeight += 100;
+        baseHeight += 100;
       } else {
-        estimatedHeight += 35; // table headers row
+        baseHeight += 35; // table headers row
         activeItems.forEach((item) => {
-          estimatedHeight += item.notes ? 65 : 52;
+          baseHeight += item.notes ? 65 : 52;
         });
       }
-      estimatedHeight += 60; // footer
+      baseHeight += 60; // footer
+      const height = baseHeight * scale;
 
       canvas.width = width;
-      canvas.height = estimatedHeight;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         showToast('Could not initialize canvas');
         return;
       }
 
+      ctx.scale(scale, scale);
+
       // 1. Background
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, estimatedHeight);
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
 
       // Top gradient bar
-      const grad = ctx.createLinearGradient(0, 0, width, 0);
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
       grad.addColorStop(0, '#0284c7');
       grad.addColorStop(1, '#0ea5e9');
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, width, 8);
+      ctx.fillRect(0, 0, baseWidth, 8);
 
-      let curY = 40;
+      let curY = 32;
 
-      // 2. Title
+      // 2. Category Badge on Top (if selected)
+      if (categoryName) {
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        const catTextWidth = ctx.measureText(categoryName).width;
+        const catWidth = catTextWidth + 32;
+        const catX = (baseWidth - catWidth) / 2;
+        
+        ctx.fillStyle = '#e0f2fe';
+        ctx.beginPath();
+        ctx.roundRect(catX, curY, catWidth, 24, 12);
+        ctx.fill();
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#0369a1';
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        ctx.fillText(categoryName, baseWidth / 2, curY + 16);
+
+        curY += 45; // Give clean vertical gap so title never overlaps
+      }
+
+      // Title
       ctx.textAlign = 'center';
       ctx.fillStyle = '#0284c7';
       ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-      ctx.fillText('SHOPPING LIST REPORT', width / 2, curY);
+      ctx.fillText('SHOPPING LIST REPORT', baseWidth / 2, curY);
 
       curY += 26;
       if (business?.name) {
         ctx.fillStyle = '#1e293b';
         ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
-        ctx.fillText(business.name, width / 2, curY);
+        ctx.fillText(business.name, baseWidth / 2, curY);
         curY += 22;
       }
 
+      // Date and Time string with AM/PM format (no 'Generated' word)
       ctx.fillStyle = '#64748b';
       ctx.font = '12px system-ui, -apple-system, sans-serif';
-      const dateStr = new Date().toLocaleDateString('en-GB', {
+      const now = new Date();
+      const dateFormatted = now.toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
       });
-      ctx.fillText(`Generated: ${dateStr}`, width / 2, curY);
+      const timeFormatted = now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+      ctx.fillText(`${dateFormatted}, ${timeFormatted}`, baseWidth / 2, curY);
 
-      curY += 25;
+      curY += 28;
 
       // 3. Summary Cards Box
       const boxX = 36;
-      const boxWidth = width - boxX * 2;
+      const boxWidth = baseWidth - boxX * 2;
       const boxHeight = 74;
 
       const drawRoundRect = (x: number, y: number, w: number, h: number, r: number, fill: string, stroke?: string) => {
@@ -2535,7 +2586,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         ctx.fillText('QTY', boxX + 310, curY);
         ctx.textAlign = 'right';
         ctx.fillText('EST. PRICE', boxX + 440, curY);
-        ctx.fillText('TOTAL BUDGET', boxX + 580, curY);
+        ctx.fillText('TOTAL', boxX + 580, curY);
         ctx.textAlign = 'center';
         ctx.fillText('STATUS', boxX + 695, curY);
 
@@ -2584,9 +2635,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
           ctx.fillText(item.name, boxX + 26, curY + 6);
 
-          // Details: Category, Note
+          // Details: Note only (Category names omitted from shopping list)
           let detailParts: string[] = [];
-          if (cat) detailParts.push(`Category: ${cat}`);
           if (item.notes) detailParts.push(`Note: ${item.notes}`);
 
           if (detailParts.length > 0) {
@@ -2641,7 +2691,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       ctx.textAlign = 'center';
       ctx.fillStyle = '#94a3b8';
       ctx.font = '11px system-ui, -apple-system, sans-serif';
-      ctx.fillText('Powered by Brivu Business Manager', width / 2, curY);
+      ctx.fillText('Powered by Brivu app', baseWidth / 2, curY);
 
       // Save image
       const dataUrl = canvas.toDataURL('image/png', 1.0);
@@ -2681,6 +2731,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 15;
       let y = 20;
+
+      const applyReportFooter = (pdfDoc: jsPDF) => {
+        const pageCount = pdfDoc.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          pdfDoc.setPage(i);
+          pdfDoc.setFont('helvetica', 'normal');
+          pdfDoc.setFontSize(8.5);
+          pdfDoc.setTextColor(148, 163, 184);
+          pdfDoc.text('Powered by Brivu app', pageWidth / 2, 287, { align: 'center' });
+        }
+      };
 
       // -------------------------------------------------------------
       // 0B. STAFF DIRECTORY REPORT
@@ -2770,6 +2831,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Staff_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -2857,6 +2919,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Agents_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -2944,6 +3007,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Client_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Client Directory', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -2957,17 +3021,38 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       // 1. SHOPPING LIST REPORT (ONLY SHOPPING LIST ITEMS)
       // -------------------------------------------------------------
       if (section === 'shoppingList') {
-        const activeShoppingList = shoppingList.filter((item) => !item.hidden);
+        const activeShoppingList = shoppingList.filter((item) => {
+          if (item.hidden) return false;
+          if (shoppingCategoryFilter !== 'all' && item.categoryId !== shoppingCategoryFilter) return false;
+          if (shoppingFilter === 'unchecked' && item.checked) return false;
+          if (shoppingFilter === 'checked' && !item.checked) return false;
+          if (shoppingSearchQuery.trim()) {
+            const q = shoppingSearchQuery.toLowerCase().trim();
+            const matchName = item.name.toLowerCase().includes(q);
+            const matchNotes = item.notes && item.notes.toLowerCase().includes(q);
+            if (!matchName && !matchNotes) return false;
+          }
+          return true;
+        });
+
+        const activeCategoryObj = shoppingCategoryFilter !== 'all' ? shoppingCategories.find(c => c.id === shoppingCategoryFilter) : null;
+        const pdfCategoryTitle = activeCategoryObj ? ` (${activeCategoryObj.name.toUpperCase()})` : '';
+
         const toBuyCount = activeShoppingList.filter((item) => !item.checked).length;
-        const totalEstimated = shoppingBudgetSummary.totalEstimated;
-        const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
-        const dateStr = new Date().toLocaleDateString('en-GB', {
+        const totalEstimated = activeShoppingList.reduce((acc, item) => acc + ((item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1)), 0);
+        const checkedEstimated = activeShoppingList.filter(i => i.checked).reduce((acc, item) => acc + ((item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1)), 0);
+        const now = new Date();
+        const pdfDateFormatted = now.toLocaleDateString('en-GB', {
           day: '2-digit',
           month: 'short',
           year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
         });
+        const pdfTimeFormatted = now.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        const dateStr = `${pdfDateFormatted}, ${pdfTimeFormatted}`;
 
         const boxX = margin;
         const boxWidth = pageWidth - margin * 2;
@@ -2978,13 +3063,29 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           doc.rect(0, 0, pageWidth, 3.5, 'F');
 
           if (isFirstPage) {
-            y = 15;
+            y = 12;
+
+            if (activeCategoryObj) {
+              const catNameUpper = activeCategoryObj.name.toUpperCase();
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(8);
+              const textW = doc.getTextWidth(catNameUpper);
+              const badgeW = textW + 12;
+              doc.setFillColor(224, 242, 254);
+              doc.setDrawColor(2, 132, 199);
+              doc.setLineWidth(0.3);
+              doc.roundedRect(pageWidth / 2 - badgeW / 2, y, badgeW, 5.5, 2, 2, 'FD');
+              doc.setTextColor(3, 105, 161);
+              doc.text(catNameUpper, pageWidth / 2, y + 3.8, { align: 'center' });
+              y += 10;
+            }
+
             // Title
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(16);
+            doc.setFontSize(15);
             doc.setTextColor(2, 132, 199);
             doc.text('SHOPPING LIST REPORT', pageWidth / 2, y, { align: 'center' });
-            y += 6;
+            y += 5.5;
 
             // Business name
             if (business?.name) {
@@ -2995,11 +3096,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               y += 5.5;
             }
 
-            // Generated date
+            // Date & Time string without 'Generated:' prefix
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(8.5);
             doc.setTextColor(100, 116, 139);
-            doc.text(`Generated: ${dateStr}`, pageWidth / 2, y, { align: 'center' });
+            doc.text(dateStr, pageWidth / 2, y, { align: 'center' });
             y += 6.5;
 
             // 3-Column Summary Cards Box
@@ -3066,7 +3167,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           doc.text('ITEM NAME', boxX + 6, y);
           doc.text('QTY', boxX + 78, y, { align: 'center' });
           doc.text('EST. PRICE', boxX + 114, y, { align: 'right' });
-          doc.text('TOTAL BUDGET', boxX + 152, y, { align: 'right' });
+          doc.text('TOTAL', boxX + 152, y, { align: 'right' });
           doc.text('STATUS', boxX + 172, y, { align: 'center' });
 
           y += 2;
@@ -3127,9 +3228,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             const nameLine = doc.splitTextToSize(item.name, 68)[0];
             doc.text(nameLine, boxX + 6, y);
 
-            // Subtitle: Category & Note
+            // Subtitle: Note only (Category names omitted from shopping list)
             let detailParts: string[] = [];
-            if (cat && cat !== 'General') detailParts.push(`Category: ${cat}`);
             if (item.notes && item.notes.trim() !== '') detailParts.push(`Note: ${item.notes.trim()}`);
             const hasDetails = detailParts.length > 0;
             if (hasDetails) {
@@ -3196,11 +3296,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           });
         }
 
-        // Footer on bottom of current page
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(148, 163, 184);
-        doc.text('Powered by Brivu Business Manager', pageWidth / 2, 287, { align: 'center' });
+        applyReportFooter(doc);
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const pdfFilename = `Shopping_List_${timestamp}.pdf`;
@@ -3309,6 +3405,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Sales_Report_${saleDateFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Sales Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -3420,6 +3517,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Stock Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -3521,6 +3619,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Expenses_Report_${expenseFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -3624,6 +3723,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         }
 
         const pdfFilename = `Debts_Report_${debtTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
+        applyReportFooter(doc);
         const res = await saveJsPdf(doc, pdfFilename, 'Debts Report', { folder: 'reports' });
         if (res.success) {
           showToast(res.message);
@@ -3875,6 +3975,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       });
 
       const pdfFilename = `Business_Report_${reportTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
+      applyReportFooter(doc);
       const res = await saveJsPdf(doc, pdfFilename, 'Business Report', { folder: 'reports' });
       if (res.success) {
         showToast(res.message);

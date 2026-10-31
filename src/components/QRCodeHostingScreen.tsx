@@ -577,20 +577,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
-    const scopeLabel = qrScope === 'all' ? 'All Pages' : qrScope === 'menu' ? 'Menu & Catalog' : qrScope === 'about' ? 'About & Profile' : 'Photos Gallery';
-    const qrName = tableNumberForPrint
-      ? `${activePage.title} - ${tableNumberForPrint}`
-      : `${activePage.title}`;
-    const subtitle = qrScope === 'all'
-      ? 'Point camera here for direct navigation to All Pages'
-      : `Point camera here to open ${scopeLabel}`;
+    const qrName = tableNumberForPrint || activePage.title;
+    const bizName = business.name || activePage.title;
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl,
       name: qrName,
-      subtitle,
-      tag: tableNumberForPrint || scopeLabel,
-      urlOrHandle: customerPageUrl,
+      businessName: bizName !== qrName ? bizName : undefined,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -598,7 +591,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       accentColor: activePage.accentColor || '#059669',
     });
 
-    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_${qrScope}_QRCode.png`;
+    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
@@ -614,16 +607,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
-    const scopeLabel = quickQrScope === 'all' ? 'All Pages' : quickQrScope === 'menu' ? 'Menu' : quickQrScope === 'about' ? 'About' : 'Photos';
-    const qrName = quickQrTableNumber
-      ? `${activePage.title} - ${scopeLabel} (${quickQrTableNumber})`
-      : `${activePage.title} - ${scopeLabel}`;
+    const qrName = quickQrTableNumber || activePage.title;
+    const bizName = business.name || activePage.title;
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: quickQrDataUrl,
       name: qrName,
-      subtitle: `Quick Scan QR Code (${scopeLabel})`,
-      tag: quickQrTableNumber || scopeLabel,
-      urlOrHandle: QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail),
+      businessName: bizName !== qrName ? bizName : undefined,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -741,9 +730,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: itemQrDataUrl,
       name: qrName,
-      subtitle: `${activePage.title} • ${activePage.currency} ${itemQrModalItem.price.toLocaleString()}`,
-      tag: itemQrModalItem.category || 'Menu Item',
-      urlOrHandle: QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -818,13 +804,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const photoTitle = photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo';
     const qrName = photoQrTableNumber
       ? `${photoTitle} (${photoQrTableNumber})`
-      : `${activePage.title} - ${photoTitle}`;
+      : photoTitle;
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: photoQrDataUrl,
       name: qrName,
-      subtitle: 'Scan with phone camera to view full photo',
-      tag: photoQrTableNumber || 'Gallery Photo',
-      urlOrHandle: QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,

@@ -7416,6 +7416,16 @@
     color: var(--color-slate-400);
   }
 
+  .text-slate-400\/80 {
+    color: #90a1b9cc;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .text-slate-400\/80 {
+      color: color-mix(in oklab, var(--color-slate-400) 80%, transparent);
+    }
+  }
+
   .text-slate-500 {
     color: var(--color-slate-500);
   }

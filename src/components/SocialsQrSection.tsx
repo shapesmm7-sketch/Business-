@@ -609,22 +609,15 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
     const defaultTitle = isAllSelected
-      ? 'our social media platforms'
+      ? 'Social Media Hub'
       : (activeItem?.title || 'Social QR');
-    const qrName = tableNumberForPrint
-      ? `${defaultTitle} - ${tableNumberForPrint}`
-      : defaultTitle;
-    const defaultSubtitle = isAllSelected
-      ? `Connect on all ${items.length} social channels`
-      : (activeItem?.usernameOrPhone || activeItem?.ctaText || 'Scan to Connect');
-    const defaultTag = tableNumberForPrint || (isAllSelected ? 'ALL SOCIAL CHANNELS' : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'SOCIAL').toUpperCase());
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || '';
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: defaultSubtitle,
-      tag: defaultTag,
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : undefined,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,

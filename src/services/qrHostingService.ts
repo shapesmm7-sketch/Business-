@@ -1154,7 +1154,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Powered by Brivu • ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text(`Powered by Brivu app • ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     return await saveJsPdf(doc, options.filename, options.documentTitle, { folder: 'qr_stands' });
   }
@@ -1376,7 +1376,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Powered by Brivu app', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeItemName}_Item_QR_Poster.pdf`;
@@ -1549,7 +1549,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu QR Hosting', pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Powered by Brivu app', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safePhotoName}_Photo_QR_Poster.pdf`;
@@ -1557,11 +1557,14 @@ export class QRHostingService {
   }
 
   /**
-   * Generates a high-resolution PNG image with the QR Code and its Name prominently displayed on top
+   * Generates a high-resolution PNG image where:
+   * - Business Name is rendered OUTSIDE the box on top (if provided/distinct)
+   * - ONLY the QR Code Name is rendered INSIDE the box pill badge above the QR code
    */
   static async generateNamedQrPng(options: {
     qrDataUrl: string;
     name: string;
+    businessName?: string;
     subtitle?: string;
     tag?: string;
     urlOrHandle?: string;
@@ -1586,86 +1589,55 @@ export class QRHostingService {
 
       const canvasWidth = 1080;
       const primaryColor = options.darkColor || '#0f172a';
-      const accent = options.accentColor || '#059669';
       const lightBg = options.lightColor || '#ffffff';
       const boxBg = options.boxBgColor || lightBg;
       const boxBorder = options.boxBorderColor && options.boxBorderColor !== 'transparent'
         ? options.boxBorderColor
         : null;
 
-      // Create measurement canvas
+      // Clean up names so business name is NEVER mixed into the pill badge
+      let rawName = (options.name || 'QR Code').trim();
+      let rawBizName = (options.businessName || '').trim();
+
+      // If name contains " - ", separate them or strip out business name
+      if (rawName.includes(' - ')) {
+        const parts = rawName.split(' - ');
+        if (!rawBizName && parts.length > 1) {
+          rawBizName = parts[0].trim();
+        }
+        rawName = parts[parts.length - 1].trim(); // strictly the QR Code Name
+      } else if (rawBizName && rawName.toLowerCase().startsWith(rawBizName.toLowerCase())) {
+        const stripped = rawName.slice(rawBizName.length).replace(/^[\s\-(]+/, '').replace(/\)+$/, '').trim();
+        if (stripped) {
+          rawName = stripped;
+        }
+      }
+
+      const topBizTitle = rawBizName;
+      const pillQrCodeName = rawName.toUpperCase();
+
+      // Measure top business title
       const testCanvas = document.createElement('canvas');
       testCanvas.width = canvasWidth;
-      testCanvas.height = 1200;
       const testCtx = testCanvas.getContext('2d');
-      if (!testCtx) return options.qrDataUrl;
 
-      // Word wrapping helper for title
-      const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
-        const words = text.split(/\s+/);
-        const lines: string[] = [];
-        let cur = '';
-        for (const w of words) {
-          const test = cur ? `${cur} ${w}` : w;
-          if (ctx.measureText(test).width > maxWidth && cur) {
-            lines.push(cur);
-            cur = w;
-          } else {
-            cur = test;
-          }
-        }
-        if (cur) lines.push(cur);
-        return lines.length > 0 ? lines : [text];
-      };
-
-      // Measure Title Lines
-      testCtx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      const titleLines = wrapText(testCtx, options.name || 'QR Code', 900);
-      const titleLineHeight = 56;
-      const titleBlockHeight = titleLines.length * titleLineHeight;
+      let topHeaderHeight = 0;
+      let topBizY = 60;
+      if (topBizTitle && testCtx) {
+        testCtx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        topHeaderHeight = 60;
+      }
 
       // Layout coordinates
-      let curY = 60;
-
-      // Optional Tag Badge
-      const hasTag = Boolean(options.tag && options.tag.trim());
-      const tagHeight = hasTag ? 46 : 0;
-      if (hasTag) {
-        curY += tagHeight + 16;
-      }
-
-      const titleY = curY;
-      curY += titleBlockHeight + 12;
-
-      // Subtitle
-      const hasSubtitle = Boolean(options.subtitle && options.subtitle.trim());
-      const subY = curY;
-      if (hasSubtitle) {
-        curY += 34 + 32;
-      } else {
-        curY += 24;
-      }
-
-      // QR Box Dimensions
       const qrSize = 720;
-      const boxPadding = 30;
-      const boxSize = qrSize + boxPadding * 2; // 780
-      const boxX = (canvasWidth - boxSize) / 2; // 150
-      const boxY = curY;
-      curY += boxSize + 36;
+      const boxPaddingX = 36;
+      const topBadgeSpace = 110; // Space for pill badge at the top inside the box
+      const boxWidth = qrSize + boxPaddingX * 2; // 792
+      const boxHeight = qrSize + topBadgeSpace + boxPaddingX; // 866
+      const boxX = (canvasWidth - boxWidth) / 2; // 144
+      const boxY = topHeaderHeight > 0 ? topBizY + topHeaderHeight + 20 : 70;
 
-      // Bottom URL / Note
-      const hasUrl = Boolean(options.urlOrHandle && options.urlOrHandle.trim());
-      const urlY = curY;
-      if (hasUrl) {
-        curY += 30 + 16;
-      }
-
-      // Footer brand
-      const footerY = curY;
-      curY += 40 + 40; // bottom padding
-
-      const canvasHeight = Math.max(1260, Math.ceil(curY));
+      const canvasHeight = Math.ceil(boxY + boxHeight + 110);
 
       // 2. Render Main Canvas
       const canvas = document.createElement('canvas');
@@ -1674,7 +1646,7 @@ export class QRHostingService {
       const ctx = canvas.getContext('2d');
       if (!ctx) return options.qrDataUrl;
 
-      // Canvas background (pure white for crisp print & digital share)
+      // Canvas background (pure white)
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
@@ -1700,96 +1672,75 @@ export class QRHostingService {
         c.closePath();
       };
 
-      // Draw Top Tag Badge if present
-      if (hasTag && options.tag) {
-        testCtx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        const tagText = options.tag.toUpperCase();
-        const tagTextWidth = testCtx.measureText(tagText).width;
-        const tagW = Math.max(140, tagTextWidth + 36);
-        const tagX = (canvasWidth - tagW) / 2;
-        const tagBadgeY = 56;
-
-        ctx.fillStyle = `${accent}14`;
-        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
-        ctx.fill();
-
-        ctx.strokeStyle = `${accent}40`;
-        ctx.lineWidth = 2;
-        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
-        ctx.stroke();
-
-        ctx.fillStyle = accent;
-        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(tagText, canvasWidth / 2, tagBadgeY + 20);
-      }
-
-      // Draw QR Code Name on Top (Primary Title)
-      ctx.fillStyle = primaryColor;
-      ctx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-
-      titleLines.forEach((line, idx) => {
-        ctx.fillText(line, canvasWidth / 2, titleY + idx * titleLineHeight);
-      });
-
-      // Draw Subtitle / Description if present
-      if (hasSubtitle && options.subtitle) {
-        ctx.fillStyle = '#64748b';
-        ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      // Draw Business Name OUTSIDE the box on top if present
+      if (topBizTitle) {
+        ctx.fillStyle = primaryColor;
+        ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(options.subtitle, canvasWidth / 2, subY);
+        ctx.fillText(topBizTitle, canvasWidth / 2, topBizY);
       }
 
-      // Draw QR Code Outer Frame Box
-      // Soft shadow
+      // Draw Main White Card Box Outer Container
       ctx.save();
       ctx.shadowColor = 'rgba(15, 23, 42, 0.08)';
-      ctx.shadowBlur = 32;
-      ctx.shadowOffsetY = 12;
+      ctx.shadowBlur = 36;
+      ctx.shadowOffsetY = 14;
 
       ctx.fillStyle = boxBg;
-      drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+      drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
       ctx.fill();
       ctx.restore();
 
-      // Box Border
+      // Card Box Border
       if (boxBorder) {
         ctx.strokeStyle = boxBorder;
         ctx.lineWidth = 6;
-        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
         ctx.stroke();
       } else {
-        ctx.strokeStyle = 'rgba(226, 232, 240, 0.8)';
-        ctx.lineWidth = 2;
-        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        ctx.strokeStyle = 'rgba(226, 232, 240, 0.85)';
+        ctx.lineWidth = 3;
+        drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
         ctx.stroke();
       }
 
-      // Draw QR Code Image inside Box
-      ctx.drawImage(qrImg, boxX + boxPadding, boxY + boxPadding, qrSize, qrSize);
+      // Draw Pill Badge INSIDE the Box above the QR Code (Contains ONLY QR Code Name)
+      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      const textMetrics = ctx.measureText(pillQrCodeName);
+      const pillWidth = Math.max(220, Math.min(boxWidth - 80, textMetrics.width + 64));
+      const pillHeight = 56;
+      const pillX = (canvasWidth - pillWidth) / 2;
+      const pillY = boxY + 32;
 
-      // Draw Bottom URL / Note
-      if (hasUrl && options.urlOrHandle) {
-        ctx.fillStyle = '#475569';
-        ctx.font = '600 22px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const displayUrl = options.urlOrHandle.length > 55
-          ? options.urlOrHandle.slice(0, 52) + '...'
-          : options.urlOrHandle;
-        ctx.fillText(displayUrl, canvasWidth / 2, urlY);
-      }
+      // Pill Background (Dark theme color or black)
+      ctx.fillStyle = primaryColor;
+      drawRoundRect(ctx, pillX, pillY, pillWidth, pillHeight, 28);
+      ctx.fill();
 
-      // Subtle Footer instruction
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      // Pill Text (White bold centered)
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pillQrCodeName, canvasWidth / 2, pillY + pillHeight / 2 + 1);
+
+      // Draw QR Code Image inside Box (positioned under the pill badge)
+      const qrY = boxY + topBadgeSpace;
+      ctx.drawImage(qrImg, boxX + boxPaddingX, qrY, qrSize, qrSize);
+
+      // Draw Bottom Footer Notices on separate lines
+      const scanNoticeY = boxY + boxHeight + 24;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText('Point camera at code to scan • Brivu', canvasWidth / 2, footerY);
+      ctx.fillText('Point camera at code to scan', canvasWidth / 2, scanNoticeY);
+
+      const brandNoticeY = scanNoticeY + 32;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'italic 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('Powered by Brivu App', canvasWidth / 2, brandNoticeY);
 
       return canvas.toDataURL('image/png');
     } catch (err) {

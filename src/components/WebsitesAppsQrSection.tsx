@@ -342,22 +342,15 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
     const defaultTitle = isAllSelected
-      ? `${business.name || 'Business'} Websites & Apps Hub`
+      ? 'Websites & Apps Hub'
       : (activeItem?.title || 'Website QR');
-    const qrName = tableNumberForPrint
-      ? `${defaultTitle} - ${tableNumberForPrint}`
-      : defaultTitle;
-    const defaultSubtitle = isAllSelected
-      ? `All ${items.length} Websites, Apps & Online Booking Portals`
-      : (activeItem?.ctaText || 'Scan to Visit Website / App');
-    const defaultTag = tableNumberForPrint || (isAllSelected ? 'ALL IN ONE DIRECTORY' : (activeItem?.type.replace('_', ' ').toUpperCase() || 'WEBSITE'));
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || '';
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: defaultSubtitle,
-      tag: defaultTag,
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : undefined,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,

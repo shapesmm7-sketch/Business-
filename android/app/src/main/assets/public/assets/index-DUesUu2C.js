@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-C9s7fTAY.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-Bm109EgX.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-ZaeA9_7z.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DKNYO3Sv.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-sxSNo3Tp.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-BkdFmf7Y.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-B1Zpylsv.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-BMo5TUp4.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -67382,7 +67382,7 @@ class QRHostingService {
     doc2.setFont("helvetica", "italic");
     doc2.setFontSize(8);
     doc2.setTextColor(148, 163, 184);
-    doc2.text(`Powered by Brivu • ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: "center" });
+    doc2.text(`Powered by Brivu app • ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: "center" });
     return await saveJsPdf(doc2, options.filename, options.documentTitle, { folder: "qr_stands" });
   }
   /**
@@ -67551,7 +67551,7 @@ class QRHostingService {
     doc2.setFont("helvetica", "italic");
     doc2.setFontSize(8);
     doc2.setTextColor(148, 163, 184);
-    doc2.text("Powered by Brivu QR Hosting", pageWidth / 2, pageHeight - 20, { align: "center" });
+    doc2.text("Powered by Brivu app", pageWidth / 2, pageHeight - 20, { align: "center" });
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, "_");
     const pdfFilename = `${safeItemName}_Item_QR_Poster.pdf`;
     return await saveJsPdf(doc2, pdfFilename, `${item.name} QR Poster`, { folder: "qr_stands" });
@@ -67673,13 +67673,15 @@ class QRHostingService {
     doc2.setFont("helvetica", "italic");
     doc2.setFontSize(8);
     doc2.setTextColor(148, 163, 184);
-    doc2.text("Powered by Brivu QR Hosting", pageWidth / 2, pageHeight - 20, { align: "center" });
+    doc2.text("Powered by Brivu app", pageWidth / 2, pageHeight - 20, { align: "center" });
     const safePhotoName = (photo.title || photo.description || "Photo").replace(/[^a-zA-Z0-9]/g, "_");
     const pdfFilename = `${safePhotoName}_Photo_QR_Poster.pdf`;
     return await saveJsPdf(doc2, pdfFilename, "Photo QR Poster", { folder: "qr_stands" });
   }
   /**
-   * Generates a high-resolution PNG image with the QR Code and its Name prominently displayed on top
+   * Generates a high-resolution PNG image where:
+   * - Business Name is rendered OUTSIDE the box on top (if provided/distinct)
+   * - ONLY the QR Code Name is rendered INSIDE the box pill badge above the QR code
    */
   static async generateNamedQrPng(options) {
     if (typeof document === "undefined") {
@@ -67694,64 +67696,42 @@ class QRHostingService {
       });
       const canvasWidth = 1080;
       const primaryColor = options.darkColor || "#0f172a";
-      const accent = options.accentColor || "#059669";
       const lightBg = options.lightColor || "#ffffff";
       const boxBg = options.boxBgColor || lightBg;
       const boxBorder = options.boxBorderColor && options.boxBorderColor !== "transparent" ? options.boxBorderColor : null;
+      let rawName = (options.name || "QR Code").trim();
+      let rawBizName = (options.businessName || "").trim();
+      if (rawName.includes(" - ")) {
+        const parts = rawName.split(" - ");
+        if (!rawBizName && parts.length > 1) {
+          rawBizName = parts[0].trim();
+        }
+        rawName = parts[parts.length - 1].trim();
+      } else if (rawBizName && rawName.toLowerCase().startsWith(rawBizName.toLowerCase())) {
+        const stripped = rawName.slice(rawBizName.length).replace(/^[\s\-(]+/, "").replace(/\)+$/, "").trim();
+        if (stripped) {
+          rawName = stripped;
+        }
+      }
+      const topBizTitle = rawBizName;
+      const pillQrCodeName = rawName.toUpperCase();
       const testCanvas = document.createElement("canvas");
       testCanvas.width = canvasWidth;
-      testCanvas.height = 1200;
       const testCtx = testCanvas.getContext("2d");
-      if (!testCtx) return options.qrDataUrl;
-      const wrapText = (ctx2, text, maxWidth) => {
-        const words = text.split(/\s+/);
-        const lines = [];
-        let cur = "";
-        for (const w3 of words) {
-          const test = cur ? `${cur} ${w3}` : w3;
-          if (ctx2.measureText(test).width > maxWidth && cur) {
-            lines.push(cur);
-            cur = w3;
-          } else {
-            cur = test;
-          }
-        }
-        if (cur) lines.push(cur);
-        return lines.length > 0 ? lines : [text];
-      };
-      testCtx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      const titleLines = wrapText(testCtx, options.name || "QR Code", 900);
-      const titleLineHeight = 56;
-      const titleBlockHeight = titleLines.length * titleLineHeight;
-      let curY = 60;
-      const hasTag = Boolean(options.tag && options.tag.trim());
-      const tagHeight = hasTag ? 46 : 0;
-      if (hasTag) {
-        curY += tagHeight + 16;
-      }
-      const titleY = curY;
-      curY += titleBlockHeight + 12;
-      const hasSubtitle = Boolean(options.subtitle && options.subtitle.trim());
-      const subY = curY;
-      if (hasSubtitle) {
-        curY += 34 + 32;
-      } else {
-        curY += 24;
+      let topHeaderHeight = 0;
+      let topBizY = 60;
+      if (topBizTitle && testCtx) {
+        testCtx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        topHeaderHeight = 60;
       }
       const qrSize = 720;
-      const boxPadding = 30;
-      const boxSize = qrSize + boxPadding * 2;
-      const boxX = (canvasWidth - boxSize) / 2;
-      const boxY = curY;
-      curY += boxSize + 36;
-      const hasUrl = Boolean(options.urlOrHandle && options.urlOrHandle.trim());
-      const urlY = curY;
-      if (hasUrl) {
-        curY += 30 + 16;
-      }
-      const footerY = curY;
-      curY += 40 + 40;
-      const canvasHeight = Math.max(1260, Math.ceil(curY));
+      const boxPaddingX = 36;
+      const topBadgeSpace = 110;
+      const boxWidth = qrSize + boxPaddingX * 2;
+      const boxHeight = qrSize + topBadgeSpace + boxPaddingX;
+      const boxX = (canvasWidth - boxWidth) / 2;
+      const boxY = topHeaderHeight > 0 ? topBizY + topHeaderHeight + 20 : 70;
+      const canvasHeight = Math.ceil(boxY + boxHeight + 110);
       const canvas2 = document.createElement("canvas");
       canvas2.width = canvasWidth;
       canvas2.height = canvasHeight;
@@ -67772,73 +67752,58 @@ class QRHostingService {
         c3.quadraticCurveTo(x3, y3, x3 + r2, y3);
         c3.closePath();
       };
-      if (hasTag && options.tag) {
-        testCtx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        const tagText = options.tag.toUpperCase();
-        const tagTextWidth = testCtx.measureText(tagText).width;
-        const tagW = Math.max(140, tagTextWidth + 36);
-        const tagX = (canvasWidth - tagW) / 2;
-        const tagBadgeY = 56;
-        ctx.fillStyle = `${accent}14`;
-        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
-        ctx.fill();
-        ctx.strokeStyle = `${accent}40`;
-        ctx.lineWidth = 2;
-        drawRoundRect(ctx, tagX, tagBadgeY, tagW, 40, 20);
-        ctx.stroke();
-        ctx.fillStyle = accent;
-        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(tagText, canvasWidth / 2, tagBadgeY + 20);
-      }
-      ctx.fillStyle = primaryColor;
-      ctx.font = 'bold 46px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      titleLines.forEach((line, idx) => {
-        ctx.fillText(line, canvasWidth / 2, titleY + idx * titleLineHeight);
-      });
-      if (hasSubtitle && options.subtitle) {
-        ctx.fillStyle = "#64748b";
-        ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      if (topBizTitle) {
+        ctx.fillStyle = primaryColor;
+        ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(options.subtitle, canvasWidth / 2, subY);
+        ctx.fillText(topBizTitle, canvasWidth / 2, topBizY);
       }
       ctx.save();
       ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
-      ctx.shadowBlur = 32;
-      ctx.shadowOffsetY = 12;
+      ctx.shadowBlur = 36;
+      ctx.shadowOffsetY = 14;
       ctx.fillStyle = boxBg;
-      drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+      drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
       ctx.fill();
       ctx.restore();
       if (boxBorder) {
         ctx.strokeStyle = boxBorder;
         ctx.lineWidth = 6;
-        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
         ctx.stroke();
       } else {
-        ctx.strokeStyle = "rgba(226, 232, 240, 0.8)";
-        ctx.lineWidth = 2;
-        drawRoundRect(ctx, boxX, boxY, boxSize, boxSize, 32);
+        ctx.strokeStyle = "rgba(226, 232, 240, 0.85)";
+        ctx.lineWidth = 3;
+        drawRoundRect(ctx, boxX, boxY, boxWidth, boxHeight, 40);
         ctx.stroke();
       }
-      ctx.drawImage(qrImg, boxX + boxPadding, boxY + boxPadding, qrSize, qrSize);
-      if (hasUrl && options.urlOrHandle) {
-        ctx.fillStyle = "#475569";
-        ctx.font = "600 22px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        const displayUrl = options.urlOrHandle.length > 55 ? options.urlOrHandle.slice(0, 52) + "..." : options.urlOrHandle;
-        ctx.fillText(displayUrl, canvasWidth / 2, urlY);
-      }
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = '500 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      const textMetrics = ctx.measureText(pillQrCodeName);
+      const pillWidth = Math.max(220, Math.min(boxWidth - 80, textMetrics.width + 64));
+      const pillHeight = 56;
+      const pillX = (canvasWidth - pillWidth) / 2;
+      const pillY = boxY + 32;
+      ctx.fillStyle = primaryColor;
+      drawRoundRect(ctx, pillX, pillY, pillWidth, pillHeight, 28);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(pillQrCodeName, canvasWidth / 2, pillY + pillHeight / 2 + 1);
+      const qrY = boxY + topBadgeSpace;
+      ctx.drawImage(qrImg, boxX + boxPaddingX, qrY, qrSize, qrSize);
+      const scanNoticeY = boxY + boxHeight + 24;
+      ctx.fillStyle = "#64748b";
+      ctx.font = '500 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillText("Point camera at code to scan • Brivu", canvasWidth / 2, footerY);
+      ctx.fillText("Point camera at code to scan", canvasWidth / 2, scanNoticeY);
+      const brandNoticeY = scanNoticeY + 32;
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = 'italic 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText("Powered by Brivu App", canvasWidth / 2, brandNoticeY);
       return canvas2.toDataURL("image/png");
     } catch (err) {
       console.error("Failed to generate named QR PNG:", err);
@@ -73171,7 +73136,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-CSnfYGA-.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-C_Eneh5h.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -83085,7 +83050,8 @@ async function generateReceiptQrDataUrl(input, size = 240) {
 const ReceiptQrCodeSection = ({
   data,
   className = "",
-  size = 52
+  size = 52,
+  darkBg = false
 }) => {
   const [qrUrl, setQrUrl] = reactExports.useState("");
   reactExports.useEffect(() => {
@@ -83097,22 +83063,31 @@ const ReceiptQrCodeSection = ({
       isMounted = false;
     };
   }, [data]);
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `flex flex-col items-center justify-center shrink-0 ${className}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-1 bg-white rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs inline-block", children: qrUrl ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "img",
-    {
-      src: qrUrl,
-      alt: "Receipt QR Code",
-      style: { width: `${size}px`, height: `${size}px` },
-      className: "block rounded-xs object-contain"
-    }
-  ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "div",
-    {
-      style: { width: `${size}px`, height: `${size}px` },
-      className: "flex flex-col items-center justify-center bg-slate-50 text-slate-400 text-[8px]",
-      children: /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { className: "w-5 h-5 animate-pulse" })
-    }
-  ) }) });
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `flex flex-col items-center justify-center shrink-0 ${className}`, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-1 bg-white rounded-lg border border-slate-200 dark:border-slate-700 shadow-2xs inline-block", children: qrUrl ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "img",
+      {
+        src: qrUrl,
+        alt: "Receipt QR Code",
+        style: { width: `${size}px`, height: `${size}px` },
+        className: "block rounded-xs object-contain"
+      }
+    ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "div",
+      {
+        style: { width: `${size}px`, height: `${size}px` },
+        className: "flex flex-col items-center justify-center bg-slate-50 text-slate-400 text-[8px]",
+        children: /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { className: "w-5 h-5 animate-pulse" })
+      }
+    ) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "div",
+      {
+        className: `mt-1.5 text-center text-[10px] tracking-wide font-medium select-none ${darkBg ? "text-slate-400/80" : "text-slate-400 dark:text-slate-500"}`,
+        children: "Powered by Brivu"
+      }
+    )
+  ] });
 };
 const renderSupplementaryInfo = (amountInWords, notes, balance = 0, currency = "UGX", nonReturnable = true, nonRefundable = false, isInvoice = false) => {
   const isOwed = balance < 0;
@@ -84470,7 +84445,12 @@ const PdfGenerator = {
   async appendBottomCenteredQrCode(doc2, receipt, startY, pageWidth, size = 22) {
     const qrX = (pageWidth - size) / 2;
     const qrY = startY + 2;
-    return await this.appendQrCodeToPdf(doc2, receipt, qrX, qrY, size, true);
+    const endY = await this.appendQrCodeToPdf(doc2, receipt, qrX, qrY, size, true);
+    doc2.setFont("helvetica", "normal");
+    doc2.setFontSize(size < 20 ? 6.5 : 8);
+    doc2.setTextColor(148, 163, 184);
+    doc2.text("Powered by Brivu", pageWidth / 2, endY + 4.5, { align: "center" });
+    return endY + 7.5;
   },
   async appendQrCodeToPdf(doc2, receipt, x3, y3, size = 18, withCard = true) {
     try {
@@ -84600,6 +84580,10 @@ const PdfGenerator = {
           format: "a4"
         });
         doc2.addImage(imgData, "PNG", margin, margin, usableWidth, imgHeight, void 0, "FAST");
+        doc2.setFont("helvetica", "normal");
+        doc2.setFontSize(8);
+        doc2.setTextColor(148, 163, 184);
+        doc2.text("Powered by Brivu", 105, 290, { align: "center" });
         return doc2;
       }
     } catch (err) {
@@ -84920,6 +84904,10 @@ const PdfGenerator = {
       doc2.setTextColor(100, 116, 139);
       doc2.text(business.customFooter, pageWidth / 2, footerY, { align: "center" });
     }
+    doc2.setFont("helvetica", "normal");
+    doc2.setFontSize(8);
+    doc2.setTextColor(148, 163, 184);
+    doc2.text("Powered by Brivu", pageWidth / 2, 290, { align: "center" });
     return doc2;
   },
   /**
@@ -85101,6 +85089,10 @@ const PdfGenerator = {
       doc2.setFontSize(9.5);
       doc2.text(business.customFooter, pageWidth / 2, Math.max(y3 + 6, 282), { align: "center" });
     }
+    doc2.setFont("helvetica", "normal");
+    doc2.setFontSize(8);
+    doc2.setTextColor(148, 163, 184);
+    doc2.text("Powered by Brivu", pageWidth / 2, 290, { align: "center" });
     return doc2;
   },
   /**
@@ -85269,6 +85261,10 @@ const PdfGenerator = {
       doc2.setFontSize(8.5);
       doc2.text(business.customFooter, margin, Math.max(y3 + 6, 282));
     }
+    doc2.setFont("helvetica", "normal");
+    doc2.setFontSize(8);
+    doc2.setTextColor(148, 163, 184);
+    doc2.text("Powered by Brivu", pageWidth / 2, 290, { align: "center" });
     return doc2;
   },
   /**
@@ -85471,6 +85467,10 @@ const PdfGenerator = {
       doc2.setTextColor(100, 116, 139);
       doc2.text(business.customFooter, pageWidth / 2, Math.max(y3 + 6, 282), { align: "center" });
     }
+    doc2.setFont("helvetica", "normal");
+    doc2.setFontSize(8);
+    doc2.setTextColor(148, 163, 184);
+    doc2.text("Powered by Brivu", pageWidth / 2, 290, { align: "center" });
     return doc2;
   },
   /**
@@ -86121,6 +86121,7 @@ class BluetoothPrinterService {
     pushString(`Payment: ${receipt.paymentMethod} (${receipt.paymentStatus.toUpperCase()})
 `);
     pushString("\nThank you for your business!\n");
+    pushString("Powered by Brivu\n");
     pushBytes(27, 100, 4);
     pushBytes(29, 86, 66, 0);
     return new Uint8Array(bytes);
@@ -122241,6 +122242,16 @@ const StaffManageModal = ({
           y3 += 13;
         });
       }
+      const pageCount = doc2.getNumberOfPages();
+      const pWidth = doc2.internal.pageSize.getWidth();
+      const pHeight = doc2.internal.pageSize.getHeight();
+      for (let i = 1; i <= pageCount; i++) {
+        doc2.setPage(i);
+        doc2.setFont("helvetica", "normal");
+        doc2.setFontSize(8.5);
+        doc2.setTextColor(148, 163, 184);
+        doc2.text("Powered by Brivu app", pWidth / 2, pHeight - 15, { align: "center" });
+      }
       const sanitizedName = worker.name.replace(/[^a-zA-Z0-9]/g, "_");
       const pdfFilename = `Staff_Report_${sanitizedName}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
       await saveJsPdf(doc2, pdfFilename, `Staff Report - ${worker.name}`);
@@ -125154,6 +125165,16 @@ const AgentManageModal = ({
           }
         });
       }
+      const pageCount = doc2.getNumberOfPages();
+      const pWidth = doc2.internal.pageSize.getWidth();
+      const pHeight = doc2.internal.pageSize.getHeight();
+      for (let i = 1; i <= pageCount; i++) {
+        doc2.setPage(i);
+        doc2.setFont("helvetica", "normal");
+        doc2.setFontSize(8.5);
+        doc2.setTextColor(148, 163, 184);
+        doc2.text("Powered by Brivu app", pWidth / 2, pHeight - 15, { align: "center" });
+      }
       const sanitizedName = agent.agentName.replace(/[^a-zA-Z0-9]/g, "_");
       const pdfFilename = `Agent_Ledger_${sanitizedName}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
       await saveJsPdf(doc2, pdfFilename, `Agent Ledger - ${agent.agentName}`);
@@ -127753,61 +127774,102 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
     try {
       showToast("Generating shopping list photo...");
       await ensureStoragePermission();
-      const activeItems = shoppingList.filter((item) => !item.hidden);
-      const totalEstimated = shoppingBudgetSummary.totalEstimated;
-      const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
+      const activeItems = shoppingList.filter((item) => {
+        if (item.hidden) return false;
+        if (shoppingCategoryFilter !== "all" && item.categoryId !== shoppingCategoryFilter) return false;
+        if (shoppingFilter === "unchecked" && item.checked) return false;
+        if (shoppingFilter === "checked" && !item.checked) return false;
+        if (shoppingSearchQuery.trim()) {
+          const q2 = shoppingSearchQuery.toLowerCase().trim();
+          const matchName = item.name.toLowerCase().includes(q2);
+          const matchNotes = item.notes && item.notes.toLowerCase().includes(q2);
+          if (!matchName && !matchNotes) return false;
+        }
+        return true;
+      });
+      const activeCategoryObj = shoppingCategoryFilter !== "all" ? shoppingCategories.find((c3) => c3.id === shoppingCategoryFilter) : null;
+      const categoryName = activeCategoryObj ? activeCategoryObj.name.toUpperCase() : null;
+      const totalEstimated = activeItems.reduce((acc, item) => acc + (item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1), 0);
+      const checkedEstimated = activeItems.filter((i) => i.checked).reduce((acc, item) => acc + (item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1), 0);
       const toBuyCount = activeItems.filter((item) => !item.checked).length;
       const canvas2 = document.createElement("canvas");
-      const width = 800;
-      let estimatedHeight = 350;
+      const scale = 3;
+      const baseWidth = 800;
+      const width = baseWidth * scale;
+      let baseHeight = 350;
+      if (categoryName) baseHeight += 30;
       if (activeItems.length === 0) {
-        estimatedHeight += 100;
+        baseHeight += 100;
       } else {
-        estimatedHeight += 35;
+        baseHeight += 35;
         activeItems.forEach((item) => {
-          estimatedHeight += item.notes ? 65 : 52;
+          baseHeight += item.notes ? 65 : 52;
         });
       }
-      estimatedHeight += 60;
+      baseHeight += 60;
+      const height = baseHeight * scale;
       canvas2.width = width;
-      canvas2.height = estimatedHeight;
+      canvas2.height = height;
       const ctx = canvas2.getContext("2d");
       if (!ctx) {
         showToast("Could not initialize canvas");
         return;
       }
+      ctx.scale(scale, scale);
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, width, estimatedHeight);
-      const grad = ctx.createLinearGradient(0, 0, width, 0);
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
       grad.addColorStop(0, "#0284c7");
       grad.addColorStop(1, "#0ea5e9");
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, width, 8);
-      let curY = 40;
+      ctx.fillRect(0, 0, baseWidth, 8);
+      let curY = 32;
+      if (categoryName) {
+        ctx.font = "bold 11px system-ui, -apple-system, sans-serif";
+        const catTextWidth = ctx.measureText(categoryName).width;
+        const catWidth = catTextWidth + 32;
+        const catX = (baseWidth - catWidth) / 2;
+        ctx.fillStyle = "#e0f2fe";
+        ctx.beginPath();
+        ctx.roundRect(catX, curY, catWidth, 24, 12);
+        ctx.fill();
+        ctx.strokeStyle = "#0284c7";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#0369a1";
+        ctx.font = "bold 11px system-ui, -apple-system, sans-serif";
+        ctx.fillText(categoryName, baseWidth / 2, curY + 16);
+        curY += 45;
+      }
       ctx.textAlign = "center";
       ctx.fillStyle = "#0284c7";
       ctx.font = "bold 22px system-ui, -apple-system, sans-serif";
-      ctx.fillText("SHOPPING LIST REPORT", width / 2, curY);
+      ctx.fillText("SHOPPING LIST REPORT", baseWidth / 2, curY);
       curY += 26;
       if (business == null ? void 0 : business.name) {
         ctx.fillStyle = "#1e293b";
         ctx.font = "bold 16px system-ui, -apple-system, sans-serif";
-        ctx.fillText(business.name, width / 2, curY);
+        ctx.fillText(business.name, baseWidth / 2, curY);
         curY += 22;
       }
       ctx.fillStyle = "#64748b";
       ctx.font = "12px system-ui, -apple-system, sans-serif";
-      const dateStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+      const now = /* @__PURE__ */ new Date();
+      const dateFormatted = now.toLocaleDateString("en-GB", {
         day: "2-digit",
         month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
+        year: "numeric"
       });
-      ctx.fillText(`Generated: ${dateStr}`, width / 2, curY);
-      curY += 25;
+      const timeFormatted = now.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      });
+      ctx.fillText(`${dateFormatted}, ${timeFormatted}`, baseWidth / 2, curY);
+      curY += 28;
       const boxX = 36;
-      const boxWidth = width - boxX * 2;
+      const boxWidth = baseWidth - boxX * 2;
       const boxHeight = 74;
       const drawRoundRect = (x3, y3, w3, h2, r2, fill, stroke) => {
         ctx.beginPath();
@@ -127887,7 +127949,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         ctx.fillText("QTY", boxX + 310, curY);
         ctx.textAlign = "right";
         ctx.fillText("EST. PRICE", boxX + 440, curY);
-        ctx.fillText("TOTAL BUDGET", boxX + 580, curY);
+        ctx.fillText("TOTAL", boxX + 580, curY);
         ctx.textAlign = "center";
         ctx.fillText("STATUS", boxX + 695, curY);
         curY += 6;
@@ -127930,7 +127992,6 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           ctx.font = "bold 13px system-ui, -apple-system, sans-serif";
           ctx.fillText(item.name, boxX + 26, curY + 6);
           let detailParts = [];
-          if (cat) detailParts.push(`Category: ${cat}`);
           if (item.notes) detailParts.push(`Note: ${item.notes}`);
           if (detailParts.length > 0) {
             ctx.fillStyle = "#64748b";
@@ -127972,7 +128033,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       ctx.textAlign = "center";
       ctx.fillStyle = "#94a3b8";
       ctx.font = "11px system-ui, -apple-system, sans-serif";
-      ctx.fillText("Powered by Brivu Business Manager", width / 2, curY);
+      ctx.fillText("Powered by Brivu app", baseWidth / 2, curY);
       const dataUrl = canvas2.toDataURL("image/png", 1);
       const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
       const filename = `Shopping_List_${timestamp}.png`;
@@ -128006,6 +128067,16 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       const pageWidth = doc2.internal.pageSize.getWidth();
       const margin = 15;
       let y3 = 20;
+      const applyReportFooter = (pdfDoc) => {
+        const pageCount = pdfDoc.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          pdfDoc.setPage(i);
+          pdfDoc.setFont("helvetica", "normal");
+          pdfDoc.setFontSize(8.5);
+          pdfDoc.setTextColor(148, 163, 184);
+          pdfDoc.text("Powered by Brivu app", pageWidth / 2, 287, { align: "center" });
+        }
+      };
       if (section === "workers") {
         const reportTitle2 = "BUSINESS STAFF DIRECTORY";
         doc2.setFont("helvetica", "bold");
@@ -128081,6 +128152,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         }
         const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
         const pdfFilename2 = `Staff_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Staff Directory", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128154,6 +128226,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         }
         const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
         const pdfFilename2 = `Agents_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Agents Directory", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128227,6 +128300,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         }
         const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
         const pdfFilename2 = `Client_Directory_${dateStr}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Client Directory", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128236,29 +128310,62 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         return;
       }
       if (section === "shoppingList") {
-        const activeShoppingList = shoppingList.filter((item) => !item.hidden);
+        const activeShoppingList = shoppingList.filter((item) => {
+          if (item.hidden) return false;
+          if (shoppingCategoryFilter !== "all" && item.categoryId !== shoppingCategoryFilter) return false;
+          if (shoppingFilter === "unchecked" && item.checked) return false;
+          if (shoppingFilter === "checked" && !item.checked) return false;
+          if (shoppingSearchQuery.trim()) {
+            const q2 = shoppingSearchQuery.toLowerCase().trim();
+            const matchName = item.name.toLowerCase().includes(q2);
+            const matchNotes = item.notes && item.notes.toLowerCase().includes(q2);
+            if (!matchName && !matchNotes) return false;
+          }
+          return true;
+        });
+        const activeCategoryObj = shoppingCategoryFilter !== "all" ? shoppingCategories.find((c3) => c3.id === shoppingCategoryFilter) : null;
+        const pdfCategoryTitle = activeCategoryObj ? ` (${activeCategoryObj.name.toUpperCase()})` : "";
         const toBuyCount = activeShoppingList.filter((item) => !item.checked).length;
-        const totalEstimated = shoppingBudgetSummary.totalEstimated;
-        const checkedEstimated = shoppingBudgetSummary.checkedEstimated;
-        const dateStr = (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", {
+        const totalEstimated = activeShoppingList.reduce((acc, item) => acc + (item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1), 0);
+        const checkedEstimated = activeShoppingList.filter((i) => i.checked).reduce((acc, item) => acc + (item.estimatedPrice || 0) * (parseFloat(item.quantity) || 1), 0);
+        const now = /* @__PURE__ */ new Date();
+        const pdfDateFormatted = now.toLocaleDateString("en-GB", {
           day: "2-digit",
           month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit"
+          year: "numeric"
         });
+        const pdfTimeFormatted = now.toLocaleTimeString("en-US", {
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true
+        });
+        const dateStr = `${pdfDateFormatted}, ${pdfTimeFormatted}`;
         const boxX = margin;
         const boxWidth = pageWidth - margin * 2;
         const drawPageHeader = (isFirstPage) => {
           doc2.setFillColor(2, 132, 199);
           doc2.rect(0, 0, pageWidth, 3.5, "F");
           if (isFirstPage) {
-            y3 = 15;
+            y3 = 12;
+            if (activeCategoryObj) {
+              const catNameUpper = activeCategoryObj.name.toUpperCase();
+              doc2.setFont("helvetica", "bold");
+              doc2.setFontSize(8);
+              const textW = doc2.getTextWidth(catNameUpper);
+              const badgeW = textW + 12;
+              doc2.setFillColor(224, 242, 254);
+              doc2.setDrawColor(2, 132, 199);
+              doc2.setLineWidth(0.3);
+              doc2.roundedRect(pageWidth / 2 - badgeW / 2, y3, badgeW, 5.5, 2, 2, "FD");
+              doc2.setTextColor(3, 105, 161);
+              doc2.text(catNameUpper, pageWidth / 2, y3 + 3.8, { align: "center" });
+              y3 += 10;
+            }
             doc2.setFont("helvetica", "bold");
-            doc2.setFontSize(16);
+            doc2.setFontSize(15);
             doc2.setTextColor(2, 132, 199);
             doc2.text("SHOPPING LIST REPORT", pageWidth / 2, y3, { align: "center" });
-            y3 += 6;
+            y3 += 5.5;
             if (business == null ? void 0 : business.name) {
               doc2.setFont("helvetica", "bold");
               doc2.setFontSize(12);
@@ -128269,7 +128376,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
             doc2.setFont("helvetica", "normal");
             doc2.setFontSize(8.5);
             doc2.setTextColor(100, 116, 139);
-            doc2.text(`Generated: ${dateStr}`, pageWidth / 2, y3, { align: "center" });
+            doc2.text(dateStr, pageWidth / 2, y3, { align: "center" });
             y3 += 6.5;
             const boxHeight = 17;
             doc2.setFillColor(248, 250, 252);
@@ -128318,7 +128425,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           doc2.text("ITEM NAME", boxX + 6, y3);
           doc2.text("QTY", boxX + 78, y3, { align: "center" });
           doc2.text("EST. PRICE", boxX + 114, y3, { align: "right" });
-          doc2.text("TOTAL BUDGET", boxX + 152, y3, { align: "right" });
+          doc2.text("TOTAL", boxX + 152, y3, { align: "right" });
           doc2.text("STATUS", boxX + 172, y3, { align: "center" });
           y3 += 2;
           doc2.setDrawColor(226, 232, 240);
@@ -128372,7 +128479,6 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
             const nameLine = doc2.splitTextToSize(item.name, 68)[0];
             doc2.text(nameLine, boxX + 6, y3);
             let detailParts = [];
-            if (cat && cat !== "General") detailParts.push(`Category: ${cat}`);
             if (item.notes && item.notes.trim() !== "") detailParts.push(`Note: ${item.notes.trim()}`);
             const hasDetails = detailParts.length > 0;
             if (hasDetails) {
@@ -128428,10 +128534,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
             y3 = rowBottom + 4.5;
           });
         }
-        doc2.setFont("helvetica", "normal");
-        doc2.setFontSize(8.5);
-        doc2.setTextColor(148, 163, 184);
-        doc2.text("Powered by Brivu Business Manager", pageWidth / 2, 287, { align: "center" });
+        applyReportFooter(doc2);
         const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
         const pdfFilename2 = `Shopping_List_${timestamp}.pdf`;
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Shopping List", { folder: "reports" });
@@ -128522,6 +128625,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           });
         }
         const pdfFilename2 = `Sales_Report_${saleDateFilter}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Sales Report", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128618,6 +128722,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           });
         }
         const pdfFilename2 = `Stock_Report_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Stock Report", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128702,6 +128807,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           doc2.text(`TOTAL: ${currency} ${filteredExpensesTotal.toLocaleString(void 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 120, y3);
         }
         const pdfFilename2 = `Expenses_Report_${expenseFilter}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Expenses Report", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -128789,6 +128895,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
           });
         }
         const pdfFilename2 = `Debts_Report_${debtTimeFilter}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+        applyReportFooter(doc2);
         const res2 = await saveJsPdf(doc2, pdfFilename2, "Debts Report", { folder: "reports" });
         if (res2.success) {
           showToast(res2.message);
@@ -129006,6 +129113,7 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
         y3 += 4;
       });
       const pdfFilename = `Business_Report_${reportTimeFilter}_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.pdf`;
+      applyReportFooter(doc2);
       const res = await saveJsPdf(doc2, pdfFilename, "Business Report", { folder: "reports" });
       if (res.success) {
         showToast(res.message);
@@ -135786,16 +135894,13 @@ const WebsitesAppsQrSection = ({
   };
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
-    const defaultTitle = isAllSelected ? `${business.name || "Business"} Websites & Apps Hub` : (activeItem == null ? void 0 : activeItem.title) || "Website QR";
-    const qrName = tableNumberForPrint ? `${defaultTitle} - ${tableNumberForPrint}` : defaultTitle;
-    const defaultSubtitle = isAllSelected ? `All ${items.length} Websites, Apps & Online Booking Portals` : (activeItem == null ? void 0 : activeItem.ctaText) || "Scan to Visit Website / App";
-    const defaultTag = tableNumberForPrint || (isAllSelected ? "ALL IN ONE DIRECTORY" : (activeItem == null ? void 0 : activeItem.type.replace("_", " ").toUpperCase()) || "WEBSITE");
+    const defaultTitle = isAllSelected ? "Websites & Apps Hub" : (activeItem == null ? void 0 : activeItem.title) || "Website QR";
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || "";
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: defaultSubtitle,
-      tag: defaultTag,
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : void 0,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,
@@ -136919,18 +137024,14 @@ const SocialsQrSection = ({
     });
   };
   const handleDownloadPng = async () => {
-    var _a4;
     if (!activeQrDataUrl) return;
-    const defaultTitle = isAllSelected ? "our social media platforms" : (activeItem == null ? void 0 : activeItem.title) || "Social QR";
-    const qrName = tableNumberForPrint ? `${defaultTitle} - ${tableNumberForPrint}` : defaultTitle;
-    const defaultSubtitle = isAllSelected ? `Connect on all ${items.length} social channels` : (activeItem == null ? void 0 : activeItem.usernameOrPhone) || (activeItem == null ? void 0 : activeItem.ctaText) || "Scan to Connect";
-    const defaultTag = tableNumberForPrint || (isAllSelected ? "ALL SOCIAL CHANNELS" : ((activeItem == null ? void 0 : activeItem.customPlatformName) || ((_a4 = PLATFORMS_CONFIG[(activeItem == null ? void 0 : activeItem.platform) || "whatsapp"]) == null ? void 0 : _a4.name) || "SOCIAL").toUpperCase());
+    const defaultTitle = isAllSelected ? "Social Media Hub" : (activeItem == null ? void 0 : activeItem.title) || "Social QR";
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || "";
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: defaultSubtitle,
-      tag: defaultTag,
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : void 0,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,
@@ -137963,15 +138064,12 @@ const EventsQrSection = ({
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
     const defaultTitle = isAllSelected ? "Our Events" : (activeItem == null ? void 0 : activeItem.title) || "Event QR";
-    const qrName = tableNumberForPrint ? `${defaultTitle} - ${tableNumberForPrint}` : defaultTitle;
-    const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
-    const subtitle = isAllSelected ? `Our Events (${items.length})` : dtFormatted ? `${dtFormatted}${(activeItem == null ? void 0 : activeItem.location) ? ` • ${activeItem.location}` : ""}` : (activeItem == null ? void 0 : activeItem.location) || (activeItem == null ? void 0 : activeItem.ctaText) || "Scan to RSVP";
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || "";
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: subtitle || "Scan to RSVP & Join Event",
-      tag: tableNumberForPrint || (isAllSelected ? "OUR EVENTS" : "EVENT INVITATION"),
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : void 0,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,
@@ -139119,22 +139217,19 @@ const QRCodeHostingScreen = ({
   };
   const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
-    const scopeLabel = qrScope === "all" ? "All Pages" : qrScope === "menu" ? "Menu & Catalog" : qrScope === "about" ? "About & Profile" : "Photos Gallery";
-    const qrName = tableNumberForPrint ? `${activePage.title} - ${tableNumberForPrint}` : `${activePage.title}`;
-    const subtitle = qrScope === "all" ? "Point camera here for direct navigation to All Pages" : `Point camera here to open ${scopeLabel}`;
+    const qrName = tableNumberForPrint || activePage.title;
+    const bizName = business.name || activePage.title;
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl,
       name: qrName,
-      subtitle,
-      tag: tableNumberForPrint || scopeLabel,
-      urlOrHandle: customerPageUrl,
+      businessName: bizName !== qrName ? bizName : void 0,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
       lightColor: activePage.qrLightColor,
       accentColor: activePage.accentColor || "#059669"
     });
-    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, "_")}_${qrScope}_QRCode.png`;
+    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, "_")}_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
@@ -139149,14 +139244,12 @@ const QRCodeHostingScreen = ({
   };
   const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
-    const scopeLabel = quickQrScope === "all" ? "All Pages" : quickQrScope === "menu" ? "Menu" : quickQrScope === "about" ? "About" : "Photos";
-    const qrName = quickQrTableNumber ? `${activePage.title} - ${scopeLabel} (${quickQrTableNumber})` : `${activePage.title} - ${scopeLabel}`;
+    const qrName = quickQrTableNumber || activePage.title;
+    const bizName = business.name || activePage.title;
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: quickQrDataUrl,
       name: qrName,
-      subtitle: `Quick Scan QR Code (${scopeLabel})`,
-      tag: quickQrTableNumber || scopeLabel,
-      urlOrHandle: QRHostingService.getCustomerPageUrl(activePage.id, quickQrScope, ownerEmail),
+      businessName: bizName !== qrName ? bizName : void 0,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -139262,9 +139355,6 @@ const QRCodeHostingScreen = ({
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: itemQrDataUrl,
       name: qrName,
-      subtitle: `${activePage.title} • ${activePage.currency} ${itemQrModalItem.price.toLocaleString()}`,
-      tag: itemQrModalItem.category || "Menu Item",
-      urlOrHandle: QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -139330,13 +139420,10 @@ const QRCodeHostingScreen = ({
   const handleDownloadPhotoPng = async () => {
     if (!photoQrDataUrl || !photoQrModalPhoto || !activePage) return;
     const photoTitle2 = photoQrModalPhoto.caption || photoQrModalPhoto.title || "Photo";
-    const qrName = photoQrTableNumber ? `${photoTitle2} (${photoQrTableNumber})` : `${activePage.title} - ${photoTitle2}`;
+    const qrName = photoQrTableNumber ? `${photoTitle2} (${photoQrTableNumber})` : photoTitle2;
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: photoQrDataUrl,
       name: qrName,
-      subtitle: "Scan with phone camera to view full photo",
-      tag: photoQrTableNumber || "Gallery Photo",
-      urlOrHandle: QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail),
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -158645,7 +158732,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-i0esnUjq.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-CLtTjBbi.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

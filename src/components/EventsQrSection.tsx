@@ -463,22 +463,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const handleDownloadPng = async () => {
     if (!activeQrDataUrl) return;
     const defaultTitle = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event QR');
-    const qrName = tableNumberForPrint
-      ? `${defaultTitle} - ${tableNumberForPrint}`
-      : defaultTitle;
-    const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
-    const subtitle = isAllSelected
-      ? `Our Events (${items.length})`
-      : (dtFormatted
-        ? `${dtFormatted}${activeItem?.location ? ` • ${activeItem.location}` : ''}`
-        : (activeItem?.location || activeItem?.ctaText || 'Scan to RSVP'));
+    const qrName = tableNumberForPrint || defaultTitle;
+    const bizName = business.name || '';
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
       name: qrName,
-      subtitle: subtitle || 'Scan to RSVP & Join Event',
-      tag: tableNumberForPrint || (isAllSelected ? 'OUR EVENTS' : 'EVENT INVITATION'),
-      urlOrHandle: activeUrl,
+      businessName: bizName && bizName !== qrName ? bizName : undefined,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,

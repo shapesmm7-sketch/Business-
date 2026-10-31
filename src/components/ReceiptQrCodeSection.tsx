@@ -14,6 +14,7 @@ export const ReceiptQrCodeSection: React.FC<ReceiptQrCodeSectionProps> = ({
   data,
   className = '',
   size = 52,
+  darkBg = false,
 }) => {
   const [qrUrl, setQrUrl] = useState<string>('');
 
@@ -46,6 +47,15 @@ export const ReceiptQrCodeSection: React.FC<ReceiptQrCodeSectionProps> = ({
             <QrCode className="w-5 h-5 animate-pulse" />
           </div>
         )}
+      </div>
+
+      {/* Powered by Brivu watermark on bottom */}
+      <div
+        className={`mt-1.5 text-center text-[10px] tracking-wide font-medium select-none ${
+          darkBg ? 'text-slate-400/80' : 'text-slate-400 dark:text-slate-500'
+        }`}
+      >
+        Powered by Brivu
       </div>
     </div>
   );

@@ -312,7 +312,15 @@ export const PdfGenerator = {
   ): Promise<number> {
     const qrX = (pageWidth - size) / 2;
     const qrY = startY + 2;
-    return await this.appendQrCodeToPdf(doc, receipt, qrX, qrY, size, true);
+    const endY = await this.appendQrCodeToPdf(doc, receipt, qrX, qrY, size, true);
+
+    // Watermark at bottom of receipt
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(size < 20 ? 6.5 : 8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Powered by Brivu', pageWidth / 2, endY + 4.5, { align: 'center' });
+
+    return endY + 7.5;
   },
 
   async appendQrCodeToPdf(
@@ -469,6 +477,10 @@ export const PdfGenerator = {
           format: 'a4',
         });
         doc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight, undefined, 'FAST');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Powered by Brivu', 105, 290, { align: 'center' });
         return doc;
       }
     } catch (err) {
@@ -882,6 +894,11 @@ export const PdfGenerator = {
       doc.text(business.customFooter, pageWidth / 2, footerY, { align: 'center' });
     }
 
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
+
     return doc;
   },
 
@@ -1107,6 +1124,11 @@ export const PdfGenerator = {
       doc.text(business.customFooter, pageWidth / 2, Math.max(y + 6, 282), { align: 'center' });
     }
 
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
+
     return doc;
   },
 
@@ -1316,6 +1338,11 @@ export const PdfGenerator = {
       doc.setFontSize(8.5);
       doc.text(business.customFooter, margin, Math.max(y + 6, 282));
     }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
 
     return doc;
   },
@@ -1565,6 +1592,11 @@ export const PdfGenerator = {
       doc.setTextColor(100, 116, 139);
       doc.text(business.customFooter, pageWidth / 2, Math.max(y + 6, 282), { align: 'center' });
     }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
 
     return doc;
   },

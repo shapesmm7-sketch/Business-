@@ -1342,6 +1342,18 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
         });
       }
 
+      // Footer
+      const pageCount = doc.getNumberOfPages();
+      const pWidth = doc.internal.pageSize.getWidth();
+      const pHeight = doc.internal.pageSize.getHeight();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Powered by Brivu app', pWidth / 2, pHeight - 15, { align: 'center' });
+      }
+
       // Save PDF
       const sanitizedName = worker.name.replace(/[^a-zA-Z0-9]/g, '_');
       const pdfFilename = `Staff_Report_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`;

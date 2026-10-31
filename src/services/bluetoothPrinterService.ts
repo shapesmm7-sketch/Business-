@@ -464,6 +464,7 @@ export class BluetoothPrinterService {
     pushBytes(0x1b, 0x61, 0x01);
     pushString(`Payment: ${receipt.paymentMethod} (${receipt.paymentStatus.toUpperCase()})\n`);
     pushString('\nThank you for your business!\n');
+    pushString('Powered by Brivu\n');
 
     // Feed lines & cut
     pushBytes(0x1b, 0x64, 0x04); // Feed 4 lines

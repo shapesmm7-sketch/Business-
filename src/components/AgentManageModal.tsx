@@ -462,6 +462,17 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
         });
       }
 
+      const pageCount = doc.getNumberOfPages();
+      const pWidth = doc.internal.pageSize.getWidth();
+      const pHeight = doc.internal.pageSize.getHeight();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Powered by Brivu app', pWidth / 2, pHeight - 15, { align: 'center' });
+      }
+
       const sanitizedName = agent.agentName.replace(/[^a-zA-Z0-9]/g, '_');
       const pdfFilename = `Agent_Ledger_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`;
       await saveJsPdf(doc, pdfFilename, `Agent Ledger - ${agent.agentName}`);
