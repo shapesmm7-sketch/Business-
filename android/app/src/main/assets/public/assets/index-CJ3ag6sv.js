@@ -16909,7 +16909,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-D2nPyKUa.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-D72gLztZ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = reactExports.useState(null);
@@ -50990,7 +50990,7 @@ const LanguageSelectorModal = ({
   return reactDomExports.createPortal(modalContent, document.body);
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-Z67PC3kN.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-Cz69ENzg.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65266,7 +65266,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DgwuB5qg.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-7s78_TBO.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66037,7 +66037,7 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-Bzd4qXIH.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-DyiJPNvk.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const MediaStore = registerPlugin("MediaStore");
@@ -73158,7 +73158,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-DksEkC-a.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-DG5d6pFx.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -159819,7 +159819,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-CSj79QBg.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-fwwjbzYM.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
@@ -160265,12 +160265,11 @@ function App() {
     setLockConfig(StorageService.getAppLockConfig());
   }, []);
   reactExports.useEffect(() => {
-    let lastBackgroundTimestamp = 0;
     const handleAppGoingBackground = () => {
-      lastBackgroundTimestamp = Date.now();
       const currentCfg = StorageService.getAppLockConfig();
-      if ((currentCfg == null ? void 0 : currentCfg.isEnabled) && (currentCfg == null ? void 0 : currentCfg.autoLockOnExit) !== false) {
+      if ((currentCfg == null ? void 0 : currentCfg.isEnabled) && (currentCfg == null ? void 0 : currentCfg.pin) && (currentCfg == null ? void 0 : currentCfg.autoLockOnExit) !== false) {
         StorageService.setAppLocked(true);
+        setIsAppLocked(true);
       }
     };
     const handleAppResuming = async () => {
@@ -160304,10 +160303,8 @@ function App() {
         if (StorageService.consumeSystemActionActive()) {
           return;
         }
-        if (lastBackgroundTimestamp > 0 && Date.now() - lastBackgroundTimestamp > 300) {
-          StorageService.setAppLocked(true);
-          setIsAppLocked(true);
-        }
+        StorageService.setAppLocked(true);
+        setIsAppLocked(true);
       }
     };
     const handleVisibilityChange = () => {

@@ -654,8 +654,9 @@ export function App() {
     const handleAppGoingBackground = () => {
       lastBackgroundTimestamp = Date.now();
       const currentCfg = StorageService.getAppLockConfig();
-      if (currentCfg?.isEnabled && currentCfg?.autoLockOnExit !== false) {
+      if (currentCfg?.isEnabled && currentCfg?.pin && currentCfg?.autoLockOnExit !== false) {
         StorageService.setAppLocked(true);
+        setIsAppLocked(true);
       }
     };
 
@@ -696,11 +697,9 @@ export function App() {
           return;
         }
 
-        // If the app was backgrounded for more than 300ms or resumed
-        if (lastBackgroundTimestamp > 0 && Date.now() - lastBackgroundTimestamp > 300) {
-          StorageService.setAppLocked(true);
-          setIsAppLocked(true);
-        }
+        // Lock the app on every resume/reopen when App Lock is active
+        StorageService.setAppLocked(true);
+        setIsAppLocked(true);
       }
     };
 
