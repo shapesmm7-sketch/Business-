@@ -24,9 +24,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Register custom NativeAd plugin with Capacitor Bridge
-        // Note: @capacitor-community/admob is auto-registered by Capacitor
+        // Register custom NativeAd and PlayBilling plugins with Capacitor Bridge
         registerPlugin(NativeAdPlugin.class);
+        registerPlugin(PlayBillingPlugin.class);
 
         super.onCreate(savedInstanceState);
 

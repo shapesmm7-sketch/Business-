@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { saveJsPdf } from '../services/fileSaver';
+import { saveJsPdf, saveFile, ensureStoragePermission } from '../services/fileSaver';
 import {
   X,
   Check,
@@ -8,6 +8,7 @@ import {
   Edit3,
   Calendar,
   Download,
+  Camera,
   Briefcase,
   Store,
   Phone,
@@ -483,6 +484,217 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
     }
   };
 
+  // Export Photo Report for Agent
+  const handleExportAgentPhoto = async () => {
+    try {
+      const hasPermission = await ensureStoragePermission();
+      if (!hasPermission) {
+        showToast('Storage permission denied');
+        return;
+      }
+
+      const baseWidth = 900;
+      const boxX = 28;
+      const boxWidth = baseWidth - 56;
+      const scale = 2;
+
+      const summaryCards = [
+        { label: 'TOTAL GOODS TAKEN', value: `${currency} ${totalItemsValue.toLocaleString()}`, color: '#1e40af' },
+        { label: 'TOTAL CASH PAID', value: `${currency} ${totalCashPaid.toLocaleString()}`, color: '#15803d' },
+        { label: 'REMAINING BALANCE', value: `${currency} ${totalRemainingBalance.toLocaleString()}`, color: '#b91c1c' },
+      ];
+
+      const columns = [
+        { header: 'DATE', x: boxX + 16, align: 'left' as const },
+        { header: 'ITEMS TAKEN', x: boxX + 160, align: 'left' as const },
+        { header: 'QTY', x: boxX + 420, align: 'center' as const },
+        { header: 'UNIT PRICE', x: boxX + 530, align: 'right' as const },
+        { header: 'TOTAL VALUE', x: boxX + 660, align: 'right' as const },
+        { header: 'PAID', x: boxX + 760, align: 'right' as const },
+        { header: 'BALANCE', x: boxX + boxWidth - 16, align: 'right' as const },
+      ];
+
+      const rows = timeframeLedgerList.slice(0, 35).map((rec) => [
+        (rec.date || '').replace('T', ' ').substring(0, 16),
+        rec.itemsTaken || '-',
+        String(rec.quantity || 1),
+        `${currency} ${(rec.unitPrice || 0).toLocaleString()}`,
+        `${currency} ${(rec.totalAmount || (rec as any).totalValue || 0).toLocaleString()}`,
+        `${currency} ${(rec.cashPaid || 0).toLocaleString()}`,
+        `${currency} ${(rec.remainingBalance || 0).toLocaleString()}`,
+      ]);
+
+      let baseHeight = 270;
+      baseHeight += 80; // KPI cards
+      baseHeight += 40; // Table header
+      baseHeight += Math.max(rows.length * 36, 60);
+      baseHeight += 60; // Footer
+
+      const height = baseHeight * scale;
+      const width = baseWidth * scale;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        showToast('Could not initialize canvas');
+        return;
+      }
+      ctx.scale(scale, scale);
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+
+      // Top gradient banner
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
+      grad.addColorStop(0, '#4f46e5');
+      grad.addColorStop(1, '#0284c7');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, baseWidth, 10);
+
+      // Title
+      let curY = 38;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#4f46e5';
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText('AGENT CONSIGNMENT & LEDGER AUDIT', baseWidth / 2, curY);
+
+      curY += 24;
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
+      ctx.fillText(agent.agentName + (agent.shopName ? ` (${agent.shopName})` : ''), baseWidth / 2, curY);
+
+      curY += 20;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px system-ui, -apple-system, sans-serif';
+      const infoLine = `Timeframe: ${getTimeframeLabel(timeframeFilter)}  •  Phone: ${agent.contact || 'N/A'}  •  Location: ${agent.address || 'N/A'}`;
+      ctx.fillText(infoLine, baseWidth / 2, curY);
+
+      curY += 24;
+
+      // KPI boxes
+      const boxHeight = 64;
+      ctx.fillStyle = '#f8fafc';
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, boxHeight, 12);
+      ctx.fill();
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const cardW = boxWidth / summaryCards.length;
+      summaryCards.forEach((c, i) => {
+        const cx = boxX + cardW * i + cardW / 2;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+        ctx.fillText(c.label, cx, curY + 22);
+
+        ctx.fillStyle = c.color;
+        ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+        ctx.fillText(c.value, cx, curY + 46);
+
+        if (i < summaryCards.length - 1) {
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX + cardW * (i + 1), curY + 12);
+          ctx.lineTo(boxX + cardW * (i + 1), curY + boxHeight - 12);
+          ctx.stroke();
+        }
+      });
+
+      curY += boxHeight + 20;
+
+      // Table Header Box
+      ctx.fillStyle = '#4f46e5';
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, 34, [8, 8, 0, 0]);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+      columns.forEach(col => {
+        ctx.textAlign = col.align;
+        ctx.fillText(col.header, col.x, curY + 21);
+      });
+
+      curY += 34;
+
+      // Table Rows
+      if (rows.length === 0) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(boxX, curY, boxWidth, 48);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.strokeRect(boxX, curY, boxWidth, 48);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No consignment records found for this period.', baseWidth / 2, curY + 28);
+        curY += 48;
+      } else {
+        rows.forEach((row, rIdx) => {
+          ctx.fillStyle = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
+          ctx.fillRect(boxX, curY, boxWidth, 36);
+
+          ctx.strokeStyle = '#f1f5f9';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX, curY + 36);
+          ctx.lineTo(boxX + boxWidth, curY + 36);
+          ctx.stroke();
+
+          row.forEach((cell, cIdx) => {
+            const col = columns[cIdx];
+            ctx.textAlign = col.align;
+            if (cIdx === 6) {
+              ctx.fillStyle = '#b91c1c';
+              ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+            } else if (cIdx === 5) {
+              ctx.fillStyle = '#15803d';
+              ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+            } else {
+              ctx.fillStyle = '#1e293b';
+              ctx.font = '11px system-ui, -apple-system, sans-serif';
+            }
+            ctx.fillText(cell, col.x, curY + 22);
+          });
+          curY += 36;
+        });
+      }
+
+      curY += 28;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Powered by Brivu app', baseWidth / 2, curY);
+
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      const sanitizedName = agent.agentName.replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `Agent_Ledger_${sanitizedName}_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: 'image/png',
+        title: `Agent Ledger - ${agent.agentName}`,
+        destination: 'photos',
+        folder: 'reports',
+      });
+
+      if (res.success) {
+        showToast('Agent report photo saved to gallery!');
+      } else {
+        showToast(res.message || 'Failed to save photo');
+      }
+    } catch (err) {
+      console.warn('Error saving agent photo:', err);
+      showToast('Could not save agent report photo');
+    }
+  };
+
   const getTimeframeLabel = (f: AgentTimeframeFilter) => {
     switch (f) {
       case 'today':
@@ -574,6 +786,16 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export</span>
+              </button>
+              <button
+                type="button"
+                id="btn-export-agent-photo"
+                onClick={handleExportAgentPhoto}
+                className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer border border-white/30 backdrop-blur-xs"
+                title="Save agent report as Photo (PNG)"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Photo</span>
               </button>
               <button
                 type="button"

@@ -40,8 +40,14 @@
 -dontwarn com.google.android.gms.ads.**
 -dontwarn com.google.android.ump.**
 
-# App Native Ad Plugin, Views & Layouts
--keep class com.brivu.myapp.** { *; }
+# App Entry Point & Custom Plugins (targeted keeps to allow high obfuscation percentage)
+-keep public class com.brivu.myapp.MainActivity
+-keep public class com.brivu.myapp.NativeAdPlugin {
+    public *;
+}
+-keep public class com.brivu.myapp.PlayBillingPlugin {
+    public *;
+}
 
 # 6. AndroidX & WebKit
 -keep public class * extends android.app.Activity

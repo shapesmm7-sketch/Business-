@@ -148,9 +148,9 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
         setIsSuccess(true);
         setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlan.formattedPrice}) via Google Play Billing!`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
+      } else if (!result.userCancelled) {
         setRestoreFeedback({
-          msg: result.error || 'Google Play Store connection required. Subscriptions can only be processed via live Google Play Billing once published on the Play Console.',
+          msg: result.error || 'Google Play Store connection required. Subscriptions are processed via Google Play Billing.',
           success: false,
         });
       }

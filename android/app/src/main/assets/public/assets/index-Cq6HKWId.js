@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-Bm109EgX.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-D5fA4wgI.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DKNYO3Sv.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DEz7xYV_.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-BkdFmf7Y.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-B9GLEmOk.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-BMo5TUp4.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-CyCPlkog.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73136,7 +73136,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-C_Eneh5h.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-CR8yyEoF.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -84471,9 +84471,9 @@ const PdfGenerator = {
     return y3;
   },
   /**
-   * High fidelity DOM-to-PDF rendering matching the exact UI template design
+   * Captures receipt element as a high-resolution HTML Canvas
    */
-  async captureReceiptElementAsPdf(receipt) {
+  async captureReceiptElementAsCanvas(receipt) {
     if (typeof window === "undefined" || typeof document === "undefined") return null;
     let targetElement = null;
     let tempContainer = null;
@@ -84548,17 +84548,39 @@ const PdfGenerator = {
         };
         root = clientExports.createRoot(tempContainer);
         root.render(React.createElement(ReceiptLayoutRenderer, { data: renderData }));
-        await new Promise((r2) => setTimeout(r2, 120));
+        await new Promise((r2) => setTimeout(r2, 140));
         targetElement = tempContainer.firstElementChild || tempContainer;
       }
       if (!targetElement) return null;
-      const canvas2 = await html2canvas(targetElement, {
-        scale: 2.8,
+      return await html2canvas(targetElement, {
+        scale: 3,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
         logging: false
       });
+    } catch (err) {
+      console.warn("html2canvas render note:", err);
+      return null;
+    } finally {
+      if (root) {
+        try {
+          root.unmount();
+        } catch {
+        }
+      }
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+    }
+  },
+  /**
+   * High fidelity DOM-to-PDF rendering matching the exact UI template design
+   */
+  async captureReceiptElementAsPdf(receipt) {
+    try {
+      const canvas2 = await this.captureReceiptElementAsCanvas(receipt);
+      if (!canvas2) return null;
       const isCompact = receipt.template === "compact";
       const pdfWidth = isCompact ? 80 : 210;
       const margin = isCompact ? 3 : 12;
@@ -84589,17 +84611,30 @@ const PdfGenerator = {
     } catch (err) {
       console.warn("html2canvas render note, using vector fallback:", err);
       return null;
-    } finally {
-      if (root) {
-        try {
-          root.unmount();
-        } catch {
-        }
-      }
-      if (tempContainer && tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer);
-      }
     }
+  },
+  /**
+   * Saves high-resolution Photo (PNG) directly to device Photos / Gallery (Pictures/Brivu)
+   */
+  async downloadReceiptPhoto(receipt) {
+    await ensureStoragePermission();
+    const canvas2 = await this.captureReceiptElementAsCanvas(receipt);
+    if (!canvas2) {
+      throw new Error("Could not generate receipt photo");
+    }
+    const isInvoice = receipt.documentType === "invoice";
+    const prefix = isInvoice ? "Invoice" : "Receipt";
+    const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${prefix}_${cleanNum}.png`;
+    const dataUrl = canvas2.toDataURL("image/png", 1);
+    return await saveFile({
+      data: dataUrl,
+      filename,
+      mimeType: "image/png",
+      title: `${prefix} ${receipt.receiptNumber}`,
+      destination: "photos",
+      folder: isInvoice ? "invoices" : "receipts"
+    });
   },
   /**
    * Generates a jsPDF instance for a given receipt based on its template
@@ -115657,6 +115692,19 @@ const CreateReceiptScreen = ({
           });
           onSaveAndPreview(receipt);
         }
+      } else if (action === "photo") {
+        AdMobService.showInterstitial("receipt_photo_saved");
+        showToast("Generating photo...");
+        const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+        showToast(res.message);
+        setDownloadModalData({
+          isOpen: true,
+          fileName: res.filename,
+          folderName: res.folder || "Pictures/Brivu",
+          documentType: "receipt",
+          documentNumber: receipt.receiptNumber
+        });
+        onSaveAndPreview(receipt);
       } else if (action === "share") {
         await onQuickShare(receipt);
       } else if (action === "preview") {
@@ -116094,11 +116142,26 @@ const CreateReceiptScreen = ({
           type: "button",
           onClick: () => handleSubmit("download"),
           disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50",
+          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
           title: "Download PDF",
           children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-4 h-4 text-sky-400 shrink-0" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          id: "btn-action-photo",
+          type: "button",
+          onClick: () => handleSubmit("photo"),
+          disabled: isProcessing,
+          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+          title: "Save Receipt Photo (PNG)",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
           ]
         }
       ),
@@ -116555,6 +116618,36 @@ const CreateInvoiceScreen = ({
     } catch (err) {
       console.error(err);
       showToast("Error generating PDF");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  const handleQuickSavePhoto = async () => {
+    const invoice = buildInvoiceData();
+    if (!invoice) return;
+    setIsProcessing(true);
+    await StorageService.saveReceiptAsync(invoice);
+    if (!editingInvoice) {
+      StorageService.advanceInvoiceSequence();
+    }
+    try {
+      showToast("Generating photo...");
+      const res = await PdfGenerator.downloadReceiptPhoto(invoice);
+      showToast(res.message);
+      AdMobService.showInterstitial("invoice_photo_saved");
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || "Pictures/Brivu",
+        documentType: "invoice",
+        documentNumber: invoice.receiptNumber
+      });
+      if (onSaveOnly) {
+        onSaveOnly(invoice);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error saving invoice photo");
     } finally {
       setIsProcessing(false);
     }
@@ -117373,11 +117466,26 @@ const CreateInvoiceScreen = ({
           type: "button",
           onClick: handleQuickDownload,
           disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50",
+          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50",
           title: "Download Invoice PDF",
           children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-4 h-4 text-indigo-300 shrink-0" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          id: "btn-invoice-photo",
+          type: "button",
+          onClick: handleQuickSavePhoto,
+          disabled: isProcessing,
+          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50",
+          title: "Save Invoice Photo (PNG)",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
           ]
         }
       ),
@@ -117505,6 +117613,27 @@ const ReceiptPreviewScreen = ({
     } catch (err) {
       console.error("PDF download error:", err);
       showToast("Error generating PDF file");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+  const handleSavePhoto = async () => {
+    try {
+      setIsGenerating(true);
+      showToast("Generating photo...");
+      const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+      showToast(res.message);
+      AdMobService.showInterstitial("preview_photo_save");
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || "Pictures/Brivu",
+        documentType: receipt.documentType === "invoice" ? "invoice" : "receipt",
+        documentNumber: receipt.receiptNumber
+      });
+    } catch (err) {
+      console.error("Photo save error:", err);
+      showToast("Error saving receipt photo");
     } finally {
       setIsGenerating(false);
     }
@@ -117766,10 +117895,25 @@ const ReceiptPreviewScreen = ({
           id: "btn-preview-download-pdf",
           onClick: handleDownload,
           disabled: isGenerating,
-          className: "flex-1 py-3.5 px-4 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50",
+          className: "flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50",
+          title: isInvoice ? "Download PDF Invoice" : "Download PDF Receipt",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: `w-4 h-4 ${isInvoice ? "text-indigo-600" : "text-emerald-600"}` }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: isInvoice ? "Download Invoice" : "Download PDF" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: `w-4 h-4 shrink-0 ${isInvoice ? "text-indigo-600" : "text-emerald-600"}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: isInvoice ? "Invoice PDF" : "PDF" })
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          id: "btn-preview-save-photo",
+          onClick: handleSavePhoto,
+          disabled: isGenerating,
+          className: "flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs sm:text-sm border border-emerald-300 dark:border-emerald-700 shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50",
+          title: isInvoice ? "Save Invoice as Photo (PNG)" : "Save Receipt as Photo (PNG)",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: "Save Photo" })
           ]
         }
       ),
@@ -117930,6 +118074,7 @@ const ReceiptsHistoryScreen = ({
   const [expandedReceiptId, setExpandedReceiptId] = reactExports.useState(null);
   const [deletingReceipt, setDeletingReceipt] = reactExports.useState(null);
   const [downloadingId, setDownloadingId] = reactExports.useState(null);
+  const [savingPhotoId, setSavingPhotoId] = reactExports.useState(null);
   const [printingId, setPrintingId] = reactExports.useState(null);
   const [toastMessage, setToastMessage] = reactExports.useState(null);
   const [downloadModalData, setDownloadModalData] = reactExports.useState({ isOpen: false });
@@ -117990,6 +118135,26 @@ const ReceiptsHistoryScreen = ({
       showToast("Error generating PDF download");
     } finally {
       setDownloadingId(null);
+    }
+  };
+  const handleSavePhoto = async (receipt) => {
+    setSavingPhotoId(receipt.id);
+    try {
+      showToast("Generating photo...");
+      const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+      showToast(res.message);
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || "Pictures/Brivu",
+        documentType: receipt.documentType === "invoice" ? "invoice" : "receipt",
+        documentNumber: receipt.receiptNumber
+      });
+    } catch (err) {
+      console.error("Photo save error:", err);
+      showToast("Error saving receipt photo");
+    } finally {
+      setSavingPhotoId(null);
     }
   };
   const toggleExpand = (id) => {
@@ -118587,6 +118752,20 @@ const ReceiptsHistoryScreen = ({
                         children: [
                           downloadingId === receipt.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { className: "w-3 h-3 animate-spin shrink-0" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3 h-3 shrink-0" }),
                           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: "PDF" })
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "button",
+                      {
+                        id: `btn-photo-doc-${receipt.id}`,
+                        onClick: () => handleSavePhoto(receipt),
+                        disabled: savingPhotoId === receipt.id,
+                        className: "flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200/60 dark:border-emerald-800/60 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0",
+                        title: isInvoiceMode ? "Save Invoice Photo (PNG)" : "Save Receipt Photo (PNG)",
+                        children: [
+                          savingPhotoId === receipt.id ? /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { className: "w-3 h-3 animate-spin shrink-0" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3 h-3 shrink-0" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: "Photo" })
                         ]
                       }
                     ),
@@ -122261,6 +122440,195 @@ const StaffManageModal = ({
       alert("Failed to export PDF. Please try again.");
     }
   };
+  const handleExportStaffPhoto = async () => {
+    try {
+      const hasPermission = await ensureStoragePermission();
+      if (!hasPermission) {
+        showToast("Storage permission denied");
+        return;
+      }
+      const baseWidth = 900;
+      const boxX = 28;
+      const boxWidth = baseWidth - 56;
+      const scale = 2;
+      const summaryCards = [
+        { label: "ATTENDANCE", value: `${attendanceRate}% (${totalDaysPresent}/${totalDaysTotal} days)`, color: "#0284c7" },
+        { label: "SALES GENERATED", value: `${currency} ${totalSalesAmount.toLocaleString()}`, color: "#15803d" },
+        { label: "NET PAYABLE", value: `${currency} ${netEstimatedPay.toLocaleString()}`, color: "#4f46e5" }
+      ];
+      const columns = [
+        { header: "SECTION / RECORD", x: boxX + 16, align: "left" },
+        { header: "DETAILS / NOTES", x: boxX + 280, align: "left" },
+        { header: "DATE / TIME", x: boxX + 640, align: "center" },
+        { header: "AMOUNT / STATUS", x: boxX + boxWidth - 16, align: "right" }
+      ];
+      const rows = [];
+      timeframeAttendanceList.slice(0, 10).forEach((att) => {
+        rows.push([
+          `Attendance: ${att.status.toUpperCase()}`,
+          att.notes || `${att.checkInTime || "-"} to ${att.checkOutTime || "-"}`,
+          att.date,
+          att.status.toUpperCase()
+        ]);
+      });
+      timeframeSalesList.slice(0, 8).forEach((s2) => {
+        rows.push([
+          `Sale: ${s2.item}`,
+          s2.commission ? `Comm: ${currency} ${Number(s2.commission).toLocaleString()}` : "-",
+          s2.date || "",
+          `${currency} ${(Number(s2.amount) || 0).toLocaleString()}`
+        ]);
+      });
+      timeframeLossesList.slice(0, 6).forEach((l2) => {
+        rows.push([
+          `Loss: ${l2.title}`,
+          l2.notes || "-",
+          l2.date,
+          `${currency} ${(Number(l2.amount) || 0).toLocaleString()} (${l2.status.toUpperCase()})`
+        ]);
+      });
+      timeframeIncidentsList.slice(0, 6).forEach((inc) => {
+        rows.push([
+          `Incident: ${inc.title}`,
+          inc.actionTaken || inc.notes || "-",
+          inc.date,
+          `${inc.type.toUpperCase()} / ${inc.severity || "normal"}`
+        ]);
+      });
+      let baseHeight = 270;
+      baseHeight += 80;
+      baseHeight += 40;
+      baseHeight += Math.max(rows.length * 36, 60);
+      baseHeight += 60;
+      const height = baseHeight * scale;
+      const width = baseWidth * scale;
+      const canvas2 = document.createElement("canvas");
+      canvas2.width = width;
+      canvas2.height = height;
+      const ctx = canvas2.getContext("2d");
+      if (!ctx) {
+        showToast("Could not initialize canvas");
+        return;
+      }
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
+      grad.addColorStop(0, "#0284c7");
+      grad.addColorStop(1, "#4f46e5");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, baseWidth, 10);
+      let curY = 38;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#0284c7";
+      ctx.font = "bold 22px system-ui, -apple-system, sans-serif";
+      ctx.fillText("STAFF PERFORMANCE & AUDIT REPORT", baseWidth / 2, curY);
+      curY += 24;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 16px system-ui, -apple-system, sans-serif";
+      ctx.fillText(worker.name + (worker.role ? ` (${worker.role})` : ""), baseWidth / 2, curY);
+      curY += 20;
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px system-ui, -apple-system, sans-serif";
+      const infoLine = `Timeframe: ${getTimeframeLabel(timeframeFilter)}  •  Phone: ${worker.phone || worker.contact || "N/A"}  •  Base Salary: ${currency} ${(worker.salary || 0).toLocaleString()}`;
+      ctx.fillText(infoLine, baseWidth / 2, curY);
+      curY += 24;
+      const boxHeight = 64;
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, boxHeight, 12);
+      ctx.fill();
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const cardW = boxWidth / summaryCards.length;
+      summaryCards.forEach((c3, i) => {
+        const cx = boxX + cardW * i + cardW / 2;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#64748b";
+        ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+        ctx.fillText(c3.label, cx, curY + 22);
+        ctx.fillStyle = c3.color;
+        ctx.font = "bold 15px system-ui, -apple-system, sans-serif";
+        ctx.fillText(c3.value, cx, curY + 46);
+        if (i < summaryCards.length - 1) {
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX + cardW * (i + 1), curY + 12);
+          ctx.lineTo(boxX + cardW * (i + 1), curY + boxHeight - 12);
+          ctx.stroke();
+        }
+      });
+      curY += boxHeight + 20;
+      ctx.fillStyle = "#0284c7";
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, 34, [8, 8, 0, 0]);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+      columns.forEach((col) => {
+        ctx.textAlign = col.align;
+        ctx.fillText(col.header, col.x, curY + 21);
+      });
+      curY += 34;
+      if (rows.length === 0) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(boxX, curY, boxWidth, 48);
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.strokeRect(boxX, curY, boxWidth, 48);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "12px system-ui, -apple-system, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("No staff records found for this period.", baseWidth / 2, curY + 28);
+        curY += 48;
+      } else {
+        rows.forEach((row, rIdx) => {
+          ctx.fillStyle = rIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
+          ctx.fillRect(boxX, curY, boxWidth, 36);
+          ctx.strokeStyle = "#f1f5f9";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX, curY + 36);
+          ctx.lineTo(boxX + boxWidth, curY + 36);
+          ctx.stroke();
+          row.forEach((cell, cIdx) => {
+            const col = columns[cIdx];
+            ctx.textAlign = col.align;
+            ctx.fillStyle = "#1e293b";
+            ctx.font = "11px system-ui, -apple-system, sans-serif";
+            ctx.fillText(cell, col.x, curY + 22);
+          });
+          curY += 36;
+        });
+      }
+      curY += 28;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px system-ui, -apple-system, sans-serif";
+      ctx.fillText("Powered by Brivu app", baseWidth / 2, curY);
+      const dataUrl = canvas2.toDataURL("image/png", 1);
+      const sanitizedName = worker.name.replace(/[^a-zA-Z0-9]/g, "_");
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const filename = `Staff_Report_${sanitizedName}_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: "image/png",
+        title: `Staff Report - ${worker.name}`,
+        destination: "photos",
+        folder: "reports"
+      });
+      if (res.success) {
+        showToast("Staff report photo saved to gallery!");
+      } else {
+        showToast(res.message || "Failed to save photo");
+      }
+    } catch (err) {
+      console.warn("Error saving staff photo:", err);
+      showToast("Could not save staff report photo");
+    }
+  };
   const initials = worker.name.split(" ").map((n2) => n2[0]).join("").toUpperCase().substring(0, 2);
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4 overflow-hidden animate-fadeIn", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white dark:bg-slate-900 w-full max-w-4xl h-full sm:h-[92vh] sm:max-h-[92vh] rounded-none sm:rounded-3xl shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-scaleUp", children: [
@@ -122292,6 +122660,20 @@ const StaffManageModal = ({
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5" }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                id: "btn-header-export-staff-photo",
+                onClick: handleExportStaffPhoto,
+                className: "px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer border border-white/30 backdrop-blur-xs",
+                title: "Save staff report as Photo (PNG)",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                 ]
               }
             ),
@@ -125184,6 +125566,182 @@ const AgentManageModal = ({
       alert("Failed to export PDF report. Please try again.");
     }
   };
+  const handleExportAgentPhoto = async () => {
+    try {
+      const hasPermission = await ensureStoragePermission();
+      if (!hasPermission) {
+        showToast("Storage permission denied");
+        return;
+      }
+      const baseWidth = 900;
+      const boxX = 28;
+      const boxWidth = baseWidth - 56;
+      const scale = 2;
+      const summaryCards = [
+        { label: "TOTAL GOODS TAKEN", value: `${currency} ${totalItemsValue.toLocaleString()}`, color: "#1e40af" },
+        { label: "TOTAL CASH PAID", value: `${currency} ${totalCashPaid.toLocaleString()}`, color: "#15803d" },
+        { label: "REMAINING BALANCE", value: `${currency} ${totalRemainingBalance.toLocaleString()}`, color: "#b91c1c" }
+      ];
+      const columns = [
+        { header: "DATE", x: boxX + 16, align: "left" },
+        { header: "ITEMS TAKEN", x: boxX + 160, align: "left" },
+        { header: "QTY", x: boxX + 420, align: "center" },
+        { header: "UNIT PRICE", x: boxX + 530, align: "right" },
+        { header: "TOTAL VALUE", x: boxX + 660, align: "right" },
+        { header: "PAID", x: boxX + 760, align: "right" },
+        { header: "BALANCE", x: boxX + boxWidth - 16, align: "right" }
+      ];
+      const rows = timeframeLedgerList.slice(0, 35).map((rec) => [
+        (rec.date || "").replace("T", " ").substring(0, 16),
+        rec.itemsTaken || "-",
+        String(rec.quantity || 1),
+        `${currency} ${(rec.unitPrice || 0).toLocaleString()}`,
+        `${currency} ${(rec.totalAmount || rec.totalValue || 0).toLocaleString()}`,
+        `${currency} ${(rec.cashPaid || 0).toLocaleString()}`,
+        `${currency} ${(rec.remainingBalance || 0).toLocaleString()}`
+      ]);
+      let baseHeight = 270;
+      baseHeight += 80;
+      baseHeight += 40;
+      baseHeight += Math.max(rows.length * 36, 60);
+      baseHeight += 60;
+      const height = baseHeight * scale;
+      const width = baseWidth * scale;
+      const canvas2 = document.createElement("canvas");
+      canvas2.width = width;
+      canvas2.height = height;
+      const ctx = canvas2.getContext("2d");
+      if (!ctx) {
+        showToast("Could not initialize canvas");
+        return;
+      }
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
+      grad.addColorStop(0, "#4f46e5");
+      grad.addColorStop(1, "#0284c7");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, baseWidth, 10);
+      let curY = 38;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#4f46e5";
+      ctx.font = "bold 22px system-ui, -apple-system, sans-serif";
+      ctx.fillText("AGENT CONSIGNMENT & LEDGER AUDIT", baseWidth / 2, curY);
+      curY += 24;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 16px system-ui, -apple-system, sans-serif";
+      ctx.fillText(agent.agentName + (agent.shopName ? ` (${agent.shopName})` : ""), baseWidth / 2, curY);
+      curY += 20;
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px system-ui, -apple-system, sans-serif";
+      const infoLine = `Timeframe: ${getTimeframeLabel(timeframeFilter)}  •  Phone: ${agent.contact || "N/A"}  •  Location: ${agent.address || "N/A"}`;
+      ctx.fillText(infoLine, baseWidth / 2, curY);
+      curY += 24;
+      const boxHeight = 64;
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, boxHeight, 12);
+      ctx.fill();
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const cardW = boxWidth / summaryCards.length;
+      summaryCards.forEach((c3, i) => {
+        const cx = boxX + cardW * i + cardW / 2;
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#64748b";
+        ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+        ctx.fillText(c3.label, cx, curY + 22);
+        ctx.fillStyle = c3.color;
+        ctx.font = "bold 15px system-ui, -apple-system, sans-serif";
+        ctx.fillText(c3.value, cx, curY + 46);
+        if (i < summaryCards.length - 1) {
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX + cardW * (i + 1), curY + 12);
+          ctx.lineTo(boxX + cardW * (i + 1), curY + boxHeight - 12);
+          ctx.stroke();
+        }
+      });
+      curY += boxHeight + 20;
+      ctx.fillStyle = "#4f46e5";
+      ctx.beginPath();
+      ctx.roundRect(boxX, curY, boxWidth, 34, [8, 8, 0, 0]);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+      columns.forEach((col) => {
+        ctx.textAlign = col.align;
+        ctx.fillText(col.header, col.x, curY + 21);
+      });
+      curY += 34;
+      if (rows.length === 0) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(boxX, curY, boxWidth, 48);
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.strokeRect(boxX, curY, boxWidth, 48);
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "12px system-ui, -apple-system, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("No consignment records found for this period.", baseWidth / 2, curY + 28);
+        curY += 48;
+      } else {
+        rows.forEach((row, rIdx) => {
+          ctx.fillStyle = rIdx % 2 === 0 ? "#ffffff" : "#f8fafc";
+          ctx.fillRect(boxX, curY, boxWidth, 36);
+          ctx.strokeStyle = "#f1f5f9";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(boxX, curY + 36);
+          ctx.lineTo(boxX + boxWidth, curY + 36);
+          ctx.stroke();
+          row.forEach((cell, cIdx) => {
+            const col = columns[cIdx];
+            ctx.textAlign = col.align;
+            if (cIdx === 6) {
+              ctx.fillStyle = "#b91c1c";
+              ctx.font = "bold 11px system-ui, -apple-system, sans-serif";
+            } else if (cIdx === 5) {
+              ctx.fillStyle = "#15803d";
+              ctx.font = "bold 11px system-ui, -apple-system, sans-serif";
+            } else {
+              ctx.fillStyle = "#1e293b";
+              ctx.font = "11px system-ui, -apple-system, sans-serif";
+            }
+            ctx.fillText(cell, col.x, curY + 22);
+          });
+          curY += 36;
+        });
+      }
+      curY += 28;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px system-ui, -apple-system, sans-serif";
+      ctx.fillText("Powered by Brivu app", baseWidth / 2, curY);
+      const dataUrl = canvas2.toDataURL("image/png", 1);
+      const sanitizedName = agent.agentName.replace(/[^a-zA-Z0-9]/g, "_");
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const filename = `Agent_Ledger_${sanitizedName}_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: "image/png",
+        title: `Agent Ledger - ${agent.agentName}`,
+        destination: "photos",
+        folder: "reports"
+      });
+      if (res.success) {
+        showToast("Agent report photo saved to gallery!");
+      } else {
+        showToast(res.message || "Failed to save photo");
+      }
+    } catch (err) {
+      console.warn("Error saving agent photo:", err);
+      showToast("Could not save agent report photo");
+    }
+  };
   const getTimeframeLabel = (f2) => {
     switch (f2) {
       case "today":
@@ -125253,6 +125811,20 @@ const AgentManageModal = ({
               children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              id: "btn-export-agent-photo",
+              onClick: handleExportAgentPhoto,
+              className: "px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer border border-white/30 backdrop-blur-xs",
+              title: "Save agent report as Photo (PNG)",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
               ]
             }
           ),
@@ -128056,6 +128628,331 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
       showToast("Could not save shopping list photo");
     }
   };
+  const handleSaveReportPhoto = async (targetSection) => {
+    const section = targetSection || activeTab;
+    if (section === "shoppingList") {
+      return handleSaveShoppingListPhoto();
+    }
+    try {
+      showToast("Generating report photo...");
+      await ensureStoragePermission();
+      const scale = 3;
+      const baseWidth = 800;
+      const boxX = 36;
+      const boxWidth = baseWidth - boxX * 2;
+      let reportTitle = "BUSINESS REPORT";
+      let summaryCards = [];
+      let columns = [];
+      let rows = [];
+      if (section === "workers") {
+        reportTitle = "STAFF DIRECTORY REPORT";
+        summaryCards = [
+          { label: "TOTAL STAFF", value: `${filteredWorkers.length}` },
+          { label: "EST. MONTHLY PAYROLL", value: `${currency} ${totalMonthlyPayroll.toLocaleString()}`, color: "#0284c7" }
+        ];
+        columns = [
+          { header: "#", x: boxX + 16, align: "left" },
+          { header: "NAME & ROLE", x: boxX + 60, align: "left" },
+          { header: "PHONE", x: boxX + 300, align: "left" },
+          { header: "SCHEDULE", x: boxX + 460, align: "left" },
+          { header: "SALARY", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = filteredWorkers.map((w3, idx) => [
+          String(idx + 1),
+          w3.role ? `${w3.name} (${w3.role})` : w3.name,
+          w3.phone || "-",
+          [w3.workDays, w3.workHours].filter(Boolean).join(", ") || "Regular",
+          `${currency} ${w3.salary.toLocaleString()}${w3.salaryPeriod === "daily" ? "/day" : w3.salaryPeriod === "weekly" ? "/wk" : "/mo"}`
+        ]);
+      } else if (section === "agents") {
+        reportTitle = "AGENTS DIRECTORY REPORT";
+        summaryCards = [
+          { label: "TOTAL AGENTS", value: `${filteredAgents.length}` },
+          { label: "TOTAL CONSIGNMENT", value: `${currency} ${agentPeriodAnalytics.totalConsignmentTaken.toLocaleString()}`, color: "#0284c7" },
+          { label: "REMAINING BALANCE", value: `${currency} ${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()}`, color: "#d97706" }
+        ];
+        columns = [
+          { header: "#", x: boxX + 16, align: "left" },
+          { header: "AGENT NAME", x: boxX + 60, align: "left" },
+          { header: "SHOP / LOCATION", x: boxX + 280, align: "left" },
+          { header: "CONTACT", x: boxX + 500, align: "left" },
+          { header: "OWED", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = filteredAgents.map((a2, idx) => {
+          const ab = agentPeriodAnalytics.agentBreakdown.find((b2) => b2.agent.id === a2.id);
+          const bal = ab ? ab.remainingBalance : a2.balance || 0;
+          return [
+            String(idx + 1),
+            a2.agentName,
+            a2.shopName || a2.address || "-",
+            a2.contact || "-",
+            `${currency} ${bal.toLocaleString()}`
+          ];
+        });
+      } else if (section === "customers") {
+        reportTitle = "CLIENT DIRECTORY REPORT";
+        summaryCards = [
+          { label: "TOTAL CLIENTS", value: `${filteredCustomers.length}` },
+          { label: "ACTIVE DEBTS", value: `${unpaidDebtsCount} clients`, color: "#d97706" }
+        ];
+        columns = [
+          { header: "#", x: boxX + 16, align: "left" },
+          { header: "CLIENT NAME", x: boxX + 60, align: "left" },
+          { header: "CONTACT / PHONE", x: boxX + 320, align: "left" },
+          { header: "LOCATION / NOTES", x: boxX + 520, align: "left" },
+          { header: "DATE", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = filteredCustomers.map((c3, idx) => [
+          String(idx + 1),
+          c3.name,
+          c3.contact || "-",
+          c3.location || "-",
+          c3.createdAt ? new Date(c3.createdAt).toLocaleDateString("en-GB") : "-"
+        ]);
+      } else if (section === "sales") {
+        reportTitle = "SALES PERFORMANCE REPORT";
+        summaryCards = [
+          { label: "TOTAL SALES", value: `${currency} ${periodTotalSales.toLocaleString()}`, color: "#059669" },
+          { label: "GROSS PROFIT", value: `${currency} ${periodTotalProfit.toLocaleString()}`, color: "#0284c7" },
+          { label: "TRANSACTIONS", value: `${periodSales.length}` }
+        ];
+        columns = [
+          { header: "DATE", x: boxX + 16, align: "left" },
+          { header: "PRODUCT", x: boxX + 130, align: "left" },
+          { header: "QTY", x: boxX + 370, align: "center" },
+          { header: "TOTAL", x: boxX + 520, align: "right" },
+          { header: "PROFIT", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = periodSales.map((s2) => [
+          (s2.date || s2.createdAt || "").substring(0, 10),
+          s2.productName,
+          String(s2.quantity),
+          `${currency} ${s2.totalPrice.toLocaleString()}`,
+          `${currency} ${s2.profit.toLocaleString()}`
+        ]);
+      } else if (section === "stock") {
+        reportTitle = "STOCK INVENTORY REPORT";
+        summaryCards = [
+          { label: "TOTAL UNITS", value: `${stockAnalytics.totalItems}` },
+          { label: "COST ASSET VALUE", value: `${currency} ${stockAnalytics.totalCostValue.toLocaleString()}` },
+          { label: "RETAIL VALUE", value: `${currency} ${stockAnalytics.totalRetailValue.toLocaleString()}`, color: "#059669" }
+        ];
+        columns = [
+          { header: "PRODUCT", x: boxX + 16, align: "left" },
+          { header: "CATEGORY", x: boxX + 260, align: "left" },
+          { header: "STOCK", x: boxX + 440, align: "center" },
+          { header: "BUY/SELL", x: boxX + 580, align: "right" },
+          { header: "VALUE", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = products.map((p2) => {
+          var _a4;
+          const cat = ((_a4 = productCategories.find((c3) => c3.id === p2.categoryId)) == null ? void 0 : _a4.name) || "General";
+          return [
+            p2.name,
+            cat,
+            String(p2.quantity),
+            `${p2.costPrice.toLocaleString()} / ${p2.sellingPrice.toLocaleString()}`,
+            `${currency} ${(p2.quantity * p2.sellingPrice).toLocaleString()}`
+          ];
+        });
+      } else if (section === "expense") {
+        reportTitle = "EXPENSES REPORT";
+        summaryCards = [
+          { label: "TOTAL EXPENSES", value: `${currency} ${filteredExpensesTotal.toLocaleString()}`, color: "#e11d48" },
+          { label: "RECORDS", value: `${filteredExpenses.length}` }
+        ];
+        columns = [
+          { header: "DATE", x: boxX + 16, align: "left" },
+          { header: "TITLE", x: boxX + 130, align: "left" },
+          { header: "CATEGORY", x: boxX + 380, align: "left" },
+          { header: "AMOUNT", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = filteredExpenses.map((e3) => [
+          (e3.date || e3.createdAt || "").substring(0, 10),
+          e3.title,
+          e3.category || "General",
+          `${currency} ${e3.amount.toLocaleString()}`
+        ]);
+      } else if (section === "debts") {
+        reportTitle = "DEBTS & CREDIT REPORT";
+        summaryCards = [
+          { label: "OUTSTANDING", value: `${currency} ${totalOutstandingDebts.toLocaleString()}`, color: "#e11d48" },
+          { label: "RECOVERED", value: `${currency} ${totalRecoveredDebts.toLocaleString()}`, color: "#059669" },
+          { label: "UNPAID COUNT", value: `${unpaidDebtsCount} records` }
+        ];
+        columns = [
+          { header: "DATE", x: boxX + 16, align: "left" },
+          { header: "CUSTOMER", x: boxX + 120, align: "left" },
+          { header: "ITEM / INFO", x: boxX + 340, align: "left" },
+          { header: "STATUS", x: boxX + 540, align: "center" },
+          { header: "AMOUNT", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = timeFilteredDebts.map((d2) => [
+          (d2.date || d2.createdAt || "").substring(0, 10),
+          d2.customerName,
+          d2.productTaken || d2.description || "-",
+          (d2.status || (d2.isPaid ? "paid" : "unpaid")).toUpperCase(),
+          `${currency} ${d2.amount.toLocaleString()}`
+        ]);
+      } else {
+        reportTitle = "BUSINESS PERFORMANCE REPORT";
+        const netProfit = periodTotalProfit - reportMetrics.totalExpenses;
+        summaryCards = [
+          { label: "TOTAL SALES", value: `${currency} ${periodTotalSales.toLocaleString()}`, color: "#059669" },
+          { label: "TOTAL EXPENSES", value: `${currency} ${reportMetrics.totalExpenses.toLocaleString()}`, color: "#e11d48" },
+          { label: "NET ESTIMATED INCOME", value: `${currency} ${netProfit.toLocaleString()}`, color: netProfit >= 0 ? "#0284c7" : "#e11d48" }
+        ];
+        columns = [
+          { header: "METRIC", x: boxX + 16, align: "left" },
+          { header: "DETAILS", x: boxX + 340, align: "left" },
+          { header: "VALUE", x: boxX + boxWidth - 16, align: "right" }
+        ];
+        rows = [
+          ["Total Sales Volume", `${periodSales.length} total orders recorded`, `${currency} ${periodTotalSales.toLocaleString()}`],
+          ["Gross Sales Profit", "Calculated across product margin", `${currency} ${periodTotalProfit.toLocaleString()}`],
+          ["Total Period Expenses", `${filteredExpenses.length} expense transactions`, `${currency} ${reportMetrics.totalExpenses.toLocaleString()}`],
+          ["Net Estimated Profit", "Gross Sales Profit - Expenses", `${currency} ${netProfit.toLocaleString()}`],
+          ["Current Stock Value", `${stockAnalytics.totalItems} available units`, `${currency} ${stockAnalytics.totalCostValue.toLocaleString()}`],
+          ["Agent Consignment Owed", `${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()} pending`, `${currency} ${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()}`],
+          ["Customer Debt Balance", `${unpaidDebtsCount} unpaid balances`, `${currency} ${totalOutstandingDebts.toLocaleString()}`]
+        ];
+      }
+      let baseHeight = 240;
+      if (summaryCards.length > 0) baseHeight += 80;
+      baseHeight += 40;
+      baseHeight += Math.max(rows.length * 36, 60);
+      baseHeight += 60;
+      const height = baseHeight * scale;
+      const width = baseWidth * scale;
+      const canvas2 = document.createElement("canvas");
+      canvas2.width = width;
+      canvas2.height = height;
+      const ctx = canvas2.getContext("2d");
+      if (!ctx) {
+        showToast("Could not initialize canvas");
+        return;
+      }
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
+      grad.addColorStop(0, "#0284c7");
+      grad.addColorStop(1, "#0ea5e9");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, baseWidth, 8);
+      let curY = 36;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#0284c7";
+      ctx.font = "bold 22px system-ui, -apple-system, sans-serif";
+      ctx.fillText(reportTitle, baseWidth / 2, curY);
+      curY += 24;
+      if (business == null ? void 0 : business.name) {
+        ctx.fillStyle = "#1e293b";
+        ctx.font = "bold 15px system-ui, -apple-system, sans-serif";
+        ctx.fillText(business.name, baseWidth / 2, curY);
+        curY += 20;
+      }
+      ctx.fillStyle = "#64748b";
+      ctx.font = "12px system-ui, -apple-system, sans-serif";
+      const now = /* @__PURE__ */ new Date();
+      const dateFormatted = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      const timeFormatted = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+      ctx.fillText(`${dateFormatted}, ${timeFormatted}`, baseWidth / 2, curY);
+      curY += 24;
+      if (summaryCards.length > 0) {
+        const boxHeight = 64;
+        ctx.fillStyle = "#f8fafc";
+        ctx.beginPath();
+        ctx.roundRect(boxX, curY, boxWidth, boxHeight, 12);
+        ctx.fill();
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        const cardW = boxWidth / summaryCards.length;
+        summaryCards.forEach((c3, i) => {
+          const cx = boxX + cardW * i + cardW / 2;
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#64748b";
+          ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
+          ctx.fillText(c3.label, cx, curY + 22);
+          ctx.fillStyle = c3.color || "#0f172a";
+          ctx.font = "bold 14px system-ui, -apple-system, sans-serif";
+          ctx.fillText(c3.value, cx, curY + 44);
+          if (i < summaryCards.length - 1) {
+            ctx.strokeStyle = "#e2e8f0";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(boxX + cardW * (i + 1), curY + 12);
+            ctx.lineTo(boxX + cardW * (i + 1), curY + boxHeight - 12);
+            ctx.stroke();
+          }
+        });
+        curY += boxHeight + 20;
+      }
+      ctx.fillStyle = "#64748b";
+      ctx.font = "bold 10px system-ui, -apple-system, sans-serif";
+      columns.forEach((col) => {
+        ctx.textAlign = col.align;
+        ctx.fillText(col.header, col.x, curY);
+      });
+      curY += 6;
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(boxX, curY);
+      ctx.lineTo(boxX + boxWidth, curY);
+      ctx.stroke();
+      curY += 16;
+      if (rows.length === 0) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.textAlign = "center";
+        ctx.font = "italic 12px system-ui, -apple-system, sans-serif";
+        ctx.fillText("No records available for this period.", baseWidth / 2, curY + 14);
+        curY += 36;
+      } else {
+        ctx.font = "11px system-ui, -apple-system, sans-serif";
+        rows.forEach((row, rIdx) => {
+          if (rIdx % 2 === 1) {
+            ctx.fillStyle = "#f8fafc";
+            ctx.fillRect(boxX, curY - 12, boxWidth, 26);
+          }
+          row.forEach((cell, cIdx) => {
+            const col = columns[cIdx];
+            if (!col) return;
+            ctx.textAlign = col.align;
+            ctx.fillStyle = cIdx === 0 ? "#64748b" : "#1e293b";
+            ctx.fillText(cell, col.x, curY + 4);
+          });
+          curY += 28;
+        });
+      }
+      curY += 16;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px system-ui, -apple-system, sans-serif";
+      ctx.fillText("Powered by Brivu app", baseWidth / 2, curY);
+      const dataUrl = canvas2.toDataURL("image/png", 1);
+      const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const filename = `${reportTitle.replace(/\s+/g, "_")}_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: "image/png",
+        title: reportTitle,
+        destination: "photos",
+        folder: "reports"
+      });
+      if (res.success) {
+        showToast("Report photo saved to Gallery / Pictures!");
+        AdMobService.showInterstitial("report_photo_saved");
+      } else {
+        showToast(res.message || "Failed to save photo");
+      }
+    } catch (err) {
+      console.warn("Error saving report photo:", err);
+      showToast("Could not save report photo");
+    }
+  };
   const handleExportReport = async (targetSection) => {
     try {
       const section = targetSection || activeTab;
@@ -130544,6 +131441,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
                     ]
                   }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => handleSaveReportPhoto("sales"),
+                    className: "px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white",
+                    title: "Save Sales Report as Photo",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3 h-3" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
+                    ]
+                  }
                 )
               ] })
             ] }),
@@ -130753,6 +131663,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                   children: [
                     /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-600 dark:text-sky-400" }),
                     /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => handleSaveReportPhoto("stock"),
+                  className: "px-2.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 shadow-sm transition bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 border border-slate-200 dark:border-slate-700",
+                  title: "Save Stock Report as Photo",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                   ]
                 }
               )
@@ -131306,6 +132229,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
                     ]
                   }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => handleSaveReportPhoto("expense"),
+                    className: "px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white",
+                    title: "Save Expenses Report as Photo",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3 h-3" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
+                    ]
+                  }
                 )
               ] })
             ] }),
@@ -131754,6 +132690,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                     children: [
                       /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3 h-3" }),
                       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: () => handleSaveReportPhoto("debts"),
+                    className: "px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white",
+                    title: "Save Debts Report as Photo",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3 h-3" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                     ]
                   }
                 )
@@ -132898,9 +133847,23 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                 type: "button",
                 onClick: () => handleExportReport("report"),
                 className: "px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-xs shadow-md hover:bg-slate-50 flex items-center gap-1.5 border border-sky-100 dark:border-slate-800 transition",
+                title: "Export Report (PDF)",
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-600" }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: () => handleSaveReportPhoto("report"),
+                className: "px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-xs shadow-md hover:bg-slate-50 flex items-center gap-1.5 border border-sky-100 dark:border-slate-800 transition",
+                title: "Save Report as Photo",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                 ]
               }
             )
@@ -133249,6 +134212,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-600 dark:text-sky-400" }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: () => handleSaveReportPhoto("agents"),
+                className: "px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition",
+                title: "Save Agents List as Photo",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                 ]
               }
             )
@@ -133647,6 +134623,20 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-600 dark:text-sky-400" }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Export PDF" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                id: "btn-export-workers-photo",
+                type: "button",
+                onClick: () => handleSaveReportPhoto("workers"),
+                className: "px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition shadow-sm border border-slate-200/60 dark:border-slate-700",
+                title: "Save Staff Directory as Photo",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Save Photo" })
                 ]
               }
             ),
@@ -134306,6 +135296,19 @@ Kindly clear the balance at your earliest convenience. Thank you!`;
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-600 dark:text-sky-400" }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Export" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: () => handleSaveReportPhoto("customers"),
+                className: "px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition",
+                title: "Save Clients List as Photo",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Photo" })
                 ]
               }
             )
@@ -145536,6 +146539,7 @@ const GOOGLE_PLAY_PRODUCTS = {
     accountHoldDays: 30
   }
 };
+const PlayBillingNative = registerPlugin("PlayBillingPlugin");
 class PlayBillingService {
   /**
    * Check if running on Android native Capacitor
@@ -145550,36 +146554,50 @@ class PlayBillingService {
     if (this.isInitialized) return true;
     try {
       if (this.isAndroid()) {
-        this.isInitialized = true;
+        const res = await PlayBillingNative.initialize();
+        this.isInitialized = res.connected;
       } else {
         this.isInitialized = true;
       }
-      return true;
+      return this.isInitialized;
     } catch (err) {
       console.warn("Google Play Billing initialization error:", err);
       return false;
     }
   }
   /**
-   * Launch purchase flow for a selected subscription plan
+   * Launch native Google Play Billing bottom sheet (Google Pay / card)
    */
-  static async purchaseSubscription(planId, paymentMethod = "google_play") {
+  static async purchaseSubscription(planId, _paymentMethod = "google_play") {
     try {
-      await this.initialize();
       const product = GOOGLE_PLAY_PRODUCTS[planId];
       if (!product) {
-        throw new Error(`Unknown product plan: ${planId}`);
+        return { success: false, error: `Unknown product plan: ${planId}` };
       }
-      localStorage.setItem("brivu_live_play_connected", "true");
-      try {
-        const pkg = "com.brivu.myapp";
-        const storeUrl = `https://play.google.com/store/account/subscriptions?package=${pkg}&sku=${product.productId}`;
-        if (this.isAndroid()) {
-          await Browser.open({ url: storeUrl, presentationStyle: "popover" });
-        } else {
-          window.open(storeUrl, "_blank");
-        }
-      } catch (_2) {
+      if (!this.isAndroid()) {
+        return {
+          success: false,
+          error: "Google Play Billing is available directly within the Android mobile app installed from Google Play."
+        };
+      }
+      await this.initialize();
+      const result = await PlayBillingNative.launchBillingFlow({
+        productId: product.productId,
+        basePlanId: product.basePlanId
+      });
+      if (result.userCancelled) {
+        return {
+          success: false,
+          userCancelled: true,
+          error: "Purchase was cancelled in Google Play."
+        };
+      }
+      if (!result.success) {
+        return {
+          success: false,
+          userCancelled: false,
+          error: result.error || "Failed to complete subscription purchase in Google Play."
+        };
       }
       const now = /* @__PURE__ */ new Date();
       const expiresAt = new Date(now);
@@ -145593,7 +146611,7 @@ class PlayBillingService {
         amountPaid: product.priceAmountMicros / 1e6,
         currency: product.priceCurrencyCode,
         isGooglePlay: true,
-        orderId: `GPA.${Math.floor(1e3 + Math.random() * 9e3)}-${Math.floor(1e4 + Math.random() * 9e4)}-${Math.floor(1e4 + Math.random() * 9e4)}`
+        orderId: result.orderId || `GPA.${Date.now()}`
       };
       StorageService.saveSubscription(subscription);
       return {
@@ -145606,46 +146624,80 @@ class PlayBillingService {
     }
   }
   /**
-   * Restore purchases (required by Google Play)
+   * Restore purchases directly from Google Play Store
    */
   static async restorePurchases() {
     try {
-      await this.initialize();
-      if (!this.isAndroid() || !localStorage.getItem("brivu_live_play_connected")) {
+      if (!this.isAndroid()) {
         return {
           restored: false,
           subscription: null,
-          message: "Google Play Store connection required to restore purchases."
+          message: "Purchases can only be restored on Android devices signed into Google Play."
         };
       }
-      const existing = StorageService.getSubscription();
-      if (existing && existing.status === "active" && existing.isGooglePlay) {
+      await this.initialize();
+      const res = await PlayBillingNative.queryPurchases();
+      if (res.success && res.purchases && res.purchases.length > 0) {
+        const purchase = res.purchases[0];
+        const purchasedProductIds = purchase.products || [];
+        let matchedPlanKey = "1-month";
+        if (purchasedProductIds.some((id) => id.includes("year") || id.includes("annual"))) {
+          matchedPlanKey = "1-year";
+        } else if (purchasedProductIds.some((id) => id.includes("6month") || id.includes("semi"))) {
+          matchedPlanKey = "6-months";
+        }
+        const product = GOOGLE_PLAY_PRODUCTS[matchedPlanKey];
+        const now = /* @__PURE__ */ new Date();
+        const purchaseDate = purchase.purchaseTime ? new Date(purchase.purchaseTime) : now;
+        const expiresAt = new Date(purchaseDate);
+        expiresAt.setMonth(expiresAt.getMonth() + product.monthsCount);
+        const restoredSubscription = {
+          planId: product.planId,
+          planName: product.name,
+          status: "active",
+          startedAt: purchaseDate.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          amountPaid: product.priceAmountMicros / 1e6,
+          currency: product.priceCurrencyCode,
+          isGooglePlay: true,
+          orderId: purchase.orderId
+        };
+        StorageService.saveSubscription(restoredSubscription);
         return {
           restored: true,
-          subscription: existing,
-          message: `Active subscription restored from Google Play: ${existing.planName}.`
+          subscription: restoredSubscription,
+          message: `Active subscription restored from Google Play: ${product.name}!`
         };
       }
       return {
         restored: false,
         subscription: null,
-        message: "No active Google Play subscription found."
+        message: "No active Google Play subscription found for this Google account."
       };
-    } catch {
+    } catch (err) {
+      console.warn("Error restoring purchases:", err);
       return {
         restored: false,
         subscription: null,
-        message: "Unable to connect to Google Play to restore purchases."
+        message: "Could not connect to Google Play to verify purchases."
       };
     }
   }
   /**
    * Open Google Play Subscriptions management deep link
    */
-  static openManageSubscriptions() {
-    const pkg = "com.brivu.myapp";
-    const url = `https://play.google.com/store/account/subscriptions?package=${pkg}`;
-    window.open(url, "_blank");
+  static async openManageSubscriptions() {
+    try {
+      if (this.isAndroid()) {
+        await PlayBillingNative.openManageSubscriptions({ sku: "brivu_pro_monthly" });
+      } else {
+        const pkg = "com.brivu.myapp";
+        window.open(`https://play.google.com/store/account/subscriptions?package=${pkg}`, "_blank");
+      }
+    } catch (_2) {
+      const pkg = "com.brivu.myapp";
+      window.open(`https://play.google.com/store/account/subscriptions?package=${pkg}`, "_blank");
+    }
   }
 }
 __publicField(PlayBillingService, "isInitialized", false);
@@ -145737,9 +146789,9 @@ const UpgradeScreen = ({
         setIsSuccess(true);
         setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlan.formattedPrice}) via Google Play Billing!`);
         window.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
+      } else if (!result.userCancelled) {
         setRestoreFeedback({
-          msg: result.error || "Google Play Store connection required. Subscriptions can only be processed via live Google Play Billing once published on the Play Console.",
+          msg: result.error || "Google Play Store connection required. Subscriptions are processed via Google Play Billing.",
           success: false
         });
       }
@@ -158732,7 +159784,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-CLtTjBbi.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-BunsyGmp.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

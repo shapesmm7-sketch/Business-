@@ -17,6 +17,7 @@ import {
   Info,
   Save,
   Download,
+  Camera,
   CheckCircle2,
   Building2,
   CreditCard,
@@ -552,6 +553,38 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     } catch (err) {
       console.error(err);
       showToast('Error generating PDF');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleQuickSavePhoto = async () => {
+    const invoice = buildInvoiceData();
+    if (!invoice) return;
+
+    setIsProcessing(true);
+    await StorageService.saveReceiptAsync(invoice);
+    if (!editingInvoice) {
+      StorageService.advanceInvoiceSequence();
+    }
+    try {
+      showToast('Generating photo...');
+      const res = await PdfGenerator.downloadReceiptPhoto(invoice);
+      showToast(res.message);
+      AdMobService.showInterstitial('invoice_photo_saved');
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Pictures/Brivu',
+        documentType: 'invoice',
+        documentNumber: invoice.receiptNumber,
+      });
+      if (onSaveOnly) {
+        onSaveOnly(invoice);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error saving invoice photo');
     } finally {
       setIsProcessing(false);
     }
@@ -1444,11 +1477,24 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
             type="button"
             onClick={handleQuickDownload}
             disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50"
+            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50"
             title="Download Invoice PDF"
           >
             <Download className="w-4 h-4 text-indigo-300 shrink-0" />
             <span className="whitespace-nowrap">PDF</span>
+          </button>
+
+          {/* Quick Save Photo */}
+          <button
+            id="btn-invoice-photo"
+            type="button"
+            onClick={handleQuickSavePhoto}
+            disabled={isProcessing}
+            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50"
+            title="Save Invoice Photo (PNG)"
+          >
+            <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="whitespace-nowrap">Photo</span>
           </button>
 
           {/* Quick Share via WhatsApp */}

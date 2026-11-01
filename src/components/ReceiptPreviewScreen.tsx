@@ -13,6 +13,7 @@ import {
   Sparkles,
   Palette,
   Cloud,
+  Camera,
 } from 'lucide-react';
 import { Receipt, ReceiptTemplateId } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
@@ -107,6 +108,28 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
     } catch (err) {
       console.error('PDF download error:', err);
       showToast('Error generating PDF file');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSavePhoto = async () => {
+    try {
+      setIsGenerating(true);
+      showToast('Generating photo...');
+      const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+      showToast(res.message);
+      AdMobService.showInterstitial('preview_photo_save');
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Pictures/Brivu',
+        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentNumber: receipt.receiptNumber,
+      });
+    } catch (err) {
+      console.error('Photo save error:', err);
+      showToast('Error saving receipt photo');
     } finally {
       setIsGenerating(false);
     }
@@ -409,10 +432,23 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             id="btn-preview-download-pdf"
             onClick={handleDownload}
             disabled={isGenerating}
-            className="flex-1 py-3.5 px-4 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50"
+            className="flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            title={isInvoice ? 'Download PDF Invoice' : 'Download PDF Receipt'}
           >
-            <Download className={`w-4 h-4 ${isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
-            <span>{isInvoice ? 'Download Invoice' : 'Download PDF'}</span>
+            <Download className={`w-4 h-4 shrink-0 ${isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
+            <span className="truncate">{isInvoice ? 'Invoice PDF' : 'PDF'}</span>
+          </button>
+
+          {/* Save Photo */}
+          <button
+            id="btn-preview-save-photo"
+            onClick={handleSavePhoto}
+            disabled={isGenerating}
+            className="flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs sm:text-sm border border-emerald-300 dark:border-emerald-700 shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            title={isInvoice ? 'Save Invoice as Photo (PNG)' : 'Save Receipt as Photo (PNG)'}
+          >
+            <Camera className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="truncate">Save Photo</span>
           </button>
 
           {/* Share PDF (WhatsApp / Android Sheet) */}

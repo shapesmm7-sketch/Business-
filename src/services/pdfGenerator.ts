@@ -8,7 +8,7 @@ import { getTemplateConfig } from '../utils/templates';
 import { resolveEffectiveTheme } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
-import { saveJsPdf, shareContent, SaveFileResult } from './fileSaver';
+import { saveJsPdf, saveFile, shareContent, ensureStoragePermission, SaveFileResult } from './fileSaver';
 import { ReceiptLayoutRenderer } from '../components/ReceiptLayoutRenderer';
 
 /**
@@ -353,9 +353,9 @@ export const PdfGenerator = {
   },
 
   /**
-   * High fidelity DOM-to-PDF rendering matching the exact UI template design
+   * Captures receipt element as a high-resolution HTML Canvas
    */
-  async captureReceiptElementAsPdf(receipt: Receipt): Promise<jsPDF | null> {
+  async captureReceiptElementAsCanvas(receipt: Receipt): Promise<HTMLCanvasElement | null> {
     if (typeof window === 'undefined' || typeof document === 'undefined') return null;
 
     let targetElement: HTMLElement | null = null;
@@ -441,19 +441,41 @@ export const PdfGenerator = {
         root.render(React.createElement(ReceiptLayoutRenderer, { data: renderData }));
 
         // Allow layout and images to paint
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 140));
         targetElement = (tempContainer.firstElementChild as HTMLElement) || tempContainer;
       }
 
       if (!targetElement) return null;
 
-      const canvas = await html2canvas(targetElement, {
-        scale: 2.8,
+      return await html2canvas(targetElement, {
+        scale: 3.0,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
         logging: false,
       });
+    } catch (err) {
+      console.warn('html2canvas render note:', err);
+      return null;
+    } finally {
+      if (root) {
+        try {
+          root.unmount();
+        } catch {}
+      }
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+    }
+  },
+
+  /**
+   * High fidelity DOM-to-PDF rendering matching the exact UI template design
+   */
+  async captureReceiptElementAsPdf(receipt: Receipt): Promise<jsPDF | null> {
+    try {
+      const canvas = await this.captureReceiptElementAsCanvas(receipt);
+      if (!canvas) return null;
 
       const isCompact = receipt.template === 'compact';
       const pdfWidth = isCompact ? 80 : 210;
@@ -486,16 +508,32 @@ export const PdfGenerator = {
     } catch (err) {
       console.warn('html2canvas render note, using vector fallback:', err);
       return null;
-    } finally {
-      if (root) {
-        try {
-          root.unmount();
-        } catch {}
-      }
-      if (tempContainer && tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer);
-      }
     }
+  },
+
+  /**
+   * Saves high-resolution Photo (PNG) directly to device Photos / Gallery (Pictures/Brivu)
+   */
+  async downloadReceiptPhoto(receipt: Receipt): Promise<SaveFileResult> {
+    await ensureStoragePermission();
+    const canvas = await this.captureReceiptElementAsCanvas(receipt);
+    if (!canvas) {
+      throw new Error('Could not generate receipt photo');
+    }
+    const isInvoice = receipt.documentType === 'invoice';
+    const prefix = isInvoice ? 'Invoice' : 'Receipt';
+    const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${prefix}_${cleanNum}.png`;
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+
+    return await saveFile({
+      data: dataUrl,
+      filename,
+      mimeType: 'image/png',
+      title: `${prefix} ${receipt.receiptNumber}`,
+      destination: 'photos',
+      folder: isInvoice ? 'invoices' : 'receipts',
+    });
   },
 
   /**

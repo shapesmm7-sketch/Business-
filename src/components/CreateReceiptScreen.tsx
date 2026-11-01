@@ -18,6 +18,7 @@ import {
   Info,
   Save,
   Download,
+  Camera,
   CheckCircle2,
   Boxes,
   Scan,
@@ -443,7 +444,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
     return receipt;
   };
 
-  const handleSubmit = async (action: 'save' | 'download' | 'share' | 'preview') => {
+  const handleSubmit = async (action: 'save' | 'download' | 'photo' | 'share' | 'preview') => {
     const receipt = buildReceiptObject();
     if (!receipt) return;
 
@@ -491,6 +492,19 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           });
           onSaveAndPreview(receipt);
         }
+      } else if (action === 'photo') {
+        AdMobService.showInterstitial('receipt_photo_saved');
+        showToast('Generating photo...');
+        const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+        showToast(res.message);
+        setDownloadModalData({
+          isOpen: true,
+          fileName: res.filename,
+          folderName: res.folder || 'Pictures/Brivu',
+          documentType: 'receipt',
+          documentNumber: receipt.receiptNumber,
+        });
+        onSaveAndPreview(receipt);
       } else if (action === 'share') {
         await onQuickShare(receipt);
       } else if (action === 'preview') {
@@ -1012,17 +1026,30 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
             <span className="whitespace-nowrap">Save</span>
           </button>
 
-          {/* 2. Download */}
+          {/* 2. Download PDF */}
           <button
             id="btn-action-download"
             type="button"
             onClick={() => handleSubmit('download')}
             disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50"
+            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
             title="Download PDF"
           >
             <Download className="w-4 h-4 text-sky-400 shrink-0" />
             <span className="whitespace-nowrap">PDF</span>
+          </button>
+
+          {/* 2B. Save Photo */}
+          <button
+            id="btn-action-photo"
+            type="button"
+            onClick={() => handleSubmit('photo')}
+            disabled={isProcessing}
+            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+            title="Save Receipt Photo (PNG)"
+          >
+            <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="whitespace-nowrap">Photo</span>
           </button>
 
           {/* 3. Share */}

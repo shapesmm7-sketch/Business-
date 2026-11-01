@@ -28,6 +28,7 @@ import {
   Download,
   Loader2,
   Palette,
+  Camera,
   CheckCircle2,
   Printer,
 } from 'lucide-react';
@@ -187,6 +188,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null);
   const [deletingReceipt, setDeletingReceipt] = useState<Receipt | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [downloadModalData, setDownloadModalData] = useState<{
@@ -257,6 +259,27 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       showToast('Error generating PDF download');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleSavePhoto = async (receipt: Receipt) => {
+    setSavingPhotoId(receipt.id);
+    try {
+      showToast('Generating photo...');
+      const res = await PdfGenerator.downloadReceiptPhoto(receipt);
+      showToast(res.message);
+      setDownloadModalData({
+        isOpen: true,
+        fileName: res.filename,
+        folderName: res.folder || 'Pictures/Brivu',
+        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentNumber: receipt.receiptNumber,
+      });
+    } catch (err) {
+      console.error('Photo save error:', err);
+      showToast('Error saving receipt photo');
+    } finally {
+      setSavingPhotoId(null);
     }
   };
 
@@ -975,6 +998,21 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                             <Download className="w-3 h-3 shrink-0" />
                           )}
                           <span className="truncate">PDF</span>
+                        </button>
+
+                        <button
+                          id={`btn-photo-doc-${receipt.id}`}
+                          onClick={() => handleSavePhoto(receipt)}
+                          disabled={savingPhotoId === receipt.id}
+                          className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200/60 dark:border-emerald-800/60 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0"
+                          title={isInvoiceMode ? 'Save Invoice Photo (PNG)' : 'Save Receipt Photo (PNG)'}
+                        >
+                          {savingPhotoId === receipt.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                          ) : (
+                            <Camera className="w-3 h-3 shrink-0" />
+                          )}
+                          <span className="truncate">Photo</span>
                         </button>
 
                         <button

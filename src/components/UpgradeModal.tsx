@@ -122,7 +122,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       onSubscriptionChange(result.subscription);
       setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlan.formattedPrice} via Google Play Billing!`);
       setPaymentStep('success');
-    } else {
+    } else if (!result.userCancelled) {
       setRestoreFeedback({
         msg: result.error || 'Subscription checkout could not be completed.',
         success: false,

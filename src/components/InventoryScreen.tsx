@@ -2718,6 +2718,353 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     }
   };
 
+  const handleSaveReportPhoto = async (targetSection?: 'stock' | 'sales' | 'expense' | 'debts' | 'shoppingList' | 'report' | 'customers' | 'agents' | 'workers') => {
+    const section = targetSection || activeTab;
+    if (section === 'shoppingList') {
+      return handleSaveShoppingListPhoto();
+    }
+
+    try {
+      showToast('Generating report photo...');
+      await ensureStoragePermission();
+
+      const scale = 3;
+      const baseWidth = 800;
+      const boxX = 36;
+      const boxWidth = baseWidth - boxX * 2;
+
+      let reportTitle = 'BUSINESS REPORT';
+      let summaryCards: { label: string; value: string; color?: string }[] = [];
+      let columns: { header: string; x: number; align: 'left' | 'center' | 'right' }[] = [];
+      let rows: string[][] = [];
+
+      if (section === 'workers') {
+        reportTitle = 'STAFF DIRECTORY REPORT';
+        summaryCards = [
+          { label: 'TOTAL STAFF', value: `${filteredWorkers.length}` },
+          { label: 'EST. MONTHLY PAYROLL', value: `${currency} ${totalMonthlyPayroll.toLocaleString()}`, color: '#0284c7' },
+        ];
+        columns = [
+          { header: '#', x: boxX + 16, align: 'left' },
+          { header: 'NAME & ROLE', x: boxX + 60, align: 'left' },
+          { header: 'PHONE', x: boxX + 300, align: 'left' },
+          { header: 'SCHEDULE', x: boxX + 460, align: 'left' },
+          { header: 'SALARY', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = filteredWorkers.map((w, idx) => [
+          String(idx + 1),
+          w.role ? `${w.name} (${w.role})` : w.name,
+          w.phone || '-',
+          [w.workDays, w.workHours].filter(Boolean).join(', ') || 'Regular',
+          `${currency} ${w.salary.toLocaleString()}${w.salaryPeriod === 'daily' ? '/day' : w.salaryPeriod === 'weekly' ? '/wk' : '/mo'}`,
+        ]);
+      } else if (section === 'agents') {
+        reportTitle = 'AGENTS DIRECTORY REPORT';
+        summaryCards = [
+          { label: 'TOTAL AGENTS', value: `${filteredAgents.length}` },
+          { label: 'TOTAL CONSIGNMENT', value: `${currency} ${agentPeriodAnalytics.totalConsignmentTaken.toLocaleString()}`, color: '#0284c7' },
+          { label: 'REMAINING BALANCE', value: `${currency} ${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()}`, color: '#d97706' },
+        ];
+        columns = [
+          { header: '#', x: boxX + 16, align: 'left' },
+          { header: 'AGENT NAME', x: boxX + 60, align: 'left' },
+          { header: 'SHOP / LOCATION', x: boxX + 280, align: 'left' },
+          { header: 'CONTACT', x: boxX + 500, align: 'left' },
+          { header: 'OWED', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = filteredAgents.map((a, idx) => {
+          const ab = agentPeriodAnalytics.agentBreakdown.find(b => b.agent.id === a.id);
+          const bal = ab ? ab.remainingBalance : ((a as any).balance || 0);
+          return [
+            String(idx + 1),
+            a.agentName,
+            a.shopName || a.address || '-',
+            a.contact || '-',
+            `${currency} ${bal.toLocaleString()}`,
+          ];
+        });
+      } else if (section === 'customers') {
+        reportTitle = 'CLIENT DIRECTORY REPORT';
+        summaryCards = [
+          { label: 'TOTAL CLIENTS', value: `${filteredCustomers.length}` },
+          { label: 'ACTIVE DEBTS', value: `${unpaidDebtsCount} clients`, color: '#d97706' },
+        ];
+        columns = [
+          { header: '#', x: boxX + 16, align: 'left' },
+          { header: 'CLIENT NAME', x: boxX + 60, align: 'left' },
+          { header: 'CONTACT / PHONE', x: boxX + 320, align: 'left' },
+          { header: 'LOCATION / NOTES', x: boxX + 520, align: 'left' },
+          { header: 'DATE', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = filteredCustomers.map((c, idx) => [
+          String(idx + 1),
+          c.name,
+          c.contact || '-',
+          c.location || '-',
+          c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-GB') : '-',
+        ]);
+      } else if (section === 'sales') {
+        reportTitle = 'SALES PERFORMANCE REPORT';
+        summaryCards = [
+          { label: 'TOTAL SALES', value: `${currency} ${periodTotalSales.toLocaleString()}`, color: '#059669' },
+          { label: 'GROSS PROFIT', value: `${currency} ${periodTotalProfit.toLocaleString()}`, color: '#0284c7' },
+          { label: 'TRANSACTIONS', value: `${periodSales.length}` },
+        ];
+        columns = [
+          { header: 'DATE', x: boxX + 16, align: 'left' },
+          { header: 'PRODUCT', x: boxX + 130, align: 'left' },
+          { header: 'QTY', x: boxX + 370, align: 'center' },
+          { header: 'TOTAL', x: boxX + 520, align: 'right' },
+          { header: 'PROFIT', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = periodSales.map(s => [
+          (s.date || s.createdAt || '').substring(0, 10),
+          s.productName,
+          String(s.quantity),
+          `${currency} ${s.totalPrice.toLocaleString()}`,
+          `${currency} ${s.profit.toLocaleString()}`,
+        ]);
+      } else if (section === 'stock') {
+        reportTitle = 'STOCK INVENTORY REPORT';
+        summaryCards = [
+          { label: 'TOTAL UNITS', value: `${stockAnalytics.totalItems}` },
+          { label: 'COST ASSET VALUE', value: `${currency} ${stockAnalytics.totalCostValue.toLocaleString()}` },
+          { label: 'RETAIL VALUE', value: `${currency} ${stockAnalytics.totalRetailValue.toLocaleString()}`, color: '#059669' },
+        ];
+        columns = [
+          { header: 'PRODUCT', x: boxX + 16, align: 'left' },
+          { header: 'CATEGORY', x: boxX + 260, align: 'left' },
+          { header: 'STOCK', x: boxX + 440, align: 'center' },
+          { header: 'BUY/SELL', x: boxX + 580, align: 'right' },
+          { header: 'VALUE', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = products.map(p => {
+          const cat = productCategories.find(c => c.id === p.categoryId)?.name || 'General';
+          return [
+            p.name,
+            cat,
+            String(p.quantity),
+            `${p.costPrice.toLocaleString()} / ${p.sellingPrice.toLocaleString()}`,
+            `${currency} ${(p.quantity * p.sellingPrice).toLocaleString()}`,
+          ];
+        });
+      } else if (section === 'expense') {
+        reportTitle = 'EXPENSES REPORT';
+        summaryCards = [
+          { label: 'TOTAL EXPENSES', value: `${currency} ${filteredExpensesTotal.toLocaleString()}`, color: '#e11d48' },
+          { label: 'RECORDS', value: `${filteredExpenses.length}` },
+        ];
+        columns = [
+          { header: 'DATE', x: boxX + 16, align: 'left' },
+          { header: 'TITLE', x: boxX + 130, align: 'left' },
+          { header: 'CATEGORY', x: boxX + 380, align: 'left' },
+          { header: 'AMOUNT', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = filteredExpenses.map(e => [
+          (e.date || e.createdAt || '').substring(0, 10),
+          e.title,
+          e.category || 'General',
+          `${currency} ${e.amount.toLocaleString()}`,
+        ]);
+      } else if (section === 'debts') {
+        reportTitle = 'DEBTS & CREDIT REPORT';
+        summaryCards = [
+          { label: 'OUTSTANDING', value: `${currency} ${totalOutstandingDebts.toLocaleString()}`, color: '#e11d48' },
+          { label: 'RECOVERED', value: `${currency} ${totalRecoveredDebts.toLocaleString()}`, color: '#059669' },
+          { label: 'UNPAID COUNT', value: `${unpaidDebtsCount} records` },
+        ];
+        columns = [
+          { header: 'DATE', x: boxX + 16, align: 'left' },
+          { header: 'CUSTOMER', x: boxX + 120, align: 'left' },
+          { header: 'ITEM / INFO', x: boxX + 340, align: 'left' },
+          { header: 'STATUS', x: boxX + 540, align: 'center' },
+          { header: 'AMOUNT', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = timeFilteredDebts.map(d => [
+          (d.date || d.createdAt || '').substring(0, 10),
+          d.customerName,
+          d.productTaken || d.description || '-',
+          (d.status || (d.isPaid ? 'paid' : 'unpaid')).toUpperCase(),
+          `${currency} ${d.amount.toLocaleString()}`,
+        ]);
+      } else {
+        reportTitle = 'BUSINESS PERFORMANCE REPORT';
+        const netProfit = periodTotalProfit - reportMetrics.totalExpenses;
+        summaryCards = [
+          { label: 'TOTAL SALES', value: `${currency} ${periodTotalSales.toLocaleString()}`, color: '#059669' },
+          { label: 'TOTAL EXPENSES', value: `${currency} ${reportMetrics.totalExpenses.toLocaleString()}`, color: '#e11d48' },
+          { label: 'NET ESTIMATED INCOME', value: `${currency} ${netProfit.toLocaleString()}`, color: netProfit >= 0 ? '#0284c7' : '#e11d48' },
+        ];
+        columns = [
+          { header: 'METRIC', x: boxX + 16, align: 'left' },
+          { header: 'DETAILS', x: boxX + 340, align: 'left' },
+          { header: 'VALUE', x: boxX + boxWidth - 16, align: 'right' },
+        ];
+        rows = [
+          ['Total Sales Volume', `${periodSales.length} total orders recorded`, `${currency} ${periodTotalSales.toLocaleString()}`],
+          ['Gross Sales Profit', 'Calculated across product margin', `${currency} ${periodTotalProfit.toLocaleString()}`],
+          ['Total Period Expenses', `${filteredExpenses.length} expense transactions`, `${currency} ${reportMetrics.totalExpenses.toLocaleString()}`],
+          ['Net Estimated Profit', 'Gross Sales Profit - Expenses', `${currency} ${netProfit.toLocaleString()}`],
+          ['Current Stock Value', `${stockAnalytics.totalItems} available units`, `${currency} ${stockAnalytics.totalCostValue.toLocaleString()}`],
+          ['Agent Consignment Owed', `${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()} pending`, `${currency} ${agentPeriodAnalytics.totalRemainingBalance.toLocaleString()}`],
+          ['Customer Debt Balance', `${unpaidDebtsCount} unpaid balances`, `${currency} ${totalOutstandingDebts.toLocaleString()}`],
+        ];
+      }
+
+      let baseHeight = 240;
+      if (summaryCards.length > 0) baseHeight += 80;
+      baseHeight += 40;
+      baseHeight += Math.max(rows.length * 36, 60);
+      baseHeight += 60;
+      const height = baseHeight * scale;
+      const width = baseWidth * scale;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        showToast('Could not initialize canvas');
+        return;
+      }
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, baseWidth, baseHeight);
+
+      const grad = ctx.createLinearGradient(0, 0, baseWidth, 0);
+      grad.addColorStop(0, '#0284c7');
+      grad.addColorStop(1, '#0ea5e9');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, baseWidth, 8);
+
+      let curY = 36;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0284c7';
+      ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText(reportTitle, baseWidth / 2, curY);
+
+      curY += 24;
+      if (business?.name) {
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 15px system-ui, -apple-system, sans-serif';
+        ctx.fillText(business.name, baseWidth / 2, curY);
+        curY += 20;
+      }
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px system-ui, -apple-system, sans-serif';
+      const now = new Date();
+      const dateFormatted = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const timeFormatted = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      ctx.fillText(`${dateFormatted}, ${timeFormatted}`, baseWidth / 2, curY);
+
+      curY += 24;
+
+      if (summaryCards.length > 0) {
+        const boxHeight = 64;
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.roundRect(boxX, curY, boxWidth, boxHeight, 12);
+        ctx.fill();
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const cardW = boxWidth / summaryCards.length;
+        summaryCards.forEach((c, i) => {
+          const cx = boxX + cardW * i + cardW / 2;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
+          ctx.fillText(c.label, cx, curY + 22);
+
+          ctx.fillStyle = c.color || '#0f172a';
+          ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+          ctx.fillText(c.value, cx, curY + 44);
+
+          if (i < summaryCards.length - 1) {
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(boxX + cardW * (i + 1), curY + 12);
+            ctx.lineTo(boxX + cardW * (i + 1), curY + boxHeight - 12);
+            ctx.stroke();
+          }
+        });
+        curY += boxHeight + 20;
+      }
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+      columns.forEach(col => {
+        ctx.textAlign = col.align;
+        ctx.fillText(col.header, col.x, curY);
+      });
+
+      curY += 6;
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(boxX, curY);
+      ctx.lineTo(boxX + boxWidth, curY);
+      ctx.stroke();
+      curY += 16;
+
+      if (rows.length === 0) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.font = 'italic 12px system-ui, -apple-system, sans-serif';
+        ctx.fillText('No records available for this period.', baseWidth / 2, curY + 14);
+        curY += 36;
+      } else {
+        ctx.font = '11px system-ui, -apple-system, sans-serif';
+        rows.forEach((row, rIdx) => {
+          if (rIdx % 2 === 1) {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(boxX, curY - 12, boxWidth, 26);
+          }
+          row.forEach((cell, cIdx) => {
+            const col = columns[cIdx];
+            if (!col) return;
+            ctx.textAlign = col.align;
+            ctx.fillStyle = cIdx === 0 ? '#64748b' : '#1e293b';
+            ctx.fillText(cell, col.x, curY + 4);
+          });
+          curY += 28;
+        });
+      }
+
+      curY += 16;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px system-ui, -apple-system, sans-serif';
+      ctx.fillText('Powered by Brivu app', baseWidth / 2, curY);
+
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `${reportTitle.replace(/\s+/g, '_')}_${timestamp}.png`;
+      const res = await saveFile({
+        data: dataUrl,
+        filename,
+        mimeType: 'image/png',
+        title: reportTitle,
+        destination: 'photos',
+        folder: 'reports',
+      });
+
+      if (res.success) {
+        showToast('Report photo saved to Gallery / Pictures!');
+        AdMobService.showInterstitial('report_photo_saved');
+      } else {
+        showToast(res.message || 'Failed to save photo');
+      }
+    } catch (err) {
+      console.warn('Error saving report photo:', err);
+      showToast('Could not save report photo');
+    }
+  };
+
   // Section-specific PDF export: Each section exports strictly its own report
   const handleExportReport = async (targetSection?: 'stock' | 'sales' | 'expense' | 'debts' | 'shoppingList' | 'report' | 'customers' | 'agents' | 'workers') => {
     try {
@@ -5553,6 +5900,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     <Download className="w-3 h-3" />
                     <span>Export</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveReportPhoto('sales')}
+                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    title="Save Sales Report as Photo"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Photo</span>
+                  </button>
                 </div>
               </div>
 
@@ -5773,6 +6129,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   >
                     <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                     <span>Export</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveReportPhoto('stock')}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 shadow-sm transition bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 border border-slate-200 dark:border-slate-700"
+                    title="Save Stock Report as Photo"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Photo</span>
                   </button>
                 </div>
 
@@ -6359,6 +6724,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         <Download className="w-3 h-3" />
                         <span>Export</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveReportPhoto('expense')}
+                        className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                        title="Save Expenses Report as Photo"
+                      >
+                        <Camera className="w-3 h-3" />
+                        <span>Photo</span>
+                      </button>
                     </div>
                   </div>
 
@@ -6849,6 +7223,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   >
                     <Download className="w-3 h-3" />
                     <span>Export</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveReportPhoto('debts')}
+                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    title="Save Debts Report as Photo"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Photo</span>
                   </button>
                 </div>
               </div>
@@ -8177,9 +8560,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={() => handleExportReport('report')}
                   className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-xs shadow-md hover:bg-slate-50 flex items-center gap-1.5 border border-sky-100 dark:border-slate-800 transition"
+                  title="Export Report (PDF)"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600" />
                   <span>Export</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveReportPhoto('report')}
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-xs shadow-md hover:bg-slate-50 flex items-center gap-1.5 border border-sky-100 dark:border-slate-800 transition"
+                  title="Save Report as Photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Photo</span>
                 </button>
               </div>
             </div>
@@ -8620,6 +9013,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                   <span>Export</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveReportPhoto('agents')}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition"
+                  title="Save Agents List as Photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Photo</span>
+                </button>
               </div>
             </div>
 
@@ -9058,6 +9460,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                   <span className="hidden sm:inline">Export PDF</span>
+                </button>
+
+                <button
+                  id="btn-export-workers-photo"
+                  type="button"
+                  onClick={() => handleSaveReportPhoto('workers')}
+                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition shadow-sm border border-slate-200/60 dark:border-slate-700"
+                  title="Save Staff Directory as Photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden sm:inline">Save Photo</span>
                 </button>
 
                 <button
@@ -9813,6 +10226,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                   <span>Export</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveReportPhoto('customers')}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition"
+                  title="Save Clients List as Photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Photo</span>
                 </button>
               </div>
             </div>
