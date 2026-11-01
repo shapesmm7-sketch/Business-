@@ -16909,7 +16909,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-BhefT2d8.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-D2nPyKUa.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = reactExports.useState(null);
@@ -50990,7 +50990,7 @@ const LanguageSelectorModal = ({
   return reactDomExports.createPortal(modalContent, document.body);
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-CLldAgVj.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-Z67PC3kN.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65266,7 +65266,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DeVnr0HI.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DgwuB5qg.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66037,7 +66037,7 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-fduNTAds.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-Bzd4qXIH.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const MediaStore = registerPlugin("MediaStore");
@@ -73158,7 +73158,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-BIn9m27n.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-DksEkC-a.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -119116,20 +119116,25 @@ const BusinessProfileScreen = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await StorageService.saveProfileAsync(profile);
+      StorageService.saveProfile(profile);
       onSave(profile);
       setSavedToast(true);
       AdMobService.showInterstitial("profile_saved");
-      setTimeout(() => setSavedToast(false), 3e3);
+      setTimeout(() => setSavedToast(false), 3800);
+    } catch (err) {
+      console.error("Error saving business profile:", err);
     } finally {
       setIsSaving(false);
     }
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4 pb-28 animate-fadeIn max-w-2xl mx-auto", children: [
-    savedToast && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xl flex items-center gap-2 animate-bounce", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { className: "w-4 h-4" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Business Profile saved successfully!" })
-    ] }),
+    savedToast && typeof document !== "undefined" && reactDomExports.createPortal(
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-emerald-500/40 flex items-center gap-3 backdrop-blur-md animate-bounce", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30", children: /* @__PURE__ */ jsxRuntimeExports.jsx(CircleCheck, { className: "w-5 h-5" }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "leading-snug", children: "Your business profile has been saved successfully!" })
+      ] }) }),
+      document.body
+    ),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
@@ -159814,7 +159819,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-ZxlHWFQP.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-CSj79QBg.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
