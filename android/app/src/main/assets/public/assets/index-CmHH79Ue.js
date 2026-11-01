@@ -16326,6 +16326,591 @@ const __iconNode = [
   ]
 ];
 const Zap = createLucideIcon("zap", __iconNode);
+/*! Capacitor: https://capacitorjs.com/ - MIT License */
+var ExceptionCode;
+(function(ExceptionCode2) {
+  ExceptionCode2["Unimplemented"] = "UNIMPLEMENTED";
+  ExceptionCode2["Unavailable"] = "UNAVAILABLE";
+})(ExceptionCode || (ExceptionCode = {}));
+class CapacitorException extends Error {
+  constructor(message, code, data) {
+    super(message);
+    this.message = message;
+    this.code = code;
+    this.data = data;
+  }
+}
+const getPlatformId = (win) => {
+  var _a3, _b3;
+  if (win === null || win === void 0 ? void 0 : win.androidBridge) {
+    return "android";
+  } else if ((_b3 = (_a3 = win === null || win === void 0 ? void 0 : win.webkit) === null || _a3 === void 0 ? void 0 : _a3.messageHandlers) === null || _b3 === void 0 ? void 0 : _b3.bridge) {
+    return "ios";
+  } else {
+    return "web";
+  }
+};
+const createCapacitor = (win) => {
+  const capCustomPlatform = win.CapacitorCustomPlatform || null;
+  const cap = win.Capacitor || {};
+  const Plugins = cap.Plugins = cap.Plugins || {};
+  const getPlatform = () => {
+    return capCustomPlatform !== null ? capCustomPlatform.name : getPlatformId(win);
+  };
+  const isNativePlatform = () => getPlatform() !== "web";
+  const isPluginAvailable = (pluginName) => {
+    const plugin = registeredPlugins.get(pluginName);
+    if (plugin === null || plugin === void 0 ? void 0 : plugin.platforms.has(getPlatform())) {
+      return true;
+    }
+    if (getPluginHeader(pluginName)) {
+      return true;
+    }
+    return false;
+  };
+  const getPluginHeader = (pluginName) => {
+    var _a3;
+    return (_a3 = cap.PluginHeaders) === null || _a3 === void 0 ? void 0 : _a3.find((h2) => h2.name === pluginName);
+  };
+  const handleError = (err) => win.console.error(err);
+  const registeredPlugins = /* @__PURE__ */ new Map();
+  const registerPlugin2 = (pluginName, jsImplementations = {}) => {
+    const registeredPlugin = registeredPlugins.get(pluginName);
+    if (registeredPlugin) {
+      console.warn(`Capacitor plugin "${pluginName}" already registered. Cannot register plugins twice.`);
+      return registeredPlugin.proxy;
+    }
+    const platform = getPlatform();
+    const pluginHeader = getPluginHeader(pluginName);
+    let jsImplementation;
+    const loadPluginImplementation = async () => {
+      if (!jsImplementation && platform in jsImplementations) {
+        jsImplementation = typeof jsImplementations[platform] === "function" ? jsImplementation = await jsImplementations[platform]() : jsImplementation = jsImplementations[platform];
+      } else if (capCustomPlatform !== null && !jsImplementation && "web" in jsImplementations) {
+        jsImplementation = typeof jsImplementations["web"] === "function" ? jsImplementation = await jsImplementations["web"]() : jsImplementation = jsImplementations["web"];
+      }
+      return jsImplementation;
+    };
+    const createPluginMethod = (impl, prop) => {
+      var _a3, _b3;
+      if (pluginHeader) {
+        const methodHeader = pluginHeader === null || pluginHeader === void 0 ? void 0 : pluginHeader.methods.find((m2) => prop === m2.name);
+        if (methodHeader) {
+          if (methodHeader.rtype === "promise") {
+            return (options) => cap.nativePromise(pluginName, prop.toString(), options);
+          } else {
+            return (options, callback) => cap.nativeCallback(pluginName, prop.toString(), options, callback);
+          }
+        } else if (impl) {
+          return (_a3 = impl[prop]) === null || _a3 === void 0 ? void 0 : _a3.bind(impl);
+        }
+      } else if (impl) {
+        return (_b3 = impl[prop]) === null || _b3 === void 0 ? void 0 : _b3.bind(impl);
+      } else {
+        throw new CapacitorException(`"${pluginName}" plugin is not implemented on ${platform}`, ExceptionCode.Unimplemented);
+      }
+    };
+    const createPluginMethodWrapper = (prop) => {
+      let remove2;
+      const wrapper = (...args) => {
+        const p2 = loadPluginImplementation().then((impl) => {
+          const fn = createPluginMethod(impl, prop);
+          if (fn) {
+            const p3 = fn(...args);
+            remove2 = p3 === null || p3 === void 0 ? void 0 : p3.remove;
+            return p3;
+          } else {
+            throw new CapacitorException(`"${pluginName}.${prop}()" is not implemented on ${platform}`, ExceptionCode.Unimplemented);
+          }
+        });
+        if (prop === "addListener") {
+          p2.remove = async () => remove2();
+        }
+        return p2;
+      };
+      wrapper.toString = () => `${prop.toString()}() { [capacitor code] }`;
+      Object.defineProperty(wrapper, "name", {
+        value: prop,
+        writable: false,
+        configurable: false
+      });
+      return wrapper;
+    };
+    const addListener = createPluginMethodWrapper("addListener");
+    const removeListener = createPluginMethodWrapper("removeListener");
+    const addListenerNative = (eventName, callback) => {
+      const call = addListener({ eventName }, callback);
+      const remove2 = async () => {
+        const callbackId = await call;
+        removeListener({
+          eventName,
+          callbackId
+        }, callback);
+      };
+      const p2 = new Promise((resolve) => call.then(() => resolve({ remove: remove2 })));
+      p2.remove = async () => {
+        console.warn(`Using addListener() without 'await' is deprecated.`);
+        await remove2();
+      };
+      return p2;
+    };
+    const proxy = new Proxy({}, {
+      get(_2, prop) {
+        switch (prop) {
+          // https://github.com/facebook/react/issues/20030
+          case "$$typeof":
+            return void 0;
+          case "toJSON":
+            return () => ({});
+          case "addListener":
+            return pluginHeader ? addListenerNative : addListener;
+          case "removeListener":
+            return removeListener;
+          default:
+            return createPluginMethodWrapper(prop);
+        }
+      }
+    });
+    Plugins[pluginName] = proxy;
+    registeredPlugins.set(pluginName, {
+      name: pluginName,
+      proxy,
+      platforms: /* @__PURE__ */ new Set([...Object.keys(jsImplementations), ...pluginHeader ? [platform] : []])
+    });
+    return proxy;
+  };
+  if (!cap.convertFileSrc) {
+    cap.convertFileSrc = (filePath) => filePath;
+  }
+  cap.getPlatform = getPlatform;
+  cap.handleError = handleError;
+  cap.isNativePlatform = isNativePlatform;
+  cap.isPluginAvailable = isPluginAvailable;
+  cap.registerPlugin = registerPlugin2;
+  cap.Exception = CapacitorException;
+  cap.DEBUG = !!cap.DEBUG;
+  cap.isLoggingEnabled = !!cap.isLoggingEnabled;
+  return cap;
+};
+const initCapacitorGlobal = (win) => win.Capacitor = createCapacitor(win);
+const Capacitor = /* @__PURE__ */ initCapacitorGlobal(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
+const registerPlugin = Capacitor.registerPlugin;
+class WebPlugin {
+  constructor() {
+    this.listeners = {};
+    this.retainedEventArguments = {};
+    this.windowListeners = {};
+  }
+  addListener(eventName, listenerFunc) {
+    let firstListener = false;
+    const listeners = this.listeners[eventName];
+    if (!listeners) {
+      this.listeners[eventName] = [];
+      firstListener = true;
+    }
+    this.listeners[eventName].push(listenerFunc);
+    const windowListener = this.windowListeners[eventName];
+    if (windowListener && !windowListener.registered) {
+      this.addWindowListener(windowListener);
+    }
+    if (firstListener) {
+      this.sendRetainedArgumentsForEvent(eventName);
+    }
+    const remove2 = async () => this.removeListener(eventName, listenerFunc);
+    const p2 = Promise.resolve({ remove: remove2 });
+    return p2;
+  }
+  async removeAllListeners() {
+    this.listeners = {};
+    for (const listener in this.windowListeners) {
+      this.removeWindowListener(this.windowListeners[listener]);
+    }
+    this.windowListeners = {};
+  }
+  notifyListeners(eventName, data, retainUntilConsumed) {
+    const listeners = this.listeners[eventName];
+    if (!listeners) {
+      if (retainUntilConsumed) {
+        let args = this.retainedEventArguments[eventName];
+        if (!args) {
+          args = [];
+        }
+        args.push(data);
+        this.retainedEventArguments[eventName] = args;
+      }
+      return;
+    }
+    listeners.forEach((listener) => listener(data));
+  }
+  hasListeners(eventName) {
+    var _a3;
+    return !!((_a3 = this.listeners[eventName]) === null || _a3 === void 0 ? void 0 : _a3.length);
+  }
+  registerWindowListener(windowEventName, pluginEventName) {
+    this.windowListeners[pluginEventName] = {
+      registered: false,
+      windowEventName,
+      pluginEventName,
+      handler: (event) => {
+        this.notifyListeners(pluginEventName, event);
+      }
+    };
+  }
+  unimplemented(msg = "not implemented") {
+    return new Capacitor.Exception(msg, ExceptionCode.Unimplemented);
+  }
+  unavailable(msg = "not available") {
+    return new Capacitor.Exception(msg, ExceptionCode.Unavailable);
+  }
+  async removeListener(eventName, listenerFunc) {
+    const listeners = this.listeners[eventName];
+    if (!listeners) {
+      return;
+    }
+    const index = listeners.indexOf(listenerFunc);
+    if (index !== -1) {
+      this.listeners[eventName].splice(index, 1);
+    }
+    if (!this.listeners[eventName].length) {
+      this.removeWindowListener(this.windowListeners[eventName]);
+    }
+  }
+  addWindowListener(handle) {
+    window.addEventListener(handle.windowEventName, handle.handler);
+    handle.registered = true;
+  }
+  removeWindowListener(handle) {
+    if (!handle) {
+      return;
+    }
+    window.removeEventListener(handle.windowEventName, handle.handler);
+    handle.registered = false;
+  }
+  sendRetainedArgumentsForEvent(eventName) {
+    const args = this.retainedEventArguments[eventName];
+    if (!args) {
+      return;
+    }
+    delete this.retainedEventArguments[eventName];
+    args.forEach((arg) => {
+      this.notifyListeners(eventName, arg);
+    });
+  }
+}
+const encode$2 = (str) => encodeURIComponent(str).replace(/%(2[346B]|5E|60|7C)/g, decodeURIComponent).replace(/[()]/g, escape);
+const decode$3 = (str) => str.replace(/(%[\dA-F]{2})+/gi, decodeURIComponent);
+class CapacitorCookiesPluginWeb extends WebPlugin {
+  async getCookies() {
+    const cookies = document.cookie;
+    const cookieMap = {};
+    cookies.split(";").forEach((cookie) => {
+      if (cookie.length <= 0)
+        return;
+      let [key, value] = cookie.replace(/=/, "CAP_COOKIE").split("CAP_COOKIE");
+      key = decode$3(key).trim();
+      value = decode$3(value).trim();
+      cookieMap[key] = value;
+    });
+    return cookieMap;
+  }
+  async setCookie(options) {
+    try {
+      const encodedKey = encode$2(options.key);
+      const encodedValue = encode$2(options.value);
+      const expires = options.expires ? `; expires=${options.expires.replace("expires=", "")}` : "";
+      const path = (options.path || "/").replace("path=", "");
+      const domain = options.url != null && options.url.length > 0 ? `domain=${options.url}` : "";
+      document.cookie = `${encodedKey}=${encodedValue || ""}${expires}; path=${path}; ${domain};`;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+  async deleteCookie(options) {
+    try {
+      document.cookie = `${options.key}=; Max-Age=0`;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+  async clearCookies() {
+    try {
+      const cookies = document.cookie.split(";") || [];
+      for (const cookie of cookies) {
+        document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, `=;expires=${(/* @__PURE__ */ new Date()).toUTCString()};path=/`);
+      }
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+  async clearAllCookies() {
+    try {
+      await this.clearCookies();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+}
+registerPlugin("CapacitorCookies", {
+  web: () => new CapacitorCookiesPluginWeb()
+});
+const readBlobAsBase64 = async (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64String = reader.result;
+    resolve(base64String.indexOf(",") >= 0 ? base64String.split(",")[1] : base64String);
+  };
+  reader.onerror = (error) => reject(error);
+  reader.readAsDataURL(blob);
+});
+const normalizeHttpHeaders = (headers = {}) => {
+  const originalKeys = Object.keys(headers);
+  const loweredKeys = Object.keys(headers).map((k3) => k3.toLocaleLowerCase());
+  const normalized = loweredKeys.reduce((acc, key, index) => {
+    acc[key] = headers[originalKeys[index]];
+    return acc;
+  }, {});
+  return normalized;
+};
+const buildUrlParams = (params, shouldEncode = true) => {
+  if (!params)
+    return null;
+  const output = Object.entries(params).reduce((accumulator, entry) => {
+    const [key, value] = entry;
+    let encodedValue;
+    let item;
+    if (Array.isArray(value)) {
+      item = "";
+      value.forEach((str) => {
+        encodedValue = shouldEncode ? encodeURIComponent(str) : str;
+        item += `${key}=${encodedValue}&`;
+      });
+      item.slice(0, -1);
+    } else {
+      encodedValue = shouldEncode ? encodeURIComponent(value) : value;
+      item = `${key}=${encodedValue}`;
+    }
+    return `${accumulator}&${item}`;
+  }, "");
+  return output.substr(1);
+};
+const buildRequestInit = (options, extra = {}) => {
+  const output = Object.assign({ method: options.method || "GET", headers: options.headers }, extra);
+  const headers = normalizeHttpHeaders(options.headers);
+  const type = headers["content-type"] || "";
+  if (typeof options.data === "string") {
+    output.body = options.data;
+  } else if (type.includes("application/x-www-form-urlencoded")) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(options.data || {})) {
+      params.set(key, value);
+    }
+    output.body = params.toString();
+  } else if (type.includes("multipart/form-data") || options.data instanceof FormData) {
+    const form = new FormData();
+    if (options.data instanceof FormData) {
+      options.data.forEach((value, key) => {
+        form.append(key, value);
+      });
+    } else {
+      for (const key of Object.keys(options.data)) {
+        form.append(key, options.data[key]);
+      }
+    }
+    output.body = form;
+    const headers2 = new Headers(output.headers);
+    headers2.delete("content-type");
+    output.headers = headers2;
+  } else if (type.includes("application/json") || typeof options.data === "object") {
+    output.body = JSON.stringify(options.data);
+  }
+  return output;
+};
+class CapacitorHttpPluginWeb extends WebPlugin {
+  /**
+   * Perform an Http request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async request(options) {
+    const requestInit = buildRequestInit(options, options.webFetchExtra);
+    const urlParams = buildUrlParams(options.params, options.shouldEncodeUrlParams);
+    const url = urlParams ? `${options.url}?${urlParams}` : options.url;
+    const response = await fetch(url, requestInit);
+    const contentType = response.headers.get("content-type") || "";
+    let { responseType = "text" } = response.ok ? options : {};
+    if (contentType.includes("application/json")) {
+      responseType = "json";
+    }
+    let data;
+    let blob;
+    switch (responseType) {
+      case "arraybuffer":
+      case "blob":
+        blob = await response.blob();
+        data = await readBlobAsBase64(blob);
+        break;
+      case "json":
+        data = await response.json();
+        break;
+      case "document":
+      case "text":
+      default:
+        data = await response.text();
+    }
+    const headers = {};
+    response.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return {
+      data,
+      headers,
+      status: response.status,
+      url: response.url
+    };
+  }
+  /**
+   * Perform an Http GET request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async get(options) {
+    return this.request(Object.assign(Object.assign({}, options), { method: "GET" }));
+  }
+  /**
+   * Perform an Http POST request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async post(options) {
+    return this.request(Object.assign(Object.assign({}, options), { method: "POST" }));
+  }
+  /**
+   * Perform an Http PUT request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async put(options) {
+    return this.request(Object.assign(Object.assign({}, options), { method: "PUT" }));
+  }
+  /**
+   * Perform an Http PATCH request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async patch(options) {
+    return this.request(Object.assign(Object.assign({}, options), { method: "PATCH" }));
+  }
+  /**
+   * Perform an Http DELETE request given a set of options
+   * @param options Options to build the HTTP request
+   */
+  async delete(options) {
+    return this.request(Object.assign(Object.assign({}, options), { method: "DELETE" }));
+  }
+}
+registerPlugin("CapacitorHttp", {
+  web: () => new CapacitorHttpPluginWeb()
+});
+var SystemBarsStyle;
+(function(SystemBarsStyle2) {
+  SystemBarsStyle2["Dark"] = "DARK";
+  SystemBarsStyle2["Light"] = "LIGHT";
+  SystemBarsStyle2["Default"] = "DEFAULT";
+})(SystemBarsStyle || (SystemBarsStyle = {}));
+var SystemBarType;
+(function(SystemBarType2) {
+  SystemBarType2["StatusBar"] = "StatusBar";
+  SystemBarType2["NavigationBar"] = "NavigationBar";
+})(SystemBarType || (SystemBarType = {}));
+class SystemBarsPluginWeb extends WebPlugin {
+  async setStyle() {
+    this.unavailable("not available for web");
+  }
+  async setAnimation() {
+    this.unavailable("not available for web");
+  }
+  async show() {
+    this.unavailable("not available for web");
+  }
+  async hide() {
+    this.unavailable("not available for web");
+  }
+}
+registerPlugin("SystemBars", {
+  web: () => new SystemBarsPluginWeb()
+});
+const scriptRel = "modulepreload";
+const assetsURL = function(dep) {
+  return "/" + dep;
+};
+const seen = {};
+const __vitePreload = function preload(baseModule, deps, importerUrl) {
+  let promise = Promise.resolve();
+  if (deps && deps.length > 0) {
+    let allSettled2 = function(promises) {
+      return Promise.all(
+        promises.map(
+          (p2) => Promise.resolve(p2).then(
+            (value) => ({ status: "fulfilled", value }),
+            (reason) => ({ status: "rejected", reason })
+          )
+        )
+      );
+    };
+    document.getElementsByTagName("link");
+    const cspNonceMeta = document.querySelector(
+      "meta[property=csp-nonce]"
+    );
+    const cspNonce = (cspNonceMeta == null ? void 0 : cspNonceMeta.nonce) || (cspNonceMeta == null ? void 0 : cspNonceMeta.getAttribute("nonce"));
+    promise = allSettled2(
+      deps.map((dep) => {
+        dep = assetsURL(dep);
+        if (dep in seen) return;
+        seen[dep] = true;
+        const isCss = dep.endsWith(".css");
+        const cssSelector = isCss ? '[rel="stylesheet"]' : "";
+        if (document.querySelector(`link[href="${dep}"]${cssSelector}`)) {
+          return;
+        }
+        const link = document.createElement("link");
+        link.rel = isCss ? "stylesheet" : scriptRel;
+        if (!isCss) {
+          link.as = "script";
+        }
+        link.crossOrigin = "";
+        link.href = dep;
+        if (cspNonce) {
+          link.setAttribute("nonce", cspNonce);
+        }
+        document.head.appendChild(link);
+        if (isCss) {
+          return new Promise((res, rej) => {
+            link.addEventListener("load", res);
+            link.addEventListener(
+              "error",
+              () => rej(new Error(`Unable to preload CSS for ${dep}`))
+            );
+          });
+        }
+      })
+    );
+  }
+  function handlePreloadError(err) {
+    const e3 = new Event("vite:preloadError", {
+      cancelable: true
+    });
+    e3.payload = err;
+    window.dispatchEvent(e3);
+    if (!e3.defaultPrevented) {
+      throw err;
+    }
+  }
+  return promise.then((res) => {
+    for (const item of res || []) {
+      if (item.status !== "rejected") continue;
+      handlePreloadError(item.reason);
+    }
+    return baseModule().catch(handlePreloadError);
+  });
+};
+const Share = registerPlugin("Share", {
+  web: () => __vitePreload(() => import("./web-BhefT2d8.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+});
 function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = reactExports.useState(null);
   const [isInstalled, setIsInstalled] = reactExports.useState(false);
@@ -19069,13 +19654,13 @@ function generateFid() {
     const crypto2 = self.crypto || self.msCrypto;
     crypto2.getRandomValues(fidByteArray);
     fidByteArray[0] = 112 + fidByteArray[0] % 16;
-    const fid = encode$2(fidByteArray);
+    const fid = encode$1(fidByteArray);
     return VALID_FID_PATTERN.test(fid) ? fid : INVALID_FID;
   } catch {
     return INVALID_FID;
   }
 }
-function encode$2(fidByteArray) {
+function encode$1(fidByteArray) {
   const b64String = bufferToBase64UrlSafe(fidByteArray);
   return b64String.substr(0, 22);
 }
@@ -43368,514 +43953,6 @@ const Be = "@firebase/firestore", Me = "4.17.2";
   }), "PUBLIC").setMultipleInstances(true)), registerVersion(Be, Me, s2), // BUILD_TARGET will be replaced by values like esm, cjs, etc during the compilation
   registerVersion(Be, Me, "esm2020");
 })();
-/*! Capacitor: https://capacitorjs.com/ - MIT License */
-var ExceptionCode;
-(function(ExceptionCode2) {
-  ExceptionCode2["Unimplemented"] = "UNIMPLEMENTED";
-  ExceptionCode2["Unavailable"] = "UNAVAILABLE";
-})(ExceptionCode || (ExceptionCode = {}));
-class CapacitorException extends Error {
-  constructor(message, code, data) {
-    super(message);
-    this.message = message;
-    this.code = code;
-    this.data = data;
-  }
-}
-const getPlatformId = (win) => {
-  var _a3, _b3;
-  if (win === null || win === void 0 ? void 0 : win.androidBridge) {
-    return "android";
-  } else if ((_b3 = (_a3 = win === null || win === void 0 ? void 0 : win.webkit) === null || _a3 === void 0 ? void 0 : _a3.messageHandlers) === null || _b3 === void 0 ? void 0 : _b3.bridge) {
-    return "ios";
-  } else {
-    return "web";
-  }
-};
-const createCapacitor = (win) => {
-  const capCustomPlatform = win.CapacitorCustomPlatform || null;
-  const cap = win.Capacitor || {};
-  const Plugins = cap.Plugins = cap.Plugins || {};
-  const getPlatform = () => {
-    return capCustomPlatform !== null ? capCustomPlatform.name : getPlatformId(win);
-  };
-  const isNativePlatform = () => getPlatform() !== "web";
-  const isPluginAvailable = (pluginName) => {
-    const plugin = registeredPlugins.get(pluginName);
-    if (plugin === null || plugin === void 0 ? void 0 : plugin.platforms.has(getPlatform())) {
-      return true;
-    }
-    if (getPluginHeader(pluginName)) {
-      return true;
-    }
-    return false;
-  };
-  const getPluginHeader = (pluginName) => {
-    var _a3;
-    return (_a3 = cap.PluginHeaders) === null || _a3 === void 0 ? void 0 : _a3.find((h2) => h2.name === pluginName);
-  };
-  const handleError = (err) => win.console.error(err);
-  const registeredPlugins = /* @__PURE__ */ new Map();
-  const registerPlugin2 = (pluginName, jsImplementations = {}) => {
-    const registeredPlugin = registeredPlugins.get(pluginName);
-    if (registeredPlugin) {
-      console.warn(`Capacitor plugin "${pluginName}" already registered. Cannot register plugins twice.`);
-      return registeredPlugin.proxy;
-    }
-    const platform = getPlatform();
-    const pluginHeader = getPluginHeader(pluginName);
-    let jsImplementation;
-    const loadPluginImplementation = async () => {
-      if (!jsImplementation && platform in jsImplementations) {
-        jsImplementation = typeof jsImplementations[platform] === "function" ? jsImplementation = await jsImplementations[platform]() : jsImplementation = jsImplementations[platform];
-      } else if (capCustomPlatform !== null && !jsImplementation && "web" in jsImplementations) {
-        jsImplementation = typeof jsImplementations["web"] === "function" ? jsImplementation = await jsImplementations["web"]() : jsImplementation = jsImplementations["web"];
-      }
-      return jsImplementation;
-    };
-    const createPluginMethod = (impl, prop) => {
-      var _a3, _b3;
-      if (pluginHeader) {
-        const methodHeader = pluginHeader === null || pluginHeader === void 0 ? void 0 : pluginHeader.methods.find((m2) => prop === m2.name);
-        if (methodHeader) {
-          if (methodHeader.rtype === "promise") {
-            return (options) => cap.nativePromise(pluginName, prop.toString(), options);
-          } else {
-            return (options, callback) => cap.nativeCallback(pluginName, prop.toString(), options, callback);
-          }
-        } else if (impl) {
-          return (_a3 = impl[prop]) === null || _a3 === void 0 ? void 0 : _a3.bind(impl);
-        }
-      } else if (impl) {
-        return (_b3 = impl[prop]) === null || _b3 === void 0 ? void 0 : _b3.bind(impl);
-      } else {
-        throw new CapacitorException(`"${pluginName}" plugin is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-      }
-    };
-    const createPluginMethodWrapper = (prop) => {
-      let remove2;
-      const wrapper = (...args) => {
-        const p2 = loadPluginImplementation().then((impl) => {
-          const fn = createPluginMethod(impl, prop);
-          if (fn) {
-            const p3 = fn(...args);
-            remove2 = p3 === null || p3 === void 0 ? void 0 : p3.remove;
-            return p3;
-          } else {
-            throw new CapacitorException(`"${pluginName}.${prop}()" is not implemented on ${platform}`, ExceptionCode.Unimplemented);
-          }
-        });
-        if (prop === "addListener") {
-          p2.remove = async () => remove2();
-        }
-        return p2;
-      };
-      wrapper.toString = () => `${prop.toString()}() { [capacitor code] }`;
-      Object.defineProperty(wrapper, "name", {
-        value: prop,
-        writable: false,
-        configurable: false
-      });
-      return wrapper;
-    };
-    const addListener = createPluginMethodWrapper("addListener");
-    const removeListener = createPluginMethodWrapper("removeListener");
-    const addListenerNative = (eventName, callback) => {
-      const call = addListener({ eventName }, callback);
-      const remove2 = async () => {
-        const callbackId = await call;
-        removeListener({
-          eventName,
-          callbackId
-        }, callback);
-      };
-      const p2 = new Promise((resolve) => call.then(() => resolve({ remove: remove2 })));
-      p2.remove = async () => {
-        console.warn(`Using addListener() without 'await' is deprecated.`);
-        await remove2();
-      };
-      return p2;
-    };
-    const proxy = new Proxy({}, {
-      get(_2, prop) {
-        switch (prop) {
-          // https://github.com/facebook/react/issues/20030
-          case "$$typeof":
-            return void 0;
-          case "toJSON":
-            return () => ({});
-          case "addListener":
-            return pluginHeader ? addListenerNative : addListener;
-          case "removeListener":
-            return removeListener;
-          default:
-            return createPluginMethodWrapper(prop);
-        }
-      }
-    });
-    Plugins[pluginName] = proxy;
-    registeredPlugins.set(pluginName, {
-      name: pluginName,
-      proxy,
-      platforms: /* @__PURE__ */ new Set([...Object.keys(jsImplementations), ...pluginHeader ? [platform] : []])
-    });
-    return proxy;
-  };
-  if (!cap.convertFileSrc) {
-    cap.convertFileSrc = (filePath) => filePath;
-  }
-  cap.getPlatform = getPlatform;
-  cap.handleError = handleError;
-  cap.isNativePlatform = isNativePlatform;
-  cap.isPluginAvailable = isPluginAvailable;
-  cap.registerPlugin = registerPlugin2;
-  cap.Exception = CapacitorException;
-  cap.DEBUG = !!cap.DEBUG;
-  cap.isLoggingEnabled = !!cap.isLoggingEnabled;
-  return cap;
-};
-const initCapacitorGlobal = (win) => win.Capacitor = createCapacitor(win);
-const Capacitor = /* @__PURE__ */ initCapacitorGlobal(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : {});
-const registerPlugin = Capacitor.registerPlugin;
-class WebPlugin {
-  constructor() {
-    this.listeners = {};
-    this.retainedEventArguments = {};
-    this.windowListeners = {};
-  }
-  addListener(eventName, listenerFunc) {
-    let firstListener = false;
-    const listeners = this.listeners[eventName];
-    if (!listeners) {
-      this.listeners[eventName] = [];
-      firstListener = true;
-    }
-    this.listeners[eventName].push(listenerFunc);
-    const windowListener = this.windowListeners[eventName];
-    if (windowListener && !windowListener.registered) {
-      this.addWindowListener(windowListener);
-    }
-    if (firstListener) {
-      this.sendRetainedArgumentsForEvent(eventName);
-    }
-    const remove2 = async () => this.removeListener(eventName, listenerFunc);
-    const p2 = Promise.resolve({ remove: remove2 });
-    return p2;
-  }
-  async removeAllListeners() {
-    this.listeners = {};
-    for (const listener in this.windowListeners) {
-      this.removeWindowListener(this.windowListeners[listener]);
-    }
-    this.windowListeners = {};
-  }
-  notifyListeners(eventName, data, retainUntilConsumed) {
-    const listeners = this.listeners[eventName];
-    if (!listeners) {
-      if (retainUntilConsumed) {
-        let args = this.retainedEventArguments[eventName];
-        if (!args) {
-          args = [];
-        }
-        args.push(data);
-        this.retainedEventArguments[eventName] = args;
-      }
-      return;
-    }
-    listeners.forEach((listener) => listener(data));
-  }
-  hasListeners(eventName) {
-    var _a3;
-    return !!((_a3 = this.listeners[eventName]) === null || _a3 === void 0 ? void 0 : _a3.length);
-  }
-  registerWindowListener(windowEventName, pluginEventName) {
-    this.windowListeners[pluginEventName] = {
-      registered: false,
-      windowEventName,
-      pluginEventName,
-      handler: (event) => {
-        this.notifyListeners(pluginEventName, event);
-      }
-    };
-  }
-  unimplemented(msg = "not implemented") {
-    return new Capacitor.Exception(msg, ExceptionCode.Unimplemented);
-  }
-  unavailable(msg = "not available") {
-    return new Capacitor.Exception(msg, ExceptionCode.Unavailable);
-  }
-  async removeListener(eventName, listenerFunc) {
-    const listeners = this.listeners[eventName];
-    if (!listeners) {
-      return;
-    }
-    const index = listeners.indexOf(listenerFunc);
-    if (index !== -1) {
-      this.listeners[eventName].splice(index, 1);
-    }
-    if (!this.listeners[eventName].length) {
-      this.removeWindowListener(this.windowListeners[eventName]);
-    }
-  }
-  addWindowListener(handle) {
-    window.addEventListener(handle.windowEventName, handle.handler);
-    handle.registered = true;
-  }
-  removeWindowListener(handle) {
-    if (!handle) {
-      return;
-    }
-    window.removeEventListener(handle.windowEventName, handle.handler);
-    handle.registered = false;
-  }
-  sendRetainedArgumentsForEvent(eventName) {
-    const args = this.retainedEventArguments[eventName];
-    if (!args) {
-      return;
-    }
-    delete this.retainedEventArguments[eventName];
-    args.forEach((arg) => {
-      this.notifyListeners(eventName, arg);
-    });
-  }
-}
-const encode$1 = (str) => encodeURIComponent(str).replace(/%(2[346B]|5E|60|7C)/g, decodeURIComponent).replace(/[()]/g, escape);
-const decode$3 = (str) => str.replace(/(%[\dA-F]{2})+/gi, decodeURIComponent);
-class CapacitorCookiesPluginWeb extends WebPlugin {
-  async getCookies() {
-    const cookies = document.cookie;
-    const cookieMap = {};
-    cookies.split(";").forEach((cookie) => {
-      if (cookie.length <= 0)
-        return;
-      let [key, value] = cookie.replace(/=/, "CAP_COOKIE").split("CAP_COOKIE");
-      key = decode$3(key).trim();
-      value = decode$3(value).trim();
-      cookieMap[key] = value;
-    });
-    return cookieMap;
-  }
-  async setCookie(options) {
-    try {
-      const encodedKey = encode$1(options.key);
-      const encodedValue = encode$1(options.value);
-      const expires = options.expires ? `; expires=${options.expires.replace("expires=", "")}` : "";
-      const path = (options.path || "/").replace("path=", "");
-      const domain = options.url != null && options.url.length > 0 ? `domain=${options.url}` : "";
-      document.cookie = `${encodedKey}=${encodedValue || ""}${expires}; path=${path}; ${domain};`;
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-  async deleteCookie(options) {
-    try {
-      document.cookie = `${options.key}=; Max-Age=0`;
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-  async clearCookies() {
-    try {
-      const cookies = document.cookie.split(";") || [];
-      for (const cookie of cookies) {
-        document.cookie = cookie.replace(/^ +/, "").replace(/=.*/, `=;expires=${(/* @__PURE__ */ new Date()).toUTCString()};path=/`);
-      }
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-  async clearAllCookies() {
-    try {
-      await this.clearCookies();
-    } catch (error) {
-      return Promise.reject(error);
-    }
-  }
-}
-registerPlugin("CapacitorCookies", {
-  web: () => new CapacitorCookiesPluginWeb()
-});
-const readBlobAsBase64 = async (blob) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const base64String = reader.result;
-    resolve(base64String.indexOf(",") >= 0 ? base64String.split(",")[1] : base64String);
-  };
-  reader.onerror = (error) => reject(error);
-  reader.readAsDataURL(blob);
-});
-const normalizeHttpHeaders = (headers = {}) => {
-  const originalKeys = Object.keys(headers);
-  const loweredKeys = Object.keys(headers).map((k3) => k3.toLocaleLowerCase());
-  const normalized = loweredKeys.reduce((acc, key, index) => {
-    acc[key] = headers[originalKeys[index]];
-    return acc;
-  }, {});
-  return normalized;
-};
-const buildUrlParams = (params, shouldEncode = true) => {
-  if (!params)
-    return null;
-  const output = Object.entries(params).reduce((accumulator, entry) => {
-    const [key, value] = entry;
-    let encodedValue;
-    let item;
-    if (Array.isArray(value)) {
-      item = "";
-      value.forEach((str) => {
-        encodedValue = shouldEncode ? encodeURIComponent(str) : str;
-        item += `${key}=${encodedValue}&`;
-      });
-      item.slice(0, -1);
-    } else {
-      encodedValue = shouldEncode ? encodeURIComponent(value) : value;
-      item = `${key}=${encodedValue}`;
-    }
-    return `${accumulator}&${item}`;
-  }, "");
-  return output.substr(1);
-};
-const buildRequestInit = (options, extra = {}) => {
-  const output = Object.assign({ method: options.method || "GET", headers: options.headers }, extra);
-  const headers = normalizeHttpHeaders(options.headers);
-  const type = headers["content-type"] || "";
-  if (typeof options.data === "string") {
-    output.body = options.data;
-  } else if (type.includes("application/x-www-form-urlencoded")) {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(options.data || {})) {
-      params.set(key, value);
-    }
-    output.body = params.toString();
-  } else if (type.includes("multipart/form-data") || options.data instanceof FormData) {
-    const form = new FormData();
-    if (options.data instanceof FormData) {
-      options.data.forEach((value, key) => {
-        form.append(key, value);
-      });
-    } else {
-      for (const key of Object.keys(options.data)) {
-        form.append(key, options.data[key]);
-      }
-    }
-    output.body = form;
-    const headers2 = new Headers(output.headers);
-    headers2.delete("content-type");
-    output.headers = headers2;
-  } else if (type.includes("application/json") || typeof options.data === "object") {
-    output.body = JSON.stringify(options.data);
-  }
-  return output;
-};
-class CapacitorHttpPluginWeb extends WebPlugin {
-  /**
-   * Perform an Http request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async request(options) {
-    const requestInit = buildRequestInit(options, options.webFetchExtra);
-    const urlParams = buildUrlParams(options.params, options.shouldEncodeUrlParams);
-    const url = urlParams ? `${options.url}?${urlParams}` : options.url;
-    const response = await fetch(url, requestInit);
-    const contentType = response.headers.get("content-type") || "";
-    let { responseType = "text" } = response.ok ? options : {};
-    if (contentType.includes("application/json")) {
-      responseType = "json";
-    }
-    let data;
-    let blob;
-    switch (responseType) {
-      case "arraybuffer":
-      case "blob":
-        blob = await response.blob();
-        data = await readBlobAsBase64(blob);
-        break;
-      case "json":
-        data = await response.json();
-        break;
-      case "document":
-      case "text":
-      default:
-        data = await response.text();
-    }
-    const headers = {};
-    response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
-    return {
-      data,
-      headers,
-      status: response.status,
-      url: response.url
-    };
-  }
-  /**
-   * Perform an Http GET request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async get(options) {
-    return this.request(Object.assign(Object.assign({}, options), { method: "GET" }));
-  }
-  /**
-   * Perform an Http POST request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async post(options) {
-    return this.request(Object.assign(Object.assign({}, options), { method: "POST" }));
-  }
-  /**
-   * Perform an Http PUT request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async put(options) {
-    return this.request(Object.assign(Object.assign({}, options), { method: "PUT" }));
-  }
-  /**
-   * Perform an Http PATCH request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async patch(options) {
-    return this.request(Object.assign(Object.assign({}, options), { method: "PATCH" }));
-  }
-  /**
-   * Perform an Http DELETE request given a set of options
-   * @param options Options to build the HTTP request
-   */
-  async delete(options) {
-    return this.request(Object.assign(Object.assign({}, options), { method: "DELETE" }));
-  }
-}
-registerPlugin("CapacitorHttp", {
-  web: () => new CapacitorHttpPluginWeb()
-});
-var SystemBarsStyle;
-(function(SystemBarsStyle2) {
-  SystemBarsStyle2["Dark"] = "DARK";
-  SystemBarsStyle2["Light"] = "LIGHT";
-  SystemBarsStyle2["Default"] = "DEFAULT";
-})(SystemBarsStyle || (SystemBarsStyle = {}));
-var SystemBarType;
-(function(SystemBarType2) {
-  SystemBarType2["StatusBar"] = "StatusBar";
-  SystemBarType2["NavigationBar"] = "NavigationBar";
-})(SystemBarType || (SystemBarType = {}));
-class SystemBarsPluginWeb extends WebPlugin {
-  async setStyle() {
-    this.unavailable("not available for web");
-  }
-  async setAnimation() {
-    this.unavailable("not available for web");
-  }
-  async show() {
-    this.unavailable("not available for web");
-  }
-  async hide() {
-    this.unavailable("not available for web");
-  }
-}
-registerPlugin("SystemBars", {
-  web: () => new SystemBarsPluginWeb()
-});
 const PushNotifications = registerPlugin("PushNotifications", {});
 var name$1 = "firebase";
 var version$2 = "12.19.0";
@@ -50500,11 +50577,22 @@ const RateUsModal = ({ isOpen, onClose }) => {
       }));
     } catch {
     }
+    const playStoreUrl = "https://play.google.com/store/apps/details?id=com.brivu.myapp";
+    const marketUrl = "market://details?id=com.brivu.myapp";
+    try {
+      if (Capacitor.isNativePlatform()) {
+        window.location.href = marketUrl;
+      } else {
+        window.open(playStoreUrl, "_blank");
+      }
+    } catch {
+      window.open(playStoreUrl, "_blank");
+    }
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);
       onClose();
-    }, 2200);
+    }, 1500);
   };
   const modalContent = /* @__PURE__ */ jsxRuntimeExports.jsx(
     "div",
@@ -50901,82 +50989,8 @@ const LanguageSelectorModal = ({
   );
   return reactDomExports.createPortal(modalContent, document.body);
 };
-const scriptRel = "modulepreload";
-const assetsURL = function(dep) {
-  return "/" + dep;
-};
-const seen = {};
-const __vitePreload = function preload(baseModule, deps, importerUrl) {
-  let promise = Promise.resolve();
-  if (deps && deps.length > 0) {
-    let allSettled2 = function(promises) {
-      return Promise.all(
-        promises.map(
-          (p2) => Promise.resolve(p2).then(
-            (value) => ({ status: "fulfilled", value }),
-            (reason) => ({ status: "rejected", reason })
-          )
-        )
-      );
-    };
-    document.getElementsByTagName("link");
-    const cspNonceMeta = document.querySelector(
-      "meta[property=csp-nonce]"
-    );
-    const cspNonce = (cspNonceMeta == null ? void 0 : cspNonceMeta.nonce) || (cspNonceMeta == null ? void 0 : cspNonceMeta.getAttribute("nonce"));
-    promise = allSettled2(
-      deps.map((dep) => {
-        dep = assetsURL(dep);
-        if (dep in seen) return;
-        seen[dep] = true;
-        const isCss = dep.endsWith(".css");
-        const cssSelector = isCss ? '[rel="stylesheet"]' : "";
-        if (document.querySelector(`link[href="${dep}"]${cssSelector}`)) {
-          return;
-        }
-        const link = document.createElement("link");
-        link.rel = isCss ? "stylesheet" : scriptRel;
-        if (!isCss) {
-          link.as = "script";
-        }
-        link.crossOrigin = "";
-        link.href = dep;
-        if (cspNonce) {
-          link.setAttribute("nonce", cspNonce);
-        }
-        document.head.appendChild(link);
-        if (isCss) {
-          return new Promise((res, rej) => {
-            link.addEventListener("load", res);
-            link.addEventListener(
-              "error",
-              () => rej(new Error(`Unable to preload CSS for ${dep}`))
-            );
-          });
-        }
-      })
-    );
-  }
-  function handlePreloadError(err) {
-    const e3 = new Event("vite:preloadError", {
-      cancelable: true
-    });
-    e3.payload = err;
-    window.dispatchEvent(e3);
-    if (!e3.defaultPrevented) {
-      throw err;
-    }
-  }
-  return promise.then((res) => {
-    for (const item of res || []) {
-      if (item.status !== "rejected") continue;
-      handlePreloadError(item.reason);
-    }
-    return baseModule().catch(handlePreloadError);
-  });
-};
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-DEA1ocJ9.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-CLldAgVj.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65266,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DQHKuXxp.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DeVnr0HI.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,12 +66037,9 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-BkNm3akN.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-fduNTAds.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
-const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-DvHqNVnT.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
-});
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
   if (!Capacitor.isNativePlatform()) return true;
@@ -72369,32 +72380,46 @@ const Header = ({
     return PushNotificationService.getLocalAlerts().filter((a2) => !a2.isRead).length;
   });
   const menuRef = reactExports.useRef(null);
+  const playStoreUrl = "https://play.google.com/store/apps/details?id=com.brivu.myapp";
   const handleShareApp = async () => {
     setIsMenuOpen(false);
-    const shareData = {
-      title: "Brivu - Digital Receipt & Business Manager",
-      text: "Try Brivu - fast digital receipts, invoices, stock tracking, and QR menu hosting for your business!",
-      url: window.location.origin
-    };
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share(shareData);
-        setToastMsg("App shared successfully!");
-        setTimeout(() => setToastMsg(null), 3e3);
-      } catch {
-      }
-    } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(shareData.url);
+    const shareText = `Download Brivu - fast digital receipts, invoices, stock tracking & business manager for your business: ${playStoreUrl}`;
+    try {
+      if (Capacitor.isNativePlatform()) {
+        await Share.share({
+          title: "Brivu - Digital Receipt & Business Manager",
+          text: shareText,
+          url: playStoreUrl,
+          dialogTitle: "Share Brivu App"
+        });
+      } else if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({
+          title: "Brivu - Digital Receipt & Business Manager",
+          text: shareText,
+          url: playStoreUrl
+        });
+      } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(playStoreUrl);
         setToastMsg("App link copied to clipboard!");
         setTimeout(() => setToastMsg(null), 3e3);
-      } catch {
-        setToastMsg(`App link: ${shareData.url}`);
+      } else {
+        setToastMsg(`App link: ${playStoreUrl}`);
         setTimeout(() => setToastMsg(null), 4e3);
       }
-    } else {
-      setToastMsg(`App link: ${shareData.url}`);
-      setTimeout(() => setToastMsg(null), 4e3);
+    } catch {
+    }
+  };
+  const handleRateUs = () => {
+    setIsMenuOpen(false);
+    const marketUrl = "market://details?id=com.brivu.myapp";
+    try {
+      if (Capacitor.isNativePlatform()) {
+        window.location.href = marketUrl;
+      } else {
+        window.open(playStoreUrl, "_blank");
+      }
+    } catch {
+      window.open(playStoreUrl, "_blank");
     }
   };
   reactExports.useEffect(() => {
@@ -72868,10 +72893,7 @@ const Header = ({
                   "button",
                   {
                     id: "btn-menu-rate-us",
-                    onClick: () => {
-                      setIsMenuOpen(false);
-                      setIsRateUsOpen(true);
-                    },
+                    onClick: handleRateUs,
                     className: "p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-700/60 transition-all flex items-center gap-3 group text-left active:scale-[0.98]",
                     children: [
                       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Star, { className: "w-4.5 h-4.5 fill-white/20" }) }),
@@ -73035,7 +73057,7 @@ const BottomNav = ({
         className: `relative flex flex-col items-center justify-center py-1.5 px-2 sm:px-3 rounded-xl transition ${currentScreen === "qr-hosting" ? "text-teal-600 dark:text-teal-400 font-semibold" : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"}`,
         children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "relative", children: /* @__PURE__ */ jsxRuntimeExports.jsx(QrCode, { className: "w-5 h-5 mb-0.5" }) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] sm:text-[11px] whitespace-nowrap", children: "Host QR" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] sm:text-[11px] whitespace-nowrap", children: "QR Code" })
         ]
       }
     )
@@ -73136,7 +73158,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-BTG5EjWP.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-BIn9m27n.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -136988,7 +137010,7 @@ const WebsitesAppsQrSection = ({
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/30 shadow-md", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Globe, { className: "w-6 h-6 sm:w-7 sm:h-7 text-white" }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center gap-2 mb-1", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full bg-blue-400/30 border border-blue-300/40 text-blue-100", children: "Websites & Apps QR Hub" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-xl sm:text-2xl font-black tracking-tight", children: "Websites / Apps QR" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-xl sm:text-2xl font-black tracking-tight", children: "Websites / Apps QR Code" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs sm:text-sm text-blue-100/90 font-medium mt-1 leading-snug", children: "Generate high-resolution scannable QR codes for your websites, mobile apps, booking links & web apps." })
       ] })
     ] }) }) }),
@@ -138128,7 +138150,7 @@ const SocialsQrSection = ({
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/30 shadow-md", children: /* @__PURE__ */ jsxRuntimeExports.jsx(MessageCircle, { className: "w-6 h-6 sm:w-7 sm:h-7 text-white" }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center gap-2 mb-1", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full bg-emerald-400/30 border border-emerald-300/40 text-emerald-100", children: "Social Channels & Chat QR" }) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-xl sm:text-2xl font-black tracking-tight", children: "Socials QR" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-xl sm:text-2xl font-black tracking-tight", children: "Socials QR Code" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs sm:text-sm text-emerald-100/90 font-medium mt-1 leading-snug", children: "Connect customers directly to your WhatsApp, Instagram, TikTok, Facebook & custom social channels with one scan." })
       ] })
     ] }) }) }),
@@ -141035,7 +141057,7 @@ const QRCodeHostingScreen = ({
                 ] })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1.5", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Business QR" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Business QR Code" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] sm:text-[11px] font-normal text-emerald-100/90 mt-0.5 leading-snug line-clamp-2", children: "Host catalog, menu, photos, WiFi & info" })
               ] })
             ]
@@ -141057,7 +141079,7 @@ const QRCodeHostingScreen = ({
                 ] })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1.5", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Websites / Apps QR" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Websites / Apps QR Code" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] sm:text-[11px] font-normal text-blue-100/90 mt-0.5 leading-snug line-clamp-2", children: "Websites, Google Play, App Store & links" })
               ] })
             ]
@@ -141079,7 +141101,7 @@ const QRCodeHostingScreen = ({
                 ] })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1.5", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Socials QR" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-xs sm:text-sm font-bold tracking-tight text-white leading-tight", children: "Socials QR Code" }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[10px] sm:text-[11px] font-normal text-teal-100/90 mt-0.5 leading-snug line-clamp-2", children: "WhatsApp, Instagram, TikTok & Facebook" })
               ] })
             ]
@@ -159792,7 +159814,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-1JrarUMT.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-ZxlHWFQP.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;

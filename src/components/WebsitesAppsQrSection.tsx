@@ -451,7 +451,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   Websites & Apps QR Hub
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Websites / Apps QR</h1>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Websites / Apps QR Code</h1>
               <p className="text-xs sm:text-sm text-blue-100/90 font-medium mt-1 leading-snug">
                 Generate high-resolution scannable QR codes for your websites, mobile apps, booking links & web apps.
               </p>

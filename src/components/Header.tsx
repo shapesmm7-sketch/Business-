@@ -25,6 +25,8 @@ import {
   User as UserIcon,
   Scan,
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import { ActiveScreen, BusinessProfile, AppLockConfig, WorkOSUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NotificationModal } from './NotificationModal';
@@ -143,34 +145,50 @@ export const Header: React.FC<HeaderProps> = ({
   });
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.brivu.myapp';
+
   const handleShareApp = async () => {
     setIsMenuOpen(false);
-    const shareData = {
-      title: 'Brivu - Digital Receipt & Business Manager',
-      text: 'Try Brivu - fast digital receipts, invoices, stock tracking, and QR menu hosting for your business!',
-      url: window.location.origin,
-    };
+    const shareText = `Download Brivu - fast digital receipts, invoices, stock tracking & business manager for your business: ${playStoreUrl}`;
 
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share(shareData);
-        setToastMsg('App shared successfully!');
-        setTimeout(() => setToastMsg(null), 3000);
-      } catch {
-        // User cancelled share
-      }
-    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(shareData.url);
+    try {
+      if (Capacitor.isNativePlatform()) {
+        await Share.share({
+          title: 'Brivu - Digital Receipt & Business Manager',
+          text: shareText,
+          url: playStoreUrl,
+          dialogTitle: 'Share Brivu App',
+        });
+      } else if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: 'Brivu - Digital Receipt & Business Manager',
+          text: shareText,
+          url: playStoreUrl,
+        });
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(playStoreUrl);
         setToastMsg('App link copied to clipboard!');
         setTimeout(() => setToastMsg(null), 3000);
-      } catch {
-        setToastMsg(`App link: ${shareData.url}`);
+      } else {
+        setToastMsg(`App link: ${playStoreUrl}`);
         setTimeout(() => setToastMsg(null), 4000);
       }
-    } else {
-      setToastMsg(`App link: ${shareData.url}`);
-      setTimeout(() => setToastMsg(null), 4000);
+    } catch {
+      // User cancelled share
+    }
+  };
+
+  const handleRateUs = () => {
+    setIsMenuOpen(false);
+    const marketUrl = 'market://details?id=com.brivu.myapp';
+    try {
+      if (Capacitor.isNativePlatform()) {
+        window.location.href = marketUrl;
+      } else {
+        window.open(playStoreUrl, '_blank');
+      }
+    } catch {
+      window.open(playStoreUrl, '_blank');
     }
   };
 
@@ -730,10 +748,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {/* Rate Us Button */}
                   <button
                     id="btn-menu-rate-us"
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      setIsRateUsOpen(true);
-                    }}
+                    onClick={handleRateUs}
                     className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-700/60 transition-all flex items-center gap-3 group text-left active:scale-[0.98]"
                   >
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">

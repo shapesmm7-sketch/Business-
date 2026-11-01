@@ -725,7 +725,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   Social Channels & Chat QR
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Socials QR</h1>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Socials QR Code</h1>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1 leading-snug">
                 Connect customers directly to your WhatsApp, Instagram, TikTok, Facebook & custom social channels with one scan.
               </p>

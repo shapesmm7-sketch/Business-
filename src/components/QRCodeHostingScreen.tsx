@@ -1482,7 +1482,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Business QR
+                  Business QR Code
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-emerald-100/90 mt-0.5 leading-snug line-clamp-2">
                   Host catalog, menu, photos, WiFi & info
@@ -1508,7 +1508,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Websites / Apps QR
+                  Websites / Apps QR Code
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-blue-100/90 mt-0.5 leading-snug line-clamp-2">
                   Websites, Google Play, App Store & links
@@ -1534,7 +1534,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Socials QR
+                  Socials QR Code
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-teal-100/90 mt-0.5 leading-snug line-clamp-2">
                   WhatsApp, Instagram, TikTok & Facebook

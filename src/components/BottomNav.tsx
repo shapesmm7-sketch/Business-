@@ -95,7 +95,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div className="relative">
             <QrCode className="w-5 h-5 mb-0.5" />
           </div>
-          <span className="text-[10px] sm:text-[11px] whitespace-nowrap">Host QR</span>
+          <span className="text-[10px] sm:text-[11px] whitespace-nowrap">QR Code</span>
         </button>
       </div>
     </nav>

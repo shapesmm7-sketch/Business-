@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Star, X, Check, Heart, Sparkles, Send } from 'lucide-react';
 
+import { Capacitor } from '@capacitor/core';
+
 interface RateUsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,11 +28,22 @@ export const RateUsModal: React.FC<RateUsModalProps> = ({ isOpen, onClose }) => 
     } catch {
       // ignore
     }
+    const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.brivu.myapp';
+    const marketUrl = 'market://details?id=com.brivu.myapp';
+    try {
+      if (Capacitor.isNativePlatform()) {
+        window.location.href = marketUrl;
+      } else {
+        window.open(playStoreUrl, '_blank');
+      }
+    } catch {
+      window.open(playStoreUrl, '_blank');
+    }
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);
       onClose();
-    }, 2200);
+    }, 1500);
   };
 
   const modalContent = (
