@@ -16909,7 +16909,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-D72gLztZ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-It-vCrNJ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = reactExports.useState(null);
@@ -50990,7 +50990,7 @@ const LanguageSelectorModal = ({
   return reactDomExports.createPortal(modalContent, document.body);
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-Cz69ENzg.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-BMAjcD7r.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65266,7 +65266,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-7s78_TBO.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-BeHMG3WO.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66037,7 +66037,7 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-DyiJPNvk.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-DmGPmBMB.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const MediaStore = registerPlugin("MediaStore");
@@ -67852,6 +67852,7 @@ const STORAGE_KEYS = {
   APP_LOCKED_STATE: "quickreceipt_app_locked_state_v1",
   CLOUDFLARE: "quickreceipt_cloudflare_config_v1",
   DELETED_RECEIPTS: "quickreceipt_deleted_receipt_ids_v1",
+  INITIAL_PROFILE_SETUP_DONE: "quickreceipt_initial_profile_setup_done_v1",
   INSTALL_DATE: "quickreceipt_install_date_v1",
   BRIVU_USER_ID: "quickreceipt_brivu_user_id_v1",
   WORKOS_USER: "quickreceipt_workos_user_v1",
@@ -68071,6 +68072,12 @@ const StorageService = {
   isSystemActionActive() {
     return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
   },
+  hasCompletedInitialProfileSetup() {
+    return readFromStorage(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+  },
+  setInitialProfileSetupDone(done = true) {
+    writeToStorage(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, done);
+  },
   getProfile() {
     const profile = readFromStorage(
       STORAGE_KEYS.PROFILE,
@@ -68082,6 +68089,7 @@ const StorageService = {
     return profile;
   },
   saveProfile(profile) {
+    this.setInitialProfileSetupDone(true);
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
       this.getProfile();
@@ -73158,7 +73166,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-DG5d6pFx.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-BGFyucFs.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -118903,7 +118911,9 @@ const ReceiptsHistoryScreen = ({
 const BusinessProfileScreen = ({
   initialProfile,
   onSave,
-  onBack
+  onBack,
+  isInitialOnboarding = false,
+  onSkipOnboarding
 }) => {
   const [profile, setProfile] = reactExports.useState(initialProfile);
   const [savedToast, setSavedToast] = reactExports.useState(false);
@@ -119116,11 +119126,17 @@ const BusinessProfileScreen = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      StorageService.setInitialProfileSetupDone(true);
       StorageService.saveProfile(profile);
       onSave(profile);
       setSavedToast(true);
       AdMobService.showInterstitial("profile_saved");
-      setTimeout(() => setSavedToast(false), 3800);
+      setTimeout(() => {
+        setSavedToast(false);
+        if (isInitialOnboarding && onSkipOnboarding) {
+          onSkipOnboarding();
+        }
+      }, isInitialOnboarding ? 1500 : 3800);
     } catch (err) {
       console.error("Error saving business profile:", err);
     } finally {
@@ -119135,16 +119151,48 @@ const BusinessProfileScreen = ({
       ] }) }),
       document.body
     ),
+    isInitialOnboarding && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md space-y-2.5 animate-fadeIn border border-emerald-400/30", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Store, { className: "w-5 h-5 text-white" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-sm font-black tracking-wide", children: "Welcome to Brivu!" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-emerald-100 font-medium", children: "Set Up Your Business Details" })
+          ] })
+        ] }),
+        onSkipOnboarding && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            id: "btn-skip-onboarding-top",
+            onClick: () => {
+              StorageService.setInitialProfileSetupDone(true);
+              onSkipOnboarding();
+            },
+            className: "px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Skip for Now" })
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[11px] text-emerald-50 leading-relaxed pt-2 border-t border-white/20", children: "Please enter your business details below (Business Name, Phone, Address, Logo, Currency). These details will be printed on all your receipts, invoices, and hosted QR pages." })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
           id: "btn-profile-back",
-          onClick: onBack,
-          className: "flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg",
+          onClick: () => {
+            if (isInitialOnboarding && onSkipOnboarding) {
+              StorageService.setInitialProfileSetupDone(true);
+              onSkipOnboarding();
+            } else {
+              onBack();
+            }
+          },
+          className: "flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg cursor-pointer",
           children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-4 h-4" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Back" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: isInitialOnboarding ? "Skip for Now" : "Back" })
           ]
         }
       ),
@@ -119154,8 +119202,8 @@ const BusinessProfileScreen = ({
         {
           id: "btn-profile-save-top",
           onClick: handleSave,
-          className: "px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition",
-          children: "Save"
+          className: "px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition cursor-pointer",
+          children: isInitialOnboarding ? "Save & Continue" : "Save"
         }
       )
     ] }),
@@ -119905,11 +119953,24 @@ const BusinessProfileScreen = ({
         id: "btn-profile-save-bottom",
         type: "button",
         onClick: handleSave,
-        className: "w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2",
+        className: "w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer",
         children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Check, { className: "w-4 h-4" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: t3("save_business_profile", profile.language) })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: isInitialOnboarding ? "Save & Continue to App" : t3("save_business_profile", profile.language) })
         ]
+      }
+    ),
+    isInitialOnboarding && onSkipOnboarding && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "button",
+      {
+        id: "btn-skip-onboarding-bottom",
+        type: "button",
+        onClick: () => {
+          StorageService.setInitialProfileSetupDone(true);
+          onSkipOnboarding();
+        },
+        className: "w-full py-3.5 rounded-2xl bg-slate-200/90 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs active:scale-[0.99] transition flex items-center justify-center gap-2 border border-slate-300/70 dark:border-slate-700 cursor-pointer",
+        children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Skip for Now & Continue to App" })
       }
     ),
     isCurrencyModalOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full h-[88vh] max-h-[88vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden", children: [
@@ -159819,7 +159880,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-fwwjbzYM.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-C5heYYmq.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
@@ -159880,6 +159941,9 @@ function App() {
   const [activeScreen, setActiveScreen] = reactExports.useState(() => {
     if (isCustomerPathFromUrl()) {
       return "qr-customer-view";
+    }
+    if (!StorageService.hasCompletedInitialProfileSetup()) {
+      return "profile";
     }
     return "home";
   });
@@ -160832,8 +160896,19 @@ function App() {
         BusinessProfileScreen,
         {
           initialProfile: business,
-          onSave: handleUpdateBusiness,
-          onBack: () => handleNavigate("home")
+          onSave: (updated) => {
+            handleUpdateBusiness(updated);
+            StorageService.setInitialProfileSetupDone(true);
+          },
+          onBack: () => {
+            StorageService.setInitialProfileSetupDone(true);
+            handleNavigate("home");
+          },
+          isInitialOnboarding: !StorageService.hasCompletedInitialProfileSetup(),
+          onSkipOnboarding: () => {
+            StorageService.setInitialProfileSetupDone(true);
+            handleNavigate("home");
+          }
         }
       ),
       activeScreen === "inventory" && /* @__PURE__ */ jsxRuntimeExports.jsx(

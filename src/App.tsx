@@ -144,6 +144,9 @@ export function App() {
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
     }
+    if (!StorageService.hasCompletedInitialProfileSetup()) {
+      return 'profile';
+    }
     return 'home';
   });
   const [previousScreen, setPreviousScreen] = useState<ActiveScreen>('home');
@@ -1301,8 +1304,19 @@ export function App() {
         {activeScreen === 'profile' && (
           <BusinessProfileScreen
             initialProfile={business}
-            onSave={handleUpdateBusiness}
-            onBack={() => handleNavigate('home')}
+            onSave={(updated) => {
+              handleUpdateBusiness(updated);
+              StorageService.setInitialProfileSetupDone(true);
+            }}
+            onBack={() => {
+              StorageService.setInitialProfileSetupDone(true);
+              handleNavigate('home');
+            }}
+            isInitialOnboarding={!StorageService.hasCompletedInitialProfileSetup()}
+            onSkipOnboarding={() => {
+              StorageService.setInitialProfileSetupDone(true);
+              handleNavigate('home');
+            }}
           />
         )}
 

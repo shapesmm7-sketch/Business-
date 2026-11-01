@@ -62,6 +62,7 @@ const STORAGE_KEYS = {
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
+  INITIAL_PROFILE_SETUP_DONE: 'quickreceipt_initial_profile_setup_done_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
   WORKOS_USER: 'quickreceipt_workos_user_v1',
@@ -320,6 +321,15 @@ export const StorageService = {
   isSystemActionActive(): boolean {
     return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
   },
+
+  hasCompletedInitialProfileSetup(): boolean {
+    return readFromStorage<boolean>(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+  },
+
+  setInitialProfileSetupDone(done: boolean = true): void {
+    writeToStorage(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, done);
+  },
+
   getProfile(): BusinessProfile {
     const profile = readFromStorage<BusinessProfile>(
       STORAGE_KEYS.PROFILE,
@@ -332,6 +342,7 @@ export const StorageService = {
   },
 
   saveProfile(profile: BusinessProfile): boolean {
+    this.setInitialProfileSetupDone(true);
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
       const current = this.getProfile();

@@ -46,12 +46,16 @@ interface BusinessProfileScreenProps {
   initialProfile: BusinessProfile;
   onSave: (updatedProfile: BusinessProfile) => void;
   onBack: () => void;
+  isInitialOnboarding?: boolean;
+  onSkipOnboarding?: () => void;
 }
 
 export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   initialProfile,
   onSave,
   onBack,
+  isInitialOnboarding = false,
+  onSkipOnboarding,
 }) => {
   const [profile, setProfile] = useState<BusinessProfile>(initialProfile);
   const [savedToast, setSavedToast] = useState(false);
@@ -311,11 +315,17 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      StorageService.setInitialProfileSetupDone(true);
       StorageService.saveProfile(profile);
       onSave(profile);
       setSavedToast(true);
       AdMobService.showInterstitial('profile_saved');
-      setTimeout(() => setSavedToast(false), 3800);
+      setTimeout(() => {
+        setSavedToast(false);
+        if (isInitialOnboarding && onSkipOnboarding) {
+          onSkipOnboarding();
+        }
+      }, isInitialOnboarding ? 1500 : 3800);
     } catch (err) {
       console.error('Error saving business profile:', err);
     } finally {
@@ -338,15 +348,55 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         document.body
       )}
 
+      {/* Onboarding Welcome Card */}
+      {isInitialOnboarding && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md space-y-2.5 animate-fadeIn border border-emerald-400/30">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
+                <Store className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black tracking-wide">Welcome to Brivu!</h2>
+                <p className="text-[11px] text-emerald-100 font-medium">Set Up Your Business Details</p>
+              </div>
+            </div>
+            {onSkipOnboarding && (
+              <button
+                type="button"
+                id="btn-skip-onboarding-top"
+                onClick={() => {
+                  StorageService.setInitialProfileSetupDone(true);
+                  onSkipOnboarding();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <span>Skip for Now</span>
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-emerald-50 leading-relaxed pt-2 border-t border-white/20">
+            Please enter your business details below (Business Name, Phone, Address, Logo, Currency). These details will be printed on all your receipts, invoices, and hosted QR pages.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <button
           id="btn-profile-back"
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg"
+          onClick={() => {
+            if (isInitialOnboarding && onSkipOnboarding) {
+              StorageService.setInitialProfileSetupDone(true);
+              onSkipOnboarding();
+            } else {
+              onBack();
+            }
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
+          <span>{isInitialOnboarding ? 'Skip for Now' : 'Back'}</span>
         </button>
 
         <h1 className="text-base font-bold text-slate-900 dark:text-white">
@@ -356,9 +406,9 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <button
           id="btn-profile-save-top"
           onClick={handleSave}
-          className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition"
+          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
         >
-          Save
+          {isInitialOnboarding ? 'Save & Continue' : 'Save'}
         </button>
       </div>
 
@@ -1169,11 +1219,26 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         id="btn-profile-save-bottom"
         type="button"
         onClick={handleSave}
-        className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2"
+        className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer"
       >
         <Check className="w-4 h-4" />
-        <span>{t('save_business_profile', profile.language)}</span>
+        <span>{isInitialOnboarding ? 'Save & Continue to App' : t('save_business_profile', profile.language)}</span>
       </button>
+
+      {/* Skip for Now Button (Onboarding) */}
+      {isInitialOnboarding && onSkipOnboarding && (
+        <button
+          id="btn-skip-onboarding-bottom"
+          type="button"
+          onClick={() => {
+            StorageService.setInitialProfileSetupDone(true);
+            onSkipOnboarding();
+          }}
+          className="w-full py-3.5 rounded-2xl bg-slate-200/90 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs active:scale-[0.99] transition flex items-center justify-center gap-2 border border-slate-300/70 dark:border-slate-700 cursor-pointer"
+        >
+          <span>Skip for Now & Continue to App</span>
+        </button>
+      )}
 
       {/* Compact Currency Picker Modal */}
       {isCurrencyModalOpen && (
