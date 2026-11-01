@@ -425,18 +425,18 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
       </div>
 
       {/* FIXED BOTTOM FLOATING ACTION BAR: DOWNLOAD & SHARE */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl">
-        <div className="max-w-2xl mx-auto flex items-center gap-2.5">
+      <div className="fixed bottom-0 left-0 right-0 z-50 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl">
+        <div className="max-w-2xl mx-auto grid grid-cols-4 gap-1.5 sm:gap-2">
           {/* Download PDF */}
           <button
             id="btn-preview-download-pdf"
             onClick={handleDownload}
             disabled={isGenerating}
-            className="flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            className="py-2.5 px-1 sm:px-2 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs border border-slate-300 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
             title={isInvoice ? 'Download PDF Invoice' : 'Download PDF Receipt'}
           >
-            <Download className={`w-4 h-4 shrink-0 ${isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
-            <span className="truncate">{isInvoice ? 'Invoice PDF' : 'PDF'}</span>
+            <Download className={`w-3.5 h-3.5 shrink-0 ${isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
+            <span className="whitespace-nowrap">{isInvoice ? 'Invoice PDF' : 'PDF'}</span>
           </button>
 
           {/* Save Photo */}
@@ -444,11 +444,11 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             id="btn-preview-save-photo"
             onClick={handleSavePhoto}
             disabled={isGenerating}
-            className="flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs sm:text-sm border border-emerald-300 dark:border-emerald-700 shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+            className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 shadow-sm active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
             title={isInvoice ? 'Save Invoice as Photo (PNG)' : 'Save Receipt as Photo (PNG)'}
           >
-            <Camera className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="truncate">Save Photo</span>
+            <Camera className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="whitespace-nowrap">Photo</span>
           </button>
 
           {/* Share PDF (WhatsApp / Android Sheet) */}
@@ -456,14 +456,14 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             id="btn-preview-share-pdf"
             onClick={handleShare}
             disabled={isGenerating}
-            className={`flex-1.5 py-3.5 px-4 rounded-2xl text-white font-bold text-sm shadow-lg active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50 ${
+            className={`py-2.5 px-1 sm:px-2 rounded-xl text-white font-bold text-xs shadow-xs active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50 ${
               isInvoice
-                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-600/30 hover:opacity-95'
-                : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-600/30 hover:opacity-95'
+                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-95'
+                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95'
             }`}
           >
-            <Share2 className="w-4 h-4" />
-            <span>{isInvoice ? 'Share Invoice' : 'Share Receipt'}</span>
+            <Share2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="whitespace-nowrap">Share</span>
           </button>
 
           {/* Print Button (Bluetooth Thermal / System Printer) */}
@@ -473,10 +473,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             onClick={handleThermalPrint}
             disabled={isGenerating || isThermalPrinting}
             title={savedPrinter ? `Print directly to ${savedPrinter.name}` : 'Print Invoice / Receipt'}
-            className="flex-1 py-3.5 px-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer"
+            className="py-2.5 px-1 sm:px-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50 cursor-pointer"
           >
-            <Printer className={`w-4 h-4 ${isThermalPrinting ? 'animate-bounce' : ''}`} />
-            <span>{isThermalPrinting ? 'Printing...' : savedPrinter ? 'Print (BT)' : 'Print'}</span>
+            <Printer className={`w-3.5 h-3.5 shrink-0 ${isThermalPrinting ? 'animate-bounce' : ''}`} />
+            <span className="whitespace-nowrap">{isThermalPrinting ? 'Printing...' : savedPrinter ? 'Print (BT)' : 'Print'}</span>
           </button>
         </div>
       </div>

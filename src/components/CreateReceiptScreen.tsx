@@ -1000,83 +1000,87 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       </div>
 
       {/* 4. Action Buttons Fixed Bottom Floating Bar (Cancel, Save, Download, Share, Preview) */}
-      <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50">
-        <div className="max-w-2xl mx-auto flex items-center gap-1.5 sm:gap-2">
-          {/* Back / Cancel */}
-          <button
-            id="btn-receipt-cancel"
-            type="button"
-            onClick={onCancel}
-            className="p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0"
-            title="Cancel & Go Back"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+      <div className="fixed bottom-0 left-0 right-0 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50">
+        <div className="max-w-2xl mx-auto space-y-2">
+          {/* Top Row: Back Button + Save Receipt Button */}
+          <div className="flex items-center gap-2">
+            <button
+              id="btn-receipt-cancel"
+              type="button"
+              onClick={onCancel}
+              className="p-2.5 sm:p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0"
+              title="Cancel & Go Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
 
-          {/* 1. Save */}
-          <button
-            id="btn-action-save"
-            type="button"
-            onClick={() => handleSubmit('save')}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold text-xs border border-slate-300 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50"
-            title="Save Receipt"
-          >
-            <Save className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="whitespace-nowrap">Save</span>
-          </button>
+            <button
+              id="btn-action-save"
+              type="button"
+              onClick={() => handleSubmit('save')}
+              disabled={isProcessing}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-md shadow-emerald-600/20 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50"
+              title="Save Receipt"
+            >
+              <Save className="w-4 h-4 shrink-0" />
+              <span>Save Receipt</span>
+            </button>
+          </div>
 
-          {/* 2. Download PDF */}
-          <button
-            id="btn-action-download"
-            type="button"
-            onClick={() => handleSubmit('download')}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-            title="Download PDF"
-          >
-            <Download className="w-4 h-4 text-sky-400 shrink-0" />
-            <span className="whitespace-nowrap">PDF</span>
-          </button>
+          {/* Bottom Row: 4 Action Buttons Grid (PDF, Photo, Share, Preview) */}
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+            {/* Download PDF */}
+            <button
+              id="btn-action-download"
+              type="button"
+              onClick={() => handleSubmit('download')}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+              title="Download PDF"
+            >
+              <Download className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <span className="whitespace-nowrap">PDF</span>
+            </button>
 
-          {/* 2B. Save Photo */}
-          <button
-            id="btn-action-photo"
-            type="button"
-            onClick={() => handleSubmit('photo')}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-            title="Save Receipt Photo (PNG)"
-          >
-            <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="whitespace-nowrap">Photo</span>
-          </button>
+            {/* Save Photo */}
+            <button
+              id="btn-action-photo"
+              type="button"
+              onClick={() => handleSubmit('photo')}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+              title="Save Receipt Photo (PNG)"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="whitespace-nowrap">Photo</span>
+            </button>
 
-          {/* 3. Share */}
-          <button
-            id="btn-action-share"
-            type="button"
-            onClick={() => handleSubmit('share')}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-md shadow-emerald-600/30 hover:opacity-95 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50"
-            title="Generate & Share PDF"
-          >
-            <Share2 className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Share</span>
-          </button>
+            {/* Share */}
+            <button
+              id="btn-action-share"
+              type="button"
+              onClick={() => handleSubmit('share')}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-xs hover:opacity-95 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+              title="Generate & Share PDF"
+            >
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Share</span>
+            </button>
 
-          {/* 4. Preview */}
-          <button
-            id="btn-action-preview"
-            type="button"
-            onClick={() => handleSubmit('preview')}
-            disabled={isProcessing}
-            className="flex-1.2 py-3 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-600/25 active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-            title="Preview Receipt"
-          >
-            <Eye className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Preview</span>
-          </button>
+            {/* Preview */}
+            <button
+              id="btn-action-preview"
+              type="button"
+              onClick={() => handleSubmit('preview')}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50"
+              title="Preview Receipt"
+            >
+              <Eye className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Preview</span>
+            </button>
+          </div>
         </div>
       </div>
 

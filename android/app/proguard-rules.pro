@@ -48,6 +48,9 @@
 -keep public class com.brivu.myapp.PlayBillingPlugin {
     public *;
 }
+-keep public class com.brivu.myapp.MediaStorePlugin {
+    public *;
+}
 
 # 6. AndroidX & WebKit
 -keep public class * extends android.app.Activity

@@ -1445,83 +1445,87 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       </div>
 
       {/* Floating Action Bar - Fixed Bottom with high z-index and full visibility */}
-      <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50">
-        <div className="max-w-2xl mx-auto flex items-center gap-1.5 sm:gap-2">
-          {/* Back / Cancel */}
-          <button
-            id="btn-invoice-cancel"
-            type="button"
-            onClick={onCancel}
-            className="p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0"
-            title="Cancel & Go Back"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+      <div className="fixed bottom-0 left-0 right-0 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50">
+        <div className="max-w-2xl mx-auto space-y-2">
+          {/* Top Row: Back Button + Save Invoice Button */}
+          <div className="flex items-center gap-2">
+            <button
+              id="btn-invoice-cancel"
+              type="button"
+              onClick={onCancel}
+              className="p-2.5 sm:p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0"
+              title="Cancel & Go Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
 
-          {/* Save Only */}
-          <button
-            id="btn-invoice-save"
-            type="button"
-            onClick={handleSaveOnly}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50"
-            title="Save Invoice Draft"
-          >
-            <Save className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-            <span className="whitespace-nowrap">Save</span>
-          </button>
+            <button
+              id="btn-invoice-save"
+              type="button"
+              onClick={handleSaveOnly}
+              disabled={isProcessing}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm shadow-md shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50"
+              title="Save Invoice Draft"
+            >
+              <Save className="w-4 h-4 shrink-0" />
+              <span>Save Invoice</span>
+            </button>
+          </div>
 
-          {/* Quick Download PDF */}
-          <button
-            id="btn-invoice-download"
-            type="button"
-            onClick={handleQuickDownload}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50"
-            title="Download Invoice PDF"
-          >
-            <Download className="w-4 h-4 text-indigo-300 shrink-0" />
-            <span className="whitespace-nowrap">PDF</span>
-          </button>
+          {/* Bottom Row: 4 Action Buttons Grid (PDF, Photo, Share, Preview) */}
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+            {/* Quick Download PDF */}
+            <button
+              id="btn-invoice-download"
+              type="button"
+              onClick={handleQuickDownload}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+              title="Download Invoice PDF"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+              <span className="whitespace-nowrap">PDF</span>
+            </button>
 
-          {/* Quick Save Photo */}
-          <button
-            id="btn-invoice-photo"
-            type="button"
-            onClick={handleQuickSavePhoto}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50"
-            title="Save Invoice Photo (PNG)"
-          >
-            <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="whitespace-nowrap">Photo</span>
-          </button>
+            {/* Quick Save Photo */}
+            <button
+              id="btn-invoice-photo"
+              type="button"
+              onClick={handleQuickSavePhoto}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
+              title="Save Invoice Photo (PNG)"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="whitespace-nowrap">Photo</span>
+            </button>
 
-          {/* Quick Share via WhatsApp */}
-          <button
-            id="btn-invoice-share"
-            type="button"
-            onClick={handleQuickShare}
-            disabled={isProcessing}
-            className="flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50 shadow-sm"
-            title="Share Invoice"
-          >
-            <Share2 className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Share</span>
-          </button>
+            {/* Quick Share via WhatsApp */}
+            <button
+              id="btn-invoice-share"
+              type="button"
+              onClick={handleQuickShare}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs"
+              title="Share Invoice"
+            >
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Share</span>
+            </button>
 
-          {/* Save & Preview */}
-          <button
-            id="btn-invoice-save-preview"
-            type="button"
-            onClick={handleSaveAndPreview}
-            disabled={isProcessing}
-            className="flex-1.2 py-3 px-3 sm:px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs sm:text-sm shadow-md shadow-indigo-600/25 active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-            title="Preview Invoice"
-          >
-            <Eye className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Preview</span>
-          </button>
+            {/* Save & Preview */}
+            <button
+              id="btn-invoice-save-preview"
+              type="button"
+              onClick={handleSaveAndPreview}
+              disabled={isProcessing}
+              className="py-2.5 px-1 sm:px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs"
+              title="Preview Invoice"
+            >
+              <Eye className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">Preview</span>
+            </button>
+          </div>
         </div>
       </div>
 

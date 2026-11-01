@@ -50976,7 +50976,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-D5fA4wgI.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-DEA1ocJ9.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65252,7 +65252,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DEz7xYV_.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-DQHKuXxp.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66023,11 +66023,11 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-B9GLEmOk.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-BkNm3akN.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-CyCPlkog.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-DvHqNVnT.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 const MediaStore = registerPlugin("MediaStore");
 async function ensureStoragePermission() {
@@ -73136,7 +73136,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-CR8yyEoF.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-BTG5EjWP.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -116108,93 +116108,97 @@ const CreateReceiptScreen = ({
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto flex items-center gap-1.5 sm:gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          id: "btn-receipt-cancel",
-          type: "button",
-          onClick: onCancel,
-          className: "p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0",
-          title: "Cancel & Go Back",
-          children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-5 h-5" })
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-action-save",
-          type: "button",
-          onClick: () => handleSubmit("save"),
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-bold text-xs border border-slate-300 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50",
-          title: "Save Receipt",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { className: "w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Save" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-action-download",
-          type: "button",
-          onClick: () => handleSubmit("download"),
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
-          title: "Download PDF",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-4 h-4 text-sky-400 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-action-photo",
-          type: "button",
-          onClick: () => handleSubmit("photo"),
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
-          title: "Save Receipt Photo (PNG)",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-action-share",
-          type: "button",
-          onClick: () => handleSubmit("share"),
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-md shadow-emerald-600/30 hover:opacity-95 active:scale-95 flex items-center justify-center gap-1 sm:gap-1.5 transition disabled:opacity-50",
-          title: "Generate & Share PDF",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-4 h-4 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Share" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-action-preview",
-          type: "button",
-          onClick: () => handleSubmit("preview"),
-          disabled: isProcessing,
-          className: "flex-1.2 py-3 px-3 sm:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm shadow-md shadow-emerald-600/25 active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50",
-          title: "Preview Receipt",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { className: "w-4 h-4 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Preview" })
-          ]
-        }
-      )
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto space-y-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            id: "btn-receipt-cancel",
+            type: "button",
+            onClick: onCancel,
+            className: "p-2.5 sm:p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0",
+            title: "Cancel & Go Back",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-5 h-5" })
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-action-save",
+            type: "button",
+            onClick: () => handleSubmit("save"),
+            disabled: isProcessing,
+            className: "flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-md shadow-emerald-600/20 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50",
+            title: "Save Receipt",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { className: "w-4 h-4 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Save Receipt" })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-4 gap-1.5 sm:gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-action-download",
+            type: "button",
+            onClick: () => handleSubmit("download"),
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+            title: "Download PDF",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-sky-400 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-action-photo",
+            type: "button",
+            onClick: () => handleSubmit("photo"),
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+            title: "Save Receipt Photo (PNG)",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-action-share",
+            type: "button",
+            onClick: () => handleSubmit("share"),
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-xs hover:opacity-95 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+            title: "Generate & Share PDF",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-3.5 h-3.5 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Share" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-action-preview",
+            type: "button",
+            onClick: () => handleSubmit("preview"),
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50",
+            title: "Preview Receipt",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { className: "w-3.5 h-3.5 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Preview" })
+            ]
+          }
+        )
+      ] })
     ] }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       StockProductPickerModal,
@@ -117432,93 +117436,97 @@ const CreateInvoiceScreen = ({
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto flex items-center gap-1.5 sm:gap-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          id: "btn-invoice-cancel",
-          type: "button",
-          onClick: onCancel,
-          className: "p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0",
-          title: "Cancel & Go Back",
-          children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-5 h-5" })
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-invoice-save",
-          type: "button",
-          onClick: handleSaveOnly,
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50",
-          title: "Save Invoice Draft",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { className: "w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Save" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-invoice-download",
-          type: "button",
-          onClick: handleQuickDownload,
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50",
-          title: "Download Invoice PDF",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-4 h-4 text-indigo-300 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-invoice-photo",
-          type: "button",
-          onClick: handleQuickSavePhoto,
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-1.5 sm:px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50",
-          title: "Save Invoice Photo (PNG)",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-invoice-share",
-          type: "button",
-          onClick: handleQuickShare,
-          disabled: isProcessing,
-          className: "flex-1 py-3 px-2 sm:px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 sm:gap-1.5 disabled:opacity-50 shadow-sm",
-          title: "Share Invoice",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-4 h-4 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Share" })
-          ]
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          id: "btn-invoice-save-preview",
-          type: "button",
-          onClick: handleSaveAndPreview,
-          disabled: isProcessing,
-          className: "flex-1.2 py-3 px-3 sm:px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs sm:text-sm shadow-md shadow-indigo-600/25 active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50",
-          title: "Preview Invoice",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { className: "w-4 h-4 shrink-0" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Preview" })
-          ]
-        }
-      )
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl z-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto space-y-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            id: "btn-invoice-cancel",
+            type: "button",
+            onClick: onCancel,
+            className: "p-2.5 sm:p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition shrink-0",
+            title: "Cancel & Go Back",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-5 h-5" })
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-invoice-save",
+            type: "button",
+            onClick: handleSaveOnly,
+            disabled: isProcessing,
+            className: "flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm shadow-md shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50",
+            title: "Save Invoice Draft",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Save, { className: "w-4 h-4 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Save Invoice" })
+            ]
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-4 gap-1.5 sm:gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-invoice-download",
+            type: "button",
+            onClick: handleQuickDownload,
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+            title: "Download Invoice PDF",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: "w-3.5 h-3.5 text-indigo-300 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "PDF" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-invoice-photo",
+            type: "button",
+            onClick: handleQuickSavePhoto,
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
+            title: "Save Invoice Photo (PNG)",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-invoice-share",
+            type: "button",
+            onClick: handleQuickShare,
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs",
+            title: "Share Invoice",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-3.5 h-3.5 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Share" })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            id: "btn-invoice-save-preview",
+            type: "button",
+            onClick: handleSaveAndPreview,
+            disabled: isProcessing,
+            className: "py-2.5 px-1 sm:px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs",
+            title: "Preview Invoice",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Eye, { className: "w-3.5 h-3.5 shrink-0" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Preview" })
+            ]
+          }
+        )
+      ] })
     ] }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       StockProductPickerModal,
@@ -117888,18 +117896,18 @@ const ReceiptPreviewScreen = ({
         )
       }
     ),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 z-50 p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto flex items-center gap-2.5", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed bottom-0 left-0 right-0 z-50 p-2.5 sm:p-3 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-2xl mx-auto grid grid-cols-4 gap-1.5 sm:gap-2", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
           id: "btn-preview-download-pdf",
           onClick: handleDownload,
           disabled: isGenerating,
-          className: "flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs sm:text-sm border border-slate-300 dark:border-slate-700 shadow-md hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50",
+          className: "py-2.5 px-1 sm:px-2 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs border border-slate-300 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
           title: isInvoice ? "Download PDF Invoice" : "Download PDF Receipt",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: `w-4 h-4 shrink-0 ${isInvoice ? "text-indigo-600" : "text-emerald-600"}` }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: isInvoice ? "Invoice PDF" : "PDF" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { className: `w-3.5 h-3.5 shrink-0 ${isInvoice ? "text-indigo-600" : "text-emerald-600"}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: isInvoice ? "Invoice PDF" : "PDF" })
           ]
         }
       ),
@@ -117909,11 +117917,11 @@ const ReceiptPreviewScreen = ({
           id: "btn-preview-save-photo",
           onClick: handleSavePhoto,
           disabled: isGenerating,
-          className: "flex-1 py-3 px-2 sm:px-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs sm:text-sm border border-emerald-300 dark:border-emerald-700 shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50",
+          className: "py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 shadow-sm active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50",
           title: isInvoice ? "Save Invoice as Photo (PNG)" : "Save Receipt as Photo (PNG)",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "truncate", children: "Save Photo" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Camera$1, { className: "w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Photo" })
           ]
         }
       ),
@@ -117923,10 +117931,10 @@ const ReceiptPreviewScreen = ({
           id: "btn-preview-share-pdf",
           onClick: handleShare,
           disabled: isGenerating,
-          className: `flex-1.5 py-3.5 px-4 rounded-2xl text-white font-bold text-sm shadow-lg active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50 ${isInvoice ? "bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-600/30 hover:opacity-95" : "bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-600/30 hover:opacity-95"}`,
+          className: `py-2.5 px-1 sm:px-2 rounded-xl text-white font-bold text-xs shadow-xs active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50 ${isInvoice ? "bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-95" : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95"}`,
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-4 h-4" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: isInvoice ? "Share Invoice" : "Share Receipt" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Share2, { className: "w-3.5 h-3.5 shrink-0" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: "Share" })
           ]
         }
       ),
@@ -117938,10 +117946,10 @@ const ReceiptPreviewScreen = ({
           onClick: handleThermalPrint,
           disabled: isGenerating || isThermalPrinting,
           title: savedPrinter ? `Print directly to ${savedPrinter.name}` : "Print Invoice / Receipt",
-          className: "flex-1 py-3.5 px-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 flex items-center justify-center gap-1.5 transition disabled:opacity-50 shrink-0 cursor-pointer",
+          className: "py-2.5 px-1 sm:px-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50 cursor-pointer",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { className: `w-4 h-4 ${isThermalPrinting ? "animate-bounce" : ""}` }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: isThermalPrinting ? "Printing..." : savedPrinter ? "Print (BT)" : "Print" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { className: `w-3.5 h-3.5 shrink-0 ${isThermalPrinting ? "animate-bounce" : ""}` }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "whitespace-nowrap", children: isThermalPrinting ? "Printing..." : savedPrinter ? "Print (BT)" : "Print" })
           ]
         }
       )
@@ -159784,7 +159792,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-BunsyGmp.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-1JrarUMT.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
