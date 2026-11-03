@@ -144,7 +144,7 @@ export function App() {
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
     }
-    if (!StorageService.hasCompletedInitialProfileSetup()) {
+    if (!StorageService.hasFilledBusinessDetails()) {
       return 'profile';
     }
     return 'home';
@@ -693,6 +693,13 @@ export function App() {
       const isPublic = isCustomerPathFromUrl();
 
       if (isPublic) return;
+
+      // If user has not yet filled their business details, show business profile page on every open/reopen
+      if (!StorageService.hasFilledBusinessDetails()) {
+        if (!StorageService.consumeSystemActionActive() && !StorageService.isSystemActionActive()) {
+          setActiveScreen('profile');
+        }
+      }
 
       if (currentCfg?.isEnabled && currentCfg.pin && currentCfg.autoLockOnExit !== false) {
         // If returning from system dialog (e.g. file picker / share sheet), do not lock
@@ -1306,15 +1313,12 @@ export function App() {
             initialProfile={business}
             onSave={(updated) => {
               handleUpdateBusiness(updated);
-              StorageService.setInitialProfileSetupDone(true);
             }}
             onBack={() => {
-              StorageService.setInitialProfileSetupDone(true);
               handleNavigate('home');
             }}
-            isInitialOnboarding={!StorageService.hasCompletedInitialProfileSetup()}
+            isInitialOnboarding={!StorageService.hasFilledBusinessDetails()}
             onSkipOnboarding={() => {
-              StorageService.setInitialProfileSetupDone(true);
               handleNavigate('home');
             }}
           />

@@ -40,8 +40,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link intent-filter for OAuth redirect callback (RFC 8252) -->
-            <intent-filter>
+            <!-- Deep link intent-filter for OAuth redirect callback & Google Play App Links (RFC 8252) -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

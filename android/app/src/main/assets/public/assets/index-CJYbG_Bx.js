@@ -16909,7 +16909,7 @@ const __vitePreload = function preload(baseModule, deps, importerUrl) {
   });
 };
 const Share = registerPlugin("Share", {
-  web: () => __vitePreload(() => import("./web-It-vCrNJ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
+  web: () => __vitePreload(() => import("./web-BhPv9qlZ.js"), true ? [] : void 0).then((m2) => new m2.ShareWeb())
 });
 function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = reactExports.useState(null);
@@ -50990,7 +50990,7 @@ const LanguageSelectorModal = ({
   return reactDomExports.createPortal(modalContent, document.body);
 };
 const Browser = registerPlugin("Browser", {
-  web: () => __vitePreload(() => import("./web-BMAjcD7r.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
+  web: () => __vitePreload(() => import("./web-KtM_4Enp.js"), true ? [] : void 0).then((m2) => new m2.BrowserWeb())
 });
 function compressImageFile(file, options = {}) {
   const { maxDimension = 800, quality = 0.75, mimeType = "image/jpeg", maxBytes = 500 * 1024 } = options;
@@ -65266,7 +65266,7 @@ function le() {
   var h2 = l2.getContext("2d");
   h2.fillStyle = "#fff", h2.fillRect(0, 0, l2.width, l2.height);
   var f2 = { ignoreMouse: true, ignoreAnimation: true, ignoreDimensions: true }, d2 = this;
-  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-BeHMG3WO.js"), true ? [] : void 0)).catch(function(t5) {
+  return (i$4.canvg ? Promise.resolve(i$4.canvg) : __vitePreload(() => import("./index.es-B_fUsuMc.js"), true ? [] : void 0)).catch(function(t5) {
     return Promise.reject(new Error("Could not load canvg: " + t5));
   }).then(function(t5) {
     return t5.default ? t5.default : t5;
@@ -66037,7 +66037,7 @@ var Encoding;
   Encoding2["UTF16"] = "utf16";
 })(Encoding || (Encoding = {}));
 const Filesystem = registerPlugin("Filesystem", {
-  web: () => __vitePreload(() => import("./web-DmGPmBMB.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
+  web: () => __vitePreload(() => import("./web-FwgMeKXZ.js"), true ? [] : void 0).then((m2) => new m2.FilesystemWeb())
 });
 f$1();
 const MediaStore = registerPlugin("MediaStore");
@@ -68072,8 +68072,12 @@ const StorageService = {
   isSystemActionActive() {
     return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
   },
+  hasFilledBusinessDetails() {
+    const profile = this.getProfile();
+    return Boolean(profile && profile.name && profile.name.trim().length > 0);
+  },
   hasCompletedInitialProfileSetup() {
-    return readFromStorage(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+    return this.hasFilledBusinessDetails();
   },
   setInitialProfileSetupDone(done = true) {
     writeToStorage(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, done);
@@ -68089,7 +68093,9 @@ const StorageService = {
     return profile;
   },
   saveProfile(profile) {
-    this.setInitialProfileSetupDone(true);
+    if (profile.name && profile.name.trim().length > 0) {
+      this.setInitialProfileSetupDone(true);
+    }
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
       this.getProfile();
@@ -73166,7 +73172,7 @@ var AppOpenAdPluginEvents;
   AppOpenAdPluginEvents2["AdImpression"] = "appOpenAdImpression";
 })(AppOpenAdPluginEvents || (AppOpenAdPluginEvents = {}));
 const AdMob = registerPlugin("AdMob", {
-  web: () => __vitePreload(() => import("./web-BGFyucFs.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
+  web: () => __vitePreload(() => import("./web-BC8ZsDel.js"), true ? [] : void 0).then((m2) => new m2.AdMobWeb())
 });
 const NativeAdBridge = registerPlugin("NativeAdPlugin", {
   web: () => ({
@@ -119122,8 +119128,19 @@ const BusinessProfileScreen = ({
       fileInputRef.current.value = "";
     }
   };
+  const [validationError, setValidationError] = reactExports.useState(null);
   const [isSaving, setIsSaving] = reactExports.useState(false);
   const handleSave = async () => {
+    if (!profile.name || !profile.name.trim()) {
+      setValidationError("Please enter your Business / Shop Name before saving.");
+      const nameInput = document.getElementById("input-profile-name");
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    setValidationError(null);
     setIsSaving(true);
     try {
       StorageService.setInitialProfileSetupDone(true);
@@ -119151,6 +119168,10 @@ const BusinessProfileScreen = ({
       ] }) }),
       document.body
     ),
+    validationError && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2.5 shadow-xs animate-shake", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(CircleAlert, { className: "w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: validationError })
+    ] }),
     isInitialOnboarding && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md space-y-2.5 animate-fadeIn border border-emerald-400/30", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2.5", children: [
@@ -119165,10 +119186,7 @@ const BusinessProfileScreen = ({
           {
             type: "button",
             id: "btn-skip-onboarding-top",
-            onClick: () => {
-              StorageService.setInitialProfileSetupDone(true);
-              onSkipOnboarding();
-            },
+            onClick: onSkipOnboarding,
             className: "px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer",
             children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Skip for Now" })
           }
@@ -119183,7 +119201,6 @@ const BusinessProfileScreen = ({
           id: "btn-profile-back",
           onClick: () => {
             if (isInitialOnboarding && onSkipOnboarding) {
-              StorageService.setInitialProfileSetupDone(true);
               onSkipOnboarding();
             } else {
               onBack();
@@ -119965,10 +119982,7 @@ const BusinessProfileScreen = ({
       {
         id: "btn-skip-onboarding-bottom",
         type: "button",
-        onClick: () => {
-          StorageService.setInitialProfileSetupDone(true);
-          onSkipOnboarding();
-        },
+        onClick: onSkipOnboarding,
         className: "w-full py-3.5 rounded-2xl bg-slate-200/90 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs active:scale-[0.99] transition flex items-center justify-center gap-2 border border-slate-300/70 dark:border-slate-700 cursor-pointer",
         children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Skip for Now & Continue to App" })
       }
@@ -159880,7 +159894,7 @@ const AdMobModalOverlay = () => {
   return null;
 };
 const App$1 = registerPlugin("App", {
-  web: () => __vitePreload(() => import("./web-C5heYYmq.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
+  web: () => __vitePreload(() => import("./web-5bJL-uvX.js"), true ? [] : void 0).then((m2) => new m2.AppWeb())
 });
 function getQrPageIdFromUrl() {
   if (typeof window === "undefined") return null;
@@ -159942,7 +159956,7 @@ function App() {
     if (isCustomerPathFromUrl()) {
       return "qr-customer-view";
     }
-    if (!StorageService.hasCompletedInitialProfileSetup()) {
+    if (!StorageService.hasFilledBusinessDetails()) {
       return "profile";
     }
     return "home";
@@ -160363,6 +160377,11 @@ function App() {
       setLockConfig(currentCfg);
       const isPublic = isCustomerPathFromUrl();
       if (isPublic) return;
+      if (!StorageService.hasFilledBusinessDetails()) {
+        if (!StorageService.consumeSystemActionActive() && !StorageService.isSystemActionActive()) {
+          setActiveScreen("profile");
+        }
+      }
       if ((currentCfg == null ? void 0 : currentCfg.isEnabled) && currentCfg.pin && currentCfg.autoLockOnExit !== false) {
         if (StorageService.consumeSystemActionActive()) {
           return;
@@ -160898,15 +160917,12 @@ function App() {
           initialProfile: business,
           onSave: (updated) => {
             handleUpdateBusiness(updated);
-            StorageService.setInitialProfileSetupDone(true);
           },
           onBack: () => {
-            StorageService.setInitialProfileSetupDone(true);
             handleNavigate("home");
           },
-          isInitialOnboarding: !StorageService.hasCompletedInitialProfileSetup(),
+          isInitialOnboarding: !StorageService.hasFilledBusinessDetails(),
           onSkipOnboarding: () => {
-            StorageService.setInitialProfileSetupDone(true);
             handleNavigate("home");
           }
         }

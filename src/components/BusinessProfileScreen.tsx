@@ -23,6 +23,7 @@ import {
   ChevronUp,
   Search,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
@@ -311,8 +312,20 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
     }
   };
 
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
   const handleSave = async () => {
+    if (!profile.name || !profile.name.trim()) {
+      setValidationError('Please enter your Business / Shop Name before saving.');
+      const nameInput = document.getElementById('input-profile-name');
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+    setValidationError(null);
     setIsSaving(true);
     try {
       StorageService.setInitialProfileSetupDone(true);
@@ -348,6 +361,14 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         document.body
       )}
 
+      {/* Validation Error Alert */}
+      {validationError && (
+        <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2.5 shadow-xs animate-shake">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+          <span>{validationError}</span>
+        </div>
+      )}
+
       {/* Onboarding Welcome Card */}
       {isInitialOnboarding && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md space-y-2.5 animate-fadeIn border border-emerald-400/30">
@@ -365,10 +386,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
               <button
                 type="button"
                 id="btn-skip-onboarding-top"
-                onClick={() => {
-                  StorageService.setInitialProfileSetupDone(true);
-                  onSkipOnboarding();
-                }}
+                onClick={onSkipOnboarding}
                 className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
               >
                 <span>Skip for Now</span>
@@ -387,7 +405,6 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           id="btn-profile-back"
           onClick={() => {
             if (isInitialOnboarding && onSkipOnboarding) {
-              StorageService.setInitialProfileSetupDone(true);
               onSkipOnboarding();
             } else {
               onBack();
@@ -1230,10 +1247,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <button
           id="btn-skip-onboarding-bottom"
           type="button"
-          onClick={() => {
-            StorageService.setInitialProfileSetupDone(true);
-            onSkipOnboarding();
-          }}
+          onClick={onSkipOnboarding}
           className="w-full py-3.5 rounded-2xl bg-slate-200/90 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-xs active:scale-[0.99] transition flex items-center justify-center gap-2 border border-slate-300/70 dark:border-slate-700 cursor-pointer"
         >
           <span>Skip for Now & Continue to App</span>

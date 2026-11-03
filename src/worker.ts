@@ -27,6 +27,25 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Max-Age': '86400',
 };
 
+// Digital Asset Links for Google Play Deep Links & Credential Sharing domain verification
+const ASSET_LINKS_DATA = [
+  {
+    relation: [
+      'delegate_permission/common.handle_all_urls',
+      'delegate_permission/common.get_login_creds',
+    ],
+    target: {
+      namespace: 'android_app',
+      package_name: 'com.brivu.myapp',
+      sha256_cert_fingerprints: [
+        '79:9D:31:8F:BE:76:28:28:7E:49:0C:2F:1A:C8:A4:D3:C5:E9:63:C3:14:4A:D2:ED:4C:CA:D5:C0:6D:26:16:31',
+        '3B:4E:4B:A1:71:DC:23:9E:DC:C7:8D:5D:16:9E:98:B3:65:74:14:0E:13:F1:6B:F2:BE:0F:D9:CC:89:C7:F1:07',
+        'F1:49:EC:19:44:7A:A8:17:84:1D:F9:D8:F3:2D:DB:16:F2:E5:D3:89:14:33:E2:54:15:87:E8:99:A8:80:3F:DE',
+      ],
+    },
+  },
+];
+
 // Flexible detector for any attached R2 storage bucket
 export function getR2Bucket(env: any): any {
   if (env.BUCKET && typeof env.BUCKET.put === 'function') return env.BUCKET;
@@ -1287,6 +1306,21 @@ export default {
         headers: {
           ...CORS_HEADERS,
           ...(reqHeaders ? { 'Access-Control-Allow-Headers': reqHeaders } : {}),
+        },
+      });
+    }
+
+    // 1b. Digital Asset Links for Google Play Deep Links & Credential Sharing domain verification
+    if (
+      url.pathname === '/.well-known/assetlinks.json' ||
+      url.pathname === '/.well-known/assetlinks'
+    ) {
+      return new Response(JSON.stringify(ASSET_LINKS_DATA, null, 2), {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300',
         },
       });
     }

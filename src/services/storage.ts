@@ -322,8 +322,13 @@ export const StorageService = {
     return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
   },
 
+  hasFilledBusinessDetails(): boolean {
+    const profile = this.getProfile();
+    return Boolean(profile && profile.name && profile.name.trim().length > 0);
+  },
+
   hasCompletedInitialProfileSetup(): boolean {
-    return readFromStorage<boolean>(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+    return this.hasFilledBusinessDetails();
   },
 
   setInitialProfileSetupDone(done: boolean = true): void {
@@ -342,7 +347,9 @@ export const StorageService = {
   },
 
   saveProfile(profile: BusinessProfile): boolean {
-    this.setInitialProfileSetupDone(true);
+    if (profile.name && profile.name.trim().length > 0) {
+      this.setInitialProfileSetupDone(true);
+    }
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
       const current = this.getProfile();
