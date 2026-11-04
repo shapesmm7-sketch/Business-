@@ -40,6 +40,7 @@ import { StorageService } from '../services/storage';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { t } from '../utils/i18n';
 
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
@@ -398,23 +399,25 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   }, [filteredReceipts, totalModeCount]);
 
   const getSalesLabel = () => {
-    const prefix = isInvoiceMode ? 'Invoiced' : 'Sales';
-    switch (dateFilter) {
-      case 'today': return `Today's ${prefix}`;
-      case 'yesterday': return `Yesterday's ${prefix}`;
-      case 'week': return `This Week ${prefix}`;
-      case 'month': return `This Month ${prefix}`;
-      case 'year': return `This Year ${prefix}`;
-      case 'custom': {
-        if (customDate) {
-          const [yr, mo, dy] = customDate.split('-').map(Number);
-          const d = new Date(yr, mo - 1, dy);
-          const formatted = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-          return `${prefix} on ${formatted}`;
-        }
-        return `Specific Day ${prefix}`;
+    const lang = business?.language;
+    if (isInvoiceMode) {
+      switch (dateFilter) {
+        case 'today': return t('todays_invoiced', lang) || "Today's Invoiced";
+        case 'yesterday': return t('yesterdays_invoiced', lang) || "Yesterday's Invoiced";
+        case 'week': return t('this_week_invoiced', lang) || "This Week Invoiced";
+        case 'month': return t('this_month_invoiced', lang) || "This Month Invoiced";
+        case 'year': return t('this_year_invoiced', lang) || "This Year Invoiced";
+        default: return t('total_invoiced', lang) || "Total Invoiced";
       }
-      default: return `Total ${prefix}`;
+    } else {
+      switch (dateFilter) {
+        case 'today': return t('todays_sales', lang) || "Today's Sales";
+        case 'yesterday': return t('yesterdays_sales', lang) || "Yesterday's Sales";
+        case 'week': return t('this_week_sales', lang) || "This Week Sales";
+        case 'month': return t('this_month_sales', lang) || "This Month Sales";
+        case 'year': return t('this_year_sales', lang) || "This Year Sales";
+        default: return t('total_sales', lang) || "Total Sales";
+      }
     }
   };
 
@@ -464,7 +467,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                     : 'text-emerald-400 bg-emerald-950/60 border-emerald-500/20'
                 }`}
               >
-                <Sparkles className="w-3 h-3" /> {isInvoiceMode ? 'Invoices Report' : 'Sales Report'}
+                <Sparkles className="w-3 h-3" /> {isInvoiceMode ? t('invoices_report', business?.language) : t('sales_report', business?.language)}
               </span>
             </div>
           </div>
@@ -484,13 +487,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
 
           <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/10 text-xs text-slate-400 font-medium">
             <span>
-              {periodStats.count} {isInvoiceMode ? (periodStats.count === 1 ? 'invoice' : 'invoices') : (periodStats.count === 1 ? 'receipt' : 'receipts')}
+              {periodStats.count} {isInvoiceMode ? (periodStats.count === 1 ? t('invoice', business?.language) : t('invoices', business?.language)) : (periodStats.count === 1 ? t('receipt', business?.language) : t('receipts', business?.language))}
             </span>
             {isInvoiceMode && periodStats.outstanding > 0 && (
               <>
                 <span>•</span>
                 <span className="text-amber-400 font-semibold">
-                  {formatCurrency(periodStats.outstanding, currency)} pending
+                  {formatCurrency(periodStats.outstanding, currency)} {t('unpaid', business?.language)}
                 </span>
               </>
             )}
@@ -502,10 +505,10 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       <div className="flex items-center justify-between gap-2.5 pt-1">
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {isInvoiceMode ? 'Invoices' : 'Receipts'}
+            {isInvoiceMode ? t('invoices', business?.language) : t('receipts', business?.language)}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {filteredReceipts.length} {isInvoiceMode ? 'invoices' : 'receipts'} • Tap to expand details
+            {filteredReceipts.length} {isInvoiceMode ? t('invoices', business?.language) : t('receipts', business?.language)}
           </p>
         </div>
 
@@ -516,10 +519,9 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
               type="button"
               onClick={onOpenTemplates}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-bold shadow-2xs active:scale-95 transition"
-              title={isInvoiceMode ? 'Browse invoice themes and layouts' : 'Browse receipt themes and layouts'}
             >
               <Palette className={`w-4 h-4 ${isInvoiceMode ? 'text-indigo-500 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
-              <span>Themes</span>
+              <span>{t('receipt_templates', business?.language)}</span>
             </button>
           )}
 
@@ -531,7 +533,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
             >
               <Plus className="w-4 h-4" />
-              <span>New Invoice</span>
+              <span>{t('create_invoice', business?.language)}</span>
             </button>
           ) : (
             <button
@@ -541,7 +543,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
               className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
             >
               <Plus className="w-4 h-4" />
-              <span>New Receipt</span>
+              <span>{t('create_receipt', business?.language)}</span>
             </button>
           )}
         </div>
@@ -555,11 +557,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={
-            isInvoiceMode
-              ? 'Search invoices by #, client, items, PO #, notes...'
-              : 'Search receipts by #, customer, items, notes...'
-          }
+          placeholder={t('search_receipts', business?.language)}
           className="w-full pl-10 pr-9 py-2.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden shadow-xs placeholder:text-slate-400"
         />
         {searchQuery && (
@@ -579,13 +577,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
             <Calendar className="w-3.5 h-3.5" />
           </div>
           {[
-            { id: 'all', label: 'All Dates' },
-            { id: 'today', label: 'Today' },
-            { id: 'yesterday', label: 'Yesterday' },
-            { id: 'week', label: 'This Week' },
-            { id: 'month', label: 'This Month' },
-            { id: 'year', label: 'This Year' },
-            { id: 'custom', label: 'Specific Day' },
+            { id: 'all', label: t('all_documents', business?.language) },
+            { id: 'today', label: t('today', business?.language) },
+            { id: 'yesterday', label: t('yesterday', business?.language) },
+            { id: 'week', label: t('this_week', business?.language) },
+            { id: 'month', label: t('this_month', business?.language) },
+            { id: 'year', label: t('this_year', business?.language) },
+            { id: 'custom', label: t('custom_date', business?.language) },
           ].map((f) => {
             const active = dateFilter === f.id;
             return (
@@ -607,10 +605,10 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0 mx-1" />
 
           {[
-            { id: 'all', label: 'All Status' },
-            { id: 'paid', label: 'Paid' },
-            { id: 'partial', label: 'Partial' },
-            { id: 'unpaid', label: 'Unpaid' },
+            { id: 'all', label: t('all_documents', business?.language) },
+            { id: 'paid', label: t('paid', business?.language) },
+            { id: 'partial', label: t('partial', business?.language) },
+            { id: 'unpaid', label: t('unpaid', business?.language) },
           ].map((s) => {
             const active = statusFilter === s.id;
             return (
@@ -655,14 +653,14 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
             {isInvoiceMode ? <FileText className="w-6 h-6 text-indigo-500" /> : <ReceiptIcon className="w-6 h-6 text-emerald-500" />}
           </div>
           <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            {isInvoiceMode ? 'No invoices found' : 'No receipts found'}
+            {isInvoiceMode ? t('no_invoices_found', business?.language) : t('no_receipts_found', business?.language)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
             {searchQuery || dateFilter !== 'all' || statusFilter !== 'all'
               ? 'Try adjusting or clearing your search filter.'
               : isInvoiceMode
-              ? 'Start by tapping "+ New Invoice" above.'
-              : 'Start by tapping "+ New Receipt" above.'}
+              ? t('start_tapping_invoice', business?.language)
+              : t('start_tapping_receipt', business?.language)}
           </p>
           {(searchQuery || dateFilter !== 'all' || statusFilter !== 'all') && (
             <button

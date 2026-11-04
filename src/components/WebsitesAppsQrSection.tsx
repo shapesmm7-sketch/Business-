@@ -35,6 +35,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { t } from '../utils/i18n';
 
 export type { WebsiteAppQrItem };
 
@@ -427,6 +428,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         initialBoxBgColor={activeBoxBgColor}
         initialBoxBorderColor={activeBoxBorderColor}
         accentColor={activeDarkColor}
+        language={business?.language}
         onSave={(updates) => {
           handleUpdateItemColors(selectedItemId, updates);
           showToast('QR Code & Box colors saved!');
@@ -448,12 +450,12 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full bg-blue-400/30 border border-blue-300/40 text-blue-100">
-                  Websites & Apps QR Hub
+                  {t('websites_apps_qr_title', business?.language) || 'Websites & Apps QR Hub'}
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Websites / Apps QR Code</h1>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">{t('websites_apps_qr_code', business?.language) || 'Websites / Apps QR Code'}</h1>
               <p className="text-xs sm:text-sm text-blue-100/90 font-medium mt-1 leading-snug">
-                Generate high-resolution scannable QR codes for your websites, mobile apps, booking links & web apps.
+                {t('websites_apps_qr_desc_sub', business?.language) || 'Generate high-resolution scannable QR codes for your websites, mobile apps, booking links & web apps.'}
               </p>
             </div>
           </div>
@@ -472,7 +474,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Websites & Apps</span>
+          <span>{t('all_websites_apps', business?.language) || 'ALL Websites & Apps'}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -492,7 +494,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           }`}
         >
           <Globe className="w-4 h-4" />
-          <span>Single Link QR Code</span>
+          <span>{t('single_link_qr', business?.language) || 'Single Link QR Code'}</span>
         </button>
       </div>
 
@@ -501,7 +503,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Select Active Link ({items.length})
+              {t('select_active_link', business?.language) || 'Select Active Link'} ({items.length})
             </span>
             <button
               type="button"
@@ -509,7 +511,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               className="text-xs font-extrabold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add New Link</span>
+              <span>{t('add_new_link', business?.language) || 'Add New Link'}</span>
             </button>
           </div>
 
@@ -533,7 +535,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     type="button"
                     onClick={() => handleOpenEditModal(activeItem)}
                     className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                    title="Edit Link"
+                    title={t('edit', business?.language) || 'Edit Link'}
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -541,7 +543,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     type="button"
                     onClick={(e) => handleDeleteItem(activeItem.id, e)}
                     className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                    title="Delete Link"
+                    title={t('delete', business?.language) || 'Delete Link'}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -550,7 +552,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
             </div>
           ) : (
             <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
-              No links added yet.
+              {t('no_links_added', business?.language) || 'No links added yet.'}
             </p>
           )}
         </div>
@@ -566,15 +568,17 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {/* QR Code Name Input on Top */}
               <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
-                  <span>QR Code Name</span>
+                  <span>{t('qr_code_name', business?.language) || 'QR Code Name'}</span>
                   {tableNumberForPrint && (
-                    <span className="text-[9px] text-blue-600 dark:text-blue-400 font-medium">Included on PNG</span>
+                    <span className="text-[9px] text-blue-600 dark:text-blue-400 font-medium">
+                      {t('included_on_downloads', business?.language) || 'Included on PNG'}
+                    </span>
                   )}
                 </label>
                 <div className="relative flex items-center">
                   <input
                     type="text"
-                    placeholder="e.g. Main Desk, Website Poster, Reception, Entrance"
+                    placeholder={t('qr_name_placeholder', business?.language) || 'e.g. Main Desk, Website Poster, Reception, Entrance'}
                     value={tableNumberForPrint}
                     onChange={(e) => setTableNumberForPrint(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
@@ -584,7 +588,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                       type="button"
                       onClick={() => setTableNumberForPrint('')}
                       className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      title="Clear"
+                      title={t('close', business?.language) || 'Clear'}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -622,7 +626,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   />
                 ) : (
                   <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400">
-                    Generating QR...
+                    {t('generating_qr', business?.language) || 'Generating QR...'}
                   </div>
                 )}
               </div>
@@ -635,7 +639,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800 text-xs font-bold transition active:scale-95 shadow-xs cursor-pointer"
                 >
                   <Palette className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <span>QR Code & Box Editor</span>
+                  <span>{t('qr_box_editor', business?.language) || 'QR Code & Box Editor'}</span>
                 </button>
               </div>
 
@@ -650,19 +654,19 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                 <div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 mb-1.5">
                     <Layers className="w-3 h-3" />
-                    OUR SITES HUB ({items.length})
+                    {t('all_websites_apps', business?.language) || 'OUR SITES HUB'} ({items.length})
                   </span>
                   <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                    Our Sites
+                    {business.name || 'Our Sites'}
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    A QR code that opens an online directory with all your official websites, mobile app downloads & direct booking portals.
+                    {t('websites_apps_qr_desc_sub', business?.language) || 'A QR code that opens an online directory with all your official websites, mobile app downloads & direct booking portals.'}
                   </p>
 
                   {/* Quick Directory Preview of Included Links */}
                   <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Included Links ({items.length})
+                      {t('items', business?.language) || 'Included Links'} ({items.length})
                     </span>
                     <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                       {items.map((it, idx) => {
@@ -708,7 +712,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   {activeItem.phone && (
                     <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-semibold mt-1.5">
                       <Phone className="w-3.5 h-3.5 shrink-0" />
-                      <span>Support / Contact: {activeItem.phone}</span>
+                      <span>{t('phone_number', business?.language) || 'Support / Contact'}: {activeItem.phone}</span>
                     </div>
                   )}
                 </div>
@@ -722,7 +726,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download PNG</span>
+                  <span>{t('download_png', business?.language) || 'Download PNG'}</span>
                 </button>
 
                 <button
@@ -731,7 +735,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{isCopied ? 'Copied!' : 'Copy Link'}</span>
+                  <span>{isCopied ? (t('copied_badge', business?.language) || 'Copied!') : (t('copy_link', business?.language) || 'Copy Link')}</span>
                 </button>
 
                 <button
@@ -740,7 +744,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5" />
-                  <span>Share</span>
+                  <span>{t('share', business?.language) || 'Share'}</span>
                 </button>
 
                 {onOpenCustomerView && (
@@ -753,7 +757,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Preview</span>
+                    <span>{t('preview', business?.language) || 'Preview'}</span>
                   </button>
                 )}
 
@@ -765,7 +769,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Link</span>
+                    <span>{t('open_category', business?.language) || 'Open Link'}</span>
                   </a>
                 )}
 
@@ -776,7 +780,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit QR</span>
+                    <span>{t('edit', business?.language) || 'Edit QR'}</span>
                   </button>
                 )}
               </div>
@@ -792,10 +796,10 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-blue-950 dark:text-blue-200">
-                  Print Table & Wall QR Code Poster (PDF)
+                  {t('print_poster_title', business?.language) || 'Print Table & Wall QR Code Poster (PDF)'}
                 </h3>
                 <p className="text-xs text-blue-700 dark:text-blue-400">
-                  Download a high-resolution A4 poster with your business name & QR code.
+                  {t('print_poster_desc', business?.language) || 'Download a high-resolution A4 poster with your business name & QR code.'}
                 </p>
               </div>
             </div>
@@ -803,11 +807,11 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  QR Code Name
+                  {t('qr_code_name', business?.language) || 'QR Code Name'}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Main Desk, Website Poster, Reception, Entrance"
+                  placeholder={t('qr_name_placeholder', business?.language) || 'e.g. Main Desk, Website Poster, Reception, Entrance'}
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-800 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -822,7 +826,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
+                  <span>{isGeneratingPdf ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('download_poster_pdf', business?.language) || 'Download Table & Wall Poster (PDF)')}</span>
                 </button>
               </div>
             </div>
@@ -835,10 +839,10 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-              No Website or App QR Codes Created
+              {t('no_links_added', business?.language) || 'No Website or App QR Codes Created'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Add your first website, web application, or custom link to generate a scannable QR code.
+              {t('websites_apps_qr_desc_sub', business?.language) || 'Add your first website, web application, or custom link to generate a scannable QR code.'}
             </p>
           </div>
           <button
@@ -847,7 +851,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
             className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Add New Link</span>
+            <span>{t('add_new_link', business?.language) || 'Add New Link'}</span>
           </button>
         </div>
       )}
@@ -870,10 +874,12 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black">
-                    {editingItem ? 'Edit Website / App QR' : 'Create Website / App QR'}
+                    {editingItem
+                      ? (t('edit_website_modal_title', business?.language) || 'Edit Website / App QR')
+                      : (t('add_website_modal_title', business?.language) || 'Create Website / App QR')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Configure destination link, call to action & details
+                    {t('websites_apps_qr_desc_sub', business?.language) || 'Configure destination link, call to action & details'}
                   </p>
                 </div>
               </div>
@@ -891,7 +897,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {/* Link Type Selector */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1.5">
-                  Link Type
+                  {t('link_type', business?.language) || 'Link Type'}
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {TYPE_OPTIONS.map((opt) => {
@@ -924,7 +930,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {/* Title */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Title / Label *
+                  {t('display_title', business?.language) || 'Title / Label'} *
                 </label>
                 <input
                   type="text"
@@ -950,7 +956,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                       }`}
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
-                      <span>WhatsApp Link</span>
+                      <span>{t('whatsapp_number', business?.language) || 'WhatsApp Link'}</span>
                     </button>
                     <button
                       type="button"
@@ -962,13 +968,13 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                       }`}
                     >
                       <Phone className="w-3.5 h-3.5" />
-                      <span>Direct Phone Call</span>
+                      <span>{t('phone_number', business?.language) || 'Direct Phone Call'}</span>
                     </button>
                   </div>
 
                   <PhoneInputField
                     id="website-phone-field"
-                    label={phoneAction === 'whatsapp' ? 'WhatsApp Phone Number *' : 'Direct Call Phone Number *'}
+                    label={phoneAction === 'whatsapp' ? (t('whatsapp_number', business?.language) || 'WhatsApp Phone Number *') : (t('phone_number', business?.language) || 'Direct Call Phone Number *')}
                     icon={phoneAction === 'whatsapp' ? MessageCircle : Phone}
                     value={formPhone}
                     onChange={(val) => setFormPhone(val)}
@@ -981,7 +987,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               ) : (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                    Destination URL *
+                    {t('destination_url', business?.language) || 'Destination URL'} *
                   </label>
                   <input
                     type="text"
@@ -998,7 +1004,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {formType !== 'phone_link' && (
                 <PhoneInputField
                   id="website-support-phone"
-                  label="Customer Support / Inquiries Phone (Optional)"
+                  label={t('phone_number', business?.language) || 'Customer Support / Inquiries Phone (Optional)'}
                   icon={Phone}
                   value={formPhone}
                   onChange={(val) => setFormPhone(val)}
@@ -1011,7 +1017,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {/* CTA Badge Text */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Call-To-Action Text
+                  {t('cta_text', business?.language) || 'Call-To-Action Text'}
                 </label>
                 <input
                   type="text"
@@ -1025,7 +1031,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
               {/* Description */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Optional Description / Subtitle
+                  {t('short_description_opt', business?.language) || 'Optional Description / Subtitle'}
                 </label>
                 <input
                   type="text"
@@ -1045,14 +1051,14 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                 className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>{editingItem ? 'Save Changes' : 'Create QR Code'}</span>
+                <span>{editingItem ? (t('save_changes', business?.language) || 'Save Changes') : (t('save_qr_link', business?.language) || 'Create QR Code')}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
+                className="px-4 py-3 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
               >
-                Cancel
+                {t('cancel', business?.language) || 'Cancel'}
               </button>
             </div>
           </div>

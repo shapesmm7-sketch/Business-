@@ -33,6 +33,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { t } from '../utils/i18n';
 
 export type SocialPlatformType = SocialPlatform;
 
@@ -701,6 +702,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         initialBoxBgColor={activeBoxBgColor}
         initialBoxBorderColor={activeBoxBorderColor}
         accentColor={activeDarkColor}
+        language={business?.language}
         onSave={(updates) => {
           handleUpdateItemColors(selectedItemId, updates);
           showToast('QR Code & Box colors saved!');
@@ -722,12 +724,12 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full bg-emerald-400/30 border border-emerald-300/40 text-emerald-100">
-                  Social Channels & Chat QR
+                  {t('socials_hub_title', business?.language) || 'Social Channels & Chat QR'}
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Socials QR Code</h1>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">{t('socials_qr_code', business?.language) || 'Socials QR Code'}</h1>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1 leading-snug">
-                Connect customers directly to your WhatsApp, Instagram, TikTok, Facebook & custom social channels with one scan.
+                {t('socials_hub_desc_sub', business?.language) || 'Connect customers directly to your WhatsApp, Instagram, TikTok, Facebook & custom social channels with one scan.'}
               </p>
             </div>
           </div>
@@ -737,7 +739,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
       {/* Quick Platform Triggers Bar */}
       <div className="space-y-2">
         <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block px-1">
-          Popular Platforms
+          {t('select_social_platform', business?.language) || 'Popular Platforms'}
         </span>
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           {(
@@ -786,7 +788,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Social Accounts</span>
+          <span>{t('all_socials_hub', business?.language) || 'ALL Social Accounts'}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -806,7 +808,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           }`}
         >
           <Share2 className="w-4 h-4" />
-          <span>Single Platform QR Code</span>
+          <span>{t('single_social_qr', business?.language) || 'Single Platform QR Code'}</span>
         </button>
       </div>
 
@@ -815,7 +817,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Select Active Channel ({items.length})
+              {t('select_active_link', business?.language) || 'Select Active Channel'} ({items.length})
             </span>
             <button
               type="button"
@@ -823,7 +825,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add Social Channel</span>
+              <span>{t('add_new_social_profile', business?.language) || 'Add Social Channel'}</span>
             </button>
           </div>
 
@@ -883,15 +885,17 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               {/* QR Code Name Input on Top */}
               <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
-                  <span>QR Code Name</span>
+                  <span>{t('qr_code_name', business?.language) || 'QR Code Name'}</span>
                   {tableNumberForPrint && (
-                    <span className="text-[9px] text-pink-600 dark:text-pink-400 font-medium">Included on PNG</span>
+                    <span className="text-[9px] text-pink-600 dark:text-pink-400 font-medium">
+                      {t('included_on_downloads', business?.language) || 'Included on PNG'}
+                    </span>
                   )}
                 </label>
                 <div className="relative flex items-center">
                   <input
                     type="text"
-                    placeholder="e.g. Front Desk, Social Poster, Reception, Entrance"
+                    placeholder={t('qr_name_placeholder', business?.language) || 'e.g. Front Desk, Social Poster, Reception, Entrance'}
                     value={tableNumberForPrint}
                     onChange={(e) => setTableNumberForPrint(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-pink-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
@@ -901,7 +905,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                       type="button"
                       onClick={() => setTableNumberForPrint('')}
                       className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      title="Clear"
+                      title={t('close', business?.language) || 'Clear'}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -939,7 +943,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   />
                 ) : (
                   <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400">
-                    Generating QR...
+                    {t('generating_qr', business?.language) || 'Generating QR...'}
                   </div>
                 )}
               </div>
@@ -952,12 +956,12 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-xs cursor-pointer"
                 >
                   <Palette className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>QR Code & Box Editor</span>
+                  <span>{t('qr_box_editor', business?.language) || 'QR Code & Box Editor'}</span>
                 </button>
               </div>
 
               <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {isAllSelected ? `Scan to Connect on All ${items.length} Socials` : activeItem?.ctaText}
+                {isAllSelected ? (t('all_socials_hub', business?.language) || `Scan to Connect on All ${items.length} Socials`) : activeItem?.ctaText}
               </span>
             </div>
 
@@ -968,10 +972,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full text-white mb-1.5 shadow-2xs"
                   style={{ backgroundColor: activeDarkColor }}
                 >
-                  {isAllSelected ? `SOCIALS HUB (${items.length} CHANNELS)` : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
+                  {isAllSelected ? (t('all_socials_hub', business?.language) || `SOCIALS HUB (${items.length} CHANNELS)`) : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                  {isAllSelected ? `${business.name || 'Official'} Social Media & Messaging Hub` : activeItem?.title}
+                  {isAllSelected ? `${business.name || 'Official'} ${t('socials_hub_title', business?.language) || 'Social Media Hub'}` : activeItem?.title}
                 </h2>
                 <a
                   href={activeUrl}
@@ -987,7 +991,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 {isAllSelected ? (
                   <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 space-y-2">
                     <span className="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
-                      Connected Channels ({items.length}):
+                      {t('connected_channels', business?.language)} ({items.length}):
                     </span>
                     <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
                       {items.map((it) => {
@@ -1011,7 +1015,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 ) : activeItem?.prefilledMessage ? (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 text-xs">
                     <span className="font-bold text-slate-600 dark:text-slate-400 block mb-0.5">
-                      Prefilled Greeting Message:
+                      {t('prefilled_greeting', business?.language)}:
                     </span>
                     <p className="text-slate-700 dark:text-slate-300 italic">
                       "{activeItem.prefilledMessage}"
@@ -1028,7 +1032,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download PNG</span>
+                  <span>{t('download_png', business?.language)}</span>
                 </button>
 
                 <button
@@ -1037,7 +1041,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{isCopied ? 'Copied!' : 'Copy Link'}</span>
+                  <span>{isCopied ? t('copied_badge', business?.language) : t('copy_link', business?.language)}</span>
                 </button>
 
                 <button
@@ -1046,7 +1050,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5" />
-                  <span>Share</span>
+                  <span>{t('share_link', business?.language)}</span>
                 </button>
 
                 {onOpenCustomerView && (
@@ -1059,7 +1063,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Preview</span>
+                    <span>{t('customer_preview_btn', business?.language)}</span>
                   </button>
                 )}
 
@@ -1071,7 +1075,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Link</span>
+                    <span>{t('open_link', business?.language)}</span>
                   </a>
                 )}
 
@@ -1082,7 +1086,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit QR</span>
+                    <span>{t('edit_qr', business?.language)}</span>
                   </button>
                 )}
               </div>
@@ -1098,10 +1102,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-pink-950 dark:text-pink-200">
-                  Print Table & Wall QR Code Poster (PDF)
+                  {t('print_poster_title', business?.language)}
                 </h3>
                 <p className="text-xs text-pink-700 dark:text-pink-400">
-                  Download a high-resolution A4 poster with your business name & QR code.
+                  {t('print_poster_desc', business?.language)}
                 </p>
               </div>
             </div>
@@ -1109,11 +1113,11 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  QR Code Name
+                  {t('qr_box_editor', business?.language)}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Front Desk, Social Poster, Reception, Entrance"
+                  placeholder={t('qr_name_placeholder', business?.language)}
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-pink-300 dark:border-pink-800 text-xs font-semibold focus:ring-2 focus:ring-pink-500 focus:outline-none"
@@ -1128,7 +1132,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
+                  <span>{isGeneratingPdf ? t('generating_pdf', business?.language) : t('download_poster_pdf', business?.language)}</span>
                 </button>
               </div>
             </div>
@@ -1141,10 +1145,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-              No Social QR Codes Created
+              {t('no_social_qr_title', business?.language)}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Select one of the popular platforms above or tap below to create your first scannable social channel QR code.
+              {t('no_social_qr_desc', business?.language)}
             </p>
           </div>
           <button
@@ -1153,7 +1157,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Social Channel</span>
+            <span>{t('add_social_channel_btn', business?.language)}</span>
           </button>
         </div>
       )}
@@ -1176,10 +1180,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black">
-                    {editingItem ? 'Edit Social QR' : 'Create Social Media QR'}
+                    {editingItem ? (t('edit_social_qr', business?.language) || 'Edit Social QR') : (t('create_social_media_qr', business?.language) || 'Create Social Media QR')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Connect customers instantly with direct chat & profiles
+                    {t('connect_customers_desc', business?.language)}
                   </p>
                 </div>
               </div>
@@ -1198,10 +1202,10 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Select Platform
+                    {t('select_social_platform', business?.language)}
                   </label>
                   <span className="text-[11px] text-slate-400 font-medium">
-                    Choose preset or custom
+                    {t('choose_preset_or_custom', business?.language)}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
@@ -1245,7 +1249,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               {formPlatform === 'custom' && (
                 <div className="p-3 rounded-2xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-800/60 space-y-2">
                   <label className="text-xs font-black uppercase tracking-wider text-teal-800 dark:text-teal-300 block">
-                    Custom Platform Name *
+                    {t('custom_platform_name', business?.language)} *
                   </label>
                   <input
                     type="text"
@@ -1261,7 +1265,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl border border-teal-300 dark:border-teal-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-teal-500 focus:outline-hidden"
                   />
                   <p className="text-[11px] text-teal-700/80 dark:text-teal-300/80">
-                    Type any social network name or community name.
+                    {t('type_social_network_name', business?.language)}
                   </p>
                 </div>
               )}
@@ -1269,7 +1273,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               {/* Title */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  QR Title / Label *
+                  {t('qr_title_label', business?.language)} *
                 </label>
                 <input
                   type="text"
@@ -1286,22 +1290,22 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 <div>
                   <PhoneInputField
                     id="social-whatsapp-phone"
-                    label="WhatsApp Phone Number *"
+                    label={`${t('whatsapp_phone_number', business?.language)} *`}
                     icon={MessageCircle}
                     value={formInputVal}
                     onChange={(val) => setFormInputVal(val)}
                     placeholder="700 123 456"
                     required
                     defaultCountryCode="+256"
-                    helpText="Select your country flag & code, then enter your WhatsApp phone number"
+                    helpText={t('whatsapp_phone_help', business?.language)}
                   />
                 </div>
               ) : (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
                     {formPlatform === 'custom'
-                      ? 'Profile URL, Server Link or Username *'
-                      : 'Username Handle / Link *'}
+                      ? `${t('profile_url_or_handle', business?.language)} *`
+                      : `${t('account_username_or_link', business?.language)} *`}
                   </label>
                   <input
                     type="text"
@@ -1321,7 +1325,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               {formPlatform === 'whatsapp' && (
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                    Prefilled Message (Optional)
+                    {t('prefilled_message_opt', business?.language)}
                   </label>
                   <textarea
                     rows={2}
@@ -1336,7 +1340,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
               {/* CTA Badge Text */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Call-To-Action Text
+                  {t('call_to_action_text', business?.language)}
                 </label>
                 <input
                   type="text"
@@ -1356,14 +1360,14 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                 className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>{editingItem ? 'Save Changes' : 'Create Social QR'}</span>
+                <span>{editingItem ? t('save_changes', business?.language) : (t('create_social_qr', business?.language) || t('save_social_qr', business?.language))}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
                 className="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
               >
-                Cancel
+                {t('cancel', business?.language)}
               </button>
             </div>
           </div>

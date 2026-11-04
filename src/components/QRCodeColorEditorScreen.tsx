@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
+import { t } from '../utils/i18n';
 
 interface QRCodeColorEditorScreenProps {
   page?: QRCodeHostedPage;
@@ -20,6 +21,7 @@ interface QRCodeColorEditorScreenProps {
   initialBoxBgColor?: string;
   initialBoxBorderColor?: string;
   accentColor?: string;
+  language?: string;
   onSave: (updates: {
     qrDarkColor: string;
     qrEyeColor: string;
@@ -99,10 +101,12 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
   initialBoxBgColor,
   initialBoxBorderColor,
   accentColor = '#059669',
+  language,
   onSave,
   onBack,
 }) => {
-  const displayTitle = title || page?.title || 'QR Code';
+  const activeLang = language || page?.language;
+  const displayTitle = title || page?.title || (t('qr_code', activeLang) || 'QR Code');
   const targetUrl = url || (page ? QRHostingService.getCustomerPageUrl(page.id) : '');
 
   const [darkColor, setDarkColor] = useState<string>(initialDarkColor || page?.qrDarkColor || '#000000');
@@ -160,7 +164,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
+          <span>{t('back', activeLang) || 'Back'}</span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -185,7 +189,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
             style={{ backgroundColor: accentColor }}
           >
             <Check className="w-3.5 h-3.5" />
-            <span>Save Changes</span>
+            <span>{t('save_changes', activeLang) || 'Save Changes'}</span>
           </button>
         </div>
       </div>
@@ -210,7 +214,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
                 Live Preview
               </span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight">QR Code & Box Editor</h1>
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight">{t('qr_box_editor', activeLang) || 'QR Code & Box Editor'}</h1>
             <p className="text-xs sm:text-sm text-white/90 font-medium mt-0.5 leading-snug">
               Customize scannable pattern dots, 3 corner square boxes, background, and stand frame for{' '}
               <span className="text-white font-bold">{displayTitle}</span>.
@@ -540,7 +544,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
           onClick={onBack}
           className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition text-center"
         >
-          Cancel & Discard
+          {t('cancel', activeLang) || 'Cancel'}
         </button>
 
         <div className="flex items-center gap-2.5 w-full sm:w-auto">
@@ -560,7 +564,7 @@ export const QRCodeColorEditorScreen: React.FC<QRCodeColorEditorScreenProps> = (
             style={{ backgroundColor: accentColor }}
           >
             <Check className="w-4 h-4" />
-            <span>Save Colors</span>
+            <span>{t('save_changes', activeLang) || 'Save Changes'}</span>
           </button>
         </div>
       </div>

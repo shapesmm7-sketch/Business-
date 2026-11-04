@@ -6,6 +6,7 @@ import {
   splitPhoneNumber,
   combinePhoneNumber,
   findCountryByPhone,
+  getDefaultAppDialCode,
 } from '../data/countryCodes';
 
 export interface PhoneInputFieldProps {
@@ -19,7 +20,7 @@ export interface PhoneInputFieldProps {
   icon?: React.ComponentType<{ className?: string }>;
   className?: string;
   inputClassName?: string;
-  defaultCountryCode?: string; // e.g. '+256'
+  defaultCountryCode?: string; // e.g. '+256', '+254', '+1'
   helpText?: string;
   error?: string;
   compact?: boolean;
@@ -36,16 +37,17 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
   icon: Icon = Phone,
   className = '',
   inputClassName = '',
-  defaultCountryCode = '+256',
+  defaultCountryCode,
   helpText,
   error,
   compact = false,
 }) => {
+  const effectiveDefault = defaultCountryCode || getDefaultAppDialCode();
   const [selectedCountry, setSelectedCountry] = useState<CountryCodeItem>(() => {
-    return findCountryByPhone(value, defaultCountryCode);
+    return findCountryByPhone(value, effectiveDefault);
   });
   const [localNumber, setLocalNumber] = useState<string>(() => {
-    const { nationalNumber } = splitPhoneNumber(value, defaultCountryCode);
+    const { nationalNumber } = splitPhoneNumber(value, effectiveDefault);
     return nationalNumber;
   });
 
@@ -58,14 +60,14 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
 
   // Sync internal state when prop value changes externally (not from user typing in this component)
   useEffect(() => {
-    if (value === lastEmittedValueRef.current) {
+    if (value === lastEmittedValueRef.current && !defaultCountryCode) {
       return;
     }
-    const { country, nationalNumber } = splitPhoneNumber(value, defaultCountryCode);
+    const { country, nationalNumber } = splitPhoneNumber(value, effectiveDefault);
     setSelectedCountry(country);
     setLocalNumber(nationalNumber);
     lastEmittedValueRef.current = value || '';
-  }, [value, defaultCountryCode]);
+  }, [value, defaultCountryCode, effectiveDefault]);
 
   // Focus search input when dropdown opens
   useEffect(() => {

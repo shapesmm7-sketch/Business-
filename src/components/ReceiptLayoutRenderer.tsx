@@ -17,21 +17,23 @@ import { isValidHex, normalizeHex, getContrastTextHex, resolveEffectiveTheme, rg
 import { ReceiptQrCodeSection } from './ReceiptQrCodeSection';
 
 
-const renderSupplementaryInfo = (amountInWords?: string, notes?: string, balance: number = 0, currency: string = 'UGX', nonReturnable: boolean = true, nonRefundable: boolean = false, isInvoice: boolean = false) => {
+import { t } from '../utils/i18n';
+
+const renderSupplementaryInfo = (amountInWords?: string, notes?: string, balance: number = 0, currency: string = 'UGX', nonReturnable: boolean = true, nonRefundable: boolean = false, isInvoice: boolean = false, lang?: string) => {
   const isOwed = balance < 0;
   const hasChange = balance > 0;
   
   if (!amountInWords && !notes && !isOwed && !hasChange && !nonReturnable && !nonRefundable) return null;
 
   const hasThankYouInNotes = notes && notes.toLowerCase().includes('thank');
-  const thankYouText = hasThankYouInNotes ? notes.trim() : (!notes ? 'Thank you' : null);
+  const thankYouText = hasThankYouInNotes ? notes.trim() : (!notes ? t('thank_you_business', lang) : null);
 
   return (
     <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700 space-y-1.5 font-sans">
       {(isOwed || hasChange) && (
         <div className="ml-auto max-w-[280px] flex justify-between gap-4 py-0.5 font-bold text-xs">
           <span className={isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>
-            {isOwed ? (isInvoice ? 'Balance Due to Pay:' : 'Balance Due:') : 'Change:'}
+            {isOwed ? `${t('balance_due', lang)}:` : 'Change:'}
           </span>
           <span className={`font-mono ${isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {formatCurrency(Math.abs(balance), currency)}
@@ -40,13 +42,13 @@ const renderSupplementaryInfo = (amountInWords?: string, notes?: string, balance
       )}
       {amountInWords && (
         <div className="text-[11px] text-slate-600 dark:text-slate-400 pt-1 text-left">
-          <span className="font-semibold text-slate-900 dark:text-slate-200">Amount Paid in Words: </span>
+          <span className="font-semibold text-slate-900 dark:text-slate-200">{t('amount_paid', lang)}: </span>
           <span className="italic uppercase">{amountInWords}</span>
         </div>
       )}
       {notes && !hasThankYouInNotes && (
         <div className="text-[11px] text-slate-600 dark:text-slate-400 text-left">
-          <span className="font-semibold text-slate-900 dark:text-slate-200">Notes: </span>
+          <span className="font-semibold text-slate-900 dark:text-slate-200">{t('notes', lang)}: </span>
           <span>{notes}</span>
         </div>
       )}
@@ -57,12 +59,12 @@ const renderSupplementaryInfo = (amountInWords?: string, notes?: string, balance
       )}
       {nonReturnable && (
         <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic">
-          Goods once sold are not returnable.
+          {t('goods_not_returnable', lang)}
         </div>
       )}
       {nonRefundable && (
         <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic">
-          Money paid are not refundable.
+          {t('money_not_refundable', lang)}
         </div>
       )}
     </div>

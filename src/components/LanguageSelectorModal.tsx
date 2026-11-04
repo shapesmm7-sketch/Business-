@@ -54,11 +54,11 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({
               <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>Select Language</span>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  {WORLD_LANGUAGES.length}+ Languages
+                  {WORLD_LANGUAGES.length} Languages
                 </span>
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Choose your local or regional language for receipts & app
+                Choose your language for receipts & app
               </p>
             </div>
           </div>
@@ -79,7 +79,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by language, country (e.g. Swahili, French, Nigeria)..."
+              placeholder="Search by language, country (e.g. Spanish, French, Arabic, Swahili)..."
               className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             />
             {searchQuery && (
@@ -150,7 +150,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({
 
         {/* Footer */}
         <div className="p-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
-          Showing {filteredLanguages.length} of {WORLD_LANGUAGES.length} supported world languages
+          Showing {filteredLanguages.length} of {WORLD_LANGUAGES.length} supported international languages
         </div>
       </div>
     </div>

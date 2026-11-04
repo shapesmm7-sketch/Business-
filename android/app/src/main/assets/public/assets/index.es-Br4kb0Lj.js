@@ -1,4 +1,4 @@
-import { c as commonjsGlobal, g as getDefaultExportFromCjs } from "./index-CJYbG_Bx.js";
+import { c as commonjsGlobal, g as getDefaultExportFromCjs } from "./index-Coih4xl7.js";
 var es_promise = {};
 var es_promise_constructor = {};
 var globalThis_1;

@@ -4870,12 +4870,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             </div>
             <span className="font-bold text-base tracking-tight truncate max-w-[180px] sm:max-w-xs">
               {currentCategory === 'products'
-                ? 'Products'
+                ? t('products_category', business?.language)
                 : currentCategory === 'money'
-                ? 'Money'
+                ? t('money_category', business?.language)
                 : currentCategory === 'people'
-                ? 'People'
-                : business.name || 'Inventory'}
+                ? t('people_category', business?.language)
+                : t('inventory', business?.language)}
             </span>
           </div>
 
@@ -4887,16 +4887,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 showToast('All inventory sections synced with Cloud Storage!');
               }}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
-              title="All inventory sections (Stock, Sales, Expenses, Debts, Shopping List, Customers, Agents, Staff, Reports) save to Cloud Storage"
             >
               <Cloud className="w-3.5 h-3.5 text-sky-100" />
-              <span>Cloud Sync</span>
+              <span>{t('cloud_sync', business?.language)}</span>
             </button>
             <button
               onClick={onNavigateHome}
               className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1 rounded-lg font-medium transition"
             >
-              Home
+              {t('home', business?.language)}
             </button>
           </div>
         </div>
@@ -4918,7 +4917,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <LayoutGrid className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Stock</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('stock', business?.language)}</span>
                 </button>
 
                 <button
@@ -4932,7 +4931,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <Tag className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Sales</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('sales_record', business?.language)}</span>
                 </button>
 
                 <button
@@ -4946,7 +4945,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <ShoppingCart className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">List</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('shopping_list', business?.language)}</span>
                 </button>
               </div>
             )}
@@ -4965,7 +4964,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <ReceiptIcon className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Expenses</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('expenses', business?.language)}</span>
                 </button>
 
                 <button
@@ -4979,7 +4978,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <DollarSign className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Debts</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('debtors', business?.language)}</span>
                 </button>
 
                 <button
@@ -4993,7 +4992,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <ClipboardList className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Report</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('reports', business?.language)}</span>
                 </button>
               </div>
             )}
@@ -5012,7 +5011,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <Users className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Client</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('clients', business?.language)}</span>
                 </button>
 
                 <button
@@ -5026,7 +5025,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <Briefcase className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Agent</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('agents', business?.language)}</span>
                 </button>
 
                 <button
@@ -5040,7 +5039,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }`}
                 >
                   <UserCheck className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">Staff</span>
+                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('staff', business?.language)}</span>
                 </button>
               </div>
             )}
@@ -5069,17 +5068,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     <Package className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
                   </div>
                   <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition">
-                    <span>Open</span>
+                    <span>{t('open_category', business?.language)}</span>
                     <ArrowUpRight className="w-3 h-3 text-white" />
                   </div>
                 </div>
 
                 <div>
                   <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    PRODUCTS
+                    {t('products_category', business?.language)}
                   </div>
                   <p className="text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug">
-                    Stock, Sales, List
+                    {t('products_category_sub', business?.language)}
                   </p>
                 </div>
               </button>
@@ -5099,17 +5098,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
                   </div>
                   <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition">
-                    <span>Open</span>
+                    <span>{t('open_category', business?.language)}</span>
                     <ArrowUpRight className="w-3 h-3 text-white" />
                   </div>
                 </div>
 
                 <div>
                   <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    MONEY
+                    {t('money_category', business?.language)}
                   </div>
                   <p className="text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug">
-                    Expenses, Debts, Report
+                    {t('money_category_sub', business?.language)}
                   </p>
                 </div>
               </button>
@@ -5129,17 +5128,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     <Users className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
                   </div>
                   <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition">
-                    <span>Open</span>
+                    <span>{t('open_category', business?.language)}</span>
                     <ArrowUpRight className="w-3 h-3 text-white" />
                   </div>
                 </div>
 
                 <div>
                   <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    PEOPLE
+                    {t('people_category', business?.language)}
                   </div>
                   <p className="text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug">
-                    Clients, Agent, Staff
+                    {t('people_category_sub', business?.language)}
                   </p>
                 </div>
               </button>
@@ -5173,11 +5172,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             >
               {showSaleForm ? (
                 <>
-                  <X className="w-4 h-4" /> Close Sale Form
+                  <X className="w-4 h-4" /> {t('close_sale_form', business?.language)}
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> Add Sale
+                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_sale', business?.language)}
                 </>
               )}
             </button>
@@ -5190,9 +5189,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                        Sold details
+                        {t('sold_details', business?.language)}
                       </h3>
-                      <p className="text-[11px] text-slate-400">Tap the date to back-date.</p>
+                      <p className="text-[11px] text-slate-400">{t('tap_date_backdate', business?.language)}</p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -5226,7 +5225,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="space-y-1 relative">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                        PRODUCT NAME
+                        {t('product_name', business?.language)}
                       </label>
                       <div className="flex items-center gap-2">
                         {products.length > 0 ? (
@@ -5241,7 +5240,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             }}
                             className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-sky-50 dark:bg-slate-700 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-slate-600 cursor-pointer focus:outline-none"
                           >
-                            <option value="">Pick from Stock ▾</option>
+                            <option value="">{t('pick_from_stock', business?.language)}</option>
                             {products.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.name} (#{p.itemId})
@@ -5256,7 +5255,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             }}
                             className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition"
                           >
-                            Pick from Stock ▾
+                            {t('pick_from_stock', business?.language)}
                           </button>
                         )}
 
@@ -5271,7 +5270,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             }}
                             className="text-[11px] text-rose-500 hover:underline"
                           >
-                            Clear Selection
+                            {t('clear_selection', business?.language)}
                           </button>
                         )}
                       </div>
@@ -5287,7 +5286,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             setSelectedProductForSale(null);
                           }
                         }}
-                        placeholder="Enter product name..."
+                        placeholder={t('enter_product_name', business?.language)}
                         className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
                         required
                       />
@@ -6045,14 +6044,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center mb-4">
                     <LayoutGrid className="w-10 h-10 text-white" />
                   </div>
-                  <h3 className="text-xl font-extrabold text-white">No products yet</h3>
-                  <p className="text-xs text-sky-100 mt-1">Tap to add your first product</p>
+                  <h3 className="text-xl font-extrabold text-white">{t('no_products_yet', business?.language)}</h3>
+                  <p className="text-xs text-sky-100 mt-1">{t('tap_to_add_first_product', business?.language)}</p>
                   <button
                     type="button"
                     onClick={() => setShowAddProductInline(true)}
                     className="mt-5 px-6 py-3 rounded-2xl bg-white text-sky-700 font-extrabold text-xs shadow-lg hover:bg-sky-50 active:scale-95 transition"
                   >
-                    + Add First Product
+                    {t('add_first_product', business?.language)}
                   </button>
                 </div>
               )
@@ -6062,11 +6061,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 {/* Stock Analytics Overview */}
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-sky-100 dark:border-slate-800 shadow-sm flex flex-col justify-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Items Available</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{t('items_available', business?.language)}</span>
                     <span className="text-lg font-black text-slate-800 dark:text-white">{stockAnalytics.totalItems}</span>
                   </div>
                   <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-sky-100 dark:border-slate-800 shadow-sm flex flex-col justify-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Total Stock Cost</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{t('total_stock_cost', business?.language)}</span>
                     <span className="text-lg font-black text-sky-600 dark:text-sky-400">{currency} {stockAnalytics.totalCostValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
@@ -6088,11 +6087,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     >
                       {showAddProductInline ? (
                         <>
-                          <X className="w-3.5 h-3.5" /> Close Form
+                          <X className="w-3.5 h-3.5" /> {t('close', business?.language)}
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" /> Add Product
+                          <Plus className="w-3.5 h-3.5" /> {t('add_product', business?.language)}
                         </>
                       )}
                     </button>
@@ -6111,11 +6110,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     >
                       {showProductCategoryForm ? (
                         <>
-                          <X className="w-3.5 h-3.5" /> Close Form
+                          <X className="w-3.5 h-3.5" /> {t('close', business?.language)}
                         </>
                       ) : (
                         <>
-                          <Tag className="w-3.5 h-3.5" /> Create Category
+                          <Tag className="w-3.5 h-3.5" /> {t('create_category', business?.language)}
                         </>
                       )}
                     </button>
@@ -6128,7 +6127,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     title="Export Stock Report (PDF)"
                   >
                     <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                    <span>Export</span>
+                    <span>{t('export', business?.language)}</span>
                   </button>
                   <button
                     type="button"
@@ -6137,7 +6136,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     title="Save Stock Report as Photo"
                   >
                     <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>Photo</span>
+                    <span>{t('photo', business?.language)}</span>
                   </button>
                 </div>
 
@@ -6547,11 +6546,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             >
               {showExpenseForm ? (
                 <>
-                  <X className="w-4 h-4" /> Close Expense Form
+                  <X className="w-4 h-4" /> {t('close', business?.language)}
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> Add expense
+                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_expense', business?.language)}
                 </>
               )}
             </button>
@@ -6562,9 +6561,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                      Record Expense
+                      {t('record_expense', business?.language)}
                     </h3>
-                    <p className="text-[11px] text-slate-400">Log shop rent, utilities, transport, restock, or operating costs.</p>
+                    <p className="text-[11px] text-slate-400">{t('record_expense_sub', business?.language)}</p>
                   </div>
 
                   {/* Date Picker Pill */}
@@ -6587,7 +6586,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {/* Expense Title */}
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Expense Title
+                      {t('expense_title', business?.language)}
                     </label>
                     <input
                       type="text"
@@ -6837,11 +6836,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             >
               {showDebtForm || editingDebtId ? (
                 <>
-                  <X className="w-4 h-4" /> Close Debt Form
+                  <X className="w-4 h-4" /> {t('close', business?.language)}
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> Add new debt
+                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_debt', business?.language)}
                 </>
               )}
             </button>
@@ -6856,10 +6855,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     </div>
                     <div>
                       <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
-                        {editingDebtId ? 'Edit Debt Record' : 'Record Debt / Person Demanded'}
+                        {editingDebtId ? t('edit', business?.language) : t('add_debt', business?.language)}
                       </h3>
                       <p className="text-[10px] text-slate-400">
-                        Record person who took items on credit / owes balance
+                        {t('record_debt_sub', business?.language)}
                       </p>
                     </div>
                   </div>
@@ -6878,7 +6877,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     {/* 1. Debtor / Customer Name */}
                     <div>
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
-                        Customer Name (Person Demanded) *
+                        {t('customer_name', business?.language)} *
                       </label>
                       <div className="relative">
                         <User className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -7607,10 +7606,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                    Shopping List
+                    {t('shopping_list', business?.language)}
                   </h3>
                   <p className="text-[10px] font-medium text-slate-400">
-                    Plan and track items to buy for your business
+                    {t('plan_track_items_sub', business?.language)}
                   </p>
                 </div>
               </div>
@@ -7623,7 +7622,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Save Shopping List as Photo"
                 >
                   <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Save Photo</span>
+                  <span>{t('save_photo', business?.language)}</span>
                 </button>
                 <button
                   type="button"
@@ -7632,7 +7631,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Export Shopping List (PDF)"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>Export PDF</span>
+                  <span>{t('export_pdf', business?.language)}</span>
                 </button>
               </div>
             </div>
@@ -7654,11 +7653,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               >
                 {showShoppingForm ? (
                   <>
-                    <X className="w-4 h-4" /> Close Form
+                    <X className="w-4 h-4" /> {t('close', business?.language)}
                   </>
                 ) : (
                   <>
-                    <Plus className="w-4 h-4" /> Add shopping item
+                    <Plus className="w-4 h-4" /> {t('add_shopping_item', business?.language)}
                   </>
                 )}
               </button>
@@ -7670,7 +7669,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="border-r border-slate-100 dark:border-slate-800 pr-1">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Total Budget
+                      {t('total_budget', business?.language)}
                     </span>
                     <span className="text-sm font-extrabold font-mono text-sky-600 dark:text-sky-400 block mt-0.5">
                       {currency} {shoppingBudgetSummary.totalEstimated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
@@ -7678,7 +7677,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                   <div className="border-r border-slate-100 dark:border-slate-800 px-1">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Completed
+                      {t('completed', business?.language)}
                     </span>
                     <span className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5">
                       {currency} {shoppingBudgetSummary.checkedEstimated.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
@@ -7686,7 +7685,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                   <div className="pl-1">
                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                      To Buy
+                      {t('to_buy', business?.language)}
                     </span>
                     <span className="text-sm font-extrabold font-mono text-amber-500 block mt-0.5">
                       {shoppingList.filter((item) => !item.checked).length} items
@@ -7698,12 +7697,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 {shoppingList.length > 0 && (
                   <div className="mt-3">
                     <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold mb-1">
-                      <span>Shopping Progress</span>
+                      <span>{t('shopping_progress', business?.language)}</span>
                       <span>
                         {Math.round(
                           (shoppingList.filter((i) => i.checked).length / shoppingList.length) * 100
                         )}
-                        % Completed
+                        % {t('completed', business?.language)}
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
@@ -7740,11 +7739,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     >
                       {showShoppingForm ? (
                         <>
-                          <X className="w-3.5 h-3.5" /> Close Form
+                          <X className="w-3.5 h-3.5" /> {t('close', business?.language)}
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" /> Add Shopping Item
+                          <Plus className="w-3.5 h-3.5" /> {t('add_shopping_item', business?.language)}
                         </>
                       )}
                     </button>
@@ -7764,11 +7763,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     >
                       {showCategoryForm ? (
                         <>
-                          <X className="w-3.5 h-3.5" /> Close Category
+                          <X className="w-3.5 h-3.5" /> {t('close_category', business?.language)}
                         </>
                       ) : (
                         <>
-                          <Tag className="w-3.5 h-3.5" /> Create Category
+                          <Tag className="w-3.5 h-3.5" /> {t('create_category', business?.language)}
                         </>
                       )}
                     </button>
@@ -7783,7 +7782,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition border border-amber-200 dark:border-amber-900/50"
                           title="Clear completed items"
                         >
-                          Clear Checked
+                          {t('clear_checked', business?.language)}
                         </button>
                       )}
                       <button
@@ -7792,7 +7791,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         className="px-2.5 py-1.5 rounded-xl text-[10px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition border border-rose-200 dark:border-rose-900/50"
                         title="Clear whole list"
                       >
-                        Clear All
+                        {t('clear_all', business?.language)}
                       </button>
                     </div>
                   )}
@@ -8096,7 +8095,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      All ({shoppingList.filter((i) => !i.hidden).length})
+                      {t('all_filter', business?.language)} ({shoppingList.filter((i) => !i.hidden).length})
                     </button>
                     <button
                       type="button"
@@ -8107,7 +8106,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      To Buy ({shoppingList.filter((i) => !i.checked && !i.hidden).length})
+                      {t('to_buy_filter', business?.language)} ({shoppingList.filter((i) => !i.checked && !i.hidden).length})
                     </button>
                     <button
                       type="button"
@@ -8118,7 +8117,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      Completed ({shoppingList.filter((i) => i.checked && !i.hidden).length})
+                      {t('completed_filter', business?.language)} ({shoppingList.filter((i) => i.checked && !i.hidden).length})
                     </button>
                     <button
                       type="button"
@@ -8129,7 +8128,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-800'
                       }`}
                     >
-                      Hidden ({shoppingList.filter((i) => i.hidden).length})
+                      {t('hidden_filter', business?.language)} ({shoppingList.filter((i) => i.hidden).length})
                     </button>
                   </div>
 
@@ -8140,7 +8139,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       type="text"
                       value={shoppingSearchQuery}
                       onChange={(e) => setShoppingSearchQuery(e.target.value)}
-                      placeholder="Search items..."
+                      placeholder={t('search_items_placeholder', business?.language)}
                       className="w-full pl-7 pr-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-[11px] focus:outline-none focus:ring-1 focus:ring-sky-500"
                     />
                     {shoppingSearchQuery && (
@@ -8159,7 +8158,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 {shoppingCategories.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 bg-slate-50/50 dark:bg-slate-900/30 px-2 rounded-xl border border-slate-100 dark:border-slate-800">
                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap mr-1 flex items-center gap-1">
-                      <Tag className="w-3 h-3 text-sky-500" /> Category:
+                      <Tag className="w-3 h-3 text-sky-500" /> {t('category_label', business?.language)}
                     </span>
                     <button
                       type="button"
@@ -8170,7 +8169,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60 hover:bg-slate-100'
                       }`}
                     >
-                      <span>All Categories</span>
+                      <span>{t('all_categories', business?.language)}</span>
                       <span className="bg-slate-200/50 dark:bg-slate-700 px-1.5 rounded-full text-[9px]">
                         {shoppingList.length}
                       </span>
@@ -8355,11 +8354,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                               </div>
                               <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
                                 <span className="font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.2 rounded font-mono">
-                                  Qty: {item.quantity}
+                                  {t('qty', business?.language)}: {item.quantity}
                                 </span>
                                 {item.estimatedPrice !== undefined && (
                                   <span className="font-medium">
-                                    Est: {currency} {item.estimatedPrice.toLocaleString()} ea
+                                    {t('est', business?.language)}: {currency} {item.estimatedPrice.toLocaleString()}
                                   </span>
                                 )}
                                 {item.notes && (
@@ -8473,10 +8472,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <BarChart3 className="w-6 h-6" />
                 </div>
                 <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                  No Sales Data Yet
+                  {t('no_sales_data_yet', business?.language)}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  Reports, profit margin breakdowns, and visual sales trends will be generated automatically once you record sales.
+                  {t('no_sales_reports_sub', business?.language)}
                 </p>
                 <button
                   type="button"
@@ -8486,7 +8485,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   }}
                   className="px-4 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold text-xs shadow-md transition inline-flex items-center gap-1.5"
                 >
-                  <Plus className="w-4 h-4" /> Go to Sales & Record Sale
+                  <Plus className="w-4 h-4" /> {t('go_to_sales_record', business?.language)}
                 </button>
               </div>
             ) : (
@@ -8494,11 +8493,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 {/* Timeframe Filter Buttons: Today | This Week | This Month | This Year | All Time */}
                 <div className="bg-white/10 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-white/20 dark:border-slate-800 flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {[
-                    { id: 'today', label: 'Today' },
-                    { id: 'week', label: 'This Week' },
-                    { id: 'month', label: 'This Month' },
-                    { id: 'year', label: 'This Year' },
-                    { id: 'all', label: 'All Time' },
+                    { id: 'today', label: t('today', business?.language) },
+                    { id: 'week', label: t('this_week', business?.language) },
+                    { id: 'month', label: t('this_month', business?.language) },
+                    { id: 'year', label: t('this_year', business?.language) },
+                    { id: 'all', label: t('all_time', business?.language) || 'All Time' },
                   ].map((f) => {
                     const active = reportTimeFilter === f.id;
                     return (
@@ -8963,14 +8962,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                      Business Agents
+                      {t('business_agents_title', business?.language)}
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[10px] font-bold">
                       {agents.length}
                     </span>
                   </div>
                   <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    Manage your business agents, shops, outlets & contacts
+                    {t('manage_agents_sub', business?.language)}
                   </p>
                 </div>
               </div>
@@ -8994,12 +8993,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {showAddAgentForm ? (
                     <>
                       <X className="w-3.5 h-3.5" />
-                      <span>Cancel</span>
+                      <span>{t('close', business?.language)}</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Add Agent</span>
+                      <span>{t('add_agent', business?.language)}</span>
                     </>
                   )}
                 </button>
@@ -9011,7 +9010,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Export Agents List (PDF)"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>Export</span>
+                  <span>{t('export', business?.language)}</span>
                 </button>
                 <button
                   type="button"
@@ -9253,10 +9252,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <Briefcase className="w-6 h-6" />
                 </div>
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                  No Business Agents Added Yet
+                  {t('no_agents_added', business?.language)}
                 </h4>
                 <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  Keep your business agents, shops, outlets, and contacts neatly organized in one place.
+                  {t('no_agents_sub', business?.language)}
                 </p>
                 <button
                   type="button"
@@ -9264,7 +9263,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold shadow-sm transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add First Agent</span>
+                  <span>{t('add_first_agent', business?.language)}</span>
                 </button>
               </div>
             ) : filteredAgents.length === 0 ? (
@@ -9438,14 +9437,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                      Staff List
+                      {t('staff_list_title', business?.language)}
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[10px] font-bold">
                       {workers.length}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Manage staff details, salaries, work schedules & contact info
+                    {t('manage_staff_sub', business?.language)}
                   </p>
                 </div>
               </div>
@@ -9459,7 +9458,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Export Staff Directory PDF"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span className="hidden sm:inline">Export PDF</span>
+                  <span className="hidden sm:inline">{t('export_pdf', business?.language)}</span>
                 </button>
 
                 <button
@@ -9470,7 +9469,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Save Staff Directory as Photo"
                 >
                   <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span className="hidden sm:inline">Save Photo</span>
+                  <span className="hidden sm:inline">{t('save_photo', business?.language)}</span>
                 </button>
 
                 <button
@@ -9492,12 +9491,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {showAddWorkerForm ? (
                     <>
                       <X className="w-3.5 h-3.5" />
-                      <span>Cancel</span>
+                      <span>{t('close', business?.language)}</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Add Staff</span>
+                      <span>{t('add_staff', business?.language)}</span>
                     </>
                   )}
                 </button>
@@ -9884,12 +9883,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                    {workerSearchQuery ? 'No staff match your search' : 'No Staff Registered Yet'}
+                    {workerSearchQuery ? 'No staff match your search' : t('no_staff_registered', business?.language)}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
                     {workerSearchQuery
                       ? 'Try searching with different keywords.'
-                      : 'Add your employees, sales team, cashiers, and shop staff to track their contact, salaries, and work schedules.'}
+                      : t('no_staff_sub', business?.language)}
                   </p>
                 </div>
                 {!workerSearchQuery && (
@@ -9899,7 +9898,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add First Staff Member</span>
+                    <span>{t('add_first_staff', business?.language)}</span>
                   </button>
                 )}
               </div>
@@ -10177,14 +10176,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                      Clients Directory
+                      {t('clients_directory', business?.language)}
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-[10px] font-bold">
                       {customers.length}
                     </span>
                   </div>
                   <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    Manage client contacts, store locations & addresses
+                    {t('manage_clients_sub', business?.language)}
                   </p>
                 </div>
               </div>
@@ -10208,12 +10207,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {showAddCustomerForm ? (
                     <>
                       <X className="w-3.5 h-3.5" />
-                      <span>Cancel</span>
+                      <span>{t('close', business?.language)}</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Add Client</span>
+                      <span>{t('add_client', business?.language)}</span>
                     </>
                   )}
                 </button>
@@ -10225,7 +10224,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Export Clients List (PDF)"
                 >
                   <Download className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                  <span>Export</span>
+                  <span>{t('export', business?.language)}</span>
                 </button>
                 <button
                   type="button"
@@ -10234,7 +10233,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   title="Save Clients List as Photo"
                 >
                   <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Photo</span>
+                  <span>{t('photo', business?.language)}</span>
                 </button>
               </div>
             </div>
@@ -10450,10 +10449,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <Users className="w-6 h-6" />
                 </div>
                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                  No Clients Added Yet
+                  {t('no_clients_added', business?.language)}
                 </h4>
                 <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  Keep your client contacts, addresses, and shop locations organized in one place.
+                  {t('no_clients_sub', business?.language)}
                 </p>
                 <button
                   type="button"
@@ -10461,7 +10460,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold shadow-sm transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add First Client</span>
+                  <span>{t('add_first_client', business?.language)}</span>
                 </button>
               </div>
             ) : filteredCustomers.length === 0 ? (

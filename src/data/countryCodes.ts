@@ -3,6 +3,7 @@ export interface CountryCodeItem {
   code: string; // ISO 2-letter
   dialCode: string; // e.g. +256
   flag: string;
+  currencyCode?: string;
   sampleFormat?: string;
   popular?: boolean;
 }
@@ -11,6 +12,197 @@ export function getFlagEmoji(countryCode: string): string {
   if (!countryCode || countryCode.length !== 2) return '🌐';
   const upper = countryCode.toUpperCase();
   return upper.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+}
+
+export const COUNTRY_CURRENCY_MAP: Record<string, string> = {
+  UG: 'UGX', Uganda: 'UGX',
+  KE: 'KES', Kenya: 'KES',
+  TZ: 'TZS', Tanzania: 'TZS',
+  RW: 'RWF', Rwanda: 'RWF',
+  BI: 'BIF', Burundi: 'BIF',
+  SS: 'SSP', 'South Sudan': 'SSP',
+  CD: 'CDF', 'DR Congo': 'CDF',
+  NG: 'NGN', Nigeria: 'NGN',
+  GH: 'GHS', Ghana: 'GHS',
+  ZA: 'ZAR', 'South Africa': 'ZAR',
+  AE: 'AED', 'United Arab Emirates': 'AED',
+  GB: 'GBP', 'United Kingdom': 'GBP',
+  US: 'USD', 'United States': 'USD',
+  CA: 'CAD', Canada: 'CAD',
+  IN: 'INR', India: 'INR',
+  CN: 'CNY', China: 'CNY',
+  SA: 'SAR', 'Saudi Arabia': 'SAR',
+  AF: 'AFN', Afghanistan: 'AFN',
+  AL: 'ALL', Albania: 'ALL',
+  DZ: 'DZD', Algeria: 'DZD',
+  AD: 'EUR', Andorra: 'EUR',
+  AO: 'AOA', Angola: 'AOA',
+  AR: 'ARS', Argentina: 'ARS',
+  AM: 'AMD', Armenia: 'AMD',
+  AU: 'AUD', Australia: 'AUD',
+  AT: 'EUR', Austria: 'EUR',
+  AZ: 'AZN', Azerbaijan: 'AZN',
+  BS: 'BSD', Bahamas: 'BSD',
+  BH: 'BHD', Bahrain: 'BHD',
+  BD: 'BDT', Bangladesh: 'BDT',
+  BB: 'BBD', Barbados: 'BBD',
+  BY: 'BYN', Belarus: 'BYN',
+  BE: 'EUR', Belgium: 'EUR',
+  BZ: 'BZD', Belize: 'BZD',
+  BJ: 'XOF', Benin: 'XOF',
+  BT: 'BTN', Bhutan: 'BTN',
+  BO: 'BOB', Bolivia: 'BOB',
+  BA: 'BAM', 'Bosnia and Herzegovina': 'BAM',
+  BW: 'BWP', Botswana: 'BWP',
+  BR: 'BRL', Brazil: 'BRL',
+  BN: 'BND', Brunei: 'BND',
+  BG: 'BGN', Bulgaria: 'BGN',
+  BF: 'XOF', 'Burkina Faso': 'XOF',
+  KH: 'KHR', Cambodia: 'KHR',
+  CM: 'XAF', Cameroon: 'XAF',
+  CV: 'CVE', 'Cape Verde': 'CVE',
+  CF: 'XAF', 'Central African Republic': 'XAF',
+  TD: 'XAF', Chad: 'XAF',
+  CL: 'CLP', Chile: 'CLP',
+  CO: 'COP', Colombia: 'COP',
+  KM: 'KMF', Comoros: 'KMF',
+  CG: 'XAF', 'Congo (Brazzaville)': 'XAF',
+  CR: 'CRC', 'Costa Rica': 'CRC',
+  HR: 'EUR', Croatia: 'EUR',
+  CU: 'CUP', Cuba: 'CUP',
+  CY: 'EUR', Cyprus: 'EUR',
+  CZ: 'CZK', 'Czech Republic': 'CZK',
+  DK: 'DKK', Denmark: 'DKK',
+  DJ: 'DJF', Djibouti: 'DJF',
+  DO: 'DOP', 'Dominican Republic': 'DOP',
+  EC: 'USD', Ecuador: 'USD',
+  EG: 'EGP', Egypt: 'EGP',
+  SV: 'USD', 'El Salvador': 'USD',
+  GQ: 'XAF', 'Equatorial Guinea': 'XAF',
+  ER: 'ERN', Eritrea: 'ERN',
+  EE: 'EUR', Estonia: 'EUR',
+  SZ: 'SZL', Eswatini: 'SZL',
+  ET: 'ETB', Ethiopia: 'ETB',
+  FJ: 'FJD', Fiji: 'FJD',
+  FI: 'EUR', Finland: 'EUR',
+  FR: 'EUR', France: 'EUR',
+  GA: 'XAF', Gabon: 'XAF',
+  GM: 'GMD', Gambia: 'GMD',
+  GE: 'GEL', Georgia: 'GEL',
+  DE: 'EUR', Germany: 'EUR',
+  GR: 'EUR', Greece: 'EUR',
+  GT: 'GTQ', Guatemala: 'GTQ',
+  GN: 'GNF', Guinea: 'GNF',
+  GW: 'XOF', 'Guinea-Bissau': 'XOF',
+  GY: 'GYD', Guyana: 'GYD',
+  HT: 'HTG', Haiti: 'HTG',
+  HN: 'HNL', Honduras: 'HNL',
+  HK: 'HKD', 'Hong Kong': 'HKD',
+  HU: 'HUF', Hungary: 'HUF',
+  IS: 'ISK', Iceland: 'ISK',
+  ID: 'IDR', Indonesia: 'IDR',
+  IR: 'IRR', Iran: 'IRR',
+  IQ: 'IQD', Iraq: 'IQD',
+  IE: 'EUR', Ireland: 'EUR',
+  IL: 'ILS', Israel: 'ILS',
+  IT: 'EUR', Italy: 'EUR',
+  CI: 'XOF', 'Ivory Coast': 'XOF',
+  JM: 'JMD', Jamaica: 'JMD',
+  JP: 'JPY', Japan: 'JPY',
+  JO: 'JOD', Jordan: 'JOD',
+  KZ: 'KZT', Kazakhstan: 'KZT',
+  KW: 'KWD', Kuwait: 'KWD',
+  KG: 'KGS', Kyrgyzstan: 'KGS',
+  LA: 'LAK', Laos: 'LAK',
+  LV: 'EUR', Latvia: 'EUR',
+  LB: 'LBP', Lebanon: 'LBP',
+  LS: 'LSL', Lesotho: 'LSL',
+  LR: 'LRD', Liberia: 'LRD',
+  LY: 'LYD', Libya: 'LYD',
+  LI: 'CHF', Liechtenstein: 'CHF',
+  LT: 'EUR', Lithuania: 'EUR',
+  LU: 'EUR', Luxembourg: 'EUR',
+  MG: 'MGA', Madagascar: 'MGA',
+  MW: 'MWK', Malawi: 'MWK',
+  MY: 'MYR', Malaysia: 'MYR',
+  MV: 'MVR', Maldives: 'MVR',
+  ML: 'XOF', Mali: 'XOF',
+  MT: 'EUR', Malta: 'EUR',
+  MR: 'MRU', Mauritania: 'MRU',
+  MU: 'MUR', Mauritius: 'MUR',
+  MX: 'MXN', Mexico: 'MXN',
+  MD: 'MDL', Moldova: 'MDL',
+  MC: 'EUR', Monaco: 'EUR',
+  MN: 'MNT', Mongolia: 'MNT',
+  ME: 'EUR', Montenegro: 'EUR',
+  MA: 'MAD', Morocco: 'MAD',
+  MZ: 'MZN', Mozambique: 'MZN',
+  MM: 'MMK', Myanmar: 'MMK',
+  NA: 'NAD', Namibia: 'NAD',
+  NP: 'NPR', Nepal: 'NPR',
+  NL: 'EUR', Netherlands: 'EUR',
+  NZ: 'NZD', 'New Zealand': 'NZD',
+  NI: 'NIO', Nicaragua: 'NIO',
+  NE: 'XOF', Niger: 'XOF',
+  MK: 'MKD', 'North Macedonia': 'MKD',
+  NO: 'NOK', Norway: 'NOK',
+  OM: 'OMR', Oman: 'OMR',
+  PK: 'PKR', Pakistan: 'PKR',
+  PS: 'ILS', Palestine: 'ILS',
+  PA: 'PAB', Panama: 'PAB',
+  PG: 'PGK', 'Papua New Guinea': 'PGK',
+  PY: 'PYG', Paraguay: 'PYG',
+  PE: 'PEN', Peru: 'PEN',
+  PH: 'PHP', Philippines: 'PHP',
+  PL: 'PLN', Poland: 'PLN',
+  PT: 'EUR', Portugal: 'EUR',
+  QA: 'QAR', Qatar: 'QAR',
+  RO: 'RON', Romania: 'RON',
+  RU: 'RUB', Russia: 'RUB',
+  SN: 'XOF', Senegal: 'XOF',
+  RS: 'RSD', Serbia: 'RSD',
+  SC: 'SCR', Seychelles: 'SCR',
+  SL: 'SLE', 'Sierra Leone': 'SLE',
+  SG: 'SGD', Singapore: 'SGD',
+  SK: 'EUR', Slovakia: 'EUR',
+  SI: 'EUR', Slovenia: 'EUR',
+  SO: 'SOS', Somalia: 'SOS',
+  ES: 'EUR', Spain: 'EUR',
+  LK: 'LKR', 'Sri Lanka': 'LKR',
+  SD: 'SDG', Sudan: 'SDG',
+  SR: 'SRD', Suriname: 'SRD',
+  SE: 'SEK', Sweden: 'SEK',
+  CH: 'CHF', Switzerland: 'CHF',
+  SY: 'SYP', Syria: 'SYP',
+  TW: 'TWD', Taiwan: 'TWD',
+  TJ: 'TJS', Tajikistan: 'TJS',
+  TH: 'THB', Thailand: 'THB',
+  TG: 'XOF', Togo: 'XOF',
+  TT: 'TTD', 'Trinidad and Tobago': 'TTD',
+  TN: 'TND', Tunisia: 'TND',
+  TR: 'TRY', Turkey: 'TRY',
+  TM: 'TMT', Turkmenistan: 'TMT',
+  UA: 'UAH', Ukraine: 'UAH',
+  UY: 'UYU', Uruguay: 'UYU',
+  UZ: 'UZS', Uzbekistan: 'UZS',
+  VE: 'VES', Venezuela: 'VES',
+  VN: 'VND', Vietnam: 'VND',
+  YE: 'YER', Yemen: 'YER',
+  ZM: 'ZMW', Zambia: 'ZMW',
+  ZW: 'ZWG', Zimbabwe: 'ZWG',
+};
+
+export function getCurrencyForCountry(countryInput: string): string | undefined {
+  if (!countryInput) return undefined;
+  const key = countryInput.trim();
+  if (COUNTRY_CURRENCY_MAP[key]) return COUNTRY_CURRENCY_MAP[key];
+  const found = COUNTRY_CODES.find(
+    (c) => c.name.toLowerCase() === key.toLowerCase() || c.code.toLowerCase() === key.toLowerCase()
+  );
+  if (found && COUNTRY_CURRENCY_MAP[found.code]) {
+    return COUNTRY_CURRENCY_MAP[found.code];
+  }
+  return undefined;
 }
 
 export const COUNTRY_CODES: CountryCodeItem[] = [
@@ -192,11 +384,42 @@ export const COUNTRY_CODES: CountryCodeItem[] = [
 ];
 
 /**
+ * Retrieves the user's chosen default country dial code (e.g. +254, +256, +234, +1).
+ * Auto-detects from the saved business profile or stored preference, falling back to +256.
+ */
+export function getDefaultAppDialCode(): string {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const explicit = localStorage.getItem('quickreceipt_default_dial_code_v1');
+      if (explicit && explicit.startsWith('+')) return explicit;
+
+      const rawProfile = localStorage.getItem('quickreceipt_business_profile_v1');
+      if (rawProfile) {
+        const p = JSON.parse(rawProfile);
+        if (p?.dialCode && typeof p.dialCode === 'string' && p.dialCode.startsWith('+')) {
+          return p.dialCode;
+        }
+        if (p?.country && typeof p.country === 'string') {
+          const found = COUNTRY_CODES.find(
+            (c) =>
+              c.name.toLowerCase() === p.country.toLowerCase() ||
+              c.code.toLowerCase() === p.country.toLowerCase()
+          );
+          if (found && found.dialCode) return found.dialCode;
+        }
+      }
+    }
+  } catch {}
+  return '+256';
+}
+
+/**
  * Finds the country item that matches a given raw phone string or dial code
  */
-export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): CountryCodeItem {
+export function findCountryByPhone(rawPhone: string, fallbackCode?: string): CountryCodeItem {
+  const effectiveFallback = fallbackCode || getDefaultAppDialCode();
   if (!rawPhone || !rawPhone.trim()) {
-    return COUNTRY_CODES.find((c) => c.dialCode === fallbackCode) || COUNTRY_CODES[0];
+    return COUNTRY_CODES.find((c) => c.dialCode === effectiveFallback) || COUNTRY_CODES[0];
   }
 
   const clean = rawPhone.trim();
@@ -227,21 +450,22 @@ export function findCountryByPhone(rawPhone: string, fallbackCode = '+256'): Cou
     }
   }
 
-  // Unprefixed or local numbers belong to fallbackCode (default Uganda +256)
-  return COUNTRY_CODES.find((c) => c.dialCode === fallbackCode) || COUNTRY_CODES[0];
+  // Unprefixed or local numbers belong to effectiveFallback
+  return COUNTRY_CODES.find((c) => c.dialCode === effectiveFallback) || COUNTRY_CODES[0];
 }
 
 /**
  * Splits a full raw phone number into dial code and national number
  */
-export function splitPhoneNumber(rawPhone: string, defaultDialCode = '+256'): { dialCode: string; nationalNumber: string; country: CountryCodeItem } {
+export function splitPhoneNumber(rawPhone: string, defaultDialCode?: string): { dialCode: string; nationalNumber: string; country: CountryCodeItem } {
+  const effectiveFallback = defaultDialCode || getDefaultAppDialCode();
   if (!rawPhone || !rawPhone.trim()) {
-    const country = findCountryByPhone('', defaultDialCode);
+    const country = findCountryByPhone('', effectiveFallback);
     return { dialCode: country.dialCode, nationalNumber: '', country };
   }
 
   const clean = rawPhone.trim();
-  const country = findCountryByPhone(clean, defaultDialCode);
+  const country = findCountryByPhone(clean, effectiveFallback);
 
   let nationalNumber = clean;
 

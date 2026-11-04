@@ -46,6 +46,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
+import { t } from '../utils/i18n';
 
 interface CreateInvoiceScreenProps {
   business: BusinessProfile;
@@ -632,7 +633,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                {editingInvoice ? 'Edit Invoice' : 'Create New Invoice'}
+                {editingInvoice ? t('edit_invoice', business?.language) : t('new_invoice', business?.language)}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                 INVOICE
@@ -651,7 +652,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-sm transition active:scale-95"
         >
           <Eye className="w-4 h-4" />
-          <span>Preview</span>
+          <span>{t('preview', business?.language)}</span>
         </button>
       </div>
 
@@ -668,17 +669,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <FileText className="w-4 h-4" />
-            <span>Invoice Details</span>
+            <span>{t('invoice_no', business?.language)}</span>
           </div>
-          <span className="text-xs font-mono font-bold text-slate-400">
-            Step 1 of 4
-          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Invoice Number <span className="text-rose-500">*</span>
+              {t('invoice_no', business?.language)} <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -707,7 +705,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Issue Date
+              {t('issue_date', business?.language)}
             </label>
             <div className="relative">
               <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -722,7 +720,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Due Date
+              {t('due_date', business?.language)}
             </label>
             <div className="relative">
               <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -742,17 +740,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <Building2 className="w-4 h-4" />
-            <span>Bill To / Client Details</span>
+            <span>{t('client_details', business?.language)}</span>
           </div>
-          <span className="text-xs font-mono font-bold text-slate-400">
-            Step 2 of 4
-          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div className="sm:col-span-2">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Client / Company Name
+              {t('customer_name', business?.language)}
             </label>
             <div className="relative">
               <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -769,7 +764,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           <div>
             <PhoneInputField
               id="input-invoice-customer-phone"
-              label="Client Phone / WhatsApp"
+              label={t('customer_phone', business?.language)}
               value={customerPhone}
               onChange={(val) => setCustomerPhone(val)}
               placeholder="700 000 000"
@@ -778,7 +773,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Client Email
+              {t('customer_email', business?.language)}
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -794,7 +789,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Client Billing Address
+              {t('customer_address', business?.language)}
             </label>
             <div className="relative">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -810,7 +805,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Client Tax ID / TIN / VAT No
+              {t('tax_id', business?.language)}
             </label>
             <input
               type="text"
@@ -828,7 +823,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <DollarSign className="w-4 h-4" />
-            <span>Invoice Line Items</span>
+            <span>{t('items_services', business?.language)}</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -837,10 +832,9 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               type="button"
               onClick={() => setIsBarcodeScannerOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-2xs"
-              title="Scan product barcode with camera"
             >
               <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Scan Barcode</span>
+              <span>{t('scan_qr', business?.language)}</span>
             </button>
 
             <button
@@ -848,10 +842,9 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               type="button"
               onClick={() => setIsStockPickerOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800 text-xs font-bold transition active:scale-95 shadow-2xs"
-              title="Pick products from your Stock Inventory"
             >
               <Boxes className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-              <span>Choose from Stock</span>
+              <span>{t('inventory_and_stock', business?.language)}</span>
             </button>
             <span className="text-xs font-mono font-bold text-slate-400 hidden sm:inline">
               Step 3 of 4
@@ -882,18 +875,15 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <span>ITEM NAME</span>
+                    <span>{t('item_name', business?.language)}</span>
                     <span className="text-rose-500 font-bold text-xs">*</span>
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    (Product or service description)
                   </span>
                 </label>
                 <input
                   type="text"
                   value={item.name}
                   onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                  placeholder="Enter item name (e.g. Graphic Design, Shoes, Cement, Repair)..."
+                  placeholder="Enter item name..."
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden placeholder:font-normal placeholder:text-slate-400"
                 />
               </div>
@@ -901,7 +891,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               <div className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-3 sm:col-span-3">
                   <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
-                    Qty
+                    {t('quantity', business?.language)}
                   </label>
                   <input
                     type="number"
@@ -925,7 +915,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
                 <div className="col-span-5 sm:col-span-4">
                   <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1 truncate">
-                    Price ({currency})
+                    {t('price', business?.language)} ({currency})
                   </label>
                   <input
                     type="number"
@@ -951,7 +941,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
                 <div className="col-span-4 sm:col-span-5">
                   <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block mb-1 text-right">
-                    Subtotal
+                    {t('subtotal', business?.language)}
                   </label>
                   <div
                     className={`min-w-0 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-700/80 border border-slate-300/60 dark:border-slate-600/60 font-bold text-slate-900 dark:text-slate-100 flex items-center justify-end font-mono whitespace-nowrap overflow-hidden shadow-2xs transition-all ${
@@ -981,7 +971,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
             className="w-full py-2.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-1.5 transition mt-1"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Item</span>
+            <span>+ {t('add_item', business?.language)}</span>
           </button>
         </div>
       </div>

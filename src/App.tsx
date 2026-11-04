@@ -7,6 +7,7 @@ import { CreateInvoiceScreen } from './components/CreateInvoiceScreen';
 import { ReceiptPreviewScreen } from './components/ReceiptPreviewScreen';
 import { ReceiptsHistoryScreen } from './components/ReceiptsHistoryScreen';
 import { BusinessProfileScreen } from './components/BusinessProfileScreen';
+import { OnboardingPreferencesScreen } from './components/OnboardingPreferencesScreen';
 import { TemplatesScreen } from './components/TemplatesScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
@@ -143,6 +144,9 @@ export function App() {
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
+    }
+    if (!StorageService.hasConfiguredPreferences()) {
+      return 'onboarding-preferences';
     }
     if (!StorageService.hasFilledBusinessDetails()) {
       return 'profile';
@@ -1308,6 +1312,17 @@ export function App() {
           />
         )}
 
+        {activeScreen === 'onboarding-preferences' && (
+          <OnboardingPreferencesScreen
+            initialProfile={business}
+            onNext={(updated) => {
+              handleUpdateBusiness(updated);
+              StorageService.setInitialPreferencesDone(true);
+              setActiveScreen('profile');
+            }}
+          />
+        )}
+
         {activeScreen === 'profile' && (
           <BusinessProfileScreen
             initialProfile={business}
@@ -1475,6 +1490,7 @@ export function App() {
         {/* Safety Catch-All Screen: Guarantees the UI never renders empty white space */}
         {![
           'home',
+          'onboarding-preferences',
           'receipts-invoices',
           'create-receipt',
           'create-invoice',
@@ -1513,14 +1529,15 @@ export function App() {
       {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
       <AdMobModalOverlay />
 
-      {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup'].includes(activeScreen) && (
+      {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding */}
+      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}
           receiptsCount={receipts.filter((r) => (r.documentType || 'receipt') === 'receipt').length}
           invoicesCount={receipts.filter((r) => r.documentType === 'invoice').length}
           inventoryCount={inventoryCount}
+          lang={business.language}
         />
       )}
 

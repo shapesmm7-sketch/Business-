@@ -322,13 +322,40 @@ export const StorageService = {
     return systemActionExpiresAt > 0 && Date.now() < systemActionExpiresAt;
   },
 
-  hasFilledBusinessDetails(): boolean {
+  hasConfiguredPreferences(): boolean {
+    const isDone = readFromStorage<boolean>('quickreceipt_initial_prefs_done_v1', false);
+    if (isDone) return true;
+    return readFromStorage<boolean>(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+  },
+
+  setInitialPreferencesDone(done: boolean = true): void {
+    writeToStorage('quickreceipt_initial_prefs_done_v1', done);
+  },
+
+  getDefaultDialCode(): string {
+    const custom = readFromStorage<string>('quickreceipt_default_dial_code_v1', '');
+    if (custom && custom.startsWith('+')) return custom;
     const profile = this.getProfile();
-    return Boolean(profile && profile.name && profile.name.trim().length > 0);
+    if (profile?.dialCode) return profile.dialCode;
+    return '+256';
+  },
+
+  setDefaultDialCode(dialCode: string): void {
+    if (dialCode && dialCode.startsWith('+')) {
+      writeToStorage('quickreceipt_default_dial_code_v1', dialCode);
+    }
+  },
+
+  hasCompletedProfileOnboarding(): boolean {
+    return readFromStorage<boolean>(STORAGE_KEYS.INITIAL_PROFILE_SETUP_DONE, false);
+  },
+
+  hasFilledBusinessDetails(): boolean {
+    return this.hasCompletedProfileOnboarding();
   },
 
   hasCompletedInitialProfileSetup(): boolean {
-    return this.hasFilledBusinessDetails();
+    return this.hasCompletedProfileOnboarding();
   },
 
   setInitialProfileSetupDone(done: boolean = true): void {

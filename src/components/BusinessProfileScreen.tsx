@@ -32,7 +32,8 @@ import { CloudflareService } from '../services/cloudflareService';
 import { AdMobService } from '../services/admobService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { PhoneInputField } from './PhoneInputField';
-import { getLanguageByCode } from '../data/languages';
+import { getLanguageByCode, WORLD_LANGUAGES } from '../data/languages';
+import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem } from '../data/countryCodes';
 import { t } from '../utils/i18n';
 import {
   BRAND_COLOR_PRESETS,
@@ -75,6 +76,11 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
     'accentColor' | 'headerBgColor' | 'headerTextColor' | 'totalBgColor' | 'totalTextColor' | 'paperBgColor'
   >('accentColor');
 
+  // Country modal & search state
+  const [isCountryModalOpen, setIsCountryModalOpen] = useState(false);
+  const [countrySearchQuery, setCountrySearchQuery] = useState('');
+  const [currencyAutoNotice, setCurrencyAutoNotice] = useState<string | null>(null);
+
   // Currency modal & search state
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
   const [currencySearchQuery, setCurrencySearchQuery] = useState('');
@@ -82,8 +88,26 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   // Language modal state
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
 
+  const selectedCountryObj =
+    COUNTRY_CODES.find(
+      (c) =>
+        c.name.toLowerCase() === (profile.country || '').toLowerCase() ||
+        c.code.toLowerCase() === (profile.country || '').toLowerCase()
+    ) || COUNTRY_CODES[0];
+
   const selectedCurrencyObj = SUPPORTED_CURRENCIES.find((c) => c.code === (profile.currency || 'UGX')) || SUPPORTED_CURRENCIES[0];
   const selectedLanguageObj = getLanguageByCode(profile.language || 'en');
+
+  const filteredCountries = COUNTRY_CODES.filter((c) => {
+    const q = countrySearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.dialCode.toLowerCase().includes(q) ||
+      (c.flag && c.flag.includes(q))
+    );
+  });
 
   const filteredCurrencies = SUPPORTED_CURRENCIES.filter((c) => {
     const q = currencySearchQuery.trim().toLowerCase();
@@ -95,6 +119,33 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
       (c.flag && c.flag.includes(q))
     );
   });
+
+  const handleSelectCountry = (countryItem: CountryCodeItem) => {
+    const autoCurrCode = getCurrencyForCountry(countryItem.code) || getCurrencyForCountry(countryItem.name);
+    setProfile((prev) => {
+      const updated = {
+        ...prev,
+        country: countryItem.name,
+        countryCode: countryItem.code,
+        dialCode: countryItem.dialCode,
+      };
+      if (autoCurrCode && SUPPORTED_CURRENCIES.some((curr) => curr.code === autoCurrCode)) {
+        updated.currency = autoCurrCode;
+      }
+      return updated;
+    });
+
+    if (countryItem.dialCode) {
+      StorageService.setDefaultDialCode(countryItem.dialCode);
+    }
+
+    setCurrencyAutoNotice(
+      `Selected ${countryItem.name}: Currency set to ${autoCurrCode || profile.currency} & country code set to ${countryItem.dialCode} by default`
+    );
+    setTimeout(() => setCurrencyAutoNotice(null), 5000);
+    setIsCountryModalOpen(false);
+    setCountrySearchQuery('');
+  };
 
   const handleChange = (field: keyof BusinessProfile, value: string) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
@@ -378,8 +429,8 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                 <Store className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h2 className="text-sm font-black tracking-wide">Welcome to Brivu!</h2>
-                <p className="text-[11px] text-emerald-100 font-medium">Set Up Your Business Details</p>
+                <h2 className="text-sm font-black tracking-wide">{t('welcome_to_brivu', profile.language) || 'Welcome to Brivu!'}</h2>
+                <p className="text-[11px] text-emerald-100 font-medium">{t('setup_business_details', profile.language) || 'Set Up Your Business Details'}</p>
               </div>
             </div>
             {onSkipOnboarding && (
@@ -389,12 +440,12 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                 onClick={onSkipOnboarding}
                 className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
               >
-                <span>Skip for Now</span>
+                <span>{t('skip_for_now', profile.language) || 'Skip for Now'}</span>
               </button>
             )}
           </div>
           <p className="text-[11px] text-emerald-50 leading-relaxed pt-2 border-t border-white/20">
-            Please enter your business details below (Business Name, Phone, Address, Logo, Currency). These details will be printed on all your receipts, invoices, and hosted QR pages.
+            {t('onboarding_desc', profile.language) || 'Please enter your business details below (Business Name, Phone, Address, Logo, Currency). These details will be printed on all your receipts, invoices, and hosted QR pages.'}
           </p>
         </div>
       )}
@@ -413,11 +464,11 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>{isInitialOnboarding ? 'Skip for Now' : 'Back'}</span>
+          <span>{isInitialOnboarding ? (t('skip_for_now', profile.language) || 'Skip for Now') : (t('back', profile.language) || 'Back')}</span>
         </button>
 
         <h1 className="text-base font-bold text-slate-900 dark:text-white">
-          Business Profile
+          {t('business_profile', profile.language) || 'Business Profile'}
         </h1>
 
         <button
@@ -425,7 +476,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           onClick={handleSave}
           className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
         >
-          {isInitialOnboarding ? 'Save & Continue' : 'Save'}
+          {isInitialOnboarding ? (t('save_and_continue', profile.language) || 'Save & Continue') : (t('save', profile.language) || 'Save')}
         </button>
       </div>
 
@@ -434,7 +485,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         {/* Business Logo Upload */}
         <div>
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
-            Business Logo (Appears on all receipts & PDFs)
+            {t('business_logo_label', profile.language) || 'Business Logo (Appears on all receipts & PDFs)'}
           </label>
 
           <div className="flex items-center gap-4">
@@ -466,7 +517,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                   className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition active:scale-95"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>{profile.logo ? 'Change Logo' : 'Upload Logo'}</span>
+                  <span>{profile.logo ? (t('change_logo', profile.language) || 'Change Logo') : (t('upload_logo', profile.language) || 'Upload Logo')}</span>
                 </button>
 
                 {profile.logo && (
@@ -492,12 +543,12 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
               <PenTool className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Authorized Signature (Auto-added to Receipt PDFs)</span>
+              <span>{t('authorized_signature_label', profile.language) || 'Authorized Signature (Auto-added to Receipt PDFs)'}</span>
             </label>
             {profile.signature && !isDrawingOpen && (
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200/50 dark:border-emerald-800/50">
                 <Sparkles className="w-3 h-3" />
-                Active on Receipts
+                {t('active_on_receipts', profile.language) || 'Active on Receipts'}
               </span>
             )}
           </div>
@@ -670,28 +721,30 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           )}
         </div>
 
-        {/* Business Name */}
-        <div>
-          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            <Store className="w-3.5 h-3.5 text-slate-400" />
-            <span>Business / Shop Name *</span>
-          </label>
-          <input
-            id="input-profile-name"
-            type="text"
-            value={profile.name}
-            onChange={(e) => handleChange('name', e.target.value)}
-            placeholder="e.g. Kampala Fresh Mart, Elite Boutique"
-            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-          />
-        </div>
+        {/* Business Name (Shown on regular profile screen, hidden during step 2 onboarding as it was set in step 1) */}
+        {!isInitialOnboarding && (
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <Store className="w-3.5 h-3.5 text-slate-400" />
+              <span>{t('business_shop_name', profile.language) || 'Business / Shop Name *'}</span>
+            </label>
+            <input
+              id="input-profile-name"
+              type="text"
+              value={profile.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+              placeholder="e.g. Kampala Fresh Mart, Elite Boutique"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+            />
+          </div>
+        )}
 
         {/* Business Description / What We Deal In */}
         <div>
           <label className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
             <span className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Business Details & Description / What We Deal In</span>
+              <span>{t('business_details_desc', profile.language) || 'Business Details & Description / What We Deal In'}</span>
             </span>
             <span className="text-[10px] text-slate-400 font-normal">Appears on receipts & PDFs</span>
           </label>
@@ -712,18 +765,20 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <PhoneInputField
             id="input-profile-phone"
-            label="Phone Number"
+            label={t('phone_number', profile.language) || 'Phone Number'}
             required
             value={profile.phone}
+            defaultCountryCode={selectedCountryObj?.dialCode || profile.dialCode || StorageService.getDefaultDialCode()}
             onChange={(val) => handleChange('phone', val)}
             placeholder="700 123 456"
           />
 
           <PhoneInputField
             id="input-profile-whatsapp"
-            label="WhatsApp Number"
+            label={t('whatsapp_number', profile.language) || 'WhatsApp Number'}
             icon={MessageSquare}
             value={profile.whatsapp || ''}
+            defaultCountryCode={selectedCountryObj?.dialCode || profile.dialCode || StorageService.getDefaultDialCode()}
             onChange={(val) => handleChange('whatsapp', val)}
             placeholder="700 123 456"
           />
@@ -733,7 +788,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <div>
           <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
             <Mail className="w-3.5 h-3.5 text-slate-400" />
-            <span>Email Address</span>
+            <span>{t('email_address', profile.language) || 'Email Address'}</span>
           </label>
           <input
             id="input-profile-email"
@@ -749,7 +804,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <div>
           <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
             <MapPin className="w-3.5 h-3.5 text-slate-400" />
-            <span>Physical Address *</span>
+            <span>{t('physical_address', profile.language) || 'Physical Address *'}</span>
           </label>
           <input
             id="input-profile-address"
@@ -766,7 +821,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               <FileCheck className="w-3.5 h-3.5 text-slate-400" />
-              <span>Tax / TIN / VAT Number (Optional)</span>
+              <span>{t('tax_tin_vat_number', profile.language) || 'Tax / TIN / VAT Number (Optional)'}</span>
             </label>
             <input
               id="input-profile-tax"
@@ -781,7 +836,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               <Globe className="w-3.5 h-3.5 text-slate-400" />
-              <span>Website / Social (Optional)</span>
+              <span>{t('website_social', profile.language) || 'Website / Social (Optional)'}</span>
             </label>
             <input
               id="input-profile-website"
@@ -1174,61 +1229,102 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           })()}
         </div>
 
-        {/* Default Currency */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
-          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-            <Coins className="w-3.5 h-3.5 text-amber-500" />
-            <span>Default Currency (Default: UGX)</span>
-          </label>
-          <button
-            id="btn-open-currency-modal"
-            type="button"
-            onClick={() => setIsCurrencyModalOpen(true)}
-            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-emerald-500 transition flex items-center justify-between gap-2 cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="text-xl leading-none shrink-0" aria-hidden="true">
-                {selectedCurrencyObj.flag || getCurrencyFlag(selectedCurrencyObj.code)}
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-extrabold text-[11px] shrink-0">
-                {selectedCurrencyObj.code}
-              </span>
-              <span className="truncate">
-                {selectedCurrencyObj.name} ({selectedCurrencyObj.symbol})
-              </span>
+        {/* Hide Country, Currency, and Language during initial onboarding step 2 (as they are chosen in step 1), but keep them on regular Business Profile page */}
+        {!isInitialOnboarding && (
+          <>
+            {/* Business Country Selection */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                <Globe className="w-3.5 h-3.5 text-emerald-500" />
+                <span>{t('country_select', profile.language) || 'Business Country'}</span>
+              </label>
+              <button
+                id="btn-open-country-modal"
+                type="button"
+                onClick={() => setIsCountryModalOpen(true)}
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-emerald-500 transition flex items-center justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl leading-none shrink-0" aria-hidden="true">
+                    {selectedCountryObj.flag}
+                  </span>
+                  <span className="truncate font-extrabold text-slate-900 dark:text-white">
+                    {profile.country || selectedCountryObj.name}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px] shrink-0">
+                    {selectedCountryObj.dialCode}
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {t('country_desc', profile.language) || 'Selecting your country automatically configures your default currency.'}
+              </p>
+              {currencyAutoNotice && (
+                <div className="mt-2 p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 animate-fadeIn">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span>{currencyAutoNotice}</span>
+                </div>
+              )}
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          </button>
-          <p className="text-[11px] text-slate-400 mt-1">
-            All prices and totals on receipts and PDFs will be formatted in this currency.
-          </p>
-        </div>
 
-        {/* App & Business Language */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60">
-          <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-            <Globe className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Business & App Language (177+ World Languages)</span>
-          </label>
-          <button
-            id="btn-open-language-modal"
-            type="button"
-            onClick={() => setIsLanguageModalOpen(true)}
-            className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-indigo-500 transition flex items-center justify-between gap-2 cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="text-xl leading-none shrink-0">{selectedLanguageObj.flag}</span>
-              <div className="flex items-center gap-1.5 min-w-0 truncate">
-                <span className="font-extrabold text-slate-900 dark:text-white">{selectedLanguageObj.name}</span>
-                <span className="text-[11px] font-semibold text-slate-400 truncate">({selectedLanguageObj.nativeName})</span>
-              </div>
+            {/* Default Currency */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                <Coins className="w-3.5 h-3.5 text-amber-500" />
+                <span>Default Currency (Default: UGX)</span>
+              </label>
+              <button
+                id="btn-open-currency-modal"
+                type="button"
+                onClick={() => setIsCurrencyModalOpen(true)}
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-emerald-500 transition flex items-center justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl leading-none shrink-0" aria-hidden="true">
+                    {selectedCurrencyObj.flag || getCurrencyFlag(selectedCurrencyObj.code)}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-mono font-extrabold text-[11px] shrink-0">
+                    {selectedCurrencyObj.code}
+                  </span>
+                  <span className="truncate">
+                    {selectedCurrencyObj.name} ({selectedCurrencyObj.symbol})
+                  </span>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+              <p className="text-[11px] text-slate-400 mt-1">
+                All prices and totals on receipts and PDFs will be formatted in this currency.
+              </p>
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-          </button>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Select your preferred local or international language for receipts, business details and menus.
-          </p>
-        </div>
+
+            {/* App & Business Language */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Business & App Language ({WORLD_LANGUAGES.length} International Languages)</span>
+              </label>
+              <button
+                id="btn-open-language-modal"
+                type="button"
+                onClick={() => setIsLanguageModalOpen(true)}
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-900 dark:text-white hover:border-indigo-500 transition flex items-center justify-between gap-2 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-xl leading-none shrink-0">{selectedLanguageObj.flag}</span>
+                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                    <span className="font-extrabold text-slate-900 dark:text-white">{selectedLanguageObj.name}</span>
+                    <span className="text-[11px] font-semibold text-slate-400 truncate">({selectedLanguageObj.nativeName})</span>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Select your preferred international language for receipts, business details and menus.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Save Button */}
@@ -1252,6 +1348,105 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         >
           <span>Skip for Now & Continue to App</span>
         </button>
+      )}
+
+      {/* Compact Country Picker Modal */}
+      {isCountryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full h-[88vh] max-h-[88vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    {t('select_country_modal_title', profile.language) || 'Select Business Country'}
+                  </h3>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Currency will update automatically according to your country
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCountryModalOpen(false);
+                  setCountrySearchQuery('');
+                }}
+                className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950/40 shrink-0">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder={t('search_country_placeholder', profile.language) || 'Search country by name, code or flag...'}
+                  value={countrySearchQuery}
+                  onChange={(e) => setCountrySearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Scrollable Country Options */}
+            <div className="p-2 flex-1 overflow-y-auto space-y-1">
+              {filteredCountries.map((c) => {
+                const isSelected = (profile.country || 'Uganda').toLowerCase() === c.name.toLowerCase() || (profile.country || '').toLowerCase() === c.code.toLowerCase();
+                const matchedCurrency = getCurrencyForCountry(c.code) || getCurrencyForCountry(c.name);
+
+                return (
+                  <button
+                    key={c.code + c.name}
+                    type="button"
+                    onClick={() => handleSelectCountry(c)}
+                    className={`w-full text-left p-2.5 rounded-xl transition flex items-center justify-between gap-2.5 text-xs ${
+                      isSelected
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 font-bold'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-2xl leading-none shrink-0" aria-hidden="true">
+                        {c.flag}
+                      </span>
+                      <div className="min-w-0 truncate">
+                        <div className="truncate text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <span>{c.name}</span>
+                          {c.popular && (
+                            <span className="px-1 py-0.2 rounded text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold">
+                              Popular
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {c.dialCode} • Auto Currency: {matchedCurrency || 'UGX'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+
+              {filteredCountries.length === 0 && (
+                <div className="py-6 text-center text-xs text-slate-400 italic">
+                  No country matching "{countrySearchQuery}"
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Compact Currency Picker Modal */}
@@ -1356,10 +1551,11 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         isOpen={isLanguageModalOpen}
         currentLanguageCode={profile.language || 'en'}
         onSelectLanguage={(lang) => {
-          const updated = { ...profile, language: lang.name };
+          const updated = { ...profile, language: lang.code };
           setProfile(updated);
           StorageService.saveProfile(updated);
           onSave(updated);
+          window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
           setIsLanguageModalOpen(false);
         }}
         onClose={() => setIsLanguageModalOpen(false)}

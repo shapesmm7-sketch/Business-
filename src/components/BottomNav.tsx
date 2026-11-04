@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, Receipt as ReceiptIcon, FileText, Boxes, QrCode } from 'lucide-react';
 import { ActiveScreen } from '../types';
+import { t } from '../utils/i18n';
 
 interface BottomNavProps {
   currentScreen: ActiveScreen;
@@ -8,6 +9,7 @@ interface BottomNavProps {
   receiptsCount: number;
   invoicesCount?: number;
   inventoryCount?: number;
+  lang?: string;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -16,6 +18,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   receiptsCount,
   invoicesCount = 0,
   inventoryCount = 0,
+  lang,
 }) => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 transition-colors pb-safe">
@@ -31,7 +34,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           }`}
         >
           <Home className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] sm:text-[11px]">Home</span>
+          <span className="text-[10px] sm:text-[11px] truncate max-w-[64px]">
+            {t('home', lang)}
+          </span>
         </button>
 
         {/* Receipts History */}
@@ -47,7 +52,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div className="relative">
             <ReceiptIcon className="w-5 h-5 mb-0.5" />
           </div>
-          <span className="text-[10px] sm:text-[11px]">Receipts</span>
+          <span className="text-[10px] sm:text-[11px] truncate max-w-[64px]">
+            {t('receipts', lang)}
+          </span>
         </button>
 
         {/* Invoices History */}
@@ -63,7 +70,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div className="relative">
             <FileText className="w-5 h-5 mb-0.5" />
           </div>
-          <span className="text-[10px] sm:text-[11px]">Invoices</span>
+          <span className="text-[10px] sm:text-[11px] truncate max-w-[64px]">
+            {t('invoices', lang)}
+          </span>
         </button>
 
         {/* Inventory */}
@@ -79,7 +88,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div className="relative">
             <Boxes className="w-5 h-5 mb-0.5" />
           </div>
-          <span className="text-[10px] sm:text-[11px]">Inventory</span>
+          <span className="text-[10px] sm:text-[11px] truncate max-w-[64px]">
+            {t('inventory', lang)}
+          </span>
         </button>
 
         {/* Host QR & Business Info */}
@@ -95,7 +106,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div className="relative">
             <QrCode className="w-5 h-5 mb-0.5" />
           </div>
-          <span className="text-[10px] sm:text-[11px] whitespace-nowrap">QR Code</span>
+          <span className="text-[10px] sm:text-[11px] whitespace-nowrap truncate max-w-[64px]">
+            {t('qr_code', lang)}
+          </span>
         </button>
       </div>
     </nav>

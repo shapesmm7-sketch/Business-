@@ -40,6 +40,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
+import { t } from '../utils/i18n';
 
 interface CreateReceiptScreenProps {
   business: BusinessProfile;
@@ -541,11 +542,11 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
+          <span>{t('back', business?.language)}</span>
         </button>
 
         <h1 className="text-base font-bold text-slate-900 dark:text-white">
-          {editingReceipt ? 'Edit Receipt' : 'New Receipt'}
+          {editingReceipt ? t('edit_receipt', business?.language) : t('new_receipt', business?.language)}
         </h1>
 
         <div className="w-12 text-right">
@@ -568,7 +569,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           {/* Receipt Number */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-              Receipt No.
+              {t('receipt_no', business?.language)}
             </label>
             <div className="relative">
               <input
@@ -585,7 +586,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           {/* Date & Time */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-              Date & Time
+              {t('date_and_time', business?.language)}
             </label>
             <div className="relative">
               <input
@@ -604,7 +605,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           <div>
             <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
               <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>Customer Name (Optional)</span>
+              <span>{t('customer_name_opt', business?.language)}</span>
             </label>
             <input
               id="input-customer-name"
@@ -618,7 +619,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
 
           <PhoneInputField
             id="input-customer-phone"
-            label="Customer Phone (Optional)"
+            label={t('customer_phone_opt', business?.language)}
             value={customerPhone}
             onChange={(val) => setCustomerPhone(val)}
             placeholder="700 000 000"
@@ -627,7 +628,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           <div>
             <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
               <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>Customer Email (Optional)</span>
+              <span>{t('customer_email_opt', business?.language)}</span>
             </label>
             <input
               id="input-customer-email"
@@ -646,7 +647,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Products / Services
+              {t('products_services', business?.language)}
             </h2>
             <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded-md">
               {items.length}
@@ -662,7 +663,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Scan product barcode with camera"
             >
               <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Scan Barcode</span>
+              <span>{t('scan_item', business?.language)}</span>
             </button>
 
             <button
@@ -673,7 +674,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Pick products from your Stock Inventory"
             >
               <Boxes className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-              <span>Choose from Stock</span>
+              <span>{t('from_stock', business?.language)}</span>
             </button>
           </div>
         </div>
@@ -707,11 +708,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                     className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 flex items-center justify-between"
                   >
                     <span className="flex items-center gap-1.5">
-                      <span>ITEM NAME</span>
+                      <span>{t('item_name', business?.language)}</span>
                       <span className="text-rose-500 font-bold text-xs">*</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-normal">
-                      (Product or service name)
                     </span>
                   </label>
                   <input
@@ -719,7 +717,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                     type="text"
                     value={item.name}
                     onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                    placeholder="Enter item name (e.g. Rice, Hair Styling, Soap, Shoes)..."
+                    placeholder="Enter item name..."
                     className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
@@ -730,7 +728,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 {/* Quantity */}
                 <div className="col-span-3 sm:col-span-3">
                   <label className="block text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold mb-0.5">
-                    Qty
+                    {t('qty', business?.language)}
                   </label>
                   <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                     <button
@@ -772,7 +770,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 {/* Price */}
                 <div className="col-span-5 sm:col-span-4">
                   <label className="block text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold mb-0.5 truncate">
-                    Price ({currency})
+                    {t('unit_price', business?.language)} ({currency})
                   </label>
                   <input
                     id={`input-item-price-${item.id}`}
@@ -802,7 +800,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 {/* Subtotal */}
                 <div className="col-span-4 sm:col-span-5">
                   <label className="block text-[10px] text-slate-500 dark:text-slate-400 uppercase font-semibold mb-0.5 text-right">
-                    Subtotal
+                    {t('subtotal', business?.language)}
                   </label>
                   <div
                     className={`min-w-0 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 font-bold font-mono text-slate-900 dark:text-white text-right overflow-hidden whitespace-nowrap shadow-2xs transition-all ${
@@ -834,7 +832,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 text-slate-600 dark:text-slate-300 hover:text-emerald-600 text-xs font-bold flex items-center justify-center gap-1.5 transition mt-1"
         >
           <Plus className="w-4 h-4" />
-          <span>Add Item</span>
+          <span>{t('add_item', business?.language)}</span>
         </button>
       </div>
 

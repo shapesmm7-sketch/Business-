@@ -88,6 +88,9 @@ export type CustomTemplateMap = Record<string, TemplateCustomization>;
 
 export interface BusinessProfile {
   name: string;
+  country?: string;
+  countryCode?: string; // ISO 2-letter country code e.g. 'UG', 'KE', 'NG', 'US'
+  dialCode?: string; // Dialing code e.g. '+256', '+254', '+234', '+1'
   description?: string; // e.g., "Dealers in all types of men & women clothes, shoes & accessories"
   logo?: string; // base64 / data URL
   signature?: string; // base64 / data URL
@@ -587,6 +590,7 @@ export interface QRCodeHostedPage {
 
 export type ActiveScreen =
   | 'home'
+  | 'onboarding-preferences'
   | 'receipts-invoices'
   | 'create-receipt'
   | 'create-invoice'

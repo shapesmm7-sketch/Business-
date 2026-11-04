@@ -713,7 +713,7 @@ export const Header: React.FC<HeaderProps> = ({
               {/* Community & App Feedback & Language Options */}
               <div className="pt-2">
                 <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1 mb-2">
-                  Language & Support
+                  {t('language_and_support', lang)}
                 </div>
 
                 {/* Language Selector Card */}
@@ -731,13 +731,13 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-1.5">
-                        <span>Language</span>
+                        <span>{t('language', lang)}</span>
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300">
                           {currentLang.flag} {currentLang.name}
                         </span>
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium truncate">
-                        Select local language (177+ Countries & Languages)
+                        {t('language_sub', lang)}
                       </div>
                     </div>
                   </div>
@@ -756,10 +756,10 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                        Rate Us
+                        {t('rate_us', lang)}
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium truncate">
-                        5-Star Feedback
+                        {t('rate_us_sub', lang)}
                       </div>
                     </div>
                   </button>
@@ -775,10 +775,10 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-extrabold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
-                        Share App
+                        {t('share_app', lang)}
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium truncate">
-                        Send to friends
+                        {t('share_app_sub', lang)}
                       </div>
                     </div>
                   </button>
@@ -794,7 +794,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300 hover:text-emerald-600 transition"
               >
                 <Home className="w-4 h-4" />
-                <span>Return to Home</span>
+                <span>{t('return_to_home', lang)}</span>
               </button>
             </div>
           </div>
@@ -818,16 +818,17 @@ export const Header: React.FC<HeaderProps> = ({
       <LanguageSelectorModal
         isOpen={isLanguageModalOpen}
         currentLanguageCode={business.language || 'en'}
-        onSelectLanguage={(lang) => {
+        onSelectLanguage={(selectedLang) => {
           const updatedProfile: BusinessProfile = {
             ...business,
-            language: lang.name,
+            language: selectedLang.code,
           };
           StorageService.saveProfile(updatedProfile);
           if (onUpdateBusiness) {
             onUpdateBusiness(updatedProfile);
           }
-          setToastMsg(`Language set to ${lang.name} (${lang.flag})`);
+          window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+          setToastMsg(`Language set to ${selectedLang.name} (${selectedLang.flag})`);
           setTimeout(() => setToastMsg(null), 3000);
         }}
         onClose={() => setIsLanguageModalOpen(false)}

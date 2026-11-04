@@ -38,6 +38,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { t } from '../utils/i18n';
 
 export type { EventQrItem };
 
@@ -545,6 +546,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         initialBoxBgColor={activeBoxBgColor}
         initialBoxBorderColor={activeBoxBorderColor}
         accentColor={activeDarkColor}
+        language={business?.language}
         onSave={(updates) => {
           handleUpdateItemColors(isAllSelected ? 'all' : (activeItem?.id || ''), updates);
           showToast('QR Code & Box colors saved!');
@@ -566,12 +568,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full bg-purple-400/30 border border-purple-300/40 text-purple-100">
-                  Host Events & Invitations
+                  {t('events_hub_title', business?.language) || 'Host Events & Invitations'}
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight">Host Events QR</h1>
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">{t('events_hub_title', business?.language) || 'Host Events QR'}</h1>
               <p className="text-xs sm:text-sm text-purple-100/90 font-medium mt-1 leading-snug">
-                Host conferences, sales events, parties & meetups. Generate scannable QR codes for invitations & flyers.
+                {t('events_hub_desc_sub', business?.language) || 'Host conferences, sales events, parties & meetups. Generate scannable QR codes for invitations & flyers.'}
               </p>
             </div>
           </div>
@@ -590,7 +592,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>ALL Events & Invitations</span>
+          <span>{t('all_events_and_invitations', business?.language)}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
             {items.length}
           </span>
@@ -610,7 +612,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           }`}
         >
           <Ticket className="w-4 h-4" />
-          <span>Single Event QR Code</span>
+          <span>{t('single_event_qr_code', business?.language)}</span>
         </button>
       </div>
 
@@ -619,7 +621,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Select Active Event ({items.length})
+              {t('select_active_event_lbl', business?.language)} ({items.length})
             </span>
             <button
               type="button"
@@ -627,7 +629,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               className="text-xs font-extrabold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Event</span>
+              <span>{t('add_new_event', business?.language)}</span>
             </button>
           </div>
 
@@ -651,7 +653,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     type="button"
                     onClick={() => handleOpenEditModal(activeItem)}
                     className="p-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                    title="Edit Event"
+                    title={t('edit_event', business?.language)}
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -659,7 +661,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     type="button"
                     onClick={(e) => handleDeleteItem(activeItem.id, e)}
                     className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 text-rose-600 dark:text-rose-400 transition cursor-pointer"
-                    title="Delete Event"
+                    title="Delete"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -668,7 +670,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             </div>
           ) : (
             <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
-              No events created yet.
+              {t('no_events_yet', business?.language)}
             </p>
           )}
         </div>
@@ -684,15 +686,15 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* QR Code Name Input on Top */}
               <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
-                  <span>QR Code Name</span>
+                  <span>{t('qr_box_editor', business?.language)}</span>
                   {tableNumberForPrint && (
-                    <span className="text-[9px] text-purple-600 dark:text-purple-400 font-medium">Included on PNG</span>
+                    <span className="text-[9px] text-purple-600 dark:text-purple-400 font-medium">{t('included_on_downloads', business?.language)}</span>
                   )}
                 </label>
                 <div className="relative flex items-center">
                   <input
                     type="text"
-                    placeholder="e.g. Main Gate, Event Poster, Reception, Entrance"
+                    placeholder={t('qr_name_placeholder', business?.language)}
                     value={tableNumberForPrint}
                     onChange={(e) => setTableNumberForPrint(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
@@ -740,7 +742,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   />
                 ) : (
                   <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400">
-                    Generating QR...
+                    {t('generating_qr', business?.language)}
                   </div>
                 )}
               </div>
@@ -753,7 +755,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800 text-xs font-bold transition active:scale-95 shadow-xs cursor-pointer"
                 >
                   <Palette className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span>QR Code & Box Editor</span>
+                  <span>{t('qr_box_editor', business?.language)}</span>
                 </button>
               </div>
 
@@ -770,19 +772,19 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 <div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
                     <Layers className="w-3 h-3" />
-                    OUR EVENTS HUB {items.length > 0 ? `(${items.length})` : ''}
+                    {t('our_events_hub', business?.language)} {items.length > 0 ? `(${items.length})` : ''}
                   </span>
                   <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                    Our Events
+                    {t('our_events', business?.language)}
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                    A directory displaying your upcoming events, schedules, and ticket RSVP links.
+                    {t('events_hub_desc', business?.language)}
                   </p>
 
                   {items.length > 0 && (
                     <div className="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 space-y-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                        Upcoming Events ({items.length})
+                        {t('upcoming_events', business?.language)} ({items.length})
                       </span>
                       <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                         {items.map((it) => (
@@ -799,7 +801,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 <div>
                   <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 mb-1.5">
                     <Calendar className="w-3 h-3" />
-                    Event Invitation
+                    {t('event_invitation', business?.language)}
                   </span>
                   <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                     {activeItem.title}
@@ -838,7 +840,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                       {activeItem?.contactPhone && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
                           <Phone className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                          <span>Inquiries: {activeItem.contactPhone}</span>
+                          <span>{t('inquiries_label', business?.language)}: {activeItem.contactPhone}</span>
                         </div>
                       )}
 
@@ -846,7 +848,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
                           <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
                           <a href={`mailto:${activeItem.contactEmail}`} className="hover:underline text-purple-600 dark:text-purple-400">
-                            Email: {activeItem.contactEmail}
+                            {t('email_label', business?.language)}: {activeItem.contactEmail}
                           </a>
                         </div>
                       )}
@@ -858,7 +860,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                       rel="noopener noreferrer"
                       className="text-xs text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-medium mt-2 break-all"
                     >
-                      <span>Event Page Link: {activeUrl}</span>
+                      <span>{t('event_page_link', business?.language)}: {activeUrl}</span>
                       <ExternalLink className="w-3 h-3 shrink-0" />
                     </a>
 
@@ -879,7 +881,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download PNG</span>
+                  <span>{t('download_png', business?.language)}</span>
                 </button>
 
                 <button
@@ -888,7 +890,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{isCopied ? 'Copied!' : 'Copy Link'}</span>
+                  <span>{isCopied ? t('copied_badge', business?.language) : t('copy_link', business?.language)}</span>
                 </button>
 
                 <button
@@ -897,7 +899,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Share2 className="w-3.5 h-3.5" />
-                  <span>Share</span>
+                  <span>{t('share_link', business?.language)}</span>
                 </button>
 
                 {onOpenCustomerView && (
@@ -912,7 +914,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span>Preview</span>
+                    <span>{t('customer_preview_btn', business?.language)}</span>
                   </button>
                 )}
 
@@ -924,7 +926,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Event Page</span>
+                    <span>{t('open_event_page', business?.language)}</span>
                   </a>
                 )}
 
@@ -935,7 +937,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit Event</span>
+                    <span>{t('edit_event', business?.language)}</span>
                   </button>
                 )}
               </div>
@@ -950,10 +952,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-purple-950 dark:text-purple-200">
-                  Print Table & Wall QR Code Poster (PDF)
+                  {t('print_poster_title', business?.language)}
                 </h3>
                 <p className="text-xs text-purple-700 dark:text-purple-400">
-                  Download a high-resolution A4 poster with your business name & QR code.
+                  {t('print_poster_desc', business?.language)}
                 </p>
               </div>
             </div>
@@ -961,11 +963,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  QR Code Name
+                  {t('qr_box_editor', business?.language)}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Main Gate, Event Poster, Reception, Entrance"
+                  placeholder={t('qr_name_placeholder', business?.language)}
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-800 text-xs font-semibold focus:ring-2 focus:ring-purple-500 focus:outline-none"
@@ -980,7 +982,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
+                  <span>{isGeneratingPdf ? t('generating_pdf', business?.language) : t('download_poster_pdf', business?.language)}</span>
                 </button>
               </div>
             </div>
@@ -993,10 +995,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-              No Event QR Codes Created
+              {t('no_events_created_title', business?.language)}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              Add your upcoming event or conference to generate an invitation and RSVP QR code.
+              {t('no_events_created_desc', business?.language)}
             </p>
           </div>
           <button
@@ -1005,7 +1007,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs shadow-md shadow-purple-700/20 active:scale-95 transition inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Event</span>
+            <span>{t('add_new_event', business?.language)}</span>
           </button>
         </div>
       )}
@@ -1028,10 +1030,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-black">
-                    {editingItem ? 'Edit Event QR' : 'Create Event QR'}
+                    {editingItem ? (t('edit_event_modal_title', business?.language) || 'Edit Event QR') : (t('add_event_modal_title', business?.language) || 'Create Event QR')}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Configure event title, dates, photos & RSVP details
+                    {t('events_hub_desc_sub', business?.language) || 'Configure event title, dates, photos & RSVP details'}
                   </p>
                 </div>
               </div>
@@ -1049,7 +1051,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Event Title */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Event Title / Name *
+                  {t('event_title_name', business?.language)} *
                 </label>
                 <input
                   type="text"
@@ -1064,11 +1066,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Event Dates (Optional) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                  Event Dates (Optional)
+                  {t('event_dates_optional', business?.language)}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">Start Date</span>
+                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">{t('start_date', business?.language)}</span>
                     <input
                       type="date"
                       value={formStartDate}
@@ -1077,7 +1079,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     />
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">End Date</span>
+                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">{t('end_date', business?.language)}</span>
                     <input
                       type="date"
                       value={formEndDate}
@@ -1091,11 +1093,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Event Times (Optional) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                  Event Times (Optional)
+                  {t('event_times_optional', business?.language)}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">Start Time</span>
+                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">{t('start_time', business?.language)}</span>
                     <input
                       type="time"
                       value={formStartTime}
@@ -1104,7 +1106,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     />
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">End Time</span>
+                    <span className="text-[11px] text-slate-400 block mb-1 font-medium">{t('end_time', business?.language)}</span>
                     <input
                       type="time"
                       value={formEndTime}
@@ -1119,7 +1121,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Event Photos (Up to 3 Photos, Optional)
+                    {t('event_photos_up_to_3', business?.language)}
                   </label>
                   <span className="text-[11px] text-slate-400 font-medium">
                     {formPhotos.length}/3 photos
@@ -1156,7 +1158,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                       ) : (
                         <>
                           <Camera className="w-5 h-5" />
-                          <span className="text-[10px] font-bold">Add Photo</span>
+                          <span className="text-[10px] font-bold">{t('add_photo', business?.language)}</span>
                         </>
                       )}
                     </label>
@@ -1167,7 +1169,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Venue / Location */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Venue / Location
+                  {t('event_location_venue', business?.language)}
                 </label>
                 <input
                   type="text"
@@ -1181,7 +1183,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* RSVP Mode Selector */}
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                  RSVP & Ticket Registration *
+                  {t('rsvp_ticket_reg', business?.language)} *
                 </label>
                 <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
                   <button
@@ -1194,7 +1196,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     }`}
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>WhatsApp / Phone RSVP</span>
+                    <span>{t('whatsapp_phone_rsvp', business?.language)}</span>
                   </button>
                   <button
                     type="button"
@@ -1206,26 +1208,26 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                     }`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Online Link / Tickets</span>
+                    <span>{t('online_link_tickets', business?.language)}</span>
                   </button>
                 </div>
 
                 {rsvpMode === 'phone' ? (
                   <PhoneInputField
                     id="event-rsvp-phone"
-                    label="RSVP WhatsApp or Mobile Phone *"
+                    label={`${t('whatsapp_phone_rsvp', business?.language)} *`}
                     icon={MessageCircle}
                     value={formRsvpPhone}
                     onChange={(val) => setFormRsvpPhone(val)}
                     placeholder="700 123 456"
                     required
                     defaultCountryCode="+256"
-                    helpText="Select your country flag & code, then enter phone number for direct WhatsApp RSVP"
+                    helpText={t('whatsapp_phone_help', business?.language)}
                   />
                 ) : (
                   <div>
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                      Event Website, Registration or Tickets URL *
+                      {t('event_website_tickets_url', business?.language)} *
                     </label>
                     <input
                       type="text"
@@ -1242,7 +1244,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Event Inquiries / Organizer Contact Phone */}
               <PhoneInputField
                 id="event-contact-phone"
-                label="Organizer Inquiries / Support Phone (Optional)"
+                label={t('organizer_inquiries_phone', business?.language)}
                 icon={Phone}
                 value={formContactPhone}
                 onChange={(val) => setFormContactPhone(val)}
@@ -1255,7 +1257,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               <div>
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>Organizer Contact Email (Optional)</span>
+                  <span>{t('organizer_contact_email', business?.language)}</span>
                 </label>
                 <input
                   type="email"
@@ -1265,14 +1267,14 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-hidden text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                 />
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  Email address for attendee inquiries, RSVP questions, or partnership details
+                  {t('organizer_email_help', business?.language)}
                 </p>
               </div>
 
               {/* Call-To-Action Text */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Call-To-Action Text
+                  {t('call_to_action_text', business?.language)}
                 </label>
                 <input
                   type="text"
@@ -1286,7 +1288,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* Description / Agenda */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
-                  Optional Description / Agenda
+                  {t('optional_desc_agenda', business?.language)}
                 </label>
                 <textarea
                   rows={2}
@@ -1306,14 +1308,14 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>{editingItem ? 'Save Changes' : 'Create Event QR'}</span>
+                <span>{editingItem ? t('save_changes', business?.language) : (t('create_event_qr_btn', business?.language) || t('save_event_qr', business?.language))}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
                 className="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition cursor-pointer"
               >
-                Cancel
+                {t('cancel', business?.language)}
               </button>
             </div>
           </div>

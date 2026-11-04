@@ -1323,6 +1323,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     return (
       <QRCodeColorEditorScreen
         page={activePage}
+        language={business?.language}
         onSave={(updates) => handleUpdateActivePage(updates)}
         onBack={() => setIsEditingQrColors(false)}
       />
@@ -1394,7 +1395,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Home</span>
+          <span>{t('home', business?.language)}</span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -1406,7 +1407,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               title="Scan QR Code using Capacitor Camera"
             >
               <Scan className="w-3.5 h-3.5" />
-              <span>Scan QR</span>
+              <span>{t('scan_qr', business?.language)}</span>
             </button>
           )}
 
@@ -1442,7 +1443,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Preview</span>
+                <span>{t('preview', business?.language)}</span>
               </button>
             </>
           )}
@@ -1476,16 +1477,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <Store className="w-3.5 h-3.5 stroke-[2.5]" />
                 </div>
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>Hub</span>
+                  <span>{t('hub', business?.language)}</span>
                   <ArrowUpRight className="w-2.5 h-2.5" />
                 </div>
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Business QR Code
+                  {t('business_qr_code', business?.language)}
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-emerald-100/90 mt-0.5 leading-snug line-clamp-2">
-                  Host catalog, menu, photos, WiFi & info
+                  {t('business_qr_desc', business?.language)}
                 </p>
               </div>
             </button>
@@ -1502,16 +1503,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <Globe className="w-3.5 h-3.5 stroke-[2.5]" />
                 </div>
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>Links</span>
+                  <span>{t('links', business?.language)}</span>
                   <ArrowUpRight className="w-2.5 h-2.5" />
                 </div>
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Websites / Apps QR Code
+                  {t('websites_apps_qr_code', business?.language)}
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-blue-100/90 mt-0.5 leading-snug line-clamp-2">
-                  Websites, Google Play, App Store & links
+                  {t('websites_apps_desc', business?.language)}
                 </p>
               </div>
             </button>
@@ -1528,16 +1529,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" />
                 </div>
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>Socials</span>
+                  <span>{t('socials', business?.language)}</span>
                   <ArrowUpRight className="w-2.5 h-2.5" />
                 </div>
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Socials QR Code
+                  {t('socials_qr_code', business?.language)}
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-teal-100/90 mt-0.5 leading-snug line-clamp-2">
-                  WhatsApp, Instagram, TikTok & Facebook
+                  {t('socials_qr_desc', business?.language)}
                 </p>
               </div>
             </button>
@@ -1554,16 +1555,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <Calendar className="w-3.5 h-3.5 stroke-[2.5]" />
                 </div>
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>Events</span>
+                  <span>{t('events', business?.language)}</span>
                   <ArrowUpRight className="w-2.5 h-2.5" />
                 </div>
               </div>
               <div className="mt-1.5">
                 <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  Host Events
+                  {t('host_events', business?.language)}
                 </div>
                 <p className="text-[10px] sm:text-[11px] font-normal text-purple-100/90 mt-0.5 leading-snug line-clamp-2">
-                  Conferences, parties & invitations
+                  {t('host_events_desc', business?.language)}
                 </p>
               </div>
             </button>
@@ -1630,12 +1631,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <QrCode className="w-4 h-4 text-white" />
                 </div>
                 <span className="text-[11px] font-bold tracking-wider uppercase text-emerald-200">
-                  Host QR code & business info
+                  {t('host_qr_business_info', business?.language)}
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black tracking-tight">{activePage.title}</h1>
               <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1 leading-snug">
-                Host your business info, photos, and items. Generate a scannable QR code for tables & flyers.
+                {t('host_photos_menu_links', business?.language)}
               </p>
             </div>
           </div>
@@ -1646,7 +1647,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               className="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5 transition active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>New QR Page</span>
+              <span>{t('new_qr_page', business?.language)}</span>
             </button>
           </div>
         </div>
@@ -1664,7 +1665,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <span className="truncate">QR Stand</span>
+          <span className="truncate">{t('qr_stand', business?.language)}</span>
         </button>
 
         <button
@@ -1676,7 +1677,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Building2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-          <span className="truncate">Info</span>
+          <span className="truncate">{t('info', business?.language)}</span>
         </button>
 
         <button
@@ -1688,7 +1689,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="truncate">Items ({activePage.menuItems.length})</span>
+          <span className="truncate">{t('items', business?.language)} ({activePage.menuItems.length})</span>
         </button>
 
         <button
@@ -1700,7 +1701,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-          <span className="truncate">Photos ({activePage.photos.length}/20)</span>
+          <span className="truncate">{t('photos', business?.language)} ({activePage.photos.length}/20)</span>
         </button>
       </div>
 
@@ -1710,29 +1711,29 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs text-center">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold mb-2">
               <QrCode className="w-3.5 h-3.5" />
-              <span>All-in-One Experience QR Code</span>
+              <span>{t('all_in_one_qr', business?.language)}</span>
             </div>
             <h2 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
-              Scannable Customer QR Code
+              {t('scannable_customer_qr', business?.language)}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Point phone camera here to test direct navigation to All Pages (Full Hub)
+              {t('point_camera_sub', business?.language)}
             </p>
 
             {/* QR Code Name Input Field On Top of QR Code Box */}
             <div className="max-w-xs sm:max-w-sm mx-auto mt-4 mb-3 text-left">
               <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
-                <span>QR Code Name</span>
+                <span>{t('qr_code_name', business?.language)}</span>
                 {tableNumberForPrint && (
                   <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                    Included on Downloads
+                    {t('included_on_downloads', business?.language) || 'Included on Downloads'}
                   </span>
                 )}
               </label>
               <div className="relative flex items-center">
                 <input
                   type="text"
-                  placeholder="e.g. Main Office, Reception, Entrance, Display Poster"
+                  placeholder={t('qr_name_placeholder', business?.language) || 'e.g. Main Office, Reception, Entrance, Display Poster'}
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
@@ -1742,7 +1743,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                     type="button"
                     onClick={() => setTableNumberForPrint('')}
                     className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                    title="Clear"
+                    title={t('close', business?.language) || 'Clear'}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1780,7 +1781,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 />
               ) : (
                 <div className="w-48 h-48 sm:w-56 sm:h-56 flex items-center justify-center text-slate-400 text-xs">
-                  Generating QR Code...
+                  {t('generating_qr', business?.language) || 'Generating QR Code...'}
                 </div>
               )}
             </div>
@@ -1793,7 +1794,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-xs"
               >
                 <Palette className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>QR Code & Box Editor</span>
+                <span>{t('qr_box_editor', business?.language) || 'QR Code & Box Editor'}</span>
               </button>
             </div>
 
@@ -1807,7 +1808,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 flex items-center gap-1 transition"
               >
                 {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                <span>{isCopied ? (t('copied_badge', business?.language) || 'Copied') : (t('copy', business?.language) || 'Copy')}</span>
               </button>
             </div>
 
@@ -1818,7 +1819,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download PNG</span>
+                <span>{t('download_png', business?.language) || 'Download PNG'}</span>
               </button>
 
               <button
@@ -1826,7 +1827,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Share Link</span>
+                <span>{t('share_link', business?.language) || 'Share Link'}</span>
               </button>
 
               <button
@@ -1834,7 +1835,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98 shadow-sm shadow-emerald-600/20 sm:col-span-1 col-span-1"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Test Preview</span>
+                <span>{t('test_preview', business?.language) || 'Test Preview'}</span>
               </button>
             </div>
           </div>
@@ -1847,10 +1848,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
-                  Print Table & Wall QR Code Poster (PDF)
+                  {t('print_poster_title', business?.language) || 'Print Table & Wall QR Code Poster (PDF)'}
                 </h3>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                  Download a high-resolution A4 poster with your business name & QR code.
+                  {t('print_poster_desc', business?.language) || 'Download a high-resolution A4 poster with your business name & QR code.'}
                 </p>
               </div>
             </div>
@@ -1858,11 +1859,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  QR Code Name
+                  {t('qr_code_name', business?.language) || 'QR Code Name'}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Main Office, Reception, Entrance, Display Poster"
+                  placeholder={t('qr_name_placeholder', business?.language) || 'e.g. Main Office, Reception, Entrance, Display Poster'}
                   value={tableNumberForPrint}
                   onChange={(e) => setTableNumberForPrint(e.target.value)}
                   className="w-full mt-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -1876,7 +1877,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98 disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
+                  <span>{isGeneratingPdf ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('download_poster_pdf', business?.language) || 'Download Table & Wall Poster (PDF)')}</span>
                 </button>
               </div>
             </div>
@@ -1902,10 +1903,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
               <div>
                 <h3 className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
-                  Generate Info & Contacts QR Code
+                  {t('gen_info_qr_title', business?.language) || 'Generate Info & Contacts QR Code'}
                 </h3>
                 <p className="text-[11px] text-indigo-700 dark:text-indigo-400">
-                  Create a QR code that opens directly to this Info & Contacts page
+                  {t('gen_info_qr_desc', business?.language) || 'Create a QR code that opens directly to this Info & Contacts page'}
                 </p>
               </div>
             </div>
@@ -1916,15 +1917,19 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-600/20 active:scale-95 transition shrink-0"
             >
               <QrCode className="w-3.5 h-3.5" />
-              <span>Generate Info QR Code</span>
+              <span>{t('gen_info_qr_btn', business?.language) || 'Generate Info QR Code'}</span>
             </button>
           </div>
 
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business & Venue Details</h2>
+          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            {t('business_venue_details', business?.language) || 'Business & Venue Details'}
+          </h2>
 
           <div className="space-y-3 text-xs">
             <div>
-              <label className="font-bold text-slate-600 dark:text-slate-400">Venue / Business Title</label>
+              <label className="font-bold text-slate-600 dark:text-slate-400">
+                {t('venue_title', business?.language) || 'Venue / Business Title'}
+              </label>
               <input
                 type="text"
                 value={activePage.title}
@@ -1934,10 +1939,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-600 dark:text-slate-400">Tagline / Slogan</label>
+              <label className="font-bold text-slate-600 dark:text-slate-400">
+                {t('tagline_slogan', business?.language) || 'Tagline / Slogan'}
+              </label>
               <input
                 type="text"
-                placeholder="e.g. Fine Dining, Artisan Coffee & Luxury Comfort"
+                placeholder={t('tagline_placeholder', business?.language) || 'e.g. Fine Dining, Artisan Coffee & Luxury Comfort'}
                 value={activePage.tagline || ''}
                 onChange={(e) => handleUpdateActivePage({ tagline: e.target.value })}
                 className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -1945,10 +1952,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
 
             <div>
-              <label className="font-bold text-slate-600 dark:text-slate-400">About / Welcome Message</label>
+              <label className="font-bold text-slate-600 dark:text-slate-400">
+                {t('about_welcome_msg', business?.language) || 'About / Welcome Message'}
+              </label>
               <textarea
                 rows={3}
-                placeholder="Describe your dishes, restaurant concept, or services..."
+                placeholder={t('about_placeholder', business?.language) || 'Describe your dishes, restaurant concept, or services...'}
                 value={activePage.description || ''}
                 onChange={(e) => handleUpdateActivePage({ description: e.target.value })}
                 className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -1959,11 +1968,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div>
               <label className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Special Promo / Announcement Notice (Optional)</span>
+                <span>{t('promo_announcement_notice', business?.language) || 'Special Promo / Announcement Notice (Optional)'}</span>
               </label>
               <input
                 type="text"
-                placeholder="e.g. 20% off all cocktails every Friday 5PM - 8PM!"
+                placeholder={t('promo_placeholder', business?.language) || 'e.g. 20% off all cocktails every Friday 5PM - 8PM!'}
                 value={activePage.announcement || ''}
                 onChange={(e) => handleUpdateActivePage({ announcement: e.target.value })}
                 className="w-full mt-1 px-3 py-2 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 focus:ring-2 focus:ring-amber-500 focus:outline-none text-amber-900 dark:text-amber-200"
@@ -1973,7 +1982,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <PhoneInputField
                 id="input-qr-phone"
-                label="Phone Number"
+                label={t('phone_number', business?.language) || 'Phone Number'}
                 value={activePage.phone || ''}
                 onChange={(val) => handleUpdateActivePage({ phone: val })}
                 placeholder="700 123 456"
@@ -1981,7 +1990,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
               <PhoneInputField
                 id="input-qr-whatsapp"
-                label="WhatsApp Number"
+                label={t('whatsapp_number', business?.language) || 'WhatsApp Number'}
                 icon={MessageCircle}
                 value={activePage.whatsapp || ''}
                 onChange={(val) => handleUpdateActivePage({ whatsapp: val })}
@@ -1991,7 +2000,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="font-bold text-slate-600 dark:text-slate-400">Physical Address / Location</label>
+                <label className="font-bold text-slate-600 dark:text-slate-400">
+                  {t('physical_address', business?.language) || 'Physical Address / Location'}
+                </label>
                 <input
                   type="text"
                   placeholder="Plot 22 Kampala Road, Kampala"
@@ -2002,7 +2013,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-slate-600 dark:text-slate-400">Opening Hours</label>
+                <label className="font-bold text-slate-600 dark:text-slate-400">
+                  {t('opening_hours', business?.language) || 'Opening Hours'}
+                </label>
                 <input
                   type="text"
                   placeholder="Mon - Sun: 7:00 AM - 11:30 PM"
@@ -2017,11 +2030,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
               <div className="flex items-center gap-2">
                 <Wifi className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <h4 className="font-bold text-slate-800 dark:text-slate-200">Guest Wi-Fi Details (Displayed to Customers)</h4>
+                <h4 className="font-bold text-slate-800 dark:text-slate-200">
+                  {t('wifi_details', business?.language) || 'Guest Wi-Fi Details'}
+                </h4>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400">Wi-Fi Name (SSID)</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">
+                    {t('wifi_ssid', business?.language) || 'Wi-Fi Name (SSID)'}
+                  </label>
                   <input
                     type="text"
                     placeholder="Guest_WiFi"
@@ -2031,7 +2048,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-slate-400">Wi-Fi Password</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">
+                    {t('wifi_pass', business?.language) || 'Wi-Fi Password'}
+                  </label>
                   <input
                     type="text"
                     placeholder="Password123"
@@ -2046,9 +2065,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             {/* WhatsApp Ordering Toggle */}
             <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
               <div>
-                <p className="font-bold text-slate-800 dark:text-slate-200">Allow WhatsApp Orders for Items</p>
+                <p className="font-bold text-slate-800 dark:text-slate-200">
+                  {t('allow_whatsapp_orders', business?.language) || 'Allow WhatsApp Orders for Items'}
+                </p>
                 <p className="text-[11px] text-slate-500">
-                  Customers can tap items, add table number, and send order straight to your WhatsApp
+                  {t('whatsapp_orders_desc', business?.language) || 'Customers can tap items, add table number, and send order straight to your WhatsApp'}
                 </p>
               </div>
               <input
@@ -2064,10 +2085,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Visual Branding (Logo & Cover Banner)
+                    {t('visual_branding', business?.language) || 'Visual Branding (Logo & Cover Banner)'}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Uploaded branding appears on customer QR screens and PDF table stands
+                    {t('branding_desc', business?.language) || 'Uploaded branding appears on customer QR screens and PDF table stands'}
                   </p>
                 </div>
               </div>
@@ -2078,11 +2099,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Business Logo</span>
+                      <span>{t('business_logo_label', business?.language) || 'Business Logo'}</span>
                     </span>
                     {activePage.logo && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                        Uploaded
+                        {t('uploaded', business?.language) || 'Uploaded'}
                       </span>
                     )}
                   </div>
@@ -2098,7 +2119,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                       </div>
                       <div className="flex-1 min-w-0 space-y-1.5">
                         <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                          Current Logo
+                          {t('current_logo', business?.language) || 'Current Logo'}
                         </p>
                         <div className="flex items-center gap-2">
                           <button
@@ -2106,16 +2127,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                             onClick={() => logoInputRef.current?.click()}
                             className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition active:scale-95"
                           >
-                            Change
+                            {t('change', business?.language) || 'Change'}
                           </button>
                           <button
                             type="button"
                             onClick={handleRemoveLogo}
                             className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-[11px] font-bold flex items-center gap-1 transition active:scale-95"
-                            title="Delete logo"
+                            title={t('delete', business?.language) || 'Delete logo'}
                           >
                             <Trash2 className="w-3 h-3" />
-                            <span>Delete</span>
+                            <span>{t('delete', business?.language) || 'Delete'}</span>
                           </button>
                         </div>
                       </div>
@@ -2129,7 +2150,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                       <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
                         <Upload className="w-4 h-4" />
                       </div>
-                      <span className="font-bold text-xs text-slate-700 dark:text-slate-300">Upload Business Logo</span>
+                      <span className="font-bold text-xs text-slate-700 dark:text-slate-300">{t('upload_business_logo', business?.language) || 'Upload Business Logo'}</span>
                       <span className="text-[10px] text-slate-400">PNG, JPG or WEBP</span>
                     </button>
                   )}
@@ -2140,11 +2161,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                       <Camera className="w-3.5 h-3.5 text-teal-600" />
-                      <span>Cover Banner</span>
+                      <span>{t('cover_banner', business?.language) || 'Cover Banner'}</span>
                     </span>
                     {activePage.coverImage && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                        Uploaded
+                        {t('uploaded', business?.language) || 'Uploaded'}
                       </span>
                     )}
                   </div>
@@ -2160,7 +2181,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                       </div>
                       <div className="flex items-center justify-between pt-0.5">
                         <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                          Header Backdrop
+                          {t('header_backdrop', business?.language) || 'Header Backdrop'}
                         </span>
                         <div className="flex items-center gap-2">
                           <button
@@ -2168,16 +2189,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                             onClick={() => coverInputRef.current?.click()}
                             className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition active:scale-95"
                           >
-                            Change
+                            {t('change', business?.language) || 'Change'}
                           </button>
                           <button
                             type="button"
                             onClick={handleRemoveCoverImage}
                             className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 text-[11px] font-bold flex items-center gap-1 transition active:scale-95"
-                            title="Delete cover banner"
+                            title={t('delete', business?.language) || 'Delete cover banner'}
                           >
                             <Trash2 className="w-3 h-3" />
-                            <span>Delete</span>
+                            <span>{t('delete', business?.language) || 'Delete'}</span>
                           </button>
                         </div>
                       </div>
@@ -2191,7 +2212,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                       <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
                         <Upload className="w-4 h-4" />
                       </div>
-                      <span className="font-bold text-xs text-slate-700 dark:text-slate-300">Upload Cover Banner</span>
+                      <span className="font-bold text-xs text-slate-700 dark:text-slate-300">{t('upload_cover_banner', business?.language) || 'Upload Cover Banner'}</span>
                       <span className="text-[10px] text-slate-400">Wide banner landscape image</span>
                     </button>
                   )}
@@ -2206,10 +2227,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <div>
                     <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                      Social Channels & Links
+                      {t('social_channels_links', business?.language) || 'Social Channels & Links'}
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Added socials appear at the bottom of your hosted Business QR page
+                      {t('social_channels_desc', business?.language) || 'Added socials appear at the bottom of your hosted Business QR page'}
                     </p>
                   </div>
                 </div>
@@ -2220,7 +2241,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add Social</span>
+                  <span>{t('add_social', business?.language) || 'Add Social'}</span>
                 </button>
               </div>
 
@@ -2263,7 +2284,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
               ) : (
                 <div className="p-3.5 text-center rounded-xl bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
-                  No social channels added yet. Tap <strong>+ Add Social</strong> to add where customers can find and follow you (Instagram, TikTok, WhatsApp, Facebook, Website, etc.).
+                  {t('no_socials_added', business?.language) || 'No social channels added yet. Tap + Add Social to add where customers can find and follow you (Instagram, TikTok, WhatsApp, Facebook, Website, etc.).'}
                 </div>
               )}
             </div>
@@ -2284,9 +2305,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Digital Items</h2>
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                {t('digital_items_title', business?.language) || 'Digital Items'}
+              </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {activePage.menuItems.length} items in {userCategories.length} categories
+                {activePage.menuItems.length} {t('items', business?.language) || 'items'}
               </p>
             </div>
 
@@ -2297,7 +2320,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/60 font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
               >
                 <QrCode className="w-3.5 h-3.5" />
-                <span>Generate Items QR</span>
+                <span>{t('generate_items_qr', business?.language) || 'Generate Items QR'}</span>
               </button>
 
               <button
@@ -2306,7 +2329,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-95 transition"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add Item</span>
+                <span>{t('add_new_item', business?.language) || 'Add Item'}</span>
               </button>
             </div>
           </div>
@@ -2557,13 +2580,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Business Photos</h2>
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  {t('photo_gallery_title', business?.language) || 'Business Photos'}
+                </h2>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                   {activePage.photos.length}/20 Max
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Upload up to 20 photos
+                {activePage.photos.length} / 20 {t('photos', business?.language) || 'photos'}
               </p>
             </div>
 
@@ -2574,7 +2599,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
               >
                 <QrCode className="w-3.5 h-3.5" />
-                <span>Generate Photos QR</span>
+                <span>{t('generate_photos_qr', business?.language) || 'Generate Photos QR'}</span>
               </button>
 
               <button
@@ -2587,7 +2612,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 }`}
               >
                 <Camera className="w-4 h-4" />
-                <span>{activePage.photos.length >= 20 ? 'Limit Reached (20/20)' : 'Upload Photo'}</span>
+                <span>{activePage.photos.length >= 20 ? 'Limit Reached (20/20)' : (t('upload_photo_btn', business?.language) || 'Upload Photo')}</span>
               </button>
             </div>
           </div>
