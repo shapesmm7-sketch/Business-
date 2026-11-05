@@ -40,7 +40,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
-import { t } from '../utils/i18n';
+import { t, formatNumber } from '../utils/i18n';
 
 interface CreateReceiptScreenProps {
   business: BusinessProfile;
@@ -112,7 +112,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     defaultPaymentMethod || 'Cash'
   );
-  const [notes, setNotes] = useState<string>('Thank you');
+  const [notes, setNotes] = useState<string>(t('thank_you_business', business?.language));
   const [nonReturnable, setNonReturnable] = useState<boolean>(true);
   const [nonRefundable, setNonRefundable] = useState<boolean>(false);
 
@@ -189,18 +189,19 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         setDiscountValue(draft.discount || 0);
         setAmountPaidInput(draft.amountPaid !== undefined ? String(draft.amountPaid) : '');
         setAmountInWords(draft.amountInWords || '');
-        setPaymentMethod(draft.paymentMethod || defaultPaymentMethod);
-        setNotes(draft.notes || 'Thank you');
+        const defaultNotes = t('thank_you_business', business?.language);
+        const isDefaultOrEng = !draft.notes || draft.notes === 'Thank you' || draft.notes === 'Thank you for your business!';
+        setNotes(isDefaultOrEng ? defaultNotes : draft.notes);
         setNonReturnable(draft.nonReturnable ?? true);
         setNonRefundable(Boolean(draft.nonRefundable));
       } else {
         setReceiptNumber(StorageService.generateReceiptNumber());
-        setNotes('Thank you');
+        setNotes(t('thank_you_business', business?.language));
         setNonReturnable(true);
         setNonRefundable(false);
       }
     }
-  }, [editingReceipt, duplicateFromReceipt, defaultPaymentMethod]);
+  }, [editingReceipt, duplicateFromReceipt, defaultPaymentMethod, business?.language]);
 
   // Calculations
   const subtotal = roundMoney(
@@ -612,7 +613,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="e.g. John Doe, Sarah"
+              placeholder={t('enter_customer_name', business?.language)}
               className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
             />
           </div>
@@ -622,6 +623,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
             label={t('customer_phone_opt', business?.language)}
             value={customerPhone}
             onChange={(val) => setCustomerPhone(val)}
+            language={business?.language}
             placeholder="700 000 000"
           />
 
@@ -635,7 +637,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               type="email"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="e.g. customer@example.com"
+              placeholder="customer@example.com"
               className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
             />
           </div>
@@ -690,7 +692,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               <div className="space-y-1">
                 <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-800">
                   <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
-                    Item #{index + 1}
+                    {t('item_no', business?.language)} #{formatNumber(index + 1, business?.language)}
                   </span>
                   <button
                     id={`btn-remove-item-${item.id}`}
@@ -717,7 +719,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                     type="text"
                     value={item.name}
                     onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
-                    placeholder="Enter item name..."
+                    placeholder={t('enter_product_name', business?.language)}
                     className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden placeholder:font-normal placeholder:text-slate-400"
                   />
                 </div>
@@ -842,10 +844,10 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 flex items-center justify-between">
           <div>
             <span className="text-xs uppercase font-extrabold text-emerald-700 dark:text-emerald-400 tracking-wider">
-              Total Amount
+              {t('total_amount_label', business?.language)}
             </span>
             <div className="text-[11px] text-slate-500 dark:text-slate-400">
-              {items.filter((i) => i.name.trim()).length} item(s) included
+              {formatNumber(items.filter((i) => i.name.trim()).length, business?.language)} {t('items_included', business?.language)}
             </div>
           </div>
 
@@ -859,7 +861,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         {/* Payment Method Selector */}
         <div className="pt-2">
           <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-            Payment Method
+            {t('payment_method_label', business?.language)}
           </label>
           <div className="relative">
             <select
@@ -867,11 +869,20 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
               className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-semibold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all outline-hidden appearance-none"
             >
-              {(['Cash', 'Mobile Money', 'Bank', 'Card', 'Check', 'Other'] as PaymentMethod[]).map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
+              {(['Cash', 'Mobile Money', 'Bank', 'Card', 'Check', 'Other'] as PaymentMethod[]).map((method) => {
+                let methodLabel: string = method;
+                if (method === 'Cash') methodLabel = t('cash', business?.language);
+                else if (method === 'Mobile Money') methodLabel = t('mobile_money', business?.language);
+                else if (method === 'Bank') methodLabel = t('bank_transfer', business?.language);
+                else if (method === 'Card') methodLabel = t('card', business?.language);
+                else if (method === 'Check') methodLabel = t('check', business?.language);
+                else if (method === 'Other') methodLabel = t('other', business?.language);
+                return (
+                  <option key={method} value={method}>
+                    {methodLabel}
+                  </option>
+                );
+              })}
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -884,14 +895,14 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         {/* Amount Paid in Words */}
         <div className="pt-4">
           <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-            Amount Paid in Words (Optional)
+            {t('amount_in_words_opt', business?.language)}
           </label>
           <input
             id="input-amount-words"
             type="text"
             value={amountInWords}
             onChange={(e) => setAmountInWords(e.target.value)}
-            placeholder="e.g. One hundred and fifty thousand shillings"
+            placeholder={t('amount_in_words_placeholder', business?.language)}
             className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
           />
         </div>
@@ -900,7 +911,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              Amount Paid in Numbers
+              {t('amount_paid_numbers', business?.language)}
             </label>
             <div className="relative">
               <input
@@ -910,7 +921,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
                 step="any"
                 value={amountPaidInput}
                 onChange={(e) => setAmountPaidInput(e.target.value)}
-                placeholder={`e.g. ${total}`}
+                placeholder={`e.g. ${formatNumber(total, business?.language)}`}
                 title={amountPaidInput}
                 className={`w-full min-w-0 pl-3 pr-12 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
                   String(amountPaidInput || '').length >= 13
@@ -927,13 +938,13 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
-              Leave blank to default to the full amount ({formatCurrency(total, currency)}).
+              {t('amount_paid_help', business?.language)} ({formatCurrency(total, currency)}).
             </p>
           </div>
 
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              Balance Status
+              {t('balance_status', business?.language)}
             </label>
             <div className={`p-2.5 rounded-xl border flex flex-col justify-center h-[38px] ${
               balance < 0
@@ -944,7 +955,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
             }`}>
               <div className="flex items-center justify-between text-xs font-bold leading-none">
                 <span>
-                  {balance < 0 ? 'Balance Remained (Due):' : balance > 0 ? 'Change to Return:' : 'Fully Paid'}
+                  {balance < 0 ? t('balance_remained_due', business?.language) : balance > 0 ? t('change_to_return', business?.language) : t('fully_paid', business?.language)}
                 </span>
                 <span className="font-extrabold font-mono">
                   {formatCurrency(Math.abs(balance), currency)}
@@ -957,14 +968,14 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         {/* Optional Notes */}
         <div className="pt-2">
           <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
-            Notes / Warranty / Remarks (Optional)
+            {t('notes_warranty_opt', business?.language)}
           </label>
           <textarea
             id="input-receipt-notes"
             rows={2}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="e.g. Paid via MTN MoMo Ref: 48920. Goods not returnable after 3 days."
+            placeholder={t('notes_placeholder', business?.language)}
             className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden resize-none"
           />
         </div>
@@ -974,8 +985,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           {/* Goods Non-Returnable Toggle */}
           <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 cursor-pointer transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
             <div>
-              <div className="text-xs font-semibold text-slate-900 dark:text-white">Goods Non-Returnable</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Prints "Goods once sold are not returnable"</div>
+              <div className="text-xs font-semibold text-slate-900 dark:text-white">{t('goods_non_returnable', business?.language)}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">{t('goods_non_returnable_sub', business?.language)}</div>
             </div>
             <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${nonReturnable ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
               <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${nonReturnable ? 'translate-x-4.5' : 'translate-x-1'}`} />
@@ -986,8 +997,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           {/* Money Non-Refundable Toggle */}
           <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 cursor-pointer transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
             <div>
-              <div className="text-xs font-semibold text-slate-900 dark:text-white">Money Non-Refundable</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Prints "Money paid are not refundable"</div>
+              <div className="text-xs font-semibold text-slate-900 dark:text-white">{t('money_non_refundable', business?.language)}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">{t('money_non_refundable_sub', business?.language)}</div>
             </div>
             <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${nonRefundable ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
               <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${nonRefundable ? 'translate-x-4.5' : 'translate-x-1'}`} />
@@ -1021,7 +1032,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Save Receipt"
             >
               <Save className="w-4 h-4 shrink-0" />
-              <span>Save Receipt</span>
+              <span>{t('save_receipt', business?.language)}</span>
             </button>
           </div>
 
@@ -1037,7 +1048,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Download PDF"
             >
               <Download className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span className="whitespace-nowrap">PDF</span>
+              <span className="whitespace-nowrap">{t('pdf_format', business?.language)}</span>
             </button>
 
             {/* Save Photo */}
@@ -1050,7 +1061,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Save Receipt Photo (PNG)"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="whitespace-nowrap">Photo</span>
+              <span className="whitespace-nowrap">{t('photo', business?.language)}</span>
             </button>
 
             {/* Share */}
@@ -1063,7 +1074,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Generate & Share PDF"
             >
               <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">Share</span>
+              <span className="whitespace-nowrap">{t('share', business?.language)}</span>
             </button>
 
             {/* Preview */}
@@ -1076,7 +1087,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Preview Receipt"
             >
               <Eye className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">Preview</span>
+              <span className="whitespace-nowrap">{t('preview', business?.language)}</span>
             </button>
           </div>
         </div>

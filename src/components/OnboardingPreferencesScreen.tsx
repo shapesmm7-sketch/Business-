@@ -14,11 +14,11 @@ import {
 } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { SUPPORTED_CURRENCIES, getCurrencyFlag } from '../utils/currencies';
-import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem } from '../data/countryCodes';
+import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem, getLocalizedCountryName } from '../data/countryCodes';
 import { getLanguageByCode, WORLD_LANGUAGES } from '../data/languages';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { StorageService } from '../services/storage';
-import { t } from '../utils/i18n';
+import { t, formatNumber } from '../utils/i18n';
 
 interface OnboardingPreferencesScreenProps {
   initialProfile: BusinessProfile;
@@ -70,10 +70,14 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
   const filteredCountries = COUNTRY_CODES.filter((c) => {
     const q = countrySearchQuery.trim().toLowerCase();
     if (!q) return true;
+    const localizedName = getLocalizedCountryName(c.code, profile.language);
+    const localizedDial = formatNumber(c.dialCode, profile.language);
     return (
       c.name.toLowerCase().includes(q) ||
+      localizedName.toLowerCase().includes(q) ||
       c.code.toLowerCase().includes(q) ||
       c.dialCode.toLowerCase().includes(q) ||
+      localizedDial.includes(q) ||
       (c.flag && c.flag.includes(q))
     );
   });
@@ -105,8 +109,9 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
       StorageService.setDefaultDialCode(countryItem.dialCode);
     }
 
+    const localizedCountry = getLocalizedCountryName(countryItem.code, profile.language);
     setAutoNotice(
-      `Selected ${countryItem.name}: Currency set to ${autoCurrCode} & country code set to ${countryItem.dialCode} by default`
+      `Selected ${localizedCountry}: Currency set to ${autoCurrCode} & country code set to ${formatNumber(countryItem.dialCode, profile.language)} by default`
     );
     setTimeout(() => setAutoNotice(null), 5000);
 
@@ -260,11 +265,11 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
                 {selectedCountryObj ? (
                   <>
                     <div className="font-black text-sm text-slate-900 dark:text-white truncate flex items-center gap-2">
-                      <span>{selectedCountryObj.name}</span>
+                      <span>{getLocalizedCountryName(selectedCountryObj.code || selectedCountryObj.name, profile.language)}</span>
                       <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[3]" />
                     </div>
                     <div className="text-[11px] text-slate-400 font-mono">
-                      {selectedCountryObj.dialCode} • Dialing Code
+                      {formatNumber(selectedCountryObj.dialCode, profile.language)} • Dialing Code
                     </div>
                   </>
                 ) : (
@@ -571,7 +576,7 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
                       </span>
                       <div className="min-w-0 truncate">
                         <div className="truncate text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <span>{c.name}</span>
+                          <span>{getLocalizedCountryName(c.code, profile.language)}</span>
                           {c.popular && (
                             <span className="px-1 py-0.2 rounded text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold">
                               Popular
@@ -579,7 +584,7 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
                           )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          {c.dialCode} • Auto Currency: {matchedCurrency || 'USD'}
+                          {formatNumber(c.dialCode, profile.language)} • Auto Currency: {matchedCurrency || 'USD'}
                         </div>
                       </div>
                     </div>

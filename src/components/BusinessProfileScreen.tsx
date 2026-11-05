@@ -33,8 +33,8 @@ import { AdMobService } from '../services/admobService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { PhoneInputField } from './PhoneInputField';
 import { getLanguageByCode, WORLD_LANGUAGES } from '../data/languages';
-import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem } from '../data/countryCodes';
-import { t } from '../utils/i18n';
+import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem, getLocalizedCountryName } from '../data/countryCodes';
+import { t, formatNumber } from '../utils/i18n';
 import {
   BRAND_COLOR_PRESETS,
   COLOR_AND_GRADIENT_PRESETS,
@@ -101,10 +101,14 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   const filteredCountries = COUNTRY_CODES.filter((c) => {
     const q = countrySearchQuery.trim().toLowerCase();
     if (!q) return true;
+    const locName = getLocalizedCountryName(c, profile.language).toLowerCase();
+    const dialLoc = formatNumber(c.dialCode, profile.language).toLowerCase();
     return (
+      locName.includes(q) ||
       c.name.toLowerCase().includes(q) ||
       c.code.toLowerCase().includes(q) ||
       c.dialCode.toLowerCase().includes(q) ||
+      dialLoc.includes(q) ||
       (c.flag && c.flag.includes(q))
     );
   });
@@ -1419,7 +1423,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                       </span>
                       <div className="min-w-0 truncate">
                         <div className="truncate text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <span>{c.name}</span>
+                          <span>{getLocalizedCountryName(c, profile.language)}</span>
                           {c.popular && (
                             <span className="px-1 py-0.2 rounded text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold">
                               Popular
@@ -1427,7 +1431,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                           )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          {c.dialCode} • Auto Currency: {matchedCurrency || 'UGX'}
+                          {formatNumber(c.dialCode, profile.language)} • Auto Currency: {matchedCurrency || 'UGX'}
                         </div>
                       </div>
                     </div>

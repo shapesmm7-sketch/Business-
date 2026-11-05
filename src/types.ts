@@ -576,6 +576,7 @@ export interface QRCodeHostedPage {
   socialsQrItems?: SocialQrItem[];
   eventsQrItems?: EventQrItem[];
   currency: string;
+  language?: string;
   announcement?: string;
   allowWhatsAppOrdering?: boolean;
   // QR Code and Box Color Customization

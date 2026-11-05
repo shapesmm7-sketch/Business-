@@ -7,7 +7,10 @@ import {
   combinePhoneNumber,
   findCountryByPhone,
   getDefaultAppDialCode,
+  getLocalizedCountryName,
 } from '../data/countryCodes';
+import { StorageService } from '../services/storage';
+import { t, formatNumber } from '../utils/i18n';
 
 export interface PhoneInputFieldProps {
   id?: string;
@@ -24,6 +27,7 @@ export interface PhoneInputFieldProps {
   helpText?: string;
   error?: string;
   compact?: boolean;
+  language?: string;
 }
 
 export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
@@ -41,7 +45,9 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
   helpText,
   error,
   compact = false,
+  language,
 }) => {
+  const effectiveLang = language || StorageService.getProfile()?.language || 'en';
   const effectiveDefault = defaultCountryCode || getDefaultAppDialCode();
   const [selectedCountry, setSelectedCountry] = useState<CountryCodeItem>(() => {
     return findCountryByPhone(value, effectiveDefault);
@@ -99,13 +105,21 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
   const filteredCountries = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return COUNTRY_CODES;
-    return COUNTRY_CODES.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.code.toLowerCase().includes(q) ||
-        c.dialCode.includes(q)
-    );
-  }, [searchQuery]);
+    return COUNTRY_CODES.filter((c) => {
+      const locName = getLocalizedCountryName(c, effectiveLang).toLowerCase();
+      const engName = c.name.toLowerCase();
+      const dialEng = c.dialCode.toLowerCase();
+      const dialLoc = formatNumber(c.dialCode, effectiveLang).toLowerCase();
+      const iso = c.code.toLowerCase();
+      return (
+        locName.includes(q) ||
+        engName.includes(q) ||
+        dialEng.includes(q) ||
+        dialLoc.includes(q) ||
+        iso.includes(q)
+      );
+    });
+  }, [searchQuery, effectiveLang]);
 
   const handleCountrySelect = (country: CountryCodeItem) => {
     setSelectedCountry(country);
@@ -136,8 +150,10 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
     onChange(combined);
   };
 
-  const currentPlaceholder =
-    placeholder || selectedCountry.sampleFormat || '700 123 456';
+  const currentPlaceholder = formatNumber(
+    placeholder || selectedCountry.sampleFormat || '700 123 456',
+    effectiveLang
+  );
 
   return (
     <div className={`relative ${className}`}>
@@ -167,11 +183,11 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
           className={`flex items-center gap-1.5 px-3 border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 font-semibold transition shrink-0 rounded-l-xl select-none ${
             compact ? 'py-1.5 text-xs' : 'py-2 text-xs sm:text-sm'
           }`}
-          title={`${selectedCountry.name} (${selectedCountry.dialCode}) - Click to change country`}
+          title={`${getLocalizedCountryName(selectedCountry, effectiveLang)} (${formatNumber(selectedCountry.dialCode, effectiveLang)})`}
         >
           <span className="text-base sm:text-lg leading-none">{selectedCountry.flag}</span>
           <span className="font-mono text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200">
-            {selectedCountry.dialCode}
+            {formatNumber(selectedCountry.dialCode, effectiveLang)}
           </span>
           <ChevronDown
             className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
@@ -222,7 +238,7 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search country or code..."
+                  placeholder={t('search_country_placeholder', effectiveLang) || "Search country or code..."}
                   className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1.5 focus:ring-emerald-500"
                 />
                 {searchQuery && (
@@ -241,12 +257,16 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
             <div className="overflow-y-auto flex-1 divide-y divide-slate-50 dark:divide-slate-800/60 p-1">
               {filteredCountries.length === 0 ? (
                 <div className="py-6 text-center text-xs text-slate-400">
-                  No countries matching "{searchQuery}"
+                  {effectiveLang === 'ar'
+                    ? `لا توجد دول تطابق "${searchQuery}"`
+                    : `No countries matching "${searchQuery}"`}
                 </div>
               ) : (
                 filteredCountries.map((c) => {
                   const isSelected =
                     selectedCountry.code === c.code && selectedCountry.dialCode === c.dialCode;
+                  const localizedCountryName = getLocalizedCountryName(c, effectiveLang);
+                  const localizedDialCode = formatNumber(c.dialCode, effectiveLang);
                   return (
                     <button
                       key={`${c.code}-${c.dialCode}`}
@@ -260,11 +280,11 @@ export const PhoneInputField: React.FC<PhoneInputFieldProps> = ({
                     >
                       <div className="flex items-center gap-2.5 min-w-0 pr-2">
                         <span className="text-xl leading-none shrink-0">{c.flag}</span>
-                        <span className="text-xs truncate">{c.name}</span>
+                        <span className="text-xs truncate">{localizedCountryName}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="font-mono text-xs font-bold text-slate-500 dark:text-slate-400">
-                          {c.dialCode}
+                          {localizedDialCode}
                         </span>
                         {isSelected && <Check className="w-3.5 h-3.5 text-emerald-600" />}
                       </div>

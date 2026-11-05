@@ -571,7 +571,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                   <span>{t('qr_code_name', business?.language) || 'QR Code Name'}</span>
                   {tableNumberForPrint && (
                     <span className="text-[9px] text-blue-600 dark:text-blue-400 font-medium">
-                      {t('included_on_downloads', business?.language) || 'Included on PNG'}
+                      {t('included_on_downloads', business?.language) || 'Included on Downloads'}
                     </span>
                   )}
                 </label>

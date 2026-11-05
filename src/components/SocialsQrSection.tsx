@@ -33,7 +33,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
-import { t } from '../utils/i18n';
+import { t, formatNumber } from '../utils/i18n';
 
 export type SocialPlatformType = SocialPlatform;
 
@@ -681,9 +681,40 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     }
   };
 
+  const getPlatformName = (platformKey: string, lang?: string) => {
+    if (lang === 'ar') {
+      const arNames: Record<string, string> = {
+        whatsapp: 'واتساب',
+        instagram: 'إنستغرام',
+        tiktok: 'تيك توك',
+        facebook: 'فيسبوك',
+        youtube: 'يوتيوب',
+        telegram: 'تيليجرام',
+        x_twitter: 'إكس (تويتر)',
+        linkedin: 'لينكد إن',
+        snapchat: 'سناب شات',
+        pinterest: 'بينترست',
+        google_maps: 'خرائط جوجل',
+        threads: 'ثريدز',
+        discord: 'ديسكورد',
+        twitch: 'تويتش',
+        reddit: 'ريديت',
+        wechat: 'وي شات',
+        spotify: 'سبوتيفاي',
+        yelp: 'ييلب',
+        patreon: 'باتريون',
+        github: 'جيت هاب',
+        custom: 'منصة مخصصة',
+      };
+      if (arNames[platformKey]) return arNames[platformKey];
+    }
+    const cfg = PLATFORMS_CONFIG[platformKey as SocialPlatformType];
+    return cfg?.name || platformKey;
+  };
+
   const getPlatformDisplay = (item: SocialQrItem) => {
     const cfg = PLATFORMS_CONFIG[item.platform] || PLATFORMS_CONFIG.custom;
-    const name = item.customPlatformName || cfg?.name || 'Platform';
+    const name = item.customPlatformName || getPlatformName(item.platform, business?.language) || 'Platform';
     const color = item.darkColor || cfg?.brandColor || '#059669';
     return { name, color };
   };
@@ -769,7 +800,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="w-2.5 h-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: cfg.brandColor }}
                 />
-                <span>{cfg.name}</span>
+                <span>{getPlatformName(pKey, business?.language)}</span>
               </button>
             );
           })}
@@ -790,7 +821,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
           <Layers className="w-4 h-4" />
           <span>{t('all_socials_hub', business?.language) || 'ALL Social Accounts'}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-            {items.length}
+            {formatNumber(items.length, business?.language)}
           </span>
         </button>
 
@@ -817,7 +848,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              {t('select_active_link', business?.language) || 'Select Active Channel'} ({items.length})
+              {t('select_active_link', business?.language) || 'Select Active Channel'} ({formatNumber(items.length, business?.language)})
             </span>
             <button
               type="button"
@@ -869,7 +900,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             </div>
           ) : (
             <p className="text-xs text-slate-500 dark:text-slate-400 py-1">
-              No channels added yet.
+              {t('no_socials_yet', business?.language) || 'No channels added yet.'}
             </p>
           )}
         </div>
@@ -888,7 +919,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   <span>{t('qr_code_name', business?.language) || 'QR Code Name'}</span>
                   {tableNumberForPrint && (
                     <span className="text-[9px] text-pink-600 dark:text-pink-400 font-medium">
-                      {t('included_on_downloads', business?.language) || 'Included on PNG'}
+                      {t('included_on_downloads', business?.language) || 'Included on Downloads'}
                     </span>
                   )}
                 </label>
@@ -972,7 +1003,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                   className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full text-white mb-1.5 shadow-2xs"
                   style={{ backgroundColor: activeDarkColor }}
                 >
-                  {isAllSelected ? (t('all_socials_hub', business?.language) || `SOCIALS HUB (${items.length} CHANNELS)`) : (activeItem?.customPlatformName || PLATFORMS_CONFIG[activeItem?.platform || 'whatsapp']?.name || 'Social')}
+                  {isAllSelected ? (t('all_socials_hub', business?.language) || `SOCIALS HUB (${items.length} CHANNELS)`) : (activeItem?.customPlatformName || getPlatformName(activeItem?.platform || 'whatsapp', business?.language) || 'Social')}
                 </span>
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                   {isAllSelected ? `${business.name || 'Official'} ${t('socials_hub_title', business?.language) || 'Social Media Hub'}` : activeItem?.title}
@@ -1219,7 +1250,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                         onClick={() => {
                           setFormPlatform(pKey);
                           if (!editingItem) {
-                            const nameToUse = pKey === 'custom' ? (formCustomName || 'Custom Platform') : cfg.name;
+                            const nameToUse = pKey === 'custom' ? (formCustomName || (t('custom_platform_name', business?.language) || 'Custom Platform')) : getPlatformName(pKey, business?.language);
                             setFormCustomName(nameToUse);
                             setFormTitle(`${business.name || 'Our'} ${nameToUse}`);
                             setFormCta(cfg.defaultCta);
@@ -1238,7 +1269,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: cfg.brandColor }}
                         />
-                        <span className="truncate">{cfg.name.split(' ')[0]}</span>
+                        <span className="truncate">{getPlatformName(pKey, business?.language)}</span>
                       </button>
                     );
                   })}

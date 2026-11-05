@@ -263,6 +263,78 @@ export async function ensureD1Tables(db: any): Promise<void> {
   } catch (_) {}
 }
 
+// 200 MB user cloud storage cap
+export const MAX_USER_STORAGE_BYTES = 200 * 1024 * 1024; // 200 MB (209,715,200 bytes)
+
+/**
+ * Calculates total cloud storage bytes consumed by a user across R2 and D1.
+ */
+export async function getUserStorageUsageBytes(userEmail: string, env: Env): Promise<number> {
+  const cleanEmail = (userEmail || '').toLowerCase().trim();
+  if (!cleanEmail) return 0;
+  const bucket = getR2Bucket(env);
+  const db = getD1Database(env);
+  let totalBytes = 0;
+  const seenKeys = new Set<string>();
+
+  // 1. Check R2 bucket objects
+  if (bucket && typeof bucket.list === 'function') {
+    try {
+      const prefixes = [
+        `users/${encodeURIComponent(cleanEmail)}/`,
+        `users/${cleanEmail}/`,
+      ];
+      for (const pfx of prefixes) {
+        let cursor: string | undefined = undefined;
+        let hasMore = true;
+        let iterations = 0;
+        while (hasMore && iterations < 10) {
+          iterations++;
+          const listed: any = await bucket.list({ prefix: pfx, limit: 1000, cursor });
+          if (listed && Array.isArray(listed.objects)) {
+            for (const obj of listed.objects) {
+              if (!seenKeys.has(obj.key)) {
+                seenKeys.add(obj.key);
+                totalBytes += (Number(obj.size) || 0);
+              }
+            }
+          }
+          if (listed?.truncated && listed?.cursor) {
+            cursor = listed.cursor;
+          } else {
+            hasMore = false;
+          }
+        }
+      }
+    } catch (r2Err) {
+      console.warn('R2 user storage calculate note:', r2Err);
+    }
+  }
+
+  // 2. Also check D1 files table
+  if (db) {
+    try {
+      await ensureD1Tables(db);
+      const rows: any = await db.prepare(`
+        SELECT id, size FROM files 
+        WHERE id LIKE ? OR id LIKE ?
+      `).bind(`users/${encodeURIComponent(cleanEmail)}/%`, `users/${cleanEmail}/%`).all();
+      if (rows && Array.isArray(rows.results)) {
+        for (const row of rows.results) {
+          if (!seenKeys.has(row.id)) {
+            seenKeys.add(row.id);
+            totalBytes += (Number(row.size) || 0);
+          }
+        }
+      }
+    } catch (d1Err) {
+      console.warn('D1 user storage calculate note:', d1Err);
+    }
+  }
+
+  return totalBytes;
+}
+
 // Robust resolver for QR Hosted Pages scoped by pageId and user email
 export async function resolveHostedQrPage(
   env: Env,
@@ -2601,6 +2673,44 @@ export default {
         const key = `${userPrefix}${folder}/${Date.now()}_${cleanFilename}`;
         const publicUrl = `${url.origin}/api/files/${encodeURIComponent(key)}`;
 
+        // Calculate incoming size in bytes
+        let incomingBytes = 0;
+        if (typeof data === 'string') {
+          const cleanBase64 = data.includes(',') ? data.split(',')[1] : data;
+          incomingBytes = Math.round((cleanBase64.length * 3) / 4);
+        } else if (data && typeof data === 'object' && 'byteLength' in data) {
+          incomingBytes = (data as any).byteLength;
+        }
+
+        // Enforce 200 MB limit per user account / email
+        if (userEmail) {
+          const currentUsage = await getUserStorageUsageBytes(userEmail, env);
+          if (currentUsage + incomingBytes > MAX_USER_STORAGE_BYTES) {
+            const limitMB = 200;
+            const usedMB = (currentUsage / (1024 * 1024)).toFixed(1);
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                success: false,
+                storageLimitExceeded: true,
+                usedBytes: currentUsage,
+                limitBytes: MAX_USER_STORAGE_BYTES,
+                usedMB: Number(usedMB),
+                limitMB,
+                error: 'You have used up your 200mbs so delete some files that are nolonger needed to save new files',
+                message: 'You have used up your 200mbs so delete some files that are nolonger needed to save new files',
+              }),
+              {
+                status: 400,
+                headers: {
+                  ...CORS_HEADERS,
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+          }
+        }
+
         if (bucket) {
           let buffer: Uint8Array;
           if (typeof data === 'string') {
@@ -2808,12 +2918,25 @@ export default {
         }
       }
 
+      const totalUsedBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
+      const isExceeded = totalUsedBytes >= MAX_USER_STORAGE_BYTES;
+      const percent = Math.min(100, Math.round((totalUsedBytes / MAX_USER_STORAGE_BYTES) * 100));
+
       return new Response(
         JSON.stringify({
           ok: true,
           success: true,
           files,
           total: files.length,
+          usedBytes: totalUsedBytes,
+          limitBytes: MAX_USER_STORAGE_BYTES,
+          usedMB: Number((totalUsedBytes / (1024 * 1024)).toFixed(2)),
+          limitMB: 200,
+          percent,
+          isExceeded,
+          warning: isExceeded
+            ? 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
+            : null,
           d1Bound: Boolean(db),
           r2Bound: Boolean(bucket),
         }),
@@ -2825,6 +2948,53 @@ export default {
           },
         }
       );
+    }
+
+    // 3c. Storage Quota endpoint (/api/storage/quota)
+    if (url.pathname === '/api/storage/quota' && request.method === 'GET') {
+      try {
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          url.searchParams.get('email') ||
+          url.searchParams.get('user_id') ||
+          ''
+        ).toLowerCase().trim();
+
+        const usedBytes = await getUserStorageUsageBytes(userEmail, env);
+        const limitBytes = MAX_USER_STORAGE_BYTES;
+        const isExceeded = usedBytes >= limitBytes;
+        const percent = Math.min(100, Math.round((usedBytes / limitBytes) * 100));
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            userEmail,
+            usedBytes,
+            limitBytes,
+            usedMB: Number((usedBytes / (1024 * 1024)).toFixed(2)),
+            limitMB: 200,
+            percent,
+            isExceeded,
+            warning: isExceeded
+              ? 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
+              : null,
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // 4. File Download & Delete endpoint (/api/files/:key)

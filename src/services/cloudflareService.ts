@@ -2,6 +2,16 @@ import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncRe
 import { StorageService } from './storage';
 import { optimizeImageForR2 } from '../utils/imageCompressor';
 
+export interface StorageQuotaInfo {
+  usedBytes: number;
+  limitBytes: number;
+  usedMB: number;
+  limitMB: number;
+  percent: number;
+  isExceeded: boolean;
+  warning?: string | null;
+}
+
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
   workerUrl: 'https://brivu.shapesmm7.workers.dev',
   apiKey: '',
@@ -320,6 +330,7 @@ export const CloudflareService = {
     force?: boolean;
   }): Promise<{
     success: boolean;
+    storageLimitExceeded?: boolean;
     url?: string;
     key?: string;
     filename?: string;
@@ -420,6 +431,7 @@ export const CloudflareService = {
 
       if (!response.ok) {
         let errorMsg = `HTTP ${response.status} upload failed`;
+        const isStorageExceeded = Boolean(parsed.data?.storageLimitExceeded);
         if (parsed.ok && parsed.data?.error) {
           errorMsg = parsed.data.error;
         } else if (parsed.error) {
@@ -429,6 +441,7 @@ export const CloudflareService = {
         }
         return {
           success: false,
+          storageLimitExceeded: isStorageExceeded,
           message: errorMsg,
         };
       }
@@ -883,6 +896,57 @@ export const CloudflareService = {
     } catch (err) {
       console.warn('Failed to delete file from Cloudflare:', err);
       return false;
+    }
+  },
+
+  /**
+   * Fetches the 200 MB user storage quota and current usage
+   */
+  async getStorageQuota(): Promise<StorageQuotaInfo> {
+    const config = this.getConfig();
+    const defaultQuota: StorageQuotaInfo = {
+      usedBytes: 0,
+      limitBytes: 200 * 1024 * 1024,
+      usedMB: 0,
+      limitMB: 200,
+      percent: 0,
+      isExceeded: false,
+      warning: null,
+    };
+    if (!this.isConfigured()) return defaultQuota;
+
+    try {
+      const headers = this.getAuthHeaders();
+      const user = StorageService.getWorkOSUser();
+      const email = user?.email ? user.email.toLowerCase().trim() : '';
+      const params = new URLSearchParams();
+      if (email) params.set('email', email);
+      const queryParam = params.toString() ? `?${params.toString()}` : '';
+      const targetUrl = `${config.workerUrl}/api/storage/quota${queryParam}`;
+
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!res.ok) return defaultQuota;
+      const rawText = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+      if (!parsed.ok || !parsed.data) return defaultQuota;
+
+      const data = parsed.data;
+      return {
+        usedBytes: Number(data.usedBytes) || 0,
+        limitBytes: Number(data.limitBytes) || 200 * 1024 * 1024,
+        usedMB: typeof data.usedMB === 'number' ? data.usedMB : parseFloat(data.usedMB) || 0,
+        limitMB: Number(data.limitMB) || 200,
+        percent: Number(data.percent) || 0,
+        isExceeded: Boolean(data.isExceeded),
+        warning: data.warning || null,
+      };
+    } catch (err) {
+      console.warn('Failed to fetch storage quota:', err);
+      return defaultQuota;
     }
   },
 

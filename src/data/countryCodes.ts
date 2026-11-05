@@ -205,6 +205,61 @@ export function getCurrencyForCountry(countryInput: string): string | undefined 
   return undefined;
 }
 
+const REGION_NAME_CACHE: Record<string, Intl.DisplayNames> = {};
+
+/**
+ * Returns localized country name based on the current app language (e.g. Arabic, Spanish, French, etc.)
+ */
+export function getLocalizedCountryName(
+  countryInput: CountryCodeItem | string | undefined | null,
+  lang = 'en'
+): string {
+  if (!countryInput) return '';
+  let code = '';
+  let fallback = '';
+
+  if (typeof countryInput === 'string') {
+    const trimmed = countryInput.trim();
+    if (trimmed.length === 2 && /^[A-Za-z]{2}$/.test(trimmed)) {
+      code = trimmed.toUpperCase();
+      const match = COUNTRY_CODES.find((c) => c.code === code);
+      fallback = match ? match.name : code;
+    } else {
+      fallback = trimmed;
+      const match = COUNTRY_CODES.find(
+        (c) => c.name.toLowerCase() === trimmed.toLowerCase() || c.code.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (match) {
+        code = match.code;
+        fallback = match.name;
+      }
+    }
+  } else if (countryInput && countryInput.code) {
+    code = countryInput.code.toUpperCase();
+    fallback = countryInput.name || countryInput.code;
+  }
+
+  const cleanLang = (lang || 'en').toLowerCase().split('-')[0];
+  if (cleanLang === 'en' || !cleanLang) {
+    return fallback;
+  }
+
+  try {
+    if (typeof Intl !== 'undefined' && Intl.DisplayNames && code && code.length === 2) {
+      if (!REGION_NAME_CACHE[cleanLang]) {
+        REGION_NAME_CACHE[cleanLang] = new Intl.DisplayNames([cleanLang], { type: 'region' });
+      }
+      const localized = REGION_NAME_CACHE[cleanLang].of(code);
+      if (localized) return localized;
+    }
+  } catch {
+    // fallback
+  }
+
+  return fallback;
+}
+
+
 export const COUNTRY_CODES: CountryCodeItem[] = [
   // Top / Popular regions
   { name: 'Uganda', code: 'UG', dialCode: '+256', flag: '🇺🇬', sampleFormat: '700 123 456', popular: true },

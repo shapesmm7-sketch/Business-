@@ -46,7 +46,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
-import { t } from '../utils/i18n';
+import { t, formatNumber } from '../utils/i18n';
 
 interface CreateInvoiceScreenProps {
   business: BusinessProfile;
@@ -130,8 +130,8 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
   const [shippingFee, setShippingFee] = useState<number>(0);
 
   // Invoice notes
-  const [notes, setNotes] = useState<string>(
-    'Thank you for your business. Payment is due within the terms specified.'
+  const [notes, setNotes] = useState<string>(() =>
+    t('thank_you_business', business?.language)
   );
 
   // Bank & Payment Instructions
@@ -226,7 +226,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       setDiscountValue(duplicateFromInvoice.discount || 0);
       setTaxRate(duplicateFromInvoice.taxRate ?? (settings.defaultTaxRate || 0));
       setShippingFee(duplicateFromInvoice.shippingFee || 0);
-      setNotes(duplicateFromInvoice.notes || 'Thank you for your business.');
+      setNotes(duplicateFromInvoice.notes || t('thank_you_business', business?.language));
       setBankDetails(duplicateFromInvoice.bankDetails || defaultBankText);
       setPaymentStatus(duplicateFromInvoice.paymentStatus || 'unpaid');
       setAmountPaidValue(duplicateFromInvoice.amountPaid ?? 0);
@@ -636,11 +636,11 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 {editingInvoice ? t('edit_invoice', business?.language) : t('new_invoice', business?.language)}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                INVOICE
+                {t('new_invoice', business?.language).toUpperCase()}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Professional client billing, due dates & tax calculation
+              {t('professional_billing_desc', business?.language)}
             </p>
           </div>
         </div>
@@ -692,7 +692,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              P.O. / Reference Number (Optional)
+              {t('po_reference_optional', business?.language)}
             </label>
             <input
               type="text"
@@ -767,6 +767,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               label={t('customer_phone', business?.language)}
               value={customerPhone}
               onChange={(val) => setCustomerPhone(val)}
+              language={business?.language}
               placeholder="700 000 000"
             />
           </div>
@@ -847,7 +848,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               <span>{t('inventory_and_stock', business?.language)}</span>
             </button>
             <span className="text-xs font-mono font-bold text-slate-400 hidden sm:inline">
-              Step 3 of 4
+              {t('step_3_of_4', business?.language)}
             </span>
           </div>
         </div>
@@ -860,7 +861,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
             >
               <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-700/60">
                 <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px]">
-                  Item #{index + 1}
+                  {t('item_no', business?.language)} #{formatNumber(index + 1, business?.language)}
                 </span>
                 <button
                   type="button"
@@ -981,10 +982,10 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <CreditCard className="w-4 h-4" />
-            <span>Taxes, Payment & Settlement</span>
+            <span>{t('taxes_payment_settlement', business?.language)}</span>
           </div>
           <span className="text-xs font-mono font-bold text-slate-400">
-            Step 4 of 4
+            {t('step_4_of_4', business?.language)}
           </span>
         </div>
 
@@ -992,9 +993,9 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         <div className="pb-3 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <span>Payment Status</span>
+              <span>{t('payment_status_label', business?.language)}</span>
               <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">
-                (Select settlement status)
+                {t('select_settlement_status', business?.language)}
               </span>
             </label>
             <span
@@ -1006,7 +1007,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                   : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
               }`}
             >
-              {paymentStatus}
+              {paymentStatus === 'paid' ? t('paid', business?.language) : paymentStatus === 'partial' ? t('partial', business?.language) : t('unpaid', business?.language)}
             </span>
           </div>
 
@@ -1033,7 +1034,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                       : 'text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  Unpaid
+                  {t('unpaid', business?.language)}
                 </span>
                 <Clock
                   className={`w-4 h-4 ${
@@ -1044,7 +1045,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 />
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                Payment pending
+                {t('payment_pending', business?.language)}
               </p>
             </button>
 
@@ -1072,7 +1073,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                       : 'text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  Partial
+                  {t('partial', business?.language)}
                 </span>
                 <Percent
                   className={`w-4 h-4 ${
@@ -1083,7 +1084,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 />
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                Deposit / Part paid
+                {t('deposit_part_paid', business?.language)}
               </p>
             </button>
 
@@ -1109,7 +1110,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                       : 'text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  Paid
+                  {t('paid', business?.language)}
                 </span>
                 <CheckCircle2
                   className={`w-4 h-4 ${
@@ -1120,7 +1121,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 />
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                Settled upfront
+                {t('settled_upfront', business?.language)}
               </p>
             </button>
           </div>
@@ -1137,10 +1138,10 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                   className="text-xs font-bold flex items-center gap-1.5 text-slate-800 dark:text-slate-200"
                 >
                   <Clock className="w-4 h-4 text-rose-500 shrink-0" />
-                  <span>Total Amount to be Paid ({currency}):</span>
+                  <span>{t('total_to_be_paid', business?.language)} ({currency}):</span>
                 </label>
                 <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-900">
-                  Full Balance Unpaid
+                  {t('full_balance_unpaid', business?.language)}
                 </span>
               </div>
 
@@ -1167,7 +1168,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                   className="text-xs font-bold flex items-center gap-1.5 text-amber-900 dark:text-amber-200"
                 >
                   <Percent className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Partially Paid Amount / Deposit ({currency}):</span>
+                  <span>{t('partially_paid_amount', business?.language)} ({currency}):</span>
                 </label>
 
                 {/* Quick Helper Preset Buttons */}
@@ -1234,7 +1235,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                   className="text-xs font-bold flex items-center gap-1.5 text-emerald-900 dark:text-emerald-200"
                 >
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Amount Paid ({currency}):</span>
+                  <span>{t('amount_paid', business?.language)} ({currency}):</span>
                 </label>
 
                 <div className="flex items-center gap-1.5">
@@ -1243,7 +1244,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                     onClick={() => setAmountPaidValue(grandTotal)}
                     className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-200 transition"
                   >
-                    100% Full Total
+                    {t('full_total', business?.language)}
                   </button>
                 </div>
               </div>
@@ -1280,7 +1281,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           {/* Discount */}
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Discount
+              {t('discount_label', business?.language)}
             </label>
             <div className="flex gap-1.5">
               <input
@@ -1313,7 +1314,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           {/* Tax / VAT */}
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Tax / VAT Rate (%)
+              {t('tax_vat_rate', business?.language)}
             </label>
             <div className="relative">
               <Percent className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
@@ -1332,7 +1333,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           {/* Shipping / Delivery */}
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              Shipping / Extra Fee ({currency})
+              {t('shipping_extra_fee', business?.language)} ({currency})
             </label>
             <input
               type="number"
@@ -1355,13 +1356,13 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         {/* Bank & Payment Instructions */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-            Bank Details / Payment Instructions on Invoice
+            {t('bank_payment_instructions', business?.language)}
           </label>
           <textarea
             rows={2}
             value={bankDetails}
             onChange={(e) => setBankDetails(e.target.value)}
-            placeholder="e.g. Bank: Stanbic Bank, A/C: 9030012345678 (Quick Mart Ltd) | MoMo Merchant: *165*3*123456#"
+            placeholder={t('bank_instructions_placeholder', business?.language)}
             className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
           />
         </div>
@@ -1369,7 +1370,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         {/* Invoice Notes / Terms */}
         <div>
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-            Notes & Terms
+            {t('notes_terms', business?.language)}
           </label>
           <textarea
             rows={2}
@@ -1383,34 +1384,34 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         {/* Financial Summary Card */}
         <div className="p-4 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-900/60 space-y-2">
           <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-            <span>Subtotal:</span>
+            <span>{t('subtotal', business?.language)}:</span>
             <span className="font-mono font-bold">{formatCurrency(subtotal, currency)}</span>
           </div>
 
           {discountAmount > 0 && (
             <div className="flex justify-between text-xs text-emerald-600 dark:text-emerald-400">
-              <span>Discount ({discountType === 'percentage' ? `${discountValue}%` : 'Fixed'}):</span>
+              <span>{t('discount', business?.language)} ({discountType === 'percentage' ? `${formatNumber(discountValue, business?.language)}%` : 'Fixed'}):</span>
               <span className="font-mono font-bold">-{formatCurrency(discountAmount, currency)}</span>
             </div>
           )}
 
           {calculatedTaxAmount > 0 && (
             <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-              <span>Tax / VAT ({taxRate}%):</span>
+              <span>{t('tax_vat', business?.language)} ({formatNumber(taxRate, business?.language)}%):</span>
               <span className="font-mono font-bold">+{formatCurrency(calculatedTaxAmount, currency)}</span>
             </div>
           )}
 
           {shippingAmount > 0 && (
             <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
-              <span>Shipping / Delivery:</span>
+              <span>{t('shipping_extra_fee', business?.language)}:</span>
               <span className="font-mono font-bold">+{formatCurrency(shippingAmount, currency)}</span>
             </div>
           )}
 
           <div className="pt-2 border-t border-indigo-200/60 dark:border-indigo-900/60 flex justify-between items-center">
             <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-              Total Invoice:
+              {t('total_invoice_amount', business?.language)}
             </span>
             <span className="text-base font-black text-indigo-700 dark:text-indigo-300 font-mono">
               {formatCurrency(grandTotal, currency)}
@@ -1420,14 +1421,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           {/* Payment Status Breakdown */}
           {paymentStatus !== 'unpaid' && (
             <div className="flex justify-between text-xs text-emerald-700 dark:text-emerald-300 pt-1 border-t border-indigo-100 dark:border-indigo-900/40 font-medium">
-              <span>Amount Paid ({paymentStatus}):</span>
+              <span>{t('amount_paid', business?.language)} ({paymentStatus === 'paid' ? t('paid', business?.language) : paymentStatus === 'partial' ? t('partial', business?.language) : t('unpaid', business?.language)}):</span>
               <span className="font-mono font-bold">{formatCurrency(effectivePaid, currency)}</span>
             </div>
           )}
 
           {remainingDue > 0 && (
             <div className="flex justify-between text-xs font-bold text-rose-600 dark:text-rose-400 pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
-              <span>Balance Due to Pay:</span>
+              <span>{t('balance_due_to_pay', business?.language)}</span>
               <span className="font-mono">{formatCurrency(remainingDue, currency)}</span>
             </div>
           )}
@@ -1458,7 +1459,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Save Invoice Draft"
             >
               <Save className="w-4 h-4 shrink-0" />
-              <span>Save Invoice</span>
+              <span>{t('save_invoice', business?.language)}</span>
             </button>
           </div>
 
@@ -1474,7 +1475,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Download Invoice PDF"
             >
               <Download className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
-              <span className="whitespace-nowrap">PDF</span>
+              <span className="whitespace-nowrap">{t('download_pdf', business?.language)}</span>
             </button>
 
             {/* Quick Save Photo */}
@@ -1487,7 +1488,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Save Invoice Photo (PNG)"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="whitespace-nowrap">Photo</span>
+              <span className="whitespace-nowrap">{t('photo', business?.language)}</span>
             </button>
 
             {/* Quick Share via WhatsApp */}
@@ -1500,7 +1501,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Share Invoice"
             >
               <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">Share</span>
+              <span className="whitespace-nowrap">{t('share', business?.language)}</span>
             </button>
 
             {/* Save & Preview */}
@@ -1513,7 +1514,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Preview Invoice"
             >
               <Eye className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">Preview</span>
+              <span className="whitespace-nowrap">{t('preview', business?.language)}</span>
             </button>
           </div>
         </div>

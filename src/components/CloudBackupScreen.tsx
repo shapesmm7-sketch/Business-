@@ -19,11 +19,14 @@ import {
   XCircle,
   Eye,
   EyeOff,
+  HardDrive,
+  AlertTriangle,
 } from 'lucide-react';
 import { CloudflareConfig } from '../types';
-import { CloudflareService } from '../services/cloudflareService';
+import { CloudflareService, StorageQuotaInfo } from '../services/cloudflareService';
 import { StorageService } from '../services/storage';
 import { CloudflareFilesModal } from './CloudflareFilesModal';
+import { t } from '../utils/i18n';
 
 interface CloudBackupScreenProps {
   onBack: () => void;
@@ -52,6 +55,9 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const [secretAccessKeyInput, setSecretAccessKeyInput] = useState(cfConfig.secretAccessKey || '');
   const [publicDomainInput, setPublicDomainInput] = useState(cfConfig.publicDomainUrl || '');
 
+  const [quota, setQuota] = useState<StorageQuotaInfo | null>(null);
+  const currentLang = StorageService.getProfile()?.language || 'en';
+
   const [healthStatus, setHealthStatus] = useState<{
     loading: boolean;
     checked: boolean;
@@ -70,7 +76,10 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const checkLiveHealth = async () => {
     setHealthStatus((prev) => ({ ...prev, loading: true }));
     try {
-      const res = await CloudflareService.testConnection();
+      const [res, quotaInfo] = await Promise.all([
+        CloudflareService.testConnection(),
+        CloudflareService.getStorageQuota(),
+      ]);
       setHealthStatus({
         loading: false,
         checked: true,
@@ -79,6 +88,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         r2Bound: res.r2Bound,
         message: res.message,
       });
+      setQuota(quotaInfo);
       setCfConfig(CloudflareService.getConfig());
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -276,6 +286,52 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         </div>
       </div>
 
+      {/* 200 MB Cloud Storage Quota Card */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-orange-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+              {t('storage_quota', currentLang) || 'Cloud Storage Quota (200 MB)'}
+            </h3>
+          </div>
+          <span className={`text-xs font-mono font-bold ${quota?.isExceeded ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500 dark:text-slate-400'}`}>
+            {quota ? `${quota.usedMB} MB / 200 MB (${quota.percent}%)` : 'Calculating...'}
+          </span>
+        </div>
+
+        <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 ${
+              quota?.isExceeded
+                ? 'bg-rose-500'
+                : (quota?.percent || 0) > 85
+                ? 'bg-amber-500'
+                : 'bg-emerald-500'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(2, quota?.percent || 0))}%` }}
+          />
+        </div>
+
+        {quota?.isExceeded ? (
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-black text-rose-900 dark:text-rose-100">
+                {t('storage_limit_reached', currentLang) || 'Storage Limit Reached (200 MB)'}
+              </div>
+              <div className="font-semibold text-rose-800 dark:text-rose-200 leading-relaxed">
+                {t('storage_limit_warning', currentLang) || 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {t('storage_limit_full_notice', currentLang) || 'Each account has a limit of 200 MB. If your account reaches 200 MB, delete unneeded files to save new files.'}
+          </p>
+        )}
+      </div>
+
       {/* Cloud Operations Card */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
@@ -334,7 +390,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             <FolderOpen className="w-5 h-5 text-orange-500" />
             <span>Browse Cloud Files</span>
             <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">
-              View saved PDFs & docs
+              {t('view_saved_pdfs')}
             </span>
           </button>
         </div>

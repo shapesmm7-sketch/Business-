@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { saveFile, shareContent } from '../services/fileSaver';
-import { t } from '../utils/i18n';
+import { t, formatNumber } from '../utils/i18n';
 import {
   QrCode,
   ArrowLeft,
@@ -1428,7 +1428,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 title="Save and sync all QR code files, stand PDFs, photos, and items"
               >
                 <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Cloud Sync</span>
+                <span>{t('cloud_sync', business?.language)}</span>
               </button>
 
               {isSaved && (
@@ -1689,7 +1689,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="truncate">{t('items', business?.language)} ({activePage.menuItems.length})</span>
+          <span className="truncate">{t('items', business?.language)} ({formatNumber(activePage.menuItems.length, business?.language)})</span>
         </button>
 
         <button
@@ -1701,7 +1701,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           }`}
         >
           <Camera className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-          <span className="truncate">{t('photos', business?.language)} ({activePage.photos.length}/20)</span>
+          <span className="truncate">{t('photos', business?.language)} ({formatNumber(activePage.photos.length, business?.language)}/{formatNumber(20, business?.language)})</span>
         </button>
       </div>
 
@@ -2309,7 +2309,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 {t('digital_items_title', business?.language) || 'Digital Items'}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {activePage.menuItems.length} {t('items', business?.language) || 'items'}
+                {formatNumber(activePage.menuItems.length, business?.language)} {t('items', business?.language) || 'items'}
               </p>
             </div>
 
@@ -2584,11 +2584,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   {t('photo_gallery_title', business?.language) || 'Business Photos'}
                 </h2>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                  {activePage.photos.length}/20 Max
+                  {formatNumber(activePage.photos.length, business?.language)}/{formatNumber(20, business?.language)} Max
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {activePage.photos.length} / 20 {t('photos', business?.language) || 'photos'}
+                {formatNumber(activePage.photos.length, business?.language)} / {formatNumber(20, business?.language)} {t('photos', business?.language) || 'photos'}
               </p>
             </div>
 
@@ -3682,7 +3682,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 flex items-center gap-1 transition"
                 >
                   {quickQrCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{quickQrCopied ? 'Copied' : 'Copy Link'}</span>
+                  <span>{quickQrCopied ? (t('copied_badge', business?.language) || 'Copied') : (t('copy_link', business?.language) || 'Copy Link')}</span>
                 </button>
               </div>
 
@@ -3694,7 +3694,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
               >
                 <Printer className="w-4 h-4 shrink-0" />
-                <span>{quickQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+                <span>{quickQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
             </div>
 
@@ -3706,7 +3706,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>PNG</span>
+                <span>{t('png_format', business?.language) || 'PNG'}</span>
               </button>
 
               <button
@@ -3715,7 +3715,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Share</span>
+                <span>{t('share', business?.language) || 'Share'}</span>
               </button>
 
               <button
@@ -3730,7 +3730,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20 transition active:scale-98"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Test View</span>
+                <span>{t('test_view', business?.language) || 'Test View'}</span>
               </button>
             </div>
           </div>
@@ -3887,7 +3887,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 flex items-center gap-1 transition"
                 >
                   {itemQrCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{itemQrCopied ? 'Copied' : 'Copy Link'}</span>
+                  <span>{itemQrCopied ? (t('copied_badge', business?.language) || 'Copied') : (t('copy_link', business?.language) || 'Copy Link')}</span>
                 </button>
               </div>
 
@@ -3899,7 +3899,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
               >
                 <Printer className="w-4 h-4 shrink-0" />
-                <span>{itemQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+                <span>{itemQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
             </div>
 
@@ -3911,7 +3911,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>PNG</span>
+                <span>{t('png_format', business?.language) || 'PNG'}</span>
               </button>
 
               <button
@@ -3920,7 +3920,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Share</span>
+                <span>{t('share', business?.language) || 'Share'}</span>
               </button>
 
               <button
@@ -3933,7 +3933,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20 transition active:scale-98"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Test View</span>
+                <span>{t('test_view', business?.language) || 'Test View'}</span>
               </button>
             </div>
           </div>
@@ -4072,7 +4072,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 flex items-center gap-1 transition"
                 >
                   {photoQrCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                  <span>{photoQrCopied ? 'Copied' : 'Copy Link'}</span>
+                  <span>{photoQrCopied ? (t('copied_badge', business?.language) || 'Copied') : (t('copy_link', business?.language) || 'Copy Link')}</span>
                 </button>
               </div>
 
@@ -4084,7 +4084,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="w-full justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition active:scale-98 cursor-pointer"
               >
                 <Printer className="w-4 h-4 shrink-0" />
-                <span>{photoQrPdfLoading ? 'Generating PDF...' : 'Print Table & Wall QR Code Poster (PDF)'}</span>
+                <span>{photoQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
             </div>
 
@@ -4096,7 +4096,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>PNG</span>
+                <span>{t('png_format', business?.language) || 'PNG'}</span>
               </button>
 
               <button
@@ -4105,7 +4105,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs transition active:scale-98"
               >
                 <Share2 className="w-3.5 h-3.5" />
-                <span>Share</span>
+                <span>{t('share', business?.language) || 'Share'}</span>
               </button>
 
               <button
@@ -4118,7 +4118,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm shadow-emerald-600/20 transition active:scale-98"
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Test View</span>
+                <span>{t('test_view', business?.language) || 'Test View'}</span>
               </button>
             </div>
           </div>

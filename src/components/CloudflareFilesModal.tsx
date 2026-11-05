@@ -14,9 +14,12 @@ import {
   HardDrive,
   FileSpreadsheet,
   Image as ImageIcon,
+  AlertTriangle,
 } from 'lucide-react';
-import { CloudflareService } from '../services/cloudflareService';
+import { CloudflareService, StorageQuotaInfo } from '../services/cloudflareService';
+import { StorageService } from '../services/storage';
 import { CloudflareFileRecord } from '../types';
+import { t } from '../utils/i18n';
 
 interface CloudflareFilesModalProps {
   isOpen: boolean;
@@ -25,11 +28,13 @@ interface CloudflareFilesModalProps {
 
 export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOpen, onClose }) => {
   const [files, setFiles] = useState<CloudflareFileRecord[]>([]);
+  const [quota, setQuota] = useState<StorageQuotaInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const currentLang = StorageService.getProfile()?.language || 'en';
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -39,8 +44,12 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
   const loadFiles = async () => {
     setIsLoading(true);
     try {
-      const records = await CloudflareService.listFiles();
+      const [records, quotaInfo] = await Promise.all([
+        CloudflareService.listFiles(),
+        CloudflareService.getStorageQuota(),
+      ]);
       setFiles(records);
+      setQuota(quotaInfo);
     } catch {
       showToast('Failed to load files from cloud storage');
     } finally {
@@ -72,6 +81,8 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       if (success) {
         setFiles((prev) => prev.filter((f) => f.key !== key));
         showToast('File deleted from cloud storage');
+        const updatedQuota = await CloudflareService.getStorageQuota();
+        setQuota(updatedQuota);
       } else {
         showToast('Failed to delete file');
       }
@@ -83,6 +94,14 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
   const handleDirectUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (quota?.isExceeded) {
+      showToast(
+        t('storage_limit_warning', currentLang) ||
+        'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
+      );
+      return;
+    }
 
     setUploading(true);
     try {
@@ -98,7 +117,11 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         showToast(`"${file.name}" uploaded to cloud storage!`);
         await loadFiles();
       } else {
-        showToast(`Upload failed: ${res.message}`);
+        showToast(res.message);
+        if (res.storageLimitExceeded) {
+          const quotaInfo = await CloudflareService.getStorageQuota();
+          setQuota(quotaInfo);
+        }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -178,6 +201,46 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
           </div>
         </div>
 
+        {/* Storage Quota Usage Meter (200 MB Limit) */}
+        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
+              <HardDrive className="w-3.5 h-3.5 text-orange-500" />
+              <span>{t('storage_quota', currentLang) || 'Cloud Storage Quota'}</span>
+            </span>
+            <span className={`font-mono font-bold text-[11px] ${quota?.isExceeded ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              {quota ? `${quota.usedMB} MB / 200 MB (${quota.percent}%)` : 'Calculating...'}
+            </span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${
+                quota?.isExceeded
+                  ? 'bg-rose-500'
+                  : (quota?.percent || 0) > 85
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(2, quota?.percent || 0))}%` }}
+            />
+          </div>
+        </div>
+
+        {/* 200 MB Exceeded Warning Banner */}
+        {quota?.isExceeded && (
+          <div className="mx-4 mt-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-900 flex items-start gap-3 text-rose-800 dark:text-rose-200 animate-fadeIn">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <div className="font-black text-rose-900 dark:text-rose-100">
+                {t('storage_limit_reached', currentLang) || 'Storage Limit Reached (200 MB)'}
+              </div>
+              <div className="font-semibold text-rose-800 dark:text-rose-200 leading-relaxed">
+                {t('storage_limit_warning', currentLang) || 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Bar (Upload & Filter) */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -193,9 +256,23 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
           />
           <button
             type="button"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50"
+            disabled={uploading || Boolean(quota?.isExceeded)}
+            onClick={() => {
+              if (quota?.isExceeded) {
+                showToast(
+                  t('storage_limit_warning', currentLang) ||
+                  'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
+                );
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
+            className={`px-3 py-1.5 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer disabled:opacity-50 ${
+              quota?.isExceeded
+                ? 'bg-slate-400 dark:bg-slate-600 cursor-not-allowed'
+                : 'bg-orange-600 hover:bg-orange-500'
+            }`}
+            title={quota?.isExceeded ? 'You have used up your 200mbs so delete some files that are nolonger needed to save new files' : undefined}
           >
             <Upload className="w-3.5 h-3.5" />
             <span>{uploading ? 'Uploading...' : 'Upload File'}</span>
