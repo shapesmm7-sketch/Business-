@@ -301,7 +301,7 @@ export const PdfGenerator = {
   },
 
   /**
-   * Appends Centered QR Code at the bottom of the receipt
+   * Appends clean footer spacing and branding at the bottom of the receipt without any QR code
    */
   async appendBottomCenteredQrCode(
     doc: jsPDF,
@@ -310,17 +310,12 @@ export const PdfGenerator = {
     pageWidth: number,
     size: number = 22
   ): Promise<number> {
-    const qrX = (pageWidth - size) / 2;
-    const qrY = startY + 2;
-    const endY = await this.appendQrCodeToPdf(doc, receipt, qrX, qrY, size, true);
-
-    // Watermark at bottom of receipt
+    // No QR code is embedded on receipts/invoices
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(size < 20 ? 6.5 : 8);
+    doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, endY + 4.5, { align: 'center' });
-
-    return endY + 7.5;
+    doc.text('Powered by Brivu', pageWidth / 2, startY + 6, { align: 'center' });
+    return startY + 10;
   },
 
   async appendQrCodeToPdf(
@@ -331,24 +326,7 @@ export const PdfGenerator = {
     size: number = 18,
     withCard: boolean = true
   ): Promise<number> {
-    try {
-      const qrDataUrl = await generateReceiptQrDataUrl(receipt, 240);
-      if (qrDataUrl) {
-        if (withCard) {
-          // White border card behind QR code
-          doc.setFillColor(255, 255, 255);
-          doc.roundedRect(x - 1, y - 1, size + 2, size + 2, 1, 1, 'F');
-          doc.setDrawColor(226, 232, 240);
-          doc.roundedRect(x - 1, y - 1, size + 2, size + 2, 1, 1, 'S');
-        }
-
-        doc.addImage(qrDataUrl, 'PNG', x, y, size, size);
-
-        return y + size + 2;
-      }
-    } catch (e) {
-      console.warn('Could not append QR code to PDF:', e);
-    }
+    // Disabled: Receipts do not contain QR codes
     return y;
   },
 

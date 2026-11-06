@@ -379,42 +379,54 @@ export const StorageService = {
       const current = this.getProfile();
       let hasUpdates = false;
 
-      // Auto-upload logo to Cloudflare R2
+      // Auto-upload compressed logo to Cloudflare R2 (overwritten in place as logo.webp)
       if (profile.logo && profile.logo.startsWith('data:image/')) {
-        const mimeType = profile.logo.slice(5, profile.logo.indexOf(';')) || 'image/png';
-        const ext = mimeType.split('/')[1] || 'png';
-        CloudflareService.uploadFile({
-          data: profile.logo,
-          filename: `logo_${Date.now()}.${ext}`,
-          mimeType,
-          folder: 'photos',
-        }).then((res) => {
-          if (res.success && res.url) {
-            const p = this.getProfile();
-            p.logo = res.url;
-            writeToStorage(STORAGE_KEYS.PROFILE, p);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }
-        }).catch(() => {});
+        import('../utils/imageCompressor')
+          .then(({ compressLogo }) => compressLogo(profile.logo!))
+          .then((compressed) => {
+            return CloudflareService.uploadFile({
+              data: compressed.dataUri,
+              filename: 'logo.webp',
+              mimeType: compressed.mimeType,
+              folder: 'photos',
+            });
+          })
+          .then((res) => {
+            if (res.success && res.url) {
+              const p = this.getProfile();
+              p.logo = res.url;
+              writeToStorage(STORAGE_KEYS.PROFILE, p);
+              CloudflareService.syncAllToCloudflare().catch(() => {});
+            }
+          })
+          .catch((err) => {
+            console.warn('Logo compression/upload note:', err);
+          });
       }
 
-      // Auto-upload signature to Cloudflare R2
+      // Auto-upload compressed signature to Cloudflare R2 (overwritten in place as signature.webp)
       if (profile.signature && profile.signature.startsWith('data:image/')) {
-        const mimeType = profile.signature.slice(5, profile.signature.indexOf(';')) || 'image/png';
-        const ext = mimeType.split('/')[1] || 'png';
-        CloudflareService.uploadFile({
-          data: profile.signature,
-          filename: `signature_${Date.now()}.${ext}`,
-          mimeType,
-          folder: 'signatures',
-        }).then((res) => {
-          if (res.success && res.url) {
-            const p = this.getProfile();
-            p.signature = res.url;
-            writeToStorage(STORAGE_KEYS.PROFILE, p);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }
-        }).catch(() => {});
+        import('../utils/imageCompressor')
+          .then(({ compressSignature }) => compressSignature(profile.signature!))
+          .then((compressed) => {
+            return CloudflareService.uploadFile({
+              data: compressed.dataUri,
+              filename: 'signature.webp',
+              mimeType: compressed.mimeType,
+              folder: 'signatures',
+            });
+          })
+          .then((res) => {
+            if (res.success && res.url) {
+              const p = this.getProfile();
+              p.signature = res.url;
+              writeToStorage(STORAGE_KEYS.PROFILE, p);
+              CloudflareService.syncAllToCloudflare().catch(() => {});
+            }
+          })
+          .catch((err) => {
+            console.warn('Signature compression/upload note:', err);
+          });
       }
 
       CloudflareService.syncAllToCloudflare().catch(() => {});

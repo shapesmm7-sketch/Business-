@@ -1,249 +1,179 @@
 /**
- * Client-side image compression utility for mobile camera photos and gallery uploads.
- * Reduces 5MB-15MB phone camera photos down to ~15KB-30KB compact thumbnails
- * so they easily fit inside browser storage without exceeding quota.
+ * Client-side image compression and resizing utility for Brivu.
+ * Converts logos to max 512x512 and signatures to max 600x200 as WebP.
  */
 
-export interface CompressOptions {
+export interface ResizeOptions {
+  maxWidth?: number;
+  maxHeight?: number;
   maxDimension?: number;
   quality?: number;
   mimeType?: string;
-  maxBytes?: number; // Maximum target size in bytes (e.g., 500 * 1024 = 512,000 bytes for 500KB)
+  maxBytes?: number;
 }
 
-export function compressImageFile(
-  file: File | Blob,
-  options: CompressOptions = {}
-): Promise<string> {
-  const { maxDimension = 800, quality = 0.75, mimeType = 'image/jpeg', maxBytes = 500 * 1024 } = options;
+export async function compressImageToWebP(
+  dataUriOrBlob: string | Blob | ArrayBuffer,
+  options: ResizeOptions
+): Promise<{ dataUri: string; blob: Blob; mimeType: string }> {
+  let maxWidth = options.maxWidth || options.maxDimension || 1200;
+  let maxHeight = options.maxHeight || options.maxDimension || 1200;
+  const quality = options.quality ?? 0.85;
+  const mimeType = options.mimeType || 'image/webp';
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+    let srcUrl = '';
+    let isCreatedUrl = false;
 
-    reader.onerror = () => {
-      reject(new Error('Failed to read image file'));
-    };
-
-    reader.onload = (event) => {
-      const src = event.target?.result as string;
-      if (!src) {
-        reject(new Error('Empty image data'));
-        return;
-      }
-
-      compressDataUrl(src, { maxDimension, quality, mimeType, maxBytes })
-        .then(resolve)
-        .catch(reject);
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
-
-export function compressDataUrl(
-  dataUrl: string,
-  options: CompressOptions = {}
-): Promise<string> {
-  const { maxDimension = 800, quality = 0.75, mimeType = 'image/jpeg', maxBytes = 500 * 1024 } = options;
-
-  return new Promise((resolve) => {
-    // If not a data URL, return as is
-    if (!dataUrl.startsWith('data:image/')) {
-      resolve(dataUrl);
-      return;
+    if (typeof dataUriOrBlob === 'string') {
+      srcUrl = dataUriOrBlob;
+    } else if (dataUriOrBlob instanceof ArrayBuffer) {
+      srcUrl = URL.createObjectURL(new Blob([dataUriOrBlob]));
+      isCreatedUrl = true;
+    } else {
+      srcUrl = URL.createObjectURL(dataUriOrBlob);
+      isCreatedUrl = true;
     }
 
     const img = new Image();
-
-    img.onerror = () => {
-      // If error loading image, fallback to original
-      resolve(dataUrl);
-    };
+    img.crossOrigin = 'anonymous';
 
     img.onload = () => {
       try {
         let width = img.naturalWidth || img.width;
         let height = img.naturalHeight || img.height;
 
-        if (width <= 0 || height <= 0) {
-          resolve(dataUrl);
-          return;
-        }
-
-        // Calculate proportional scale
-        if (width > height) {
-          if (width > maxDimension) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          }
-        } else {
-          if (height > maxDimension) {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
+        // Calculate aspect-ratio preserved dimensions
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
         }
 
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
         const ctx = canvas.getContext('2d');
+
         if (!ctx) {
-          resolve(dataUrl);
+          if (isCreatedUrl) URL.revokeObjectURL(srcUrl);
+          reject(new Error('Canvas context could not be created'));
           return;
         }
 
-        // Fill background with white for JPEG transparency compatibility
-        if (mimeType === 'image/jpeg') {
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, width, height);
-        }
-
-        // Use high quality image smoothing
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-
         ctx.drawImage(img, 0, 0, width, height);
 
-        let currentQuality = quality;
-        let compressed = canvas.toDataURL(mimeType, currentQuality);
-
-        // Helper to calculate approximate byte size from data URL
-        const getByteSize = (str: string) => {
-          const base64Part = str.split(',')[1] || '';
-          return Math.round(base64Part.length * 0.75);
-        };
-
-        // Iteratively reduce quality and scale if image exceeds maxBytes (e.g. 500KB)
-        let attempts = 0;
-        while (maxBytes && getByteSize(compressed) > maxBytes && attempts < 5) {
-          attempts++;
-          currentQuality = Math.max(0.2, currentQuality - 0.12);
-
-          if (attempts >= 2) {
-            // Scale dimensions down
-            const scale = 0.82;
-            width = Math.max(120, Math.round(width * scale));
-            height = Math.max(120, Math.round(height * scale));
-            canvas.width = width;
-            canvas.height = height;
-
-            if (mimeType === 'image/jpeg') {
-              ctx.fillStyle = '#FFFFFF';
-              ctx.fillRect(0, 0, width, height);
-            }
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, width, height);
-          }
-
-          compressed = canvas.toDataURL(mimeType, currentQuality);
+        // Try WebP first
+        let outputDataUri = canvas.toDataURL(mimeType, quality);
+        let actualMime = mimeType;
+        if (!outputDataUri.startsWith('data:image/webp') && mimeType === 'image/webp') {
+          actualMime = 'image/png';
+          outputDataUri = canvas.toDataURL(actualMime);
         }
 
-        resolve(compressed);
+        canvas.toBlob(
+          (blob) => {
+            if (isCreatedUrl) URL.revokeObjectURL(srcUrl);
+            if (blob) {
+              resolve({ dataUri: outputDataUri, blob, mimeType: actualMime });
+            } else {
+              const byteString = atob(outputDataUri.split(',')[1]);
+              const ab = new ArrayBuffer(byteString.length);
+              const ia = new Uint8Array(ab);
+              for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+              }
+              resolve({
+                dataUri: outputDataUri,
+                blob: new Blob([ab], { type: actualMime }),
+                mimeType: actualMime,
+              });
+            }
+          },
+          actualMime,
+          quality
+        );
       } catch (err) {
-        console.warn('Image compression fallback:', err);
-        resolve(dataUrl);
+        if (isCreatedUrl) URL.revokeObjectURL(srcUrl);
+        reject(err);
       }
     };
 
-    img.src = dataUrl;
+    img.onerror = (err) => {
+      if (isCreatedUrl) URL.revokeObjectURL(srcUrl);
+      reject(err);
+    };
+
+    img.src = srcUrl;
   });
 }
 
+/**
+ * Compresses an image File or Blob and returns a base64 data URI string.
+ */
+export async function compressImageFile(
+  fileOrBlob: File | Blob,
+  options: ResizeOptions = {}
+): Promise<string> {
+  const res = await compressImageToWebP(fileOrBlob, options);
+  return res.dataUri;
+}
+
+/**
+ * Optimizes an image for R2 storage (converts to WebP, limits dimensions).
+ */
 export async function optimizeImageForR2(
-  data: Blob | ArrayBuffer | string,
-  folder = '',
-  filename = ''
+  data: string | Blob | ArrayBuffer,
+  folder: string,
+  filename: string
 ): Promise<{ data: string; mimeType: string; filename: string }> {
-  let dataUrl = '';
-  if (typeof data === 'string') {
-    dataUrl = data.startsWith('data:') ? data : `data:image/jpeg;base64,${data}`;
-  } else if (data instanceof ArrayBuffer) {
-    const blob = new Blob([data]);
-    dataUrl = await blobToDataUrl(blob);
-  } else if (data instanceof Blob) {
-    dataUrl = await blobToDataUrl(data);
-  } else {
-    return { data: typeof data === 'string' ? data : '', mimeType: 'application/octet-stream', filename };
+  const isLogo = folder === 'photos' && filename.toLowerCase().includes('logo');
+  const isSignature = folder === 'signatures' || filename.toLowerCase().includes('signature');
+
+  let maxWidth = 1200;
+  let maxHeight = 1200;
+  let targetFilename = filename;
+
+  if (isLogo) {
+    maxWidth = 512;
+    maxHeight = 512;
+    targetFilename = 'logo.webp';
+  } else if (isSignature) {
+    maxWidth = 600;
+    maxHeight = 200;
+    targetFilename = 'signature.webp';
   }
 
-  if (!dataUrl.startsWith('data:image/')) {
-    return { data: dataUrl, mimeType: 'application/octet-stream', filename };
-  }
-
-  const fLower = (folder || '').toLowerCase();
-  const nameLower = (filename || '').toLowerCase();
-
-  let maxBytes = 250 * 1024;
-  let targetQuality = 0.80;
-
-  if (
-    fLower.includes('logo') ||
-    fLower.includes('business') ||
-    fLower.includes('profile') ||
-    fLower.includes('signature') ||
-    nameLower.includes('logo') ||
-    nameLower.includes('signature') ||
-    nameLower.includes('favicon')
-  ) {
-    // Business logos (inside app): target 30–80 KB, maximum 100 KB
-    maxBytes = 100 * 1024;
-    targetQuality = 0.80;
-  } else if (
-    fLower.includes('inventory') ||
-    fLower.includes('product') ||
-    fLower.includes('sales') ||
-    fLower.includes('item') ||
-    fLower.includes('stock') ||
-    fLower.includes('expenses') ||
-    fLower.includes('debts') ||
-    fLower.includes('shopping') ||
-    fLower.includes('customer') ||
-    fLower.includes('agent') ||
-    fLower.includes('worker')
-  ) {
-    // Product photos (inside app): target 100–150 KB, maximum 250 KB
-    maxBytes = 250 * 1024;
-    targetQuality = 0.78;
-  } else {
-    // QR menu photos (web): target 150–200 KB, maximum 250 KB
-    maxBytes = 250 * 1024;
-    targetQuality = 0.82;
-  }
-
-  const compressedDataUrl = await compressDataUrl(dataUrl, {
-    maxDimension: 1200,
-    quality: targetQuality,
+  const res = await compressImageToWebP(data, {
+    maxWidth,
+    maxHeight,
+    quality: 0.85,
     mimeType: 'image/webp',
-    maxBytes,
   });
 
-  let newFilename = filename;
-  if (newFilename) {
-    const lastDot = newFilename.lastIndexOf('.');
-    if (lastDot !== -1) {
-      newFilename = newFilename.substring(0, lastDot) + '.webp';
-    } else {
-      newFilename = `${newFilename}.webp`;
-    }
-  } else {
-    newFilename = `image_${Date.now()}.webp`;
-  }
-
   return {
-    data: compressedDataUrl,
-    mimeType: 'image/webp',
-    filename: newFilename,
+    data: res.dataUri,
+    mimeType: res.mimeType,
+    filename: targetFilename,
   };
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
+export async function compressLogo(dataUriOrBlob: string | Blob) {
+  return compressImageToWebP(dataUriOrBlob, {
+    maxWidth: 512,
+    maxHeight: 512,
+    quality: 0.85,
+    mimeType: 'image/webp',
   });
 }
 
+export async function compressSignature(dataUriOrBlob: string | Blob) {
+  return compressImageToWebP(dataUriOrBlob, {
+    maxWidth: 600,
+    maxHeight: 200,
+    quality: 0.85,
+    mimeType: 'image/webp',
+  });
+}
