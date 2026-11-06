@@ -409,45 +409,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                 </div>
               )}
 
-              {scanResult.customerPage && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>Page Title:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {scanResult.customerPage.title}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>Target Section:</span>
-                    <span className="font-semibold text-teal-600 dark:text-teal-400 uppercase">
-                      {scanResult.targetTab || 'Full Showcase Hub'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>Showcase Items:</span>
-                    <span>{scanResult.customerPage.menuItems?.length || 0} items</span>
-                  </div>
 
-                  {onOpenCustomerPage && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenCustomerPage(
-                          scanResult.customerPage!,
-                          scanResult.targetTab,
-                          scanResult.targetItemId,
-                          scanResult.targetPhotoId
-                        );
-                      }}
-                      className="w-full mt-3 py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Open Customer Page</span>
-                    </button>
-                  )}
-                </div>
-              )}
 
               {scanResult.product && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2 text-xs">

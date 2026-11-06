@@ -353,17 +353,23 @@ export const PdfGenerator = {
         // Build offscreen high-resolution container
         tempContainer = document.createElement('div');
         tempContainer.style.position = 'fixed';
-        tempContainer.style.left = '-9999px';
+        tempContainer.style.left = '0';
         tempContainer.style.top = '0';
         tempContainer.style.width = '680px';
         tempContainer.style.backgroundColor = '#ffffff';
-        tempContainer.style.zIndex = '-9999';
-        tempContainer.style.opacity = '1';
+        tempContainer.style.zIndex = '-1';
+        tempContainer.style.opacity = '0.01';
+        tempContainer.style.pointerEvents = 'none';
         document.body.appendChild(tempContainer);
 
         const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
         const isInvoice = receipt.documentType === 'invoice';
         const currency = resolvedBiz.currency || receipt.currency || 'UGX';
+
+        const [logoDataUrl, sigDataUrl] = await Promise.all([
+          loadImgDataUrl(resolvedBiz.logo),
+          loadImgDataUrl(resolvedBiz.signature),
+        ]);
 
         const renderData = {
           storeName: resolvedBiz.name || '',
@@ -372,8 +378,8 @@ export const PdfGenerator = {
           email: resolvedBiz.email || '',
           address: resolvedBiz.address || '',
           taxNumber: resolvedBiz.taxNumber || '',
-          logo: resolvedBiz.logo,
-          signature: resolvedBiz.signature,
+          logo: logoDataUrl || resolvedBiz.logo,
+          signature: sigDataUrl || resolvedBiz.signature,
           customFooter: resolvedBiz.customFooter || '',
           receiptNumber: receipt.receiptNumber,
           createdAt: receipt.createdAt,
@@ -419,14 +425,14 @@ export const PdfGenerator = {
         root.render(React.createElement(ReceiptLayoutRenderer, { data: renderData }));
 
         // Allow layout and images to paint
-        await new Promise((r) => setTimeout(r, 140));
+        await new Promise((r) => setTimeout(r, 220));
         targetElement = (tempContainer.firstElementChild as HTMLElement) || tempContainer;
       }
 
       if (!targetElement) return null;
 
       return await html2canvas(targetElement, {
-        scale: 3.0,
+        scale: 2.0,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
@@ -494,15 +500,123 @@ export const PdfGenerator = {
    */
   async downloadReceiptPhoto(receipt: Receipt): Promise<SaveFileResult> {
     await ensureStoragePermission();
-    const canvas = await this.captureReceiptElementAsCanvas(receipt);
-    if (!canvas) {
-      throw new Error('Could not generate receipt photo');
-    }
+    let canvas = await this.captureReceiptElementAsCanvas(receipt);
     const isInvoice = receipt.documentType === 'invoice';
     const prefix = isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.png`;
-    const dataUrl = canvas.toDataURL('image/png', 1.0);
+
+    if (!canvas) {
+      // 2D Canvas Fallback Renderer for mobile WebView / restricted environments
+      const fbCanvas = document.createElement('canvas');
+      const width = 640;
+      const itemsCount = receipt.items?.length || 0;
+      const height = Math.max(500, 320 + itemsCount * 36 + 180);
+      fbCanvas.width = width;
+      fbCanvas.height = height;
+      const ctx = fbCanvas.getContext('2d');
+      if (ctx) {
+        const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
+        const curr = resolvedBiz.currency || receipt.currency || 'UGX';
+        // Background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        // Header card
+        ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
+        ctx.fillRect(0, 0, width, 100);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+        ctx.fillText(resolvedBiz.name || 'BRIVU BUSINESS', 24, 45);
+        ctx.font = '14px system-ui, -apple-system, sans-serif';
+        ctx.fillText(`${prefix.toUpperCase()} #${receipt.receiptNumber}`, 24, 75);
+        ctx.textAlign = 'right';
+        ctx.fillText(receipt.createdAt ? new Date(receipt.createdAt).toLocaleDateString() : new Date().toLocaleDateString(), width - 24, 75);
+        ctx.textAlign = 'left';
+
+        // Customer details
+        let y = 135;
+        ctx.fillStyle = '#475569';
+        ctx.font = '13px system-ui, -apple-system, sans-serif';
+        ctx.fillText(`Customer: ${receipt.customerName || 'Walk-in'}`, 24, y);
+        if (receipt.customerPhone) ctx.fillText(`Phone: ${receipt.customerPhone}`, 300, y);
+        y += 30;
+
+        // Divider
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(24, y);
+        ctx.lineTo(width - 24, y);
+        ctx.stroke();
+        y += 24;
+
+        // Table Header
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+        ctx.fillText('ITEM DESCRIPTION', 24, y);
+        ctx.fillText('QTY', 360, y);
+        ctx.textAlign = 'right';
+        ctx.fillText('PRICE', width - 140, y);
+        ctx.fillText('TOTAL', width - 24, y);
+        ctx.textAlign = 'left';
+        y += 18;
+
+        // Line items
+        ctx.font = '13px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#0f172a';
+        (receipt.items || []).forEach((item) => {
+          ctx.fillText(item.name || 'Item', 24, y);
+          ctx.fillText(String(item.quantity || 1), 360, y);
+          ctx.textAlign = 'right';
+          const lineTotal = (item as any).total ?? ((item.quantity || 1) * (item.unitPrice || 0));
+          ctx.fillText(lineTotal.toLocaleString(), width - 24, y);
+          ctx.textAlign = 'left';
+          y += 32;
+        });
+
+        // Totals
+        y += 10;
+        ctx.beginPath();
+        ctx.moveTo(24, y);
+        ctx.lineTo(width - 24, y);
+        ctx.stroke();
+        y += 30;
+
+        ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
+        ctx.fillText('Total Amount:', 24, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(`${curr} ${(receipt.total || 0).toLocaleString()}`, width - 24, y);
+        ctx.textAlign = 'left';
+
+        // Footer
+        ctx.font = '11px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.textAlign = 'center';
+        ctx.fillText('Powered by Brivu app', width / 2, height - 20);
+
+        canvas = fbCanvas;
+      }
+    }
+
+    if (!canvas) {
+      throw new Error('Could not generate receipt photo');
+    }
+
+    let dataUrl = '';
+    try {
+      dataUrl = canvas.toDataURL('image/png', 1.0);
+    } catch (_) {
+      try {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      } catch (err) {
+        console.warn('Canvas toDataURL security note, using fallback:', err);
+      }
+    }
+
+    if (!dataUrl) {
+      throw new Error('Could not format photo Data URL from canvas');
+    }
 
     return await saveFile({
       data: dataUrl,

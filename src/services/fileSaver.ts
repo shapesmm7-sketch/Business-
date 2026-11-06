@@ -32,20 +32,34 @@ const MediaStore = registerPlugin<MediaStorePluginInterface>('MediaStore');
 export async function ensureStoragePermission(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return true;
   try {
+    let mediaGranted = false;
     if (MediaStore.checkStoragePermission) {
-      const status = await MediaStore.checkStoragePermission();
-      if (status && status.granted) return true;
-      if (MediaStore.requestStoragePermission) {
-        const req = await MediaStore.requestStoragePermission();
-        return !!req?.granted;
+      try {
+        const status = await MediaStore.checkStoragePermission();
+        if (status && status.granted) {
+          mediaGranted = true;
+        } else if (MediaStore.requestStoragePermission) {
+          const req = await MediaStore.requestStoragePermission();
+          mediaGranted = !!req?.granted;
+        }
+      } catch (err) {
+        console.warn('MediaStore permission check note:', err);
       }
     }
-    const permResult = await Filesystem.checkPermissions();
-    if (permResult.publicStorage !== 'granted') {
-      const req = await Filesystem.requestPermissions();
-      return req.publicStorage === 'granted';
+
+    try {
+      const permResult = await Filesystem.checkPermissions();
+      if (permResult.publicStorage !== 'granted') {
+        const req = await Filesystem.requestPermissions();
+        if (req.publicStorage === 'granted') return true;
+      } else {
+        return true;
+      }
+    } catch (err) {
+      console.warn('Filesystem permission check note:', err);
     }
-    return true;
+
+    return mediaGranted;
   } catch (err) {
     console.warn('Storage permission check note:', err);
     return true;
@@ -214,6 +228,7 @@ async function attachCloudflareUpload(
  * Does NOT pop open the Android share sheet unless explicitly requested.
  */
 export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult> {
+  await ensureStoragePermission();
   const {
     filename,
     mimeType = 'application/octet-stream',
@@ -346,7 +361,24 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
       return attachCloudflareUpload(localResult, data, filename, mimeType, targetR2Folder);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('Native Android file save error, using web fallback:', errMsg);
+      console.error('Native Android file save error, using share sheet fallback:', errMsg);
+      try {
+        const shareRes = await shareContent({
+          filename,
+          data,
+          mimeType,
+          title: title || filename,
+          text: `Save ${filename}`,
+        });
+        if (shareRes.shared) {
+          return attachCloudflareUpload({
+            success: true,
+            filename,
+            folder: 'Pictures/Brivu',
+            message: 'Saved via Share sheet!',
+          }, data, filename, mimeType, folder || 'photos');
+        }
+      } catch (_) {}
       const webRes = fallbackWebDownload(data, filename, mimeType);
       return attachCloudflareUpload(webRes, data, filename, mimeType, folder || 'documents');
     }

@@ -203,76 +203,15 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
     };
   }
 
-  // 3. Check for Customer Page / Business Hub URL (e.g. /qr/:pageId, ?qr=..., tab=...)
-  const isQrCustomerUrl =
-    text.includes('/qr/') ||
-    text.includes('?qr=') ||
-    text.includes('business-hub') ||
-    text.includes('socials-hub') ||
-    text.includes('websites-hub') ||
-    text.includes('events-hub');
-
-  if (isQrCustomerUrl) {
-    let pageId = 'default';
-    let targetTab: 'menu' | 'photos' | 'about' | undefined;
-    let itemId: string | undefined;
-    let photoId: string | undefined;
-
-    try {
-      const urlObj = new URL(text);
-      if (urlObj.pathname.includes('/qr/')) {
-        const afterQr = urlObj.pathname.split('/qr/')[1]?.split('/')[0];
-        if (afterQr) pageId = decodeURIComponent(afterQr);
-      } else if (urlObj.searchParams.get('qr')) {
-        pageId = urlObj.searchParams.get('qr') || 'default';
-      }
-
-      const tabParam = urlObj.searchParams.get('tab');
-      if (tabParam === 'menu' || tabParam === 'photos' || tabParam === 'about') {
-        targetTab = tabParam;
-      }
-      itemId = urlObj.searchParams.get('item') || urlObj.searchParams.get('itemId') || undefined;
-      photoId = urlObj.searchParams.get('photo') || urlObj.searchParams.get('photoId') || undefined;
-    } catch {
-      // not a fully qualified URL
-      if (text.includes('/qr/')) {
-        pageId = text.split('/qr/')[1]?.split('?')[0]?.split('#')[0] || 'default';
-      }
-    }
-
-    const pages = StorageService.getHostedQRPages();
-    let foundPage = pages.find((p) => p.id === pageId);
-
-    // If it's a hub link
-    if (!foundPage && (pageId.includes('social') || text.includes('socials'))) {
-      foundPage = QRHostingService.convertSocialsHubToHostedPage(
-        StorageService.getSocialsQrItems(),
-        StorageService.getProfile()
-      );
-    } else if (!foundPage && (pageId.includes('website') || text.includes('websites'))) {
-      foundPage = QRHostingService.convertWebsitesHubToHostedPage(
-        StorageService.getWebsitesQrItems(),
-        StorageService.getProfile()
-      );
-    } else if (!foundPage && (pageId.includes('event') || text.includes('events'))) {
-      foundPage = QRHostingService.convertEventsHubToHostedPage(
-        StorageService.getEventsQrItems(),
-        StorageService.getProfile()
-      );
-    } else if (!foundPage) {
-      foundPage = pages[0];
-    }
-
+  // 3. Check for Web URL or Link (e.g. https://..., http://...)
+  if (/^https?:\/\//i.test(text) || text.includes('http://') || text.includes('https://') || text.includes('.menu/') || text.includes('/qr/')) {
+    const cleanUrl = text.startsWith('http') ? text : `https://${text.replace(/^\/+/, '')}`;
     return {
-      type: 'customer_page',
+      type: 'url',
       rawText: text,
-      title: foundPage?.title || 'Customer Showcase Page',
-      subtitle: `Target: ${targetTab ? targetTab.toUpperCase() : 'Full Hub'} • ${foundPage?.menuItems?.length || 0} items`,
-      customerPage: foundPage,
-      targetTab,
-      targetItemId: itemId,
-      targetPhotoId: photoId,
-      url: text.startsWith('http') ? text : undefined,
+      title: 'Web Link',
+      subtitle: cleanUrl,
+      url: cleanUrl,
     };
   }
 

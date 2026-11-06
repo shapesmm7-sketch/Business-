@@ -187,6 +187,24 @@ export async function ensureD1Tables(db: any): Promise<void> {
 
   try {
     await db.prepare(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        profile_picture_url TEXT,
+        provider TEXT DEFAULT 'google',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_login TEXT NOT NULL
+      )
+    `).run();
+    await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`).run();
+  } catch (_) {}
+
+  try {
+    await db.prepare(`
       CREATE TABLE IF NOT EXISTS auth_sessions (
         session_id TEXT PRIMARY KEY,
         status TEXT,
@@ -1499,44 +1517,46 @@ export default {
           );
         }
 
-        if (user && user.email && bucket) {
+        if (user && user.email && db) {
           const cleanEmail = user.email.toLowerCase().trim();
-          const userKey = encodeURIComponent(cleanEmail);
-          
+          const nowIso = new Date().toISOString();
           user.id = cleanEmail;
           user.syncedToCloudflare = true;
-          user.cloudflareStoredAt = new Date().toISOString();
+          user.cloudflareStoredAt = nowIso;
 
-          await bucket.put(`users/${userKey}/profile.json`, JSON.stringify(user), {
-            httpMetadata: { contentType: 'application/json' },
-          });
-          await bucket.put(`users/profile_${userKey}.json`, JSON.stringify(user), {
-            httpMetadata: { contentType: 'application/json' },
-          });
-          await bucket.put(`users/email_${userKey}.json`, JSON.stringify({ email: user.email, userId: user.id, user }), {
-            httpMetadata: { contentType: 'application/json' },
-          });
-
-          // Update aggregated users list
-          let usersList: any[] = [];
           try {
-            const listObj = await bucket.get('users/all_users.json');
-            if (listObj) {
-              const text = await listObj.text();
-              usersList = JSON.parse(text);
-            }
-          } catch {}
+            await ensureD1Tables(db);
+            await db.prepare(`
+              INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(email) DO UPDATE SET
+                name = excluded.name,
+                first_name = excluded.first_name,
+                last_name = excluded.last_name,
+                profile_picture_url = excluded.profile_picture_url,
+                updated_at = excluded.updated_at,
+                last_login = excluded.last_login
+            `).bind(
+              cleanEmail,
+              cleanEmail,
+              user.name || '',
+              user.firstName || '',
+              user.lastName || '',
+              user.profilePictureUrl || '',
+              user.provider || 'google',
+              nowIso,
+              nowIso,
+              nowIso
+            ).run();
 
-          const existingIdx = usersList.findIndex((u) => u.email?.toLowerCase() === cleanEmail || u.id === cleanEmail);
-          if (existingIdx >= 0) {
-            usersList[existingIdx] = user;
-          } else {
-            usersList.push(user);
+            await db.prepare(`
+              INSERT INTO auth_sessions (session_id, status, code, user_json, created_at)
+              VALUES (?, 'authenticated', 'workos', ?, ?)
+              ON CONFLICT(session_id) DO UPDATE SET user_json = excluded.user_json
+            `).bind(cleanEmail, JSON.stringify(user), Date.now()).run();
+          } catch (d1Err) {
+            console.warn('D1 auth user store note:', d1Err);
           }
-
-          await bucket.put('users/all_users.json', JSON.stringify(usersList), {
-            httpMetadata: { contentType: 'application/json' },
-          });
         }
 
         return new Response(
@@ -1545,7 +1565,7 @@ export default {
             success: true,
             user,
             storedInCloudflare: true,
-            message: 'Authenticated and saved user profile & email in Cloudflare',
+            message: 'Authenticated and saved user profile & email in D1',
           }),
           {
             status: 200,
@@ -1566,7 +1586,6 @@ export default {
     // 2d. Cloudflare User Profile & Emails Storage endpoint (/api/user/profile)
     if (url.pathname === '/api/user/profile' && request.method === 'POST') {
       try {
-        const bucket = getR2Bucket(env);
         const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
         const { user, businessProfile, appData } = body;
@@ -1579,12 +1598,13 @@ export default {
         }
 
         const cleanEmail = user.email.toLowerCase().trim();
+        const nowIso = new Date().toISOString();
         const userPayload = {
           ...user,
           id: cleanEmail,
           email: cleanEmail,
           syncedToCloudflare: true,
-          cloudflareStoredAt: new Date().toISOString(),
+          cloudflareStoredAt: nowIso,
           businessProfile,
           appData,
         };
@@ -1593,20 +1613,66 @@ export default {
           try {
             await ensureD1Tables(db);
             await db.prepare(`
+              INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(email) DO UPDATE SET
+                name = excluded.name,
+                updated_at = excluded.updated_at,
+                last_login = excluded.last_login
+            `).bind(
+              cleanEmail,
+              cleanEmail,
+              user.name || '',
+              user.firstName || '',
+              user.lastName || '',
+              user.profilePictureUrl || '',
+              user.provider || 'google',
+              nowIso,
+              nowIso,
+              nowIso
+            ).run();
+
+            await db.prepare(`
               INSERT INTO auth_sessions (session_id, status, code, user_json, created_at)
               VALUES (?, 'authenticated', 'profile', ?, ?)
               ON CONFLICT(session_id) DO UPDATE SET user_json = excluded.user_json
             `).bind(cleanEmail, JSON.stringify(userPayload), Date.now()).run();
-          } catch (_) {}
+
+            if (businessProfile) {
+              await db.prepare(`
+                INSERT INTO business_profile (user_email, name, description, phone, email, address, currency, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_email) DO UPDATE SET
+                  name = excluded.name,
+                  description = excluded.description,
+                  phone = excluded.phone,
+                  email = excluded.email,
+                  address = excluded.address,
+                  currency = excluded.currency,
+                  updated_at = excluded.updated_at
+              `).bind(
+                cleanEmail,
+                businessProfile.name || '',
+                businessProfile.description || '',
+                businessProfile.phone || '',
+                businessProfile.email || cleanEmail,
+                businessProfile.address || '',
+                businessProfile.currency || 'UGX',
+                nowIso
+              ).run();
+            }
+          } catch (d1Err) {
+            console.warn('D1 profile store note:', d1Err);
+          }
         }
 
         return new Response(
           JSON.stringify({
             ok: true,
             success: true,
-            message: 'User profile, email, and data stored successfully in Cloudflare',
+            message: 'User profile, email, and data stored successfully in Cloudflare D1',
             user: userPayload,
-            timestamp: new Date().toISOString(),
+            timestamp: nowIso,
           }),
           {
             status: 200,
@@ -1626,23 +1692,34 @@ export default {
 
     // 2e. Get stored user profile from Cloudflare (/api/user/profile?email=... or ?id=...)
     if (url.pathname === '/api/user/profile' && request.method === 'GET') {
-      const bucket = getR2Bucket(env);
       const db = getD1Database(env);
       const email = url.searchParams.get('email');
       const id = url.searchParams.get('id');
+      const targetEmail = (email || id || '').toLowerCase().trim();
 
-      if (bucket && (email || id)) {
+      if (db && targetEmail) {
         try {
-          const key = id ? `users/profile_${id}.json` : `users/email_${encodeURIComponent(email!.toLowerCase())}.json`;
-          const obj = await bucket.get(key);
-          if (obj) {
-            const data = JSON.parse(await obj.text());
-            return new Response(JSON.stringify({ ok: true, success: true, user: data }), {
+          await ensureD1Tables(db);
+          const uRow: any = await db.prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ?').bind(targetEmail, targetEmail).first();
+          if (uRow) {
+            const userObj = {
+              id: uRow.email,
+              email: uRow.email,
+              name: uRow.name || uRow.email,
+              firstName: uRow.first_name || '',
+              lastName: uRow.last_name || '',
+              profilePictureUrl: uRow.profile_picture_url || '',
+              provider: uRow.provider || 'google',
+              updatedAt: uRow.updated_at,
+              createdAt: uRow.created_at,
+              lastLogin: uRow.last_login,
+            };
+            return new Response(JSON.stringify({ ok: true, success: true, user: userObj }), {
               status: 200,
               headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
             });
           }
-        } catch {}
+        } catch (_) {}
       }
 
       return new Response(
@@ -1653,15 +1730,27 @@ export default {
 
     // 2f. List all stored users & emails from Cloudflare (/api/users/all)
     if (url.pathname === '/api/users/all') {
-      const bucket = getR2Bucket(env);
+      const db = getD1Database(env);
       let users: any[] = [];
-      if (bucket) {
+      if (db) {
         try {
-          const obj = await bucket.get('users/all_users.json');
-          if (obj) {
-            users = JSON.parse(await obj.text());
+          await ensureD1Tables(db);
+          const rows: any = await db.prepare('SELECT * FROM users ORDER BY last_login DESC').all();
+          if (rows && Array.isArray(rows.results)) {
+            users = rows.results.map((u: any) => ({
+              id: u.email,
+              email: u.email,
+              name: u.name || u.email,
+              firstName: u.first_name || '',
+              lastName: u.last_name || '',
+              profilePictureUrl: u.profile_picture_url || '',
+              provider: u.provider || 'google',
+              updatedAt: u.updated_at,
+              createdAt: u.created_at,
+              lastLogin: u.last_login,
+            }));
           }
-        } catch {}
+        } catch (_) {}
       }
       return new Response(
         JSON.stringify({
