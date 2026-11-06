@@ -407,7 +407,7 @@ export function App() {
           setActiveScreen('qr-customer-view');
 
           CloudflareService.getHostedQrPage(fetchId, emailFromUrl).then(async (remotePage) => {
-            if (remotePage && hasCustomerQrItems(remotePage)) {
+            if (remotePage) {
               setActiveCustomerPage(remotePage);
               setIsCustomerDataResolving(false);
               return;
@@ -465,20 +465,87 @@ export function App() {
               } catch (_) {}
             }
 
-            if (remotePage) {
-              setActiveCustomerPage(remotePage);
-            } else if (found) {
-              setActiveCustomerPage(found);
-            }
+            // If not found in Cloudflare, render a clean empty page structure for unauthenticated visitors
+            const nowIso = new Date().toISOString();
+            const fallbackCleanPage: QRCodeHostedPage = {
+              id: fetchId,
+              title: 'Brivu Business',
+              tagline: 'Welcome to our official business page',
+              description: '',
+              pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+              accentColor: '#059669',
+              theme: 'emerald',
+              phone: '',
+              whatsapp: '',
+              email: emailFromUrl || '',
+              address: '',
+              currency: 'UGX',
+              allowWhatsAppOrdering: true,
+              photos: [],
+              menuCategories: ['All'],
+              menuItems: [],
+              websitesQrItems: [],
+              socialsQrItems: [],
+              eventsQrItems: [],
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+            setActiveCustomerPage(fallbackCleanPage);
             setIsCustomerDataResolving(false);
           }).catch(() => {
-            if (found) {
-              setActiveCustomerPage(found);
-            }
+            const nowIso = new Date().toISOString();
+            const fallbackCleanPage: QRCodeHostedPage = {
+              id: fetchId,
+              title: 'Brivu Business',
+              tagline: 'Welcome to our official business page',
+              description: '',
+              pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+              accentColor: '#059669',
+              theme: 'emerald',
+              phone: '',
+              whatsapp: '',
+              email: emailFromUrl || '',
+              address: '',
+              currency: 'UGX',
+              allowWhatsAppOrdering: true,
+              photos: [],
+              menuCategories: ['All'],
+              menuItems: [],
+              websitesQrItems: [],
+              socialsQrItems: [],
+              eventsQrItems: [],
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+            setActiveCustomerPage(fallbackCleanPage);
             setIsCustomerDataResolving(false);
           });
-        } else if (found) {
-          setActiveCustomerPage(found);
+        } else {
+          const nowIso = new Date().toISOString();
+          const fallbackCleanPage: QRCodeHostedPage = {
+            id: fetchId,
+            title: 'Brivu Business',
+            tagline: 'Welcome to our official business page',
+            description: '',
+            pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+            accentColor: '#059669',
+            theme: 'emerald',
+            phone: '',
+            whatsapp: '',
+            email: emailFromUrl || '',
+            address: '',
+            currency: 'UGX',
+            allowWhatsAppOrdering: true,
+            photos: [],
+            menuCategories: ['All'],
+            menuItems: [],
+            websitesQrItems: [],
+            socialsQrItems: [],
+            eventsQrItems: [],
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+          setActiveCustomerPage(fallbackCleanPage);
           setIsCustomerDataResolving(false);
         }
       }
