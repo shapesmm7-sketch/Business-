@@ -101,6 +101,12 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
     try {
       const result = await parseScannedQrText(decodedText);
       if (isMountedRef.current) {
+        if (result.url) {
+          stopLiveScanner();
+          onClose();
+          window.open(result.url, '_blank');
+          return;
+        }
         setScanResult(result);
         stopLiveScanner();
       }
@@ -474,20 +480,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                 </div>
               )}
 
-              {scanResult.url && (
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2 text-xs">
-                  <div className="text-slate-500 break-all">{scanResult.url}</div>
-                  <a
-                    href={scanResult.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full mt-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Web Link</span>
-                  </a>
-                </div>
-              )}
+
 
               {/* RESET SCAN BUTTON */}
               <button
