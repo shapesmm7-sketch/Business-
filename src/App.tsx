@@ -1328,12 +1328,15 @@ export function App() {
             initialProfile={business}
             onSave={(updated) => {
               handleUpdateBusiness(updated);
+              StorageService.setInitialProfileSetupDone(true);
+              handleNavigate('home');
             }}
             onBack={() => {
               handleNavigate('home');
             }}
-            isInitialOnboarding={!StorageService.hasFilledBusinessDetails()}
+            isInitialOnboarding={!StorageService.hasCompletedProfileOnboarding()}
             onSkipOnboarding={() => {
+              StorageService.setInitialProfileSetupDone(true);
               handleNavigate('home');
             }}
           />

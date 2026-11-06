@@ -392,8 +392,10 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         setSavedToast(false);
         if (isInitialOnboarding && onSkipOnboarding) {
           onSkipOnboarding();
+        } else if (onBack) {
+          onBack();
         }
-      }, isInitialOnboarding ? 1500 : 3800);
+      }, 1000);
     } catch (err) {
       console.error('Error saving business profile:', err);
     } finally {

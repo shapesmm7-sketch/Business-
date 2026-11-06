@@ -374,9 +374,6 @@ export const StorageService = {
   },
 
   saveProfile(profile: BusinessProfile): boolean {
-    if (profile.name && profile.name.trim().length > 0) {
-      this.setInitialProfileSetupDone(true);
-    }
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
       const current = this.getProfile();
