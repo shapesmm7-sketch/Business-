@@ -350,15 +350,15 @@ export const PdfGenerator = {
       if (isMatchingPreview) {
         targetElement = existingNode;
       } else {
-        // Build offscreen high-resolution container
+        // Build offscreen high-resolution container (794px standard A4 width at 96dpi)
         tempContainer = document.createElement('div');
         tempContainer.style.position = 'fixed';
-        tempContainer.style.left = '0';
-        tempContainer.style.top = '0';
-        tempContainer.style.width = '680px';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '0px';
+        tempContainer.style.width = '794px';
         tempContainer.style.backgroundColor = '#ffffff';
-        tempContainer.style.zIndex = '-1';
-        tempContainer.style.opacity = '0.01';
+        tempContainer.style.zIndex = '-9999';
+        tempContainer.style.opacity = '1';
         tempContainer.style.pointerEvents = 'none';
         document.body.appendChild(tempContainer);
 
@@ -424,19 +424,28 @@ export const PdfGenerator = {
         root = createRoot(tempContainer);
         root.render(React.createElement(ReceiptLayoutRenderer, { data: renderData }));
 
-        // Allow layout and images to paint
-        await new Promise((r) => setTimeout(r, 220));
+        // Allow layout, CSS styles, web fonts, and Data URLs to fully paint
+        await new Promise((r) => setTimeout(r, 350));
         targetElement = (tempContainer.firstElementChild as HTMLElement) || tempContainer;
       }
 
       if (!targetElement) return null;
 
       return await html2canvas(targetElement, {
-        scale: 2.0,
+        scale: 3.0, // Ultra sharp 300+ DPI crisp high resolution
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
         logging: false,
+        windowWidth: 1200,
+        windowHeight: 1600,
+        onclone: (_clonedDoc, clonedElement) => {
+          clonedElement.style.position = 'static';
+          clonedElement.style.left = '0px';
+          clonedElement.style.top = '0px';
+          clonedElement.style.opacity = '1';
+          clonedElement.style.visibility = 'visible';
+        },
       });
     } catch (err) {
       console.warn('html2canvas render note:', err);
@@ -507,93 +516,178 @@ export const PdfGenerator = {
     const filename = `${prefix}_${cleanNum}.png`;
 
     if (!canvas) {
-      // 2D Canvas Fallback Renderer for mobile WebView / restricted environments
+      // High-resolution 2D Canvas Fallback matching exact PDF template styling
       const fbCanvas = document.createElement('canvas');
-      const width = 640;
+      const scale = 2.0;
+      const baseWidth = 800;
       const itemsCount = receipt.items?.length || 0;
-      const height = Math.max(500, 320 + itemsCount * 36 + 180);
-      fbCanvas.width = width;
-      fbCanvas.height = height;
+      const baseHeight = Math.max(900, 520 + itemsCount * 44 + 320);
+      fbCanvas.width = baseWidth * scale;
+      fbCanvas.height = baseHeight * scale;
       const ctx = fbCanvas.getContext('2d');
       if (ctx) {
+        ctx.scale(scale, scale);
         const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
         const curr = resolvedBiz.currency || receipt.currency || 'UGX';
-        // Background
+
+        // Background paper canvas
+        ctx.fillStyle = '#faf8f5';
+        ctx.fillRect(0, 0, baseWidth, baseHeight);
+
+        // White receipt container
+        const cardX = 40;
+        const cardY = 40;
+        const cardW = baseWidth - 80;
+        const cardH = baseHeight - 80;
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        // Header card
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
+        ctx.shadowBlur = 16;
+        ctx.shadowOffsetY = 4;
+        ctx.fillRect(cardX, cardY, cardW, cardH);
+        ctx.shadowColor = 'transparent';
+
+        // Dark header block
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(cardX + 24, cardY + 24, cardW - 48, 110);
+
+        // Badge pill
+        const badgeText = isInvoice ? 'INVOICE' : 'RECEIPT';
         ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
-        ctx.fillRect(0, 0, width, 100);
+        const badgeW = 90;
+        const badgeH = 22;
+        const badgeX = cardX + (cardW - badgeW) / 2;
+        const badgeY = cardY + 36;
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 11);
+        ctx.fill();
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
-        ctx.fillText(resolvedBiz.name || 'BRIVU BUSINESS', 24, 45);
-        ctx.font = '14px system-ui, -apple-system, sans-serif';
-        ctx.fillText(`${prefix.toUpperCase()} #${receipt.receiptNumber}`, 24, 75);
-        ctx.textAlign = 'right';
-        ctx.fillText(receipt.createdAt ? new Date(receipt.createdAt).toLocaleDateString() : new Date().toLocaleDateString(), width - 24, 75);
-        ctx.textAlign = 'left';
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + 15);
 
-        // Customer details
-        let y = 135;
-        ctx.fillStyle = '#475569';
-        ctx.font = '13px system-ui, -apple-system, sans-serif';
-        ctx.fillText(`Customer: ${receipt.customerName || 'Walk-in'}`, 24, y);
-        if (receipt.customerPhone) ctx.fillText(`Phone: ${receipt.customerPhone}`, 300, y);
-        y += 30;
+        let y = cardY + 160;
 
-        // Divider
+        // Received from / Receipt info card
+        ctx.fillStyle = '#f8fafc';
+        ctx.beginPath();
+        ctx.roundRect(cardX + 24, y, cardW - 48, 100, 12);
+        ctx.fill();
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(24, y);
-        ctx.lineTo(width - 24, y);
         ctx.stroke();
-        y += 24;
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+        ctx.fillText(isInvoice ? 'BILLED TO:' : 'RECEIVED WITH THANKS FROM:', cardX + 44, y + 26);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+        ctx.fillText(receipt.customerName || 'John Doe', cardX + 44, y + 48);
+        ctx.fillStyle = '#475569';
+        ctx.font = '11px system-ui, -apple-system, sans-serif';
+        if (receipt.customerPhone) ctx.fillText(`Phone: ${receipt.customerPhone}`, cardX + 44, y + 66);
+        if (receipt.customerEmail) ctx.fillText(`Email: ${receipt.customerEmail}`, cardX + 44, y + 82);
+
+        const rightColX = cardX + cardW / 2 + 20;
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+        ctx.fillText(`${prefix.toUpperCase()} NO:`, rightColX, y + 26);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+        ctx.fillText(receipt.receiptNumber, rightColX + 90, y + 26);
+        ctx.fillStyle = '#475569';
+        ctx.font = '11px system-ui, -apple-system, sans-serif';
+        ctx.fillText(`Date: ${receipt.createdAt ? new Date(receipt.createdAt).toLocaleString() : new Date().toLocaleDateString()}`, rightColX, y + 50);
+        ctx.fillText(`Payment: ${receipt.paymentMethod || 'Cash'} (Paid)`, rightColX, y + 68);
+
+        y += 124;
 
         // Table Header
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
-        ctx.fillText('ITEM DESCRIPTION', 24, y);
-        ctx.fillText('QTY', 360, y);
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(cardX + 24, y, cardW - 48, 32);
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+        ctx.fillText('PAID FOR', cardX + 40, y + 20);
+        ctx.textAlign = 'center';
+        ctx.fillText('QTY', cardX + cardW - 280, y + 20);
         ctx.textAlign = 'right';
-        ctx.fillText('PRICE', width - 140, y);
-        ctx.fillText('TOTAL', width - 24, y);
-        ctx.textAlign = 'left';
-        y += 18;
+        ctx.fillText('PRICE', cardX + cardW - 170, y + 20);
+        ctx.fillText('AMOUNT', cardX + cardW - 44, y + 20);
 
-        // Line items
-        ctx.font = '13px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = '#0f172a';
+        y += 32;
+
+        // Line Items
+        ctx.textAlign = 'left';
+        ctx.font = '12px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#1e293b';
+
         (receipt.items || []).forEach((item) => {
-          ctx.fillText(item.name || 'Item', 24, y);
-          ctx.fillText(String(item.quantity || 1), 360, y);
+          y += 24;
+          ctx.fillText(item.name || 'Item', cardX + 40, y);
+          ctx.textAlign = 'center';
+          ctx.fillText(String(item.quantity || 1), cardX + cardW - 280, y);
           ctx.textAlign = 'right';
-          const lineTotal = (item as any).total ?? ((item.quantity || 1) * (item.unitPrice || 0));
-          ctx.fillText(lineTotal.toLocaleString(), width - 24, y);
+          ctx.fillText((item.unitPrice || 0).toLocaleString(), cardX + cardW - 170, y);
+          const lTotal = (item as any).total ?? ((item.quantity || 1) * (item.unitPrice || 0));
+          ctx.fillText(`${curr} ${lTotal.toLocaleString()}`, cardX + cardW - 44, y);
           ctx.textAlign = 'left';
-          y += 32;
+          y += 12;
+          ctx.strokeStyle = '#f1f5f9';
+          ctx.beginPath();
+          ctx.moveTo(cardX + 24, y);
+          ctx.lineTo(cardX + cardW - 24, y);
+          ctx.stroke();
         });
 
-        // Totals
-        y += 10;
-        ctx.beginPath();
-        ctx.moveTo(24, y);
-        ctx.lineTo(width - 24, y);
-        ctx.stroke();
-        y += 30;
+        // Subtotal & Grand Total Card
+        y += 20;
+        const totalCardW = 280;
+        const totalCardX = cardX + cardW - 24 - totalCardW;
 
-        ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
         ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
-        ctx.fillText('Total Amount:', 24, y);
+        ctx.beginPath();
+        ctx.roundRect(totalCardX, y, totalCardW, 44, 10);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+        ctx.fillText('GRAND TOTAL:', totalCardX + 16, y + 27);
         ctx.textAlign = 'right';
-        ctx.fillText(`${curr} ${(receipt.total || 0).toLocaleString()}`, width - 24, y);
+        ctx.fillText(`${curr} ${(receipt.total || 0).toLocaleString()}`, totalCardX + totalCardW - 16, y + 27);
         ctx.textAlign = 'left';
 
-        // Footer
-        ctx.font = '11px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = '#94a3b8';
+        // Amount in Words
+        if (receipt.amountInWords) {
+          y += 64;
+          ctx.fillStyle = '#475569';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Amount Paid in Words:', cardX + 40, y);
+          ctx.font = 'italic 11px system-ui, -apple-system, sans-serif';
+          ctx.fillStyle = '#0f172a';
+          ctx.fillText(receipt.amountInWords.toUpperCase(), cardX + 180, y);
+        }
+
+        // Signature Line
+        y = cardY + cardH - 120;
+        const sigLineX = cardX + cardW - 240;
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.beginPath();
+        ctx.moveTo(sigLineX, y);
+        ctx.lineTo(cardX + cardW - 40, y);
+        ctx.stroke();
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px system-ui, -apple-system, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Powered by Brivu app', width / 2, height - 20);
+        ctx.fillText('Authorized Signature', sigLineX + 100, y + 16);
+
+        // Thank you notice
+        y += 28;
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
+        ctx.fillText('Thank you for your business!', cardX + cardW / 2, y);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px system-ui, -apple-system, sans-serif';
+        ctx.fillText('Powered by Brivu', cardX + cardW / 2, y + 20);
 
         canvas = fbCanvas;
       }
