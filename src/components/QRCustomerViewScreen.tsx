@@ -836,46 +836,113 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         </p>
                       )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
-                        {page.address && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Venue Location</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{page.address}</p>
-                            </div>
-                          </div>
-                        )}
+                      {(() => {
+                        const matchingEvt = page.eventsQrItems?.find(
+                          (e: any) => `rsvp-${e.id}` === evtItem.id || e.id === evtItem.id || `event-pass-${e.id}` === evtItem.id
+                        ) || null;
 
-                        {page.announcement && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Schedule</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{page.announcement.replace('📅 ', '')}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        const evtLocation = matchingEvt?.location || page.address;
+                        const evtStartDate = matchingEvt?.startDate || matchingEvt?.eventDate;
+                        const evtEndDate = matchingEvt?.endDate || evtStartDate;
+                        const evtStartTime = matchingEvt?.startTime;
+                        const evtEndTime = matchingEvt?.endTime;
+                        const evtPhone = matchingEvt?.contactPhone || (matchingEvt as any)?.phone || page.phone || page.whatsapp;
+                        const evtEmail = matchingEvt?.contactEmail || (matchingEvt as any)?.email || page.email;
 
-                      {/* Contact Channels */}
-                      {(page.phone || page.email) && (
-                        <div className="p-3 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100/40 dark:border-purple-900/40 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                          <span className="text-[9px] font-black text-purple-500 uppercase tracking-wider block">Inquiries & Contact</span>
-                          {page.phone && (
-                            <p className="flex items-center gap-1.5">
-                              <Phone className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                              <span>Call Host: <a href={`tel:${page.phone}`} className="underline">{page.phone}</a></span>
-                            </p>
-                          )}
-                          {page.email && (
-                            <p className="flex items-center gap-1.5">
-                              <Mail className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                              <span>Email: <a href={`mailto:${page.email}`} className="underline">{page.email}</a></span>
-                            </p>
-                          )}
-                        </div>
-                      )}
+                        const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
+                        const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
+                        const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
+
+                        return (
+                          <div className="space-y-3 pt-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                              {evtLocation && (
+                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                  <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      Location: {evtLocation}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {evtStartDate && (
+                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      Start Date: {evtStartDate}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {evtEndDate && (
+                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      End Date: {evtEndDate}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {(formattedStartTime || formattedEndTime) && (
+                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                  <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      {formattedStartTime && hasEndTime ? (
+                                        `Time: ${formattedStartTime} - ${formattedEndTime}`
+                                      ) : formattedStartTime ? (
+                                        `Start Time: ${formattedStartTime}`
+                                      ) : (
+                                        `End Time: ${formattedEndTime}`
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {(evtPhone || evtEmail) && (
+                              <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                                <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                  {evtPhone && (
+                                    <div className="flex items-center gap-2">
+                                      <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                      <div className="min-w-0">
+                                        <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
+                                        <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
+                                          Phone: {evtPhone}
+                                        </a>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {evtEmail && (
+                                    <div className="flex items-center gap-2">
+                                      <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                      <div className="min-w-0">
+                                        <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
+                                        <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
+                                          Email: {evtEmail}
+                                        </a>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Action buttons */}
                       <div className="flex flex-col sm:flex-row gap-2 pt-1">
@@ -969,46 +1036,110 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                   </p>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
-                  {page.address && (
-                    <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                      <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Venue Location</span>
-                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{page.address}</p>
-                      </div>
-                    </div>
-                  )}
+                {(() => {
+                  const singleEvt = page.eventsQrItems?.[0] || null;
+                  const evtLocation = singleEvt?.location || page.address;
+                  const evtStartDate = singleEvt?.startDate || singleEvt?.eventDate;
+                  const evtEndDate = singleEvt?.endDate || evtStartDate;
+                  const evtStartTime = singleEvt?.startTime;
+                  const evtEndTime = singleEvt?.endTime;
+                  const evtPhone = singleEvt?.contactPhone || (singleEvt as any)?.phone || page.phone || page.whatsapp;
+                  const evtEmail = singleEvt?.contactEmail || (singleEvt as any)?.email || page.email;
 
-                  {page.announcement && (
-                    <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                      <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Schedule</span>
-                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate">{page.announcement.replace('📅 ', '')}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
+                  const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
+                  const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
 
-                {/* Contact Channels */}
-                {(page.phone || page.email) && (
-                  <div className="p-3 rounded-2xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100/40 dark:border-purple-900/40 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                    <span className="text-[9px] font-black text-purple-500 uppercase tracking-wider block">Inquiries & Contact</span>
-                    {page.phone && (
-                      <p className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                        <span>Call Host: <a href={`tel:${page.phone}`} className="underline">{page.phone}</a></span>
-                      </p>
-                    )}
-                    {page.email && (
-                      <p className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                        <span>Email: <a href={`mailto:${page.email}`} className="underline">{page.email}</a></span>
-                      </p>
-                    )}
-                  </div>
-                )}
+                  return (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                        {evtLocation && (
+                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                            <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                Location: {evtLocation}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {evtStartDate && (
+                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                Start Date: {evtStartDate}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {evtEndDate && (
+                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                End Date: {evtEndDate}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {(formattedStartTime || formattedEndTime) && (
+                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                            <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                {formattedStartTime && hasEndTime ? (
+                                  `Time: ${formattedStartTime} - ${formattedEndTime}`
+                                ) : formattedStartTime ? (
+                                  `Start Time: ${formattedStartTime}`
+                                ) : (
+                                  `End Time: ${formattedEndTime}`
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {(evtPhone || evtEmail) && (
+                        <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                          <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {evtPhone && (
+                              <div className="flex items-center gap-2">
+                                <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
+                                  <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
+                                    Phone: {evtPhone}
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                            {evtEmail && (
+                              <div className="flex items-center gap-2">
+                                <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
+                                  <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
+                                    Email: {evtEmail}
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Action buttons */}
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">

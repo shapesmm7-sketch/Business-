@@ -244,10 +244,30 @@ export class QRHostingService {
   }
 
   /**
+   * Helper to format 24h time strings (e.g. "14:30") to 12h format with AM/PM (e.g. "2:30 PM")
+   */
+  static formatTimeToAMPM(timeStr?: string): string {
+    if (!timeStr) return '';
+    const trimmed = timeStr.trim();
+    if (!trimmed) return '';
+    if (/am|pm/i.test(trimmed)) return trimmed;
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = match[2];
+      const period = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      if (hours === 0) hours = 12;
+      return `${hours}:${minutes} ${period}`;
+    }
+    return trimmed;
+  }
+
+  /**
    * Converts an EventQrItem into its own dedicated QRCodeHostedPage for standalone Cloudflare hosting
    */
   static convertEventToHostedPage(event: EventQrItem, business: BusinessProfile): QRCodeHostedPage {
-    const cleanPhone = (event.contactPhone || business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanPhone = (event.contactPhone || business.phone || business.whatsapp || '').replace(/[^0-9+]/g, '');
     let cleanWa = '';
     if (event.rsvpUrl && event.rsvpUrl.includes('wa.me/')) {
       const match = event.rsvpUrl.match(/wa\.me\/([0-9]+)/);
@@ -260,18 +280,28 @@ export class QRHostingService {
     }
 
     const ownerEmail = this.resolveOwnerEmail(business.email);
+    const formattedStartTime = this.formatTimeToAMPM(event.startTime);
+    const formattedEndTime = this.formatTimeToAMPM(event.endTime);
+
     const dateParts: string[] = [];
     if (event.startDate) {
-      dateParts.push(event.startDate + (event.endDate && event.endDate !== event.startDate ? ` to ${event.endDate}` : ''));
+      dateParts.push(`Start Date: ${event.startDate}`);
     } else if (event.eventDate) {
-      dateParts.push(event.eventDate);
+      dateParts.push(`Start Date: ${event.eventDate}`);
     }
-    if (event.startTime) {
-      dateParts.push(event.startTime + (event.endTime ? ` - ${event.endTime}` : ''));
+    if (event.endDate && event.endDate !== event.startDate) {
+      dateParts.push(`End Date: ${event.endDate}`);
+    }
+    if (formattedStartTime && formattedEndTime) {
+      dateParts.push(`Time: ${formattedStartTime} - ${formattedEndTime}`);
+    } else if (formattedStartTime) {
+      dateParts.push(`Start Time: ${formattedStartTime}`);
+    } else if (formattedEndTime) {
+      dateParts.push(`End Time: ${formattedEndTime}`);
     }
 
     const dateScheduleText = dateParts.length > 0 ? dateParts.join(' • ') : '';
-    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 ${event.location}`;
+    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 Location: ${event.location}`;
 
     const cssStyle = `
       #tab-btn-photos, #tab-btn-about { display: none !important; }
@@ -296,7 +326,7 @@ export class QRHostingService {
       id: `${event.id}-photo-${idx}`,
       url,
       title: event.title,
-      description: event.location,
+      description: `Location: ${event.location}`,
       badge: 'Event Photo',
       caption: event.title,
     }));
@@ -307,7 +337,7 @@ export class QRHostingService {
         name: `${event.title} - Entry & RSVP Pass`,
         category: 'Event Pass & RSVP',
         price: 0,
-        description: `${event.description ? event.description + ' • ' : ''}Venue: ${event.location}. Click to RSVP!`,
+        description: `${event.description ? event.description + ' • ' : ''}Location: ${event.location}. Click to RSVP!`,
         tags: ['RSVP', 'Invitation', 'Entry Pass'],
         isSpecial: true,
         isAvailable: true,
@@ -321,13 +351,13 @@ export class QRHostingService {
       id: event.id,
       title: this.cleanText(event.title),
       tagline: this.cleanText(event.ctaText || 'Official Event Invitation & RSVP Pass'),
-      description: this.cleanText(event.description || `Event Venue: ${event.location}`),
+      description: this.cleanText(event.description || `Location: ${event.location}`),
       pageType: 'event',
       accentColor: injectedAccentColor,
       theme: 'indigo',
       coverImage: event.photos?.[0] || undefined,
       logo: event.photos?.[0] || business.logo || undefined,
-      phone: event.contactPhone || business.phone || '',
+      phone: event.contactPhone || business.phone || business.whatsapp || '',
       whatsapp: cleanWa,
       email: event.contactEmail || ownerEmail || business.email || '',
       userEmail: ownerEmail || business.email || '',
@@ -339,6 +369,7 @@ export class QRHostingService {
       photos,
       menuCategories: ['Event Pass & RSVP'],
       menuItems,
+      eventsQrItems: [event],
       qrDarkColor: event.darkColor || '#7c3aed',
       qrLightColor: event.lightColor || '#ffffff',
       qrEyeColor: event.eyeColor || event.darkColor || '#6d28d9',
@@ -355,7 +386,7 @@ export class QRHostingService {
   static convertEventsHubToHostedPage(events: EventQrItem[], business: BusinessProfile): QRCodeHostedPage {
     const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
     const hubId = `events-hub-${cleanName}`;
-    const cleanPhone = (business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanPhone = (business.phone || business.whatsapp || '').replace(/[^0-9+]/g, '');
     const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
     const ownerEmail = this.resolveOwnerEmail(business.email);
 
@@ -364,23 +395,35 @@ export class QRHostingService {
         id: `${evt.id}-photo-${idx}`,
         url,
         title: evt.title,
-        description: evt.location,
+        description: `Location: ${evt.location}`,
         badge: 'Event Photo',
         caption: evt.title,
       }))
     );
 
-    const menuItems: QRMenuItem[] = events.map((evt) => ({
-      id: `rsvp-${evt.id}`,
-      name: evt.title,
-      category: 'Our Events',
-      price: 0,
-      description: `${evt.startDate ? '📅 ' + evt.startDate + ' • ' : ''}📍 ${evt.location}. ${evt.description || ''}`,
-      photoUrl: evt.photos?.[0] || undefined,
-      tags: ['RSVP', 'Invitation', 'Entry Pass'],
-      isSpecial: true,
-      isAvailable: true,
-    }));
+    const menuItems: QRMenuItem[] = events.map((evt) => {
+      const formattedStartTime = this.formatTimeToAMPM(evt.startTime);
+      const formattedEndTime = this.formatTimeToAMPM(evt.endTime);
+      const parts: string[] = [];
+      if (evt.startDate) parts.push(`Start Date: ${evt.startDate}`);
+      if (evt.endDate && evt.endDate !== evt.startDate) parts.push(`End Date: ${evt.endDate}`);
+      if (formattedStartTime && formattedEndTime) parts.push(`Time: ${formattedStartTime} - ${formattedEndTime}`);
+      else if (formattedStartTime) parts.push(`Start Time: ${formattedStartTime}`);
+      else if (formattedEndTime) parts.push(`End Time: ${formattedEndTime}`);
+      parts.push(`Location: ${evt.location}`);
+
+      return {
+        id: `rsvp-${evt.id}`,
+        name: evt.title,
+        category: 'Our Events',
+        price: 0,
+        description: `${parts.join(' • ')}${evt.description ? ' • ' + evt.description : ''}`,
+        photoUrl: evt.photos?.[0] || undefined,
+        tags: ['RSVP', 'Invitation', 'Entry Pass'],
+        isSpecial: true,
+        isAvailable: true,
+      };
+    });
 
     const cssStyle = `
       #tab-btn-photos, #tab-btn-about { display: none !important; }
@@ -413,7 +456,7 @@ export class QRHostingService {
       theme: 'indigo',
       coverImage: photos[0]?.url || undefined,
       logo: business.logo || photos[0]?.url || undefined,
-      phone: business.phone || '',
+      phone: business.phone || business.whatsapp || '',
       whatsapp: cleanWa,
       email: ownerEmail || business.email || '',
       userEmail: ownerEmail || business.email || '',
@@ -425,6 +468,7 @@ export class QRHostingService {
       photos,
       menuCategories: ['Our Events'],
       menuItems,
+      eventsQrItems: events,
       qrDarkColor: '#7c3aed',
       qrLightColor: '#ffffff',
       qrEyeColor: '#6d28d9',
@@ -676,13 +720,13 @@ export class QRHostingService {
       const darkColor = options?.color?.dark || '#000000';
       const lightColor = options?.color?.light || '#ffffff';
       const eyeColor = options?.color?.eyeColor || darkColor;
-      const targetWidth = options?.width || 512;
-      const margin = options?.margin ?? 2;
+      const targetWidth = options?.width || 600;
+      const margin = options?.margin ?? 3; // Ensure compliant quiet zone for phone cameras
 
       // In browser runtime, render onto canvas to support independent corner finder box colors
       if (typeof document !== 'undefined') {
         const qr = QRCode.create(url, {
-          errorCorrectionLevel: 'H',
+          errorCorrectionLevel: 'M', // 'M' (15%) gives optimal module density (41x41 vs 53x53 in H), dramatically improving scan speed
         });
         const moduleCount = qr.modules.size;
         const totalModules = moduleCount + margin * 2;
@@ -703,21 +747,17 @@ export class QRHostingService {
             for (let c = 0; c < moduleCount; c++) {
               if (qr.modules.get(r, c)) {
                 // Check if this module is in the 3 standard corner finder patterns (7x7 squares)
-                // 1. Top-Left: row 0..6, col 0..6
-                // 2. Top-Right: row 0..6, col (moduleCount-7)..moduleCount-1
-                // 3. Bottom-Left: row (moduleCount-7)..moduleCount-1, col 0..6
                 const isTopLeftEye = r < 7 && c < 7;
                 const isTopRightEye = r < 7 && c >= moduleCount - 7;
                 const isBottomLeftEye = r >= moduleCount - 7 && c < 7;
                 const isEye = isTopLeftEye || isTopRightEye || isBottomLeftEye;
 
                 ctx.fillStyle = isEye ? eyeColor : darkColor;
-                ctx.fillRect(
-                  (c + margin) * cellSize,
-                  (r + margin) * cellSize,
-                  cellSize + 0.15,
-                  cellSize + 0.15
-                );
+                const x0 = Math.floor((c + margin) * cellSize);
+                const y0 = Math.floor((r + margin) * cellSize);
+                const x1 = Math.ceil((c + margin + 1) * cellSize);
+                const y1 = Math.ceil((r + margin + 1) * cellSize);
+                ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
               }
             }
           }
@@ -733,7 +773,7 @@ export class QRHostingService {
           dark: darkColor,
           light: lightColor,
         },
-        errorCorrectionLevel: 'H',
+        errorCorrectionLevel: 'M',
       });
     } catch (err) {
       console.error('Failed to generate QR code:', err);
@@ -1629,9 +1669,9 @@ export class QRHostingService {
       }
 
       // Layout coordinates
-      const qrSize = 720;
-      const boxPaddingX = 36;
-      const topBadgeSpace = 110; // Space for pill badge at the top inside the box
+      const qrSize = 700;
+      const boxPaddingX = 46;
+      const topBadgeSpace = 120; // Ample breathing space for pill badge at the top
       const boxWidth = qrSize + boxPaddingX * 2; // 792
       const boxHeight = qrSize + topBadgeSpace + boxPaddingX; // 866
       const boxX = (canvasWidth - boxWidth) / 2; // 144
@@ -1711,7 +1751,7 @@ export class QRHostingService {
       const pillWidth = Math.max(220, Math.min(boxWidth - 80, textMetrics.width + 64));
       const pillHeight = 56;
       const pillX = (canvasWidth - pillWidth) / 2;
-      const pillY = boxY + 32;
+      const pillY = boxY + 30;
 
       // Pill Background (Dark theme color or black)
       ctx.fillStyle = primaryColor;
@@ -1725,7 +1765,7 @@ export class QRHostingService {
       ctx.textBaseline = 'middle';
       ctx.fillText(pillQrCodeName, canvasWidth / 2, pillY + pillHeight / 2 + 1);
 
-      // Draw QR Code Image inside Box (positioned under the pill badge)
+      // Draw QR Code Image inside Box (with dedicated white backing and ample margin)
       const qrY = boxY + topBadgeSpace;
       ctx.drawImage(qrImg, boxX + boxPaddingX, qrY, qrSize, qrSize);
 

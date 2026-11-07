@@ -1144,7 +1144,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  {t('qr_box_editor', business?.language)}
+                  {t('qr_code_name', business?.language) || 'QR Code Name'}
                 </label>
                 <input
                   type="text"

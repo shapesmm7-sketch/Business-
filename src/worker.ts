@@ -3364,6 +3364,96 @@ export default {
       }
     }
 
+    // 10. Audit Report Endpoint (/api/admin/audit-report)
+    if (url.pathname === '/api/admin/audit-report' && request.method === 'GET') {
+      try {
+        const bucket = getR2Bucket(env);
+        const db = getD1Database(env);
+        const report: any = {
+          r2Objects: [],
+          d1Files: [],
+          d1QrPages: [],
+          d1Users: [],
+          errors: [],
+        };
+
+        if (bucket && typeof bucket.list === 'function') {
+          try {
+            let cursor: string | undefined = undefined;
+            let hasMore = true;
+            while (hasMore) {
+              const listed: any = await bucket.list({ limit: 1000, cursor });
+              if (listed?.objects && Array.isArray(listed.objects)) {
+                for (const obj of listed.objects) {
+                  report.r2Objects.push({
+                    key: obj.key,
+                    size: obj.size,
+                    uploaded: obj.uploaded,
+                    httpMetadata: obj.httpMetadata,
+                  });
+                }
+              }
+              if (listed?.truncated && listed?.cursor) {
+                cursor = listed.cursor;
+              } else {
+                hasMore = false;
+              }
+            }
+          } catch (e: any) {
+            report.errors.push(`R2 list error: ${e.message}`);
+          }
+        }
+
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            const filesRes = await db.prepare('SELECT id, user_email, r2_key, filename, mime_type, size, created_at, updated_at FROM files').all();
+            report.d1Files = filesRes?.results || [];
+
+            const qrRes = await db.prepare('SELECT id, user_email, content_hash, updated_at, LENGTH(page_json) as json_len, page_json FROM qr_pages').all();
+            report.d1QrPages = (qrRes?.results || []).map((r: any) => {
+              let parsed: any = null;
+              try { parsed = JSON.parse(r.page_json); } catch (_) {}
+              return {
+                id: r.id,
+                user_email: r.user_email,
+                content_hash: r.content_hash,
+                updated_at: r.updated_at,
+                json_len: r.json_len,
+                page_title: parsed?.title || '',
+                page_type: parsed?.pageType || '',
+                internal_id: parsed?.id || '',
+                has_content: parsed ? (
+                  (parsed.eventsQrItems?.length || 0) > 0 ||
+                  (parsed.websitesQrItems?.length || 0) > 0 ||
+                  (parsed.socialsQrItems?.length || 0) > 0 ||
+                  (parsed.menuItems?.length || 0) > 0 ||
+                  (parsed.photos?.length || 0) > 0
+                ) : false,
+              };
+            });
+
+            try {
+              const usersRes = await db.prepare('SELECT * FROM users').all();
+              report.d1Users = usersRes?.results || [];
+            } catch (_) {}
+          } catch (e: any) {
+            report.errors.push(`D1 query error: ${e.message}`);
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, report, timestamp: new Date().toISOString() }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // 5. Try serving exact static asset from ASSETS binding
     try {
       const response = await env.ASSETS.fetch(request);

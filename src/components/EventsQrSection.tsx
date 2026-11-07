@@ -410,52 +410,25 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const formatEventDateTime = (item: EventQrItem) => {
     const parts: string[] = [];
+    const formattedStartTime = QRHostingService.formatTimeToAMPM(item.startTime);
+    const formattedEndTime = QRHostingService.formatTimeToAMPM(item.endTime);
 
-    // Date range
     if (item.startDate) {
-      try {
-        const startStr = new Date(item.startDate).toLocaleDateString([], {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        });
-        if (item.endDate && item.endDate !== item.startDate) {
-          const endStr = new Date(item.endDate).toLocaleDateString([], {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          });
-          parts.push(`${startStr} - ${endStr}`);
-        } else {
-          parts.push(startStr);
-        }
-      } catch {
-        parts.push(item.startDate);
-      }
+      parts.push(`Start Date: ${item.startDate}`);
     } else if (item.eventDate) {
-      try {
-        parts.push(new Date(item.eventDate).toLocaleDateString([], {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        }));
-      } catch {
-        parts.push(item.eventDate);
-      }
+      parts.push(`Start Date: ${item.eventDate}`);
     }
 
-    // Time range
-    if (item.startTime) {
-      if (item.endTime) {
-        parts.push(`${item.startTime} - ${item.endTime}`);
-      } else {
-        parts.push(`Starts at ${item.startTime}`);
-      }
-    } else if (item.endTime) {
-      parts.push(`Ends at ${item.endTime}`);
+    if (item.endDate && item.endDate !== item.startDate) {
+      parts.push(`End Date: ${item.endDate}`);
+    }
+
+    if (formattedStartTime && formattedEndTime && formattedStartTime !== formattedEndTime) {
+      parts.push(`Time: ${formattedStartTime} - ${formattedEndTime}`);
+    } else if (formattedStartTime) {
+      parts.push(`Start Time: ${formattedStartTime}`);
+    } else if (formattedEndTime) {
+      parts.push(`End Time: ${formattedEndTime}`);
     }
 
     return parts.length > 0 ? parts.join(' • ') : null;
@@ -686,7 +659,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
               {/* QR Code Name Input on Top */}
               <div className="w-full max-w-[240px] sm:max-w-[260px] text-left mb-1">
                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1 flex items-center justify-between">
-                  <span>{t('qr_box_editor', business?.language)}</span>
+                  <span>{t('qr_code_name', business?.language) || 'QR Code Name'}</span>
                   {tableNumberForPrint && (
                     <span className="text-[9px] text-purple-600 dark:text-purple-400 font-medium">{t('included_on_downloads', business?.language)}</span>
                   )}
@@ -833,14 +806,14 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                       {activeItem?.location && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
                           <MapPin className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                          <span>{activeItem.location}</span>
+                          <span>Location: {activeItem.location}</span>
                         </div>
                       )}
 
                       {activeItem?.contactPhone && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
                           <Phone className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                          <span>{t('inquiries_label', business?.language)}: {activeItem.contactPhone}</span>
+                          <span>Phone: {activeItem.contactPhone}</span>
                         </div>
                       )}
 
@@ -963,7 +936,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
-                  {t('qr_box_editor', business?.language)}
+                  {t('qr_code_name', business?.language) || 'QR Code Name'}
                 </label>
                 <input
                   type="text"

@@ -104,7 +104,7 @@ export async function tryUploadToCloudflare(
   mimeType = 'application/octet-stream',
   folder = 'receipts'
 ): Promise<{ url?: string; key?: string } | null> {
-  // Generated PDFs, reports, shopping lists, and receipts are NOT saved to R2.
+  // Generated PDFs, reports, shopping lists, receipts, and QR images are NOT saved to R2.
   // Data is kept in D1 and files are generated on demand.
   const lowerFolder = (folder || '').toLowerCase();
   const lowerFilename = (filename || '').toLowerCase();
@@ -112,6 +112,10 @@ export async function tryUploadToCloudflare(
     lowerFolder === 'documents' ||
     lowerFolder === 'reports' ||
     lowerFolder === 'receipts' ||
+    lowerFolder === 'qr_codes' ||
+    lowerFolder === 'qr_stands' ||
+    lowerFolder === 'qr_pages' ||
+    lowerFolder.includes('qr') ||
     mimeType.includes('pdf') ||
     lowerFilename.endsWith('.pdf')
   ) {
