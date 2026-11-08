@@ -77,6 +77,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [formContactEmail, setFormContactEmail] = useState<string>('');
   const [formCta, setFormCta] = useState<string>('Scan to RSVP & Join Event');
   const [formDesc, setFormDesc] = useState<string>('');
+  const [formGuestOfHonor, setFormGuestOfHonor] = useState<string>('');
+  const [formSpeakers, setFormSpeakers] = useState<string>('');
   const [formPhotos, setFormPhotos] = useState<string[]>([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -205,6 +207,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     setFormContactEmail(business.email || '');
     setFormCta('Scan to RSVP & Join Event');
     setFormDesc('');
+    setFormGuestOfHonor('');
+    setFormSpeakers('');
     setFormPhotos([]);
     setShowModal(true);
   };
@@ -235,6 +239,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     setFormContactEmail(item.contactEmail || '');
     setFormCta(item.ctaText);
     setFormDesc(item.description || '');
+    setFormGuestOfHonor(item.guestOfHonor || '');
+    setFormSpeakers(item.speakers && item.speakers.length > 0 ? item.speakers.join(', ') : '');
     setFormPhotos(item.photos || []);
     setShowModal(true);
   };
@@ -321,6 +327,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       }
     }
 
+    const parsedSpeakers = formSpeakers
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     if (editingItem) {
       const updatedItem: EventQrItem = {
         ...editingItem,
@@ -336,6 +347,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         contactEmail: formContactEmail.trim() || undefined,
         ctaText: formCta.trim() || 'Scan to RSVP',
         description: formDesc.trim(),
+        guestOfHonor: formGuestOfHonor.trim() || undefined,
+        speakers: parsedSpeakers.length > 0 ? parsedSpeakers : undefined,
         photos: formPhotos,
       };
       setItems((prev) =>
@@ -358,6 +371,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         contactEmail: formContactEmail.trim() || undefined,
         ctaText: formCta.trim() || 'Scan to RSVP',
         description: formDesc.trim(),
+        guestOfHonor: formGuestOfHonor.trim() || undefined,
+        speakers: parsedSpeakers.length > 0 ? parsedSpeakers : undefined,
         photos: formPhotos,
         darkColor: '#7c3aed',
         lightColor: '#ffffff',
@@ -853,6 +868,26 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                         {activeItem.description}
                       </p>
                     )}
+
+                    {activeItem?.guestOfHonor && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 text-xs">
+                        <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 block">Guest of Honor</span>
+                        <span className="font-bold text-amber-900 dark:text-amber-200">{activeItem.guestOfHonor}</span>
+                      </div>
+                    )}
+
+                    {activeItem?.speakers && activeItem.speakers.length > 0 && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/40 text-xs">
+                        <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 block mb-1">Key Speakers</span>
+                        <div className="flex flex-wrap gap-1">
+                          {activeItem.speakers.map((sp, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-[11px] text-indigo-900 dark:text-indigo-200">
+                              {sp}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1265,6 +1300,34 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                   placeholder="e.g. Scan to RSVP & Join Event"
                   value={formCta}
                   onChange={(e) => setFormCta(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Guest of Honor */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
+                  Guest of Honor (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Honorable Minister Jane Doe, CEO John Smith"
+                  value={formGuestOfHonor}
+                  onChange={(e) => setFormGuestOfHonor(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Key Speakers */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-1">
+                  Key Speakers (Comma Separated, Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. Alex Musisi, Sarah Connor, Mark Cuban"
+                  value={formSpeakers}
+                  onChange={(e) => setFormSpeakers(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
                 />
               </div>

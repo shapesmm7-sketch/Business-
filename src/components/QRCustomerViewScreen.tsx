@@ -911,7 +911,27 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                               )}
                             </div>
 
-                            {(evtPhone || evtEmail) && (
+                            {matchingEvt?.guestOfHonor && (
+                               <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                                 <span className="text-[10px] font-black uppercase tracking-wide text-amber-600 dark:text-amber-400 block mb-0.5">Guest of Honor</span>
+                                 <p className="font-bold">{matchingEvt.guestOfHonor}</p>
+                               </div>
+                             )}
+
+                             {matchingEvt?.speakers && matchingEvt.speakers.length > 0 && (
+                               <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200">
+                                 <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600 dark:text-indigo-400 block mb-1">Key Speakers</span>
+                                 <div className="flex flex-wrap gap-1.5">
+                                   {matchingEvt.speakers.map((sp: string, idx: number) => (
+                                     <span key={idx} className="px-2.5 py-1 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-xs text-indigo-900 dark:text-indigo-200">
+                                       {sp}
+                                     </span>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
+
+                             {(evtPhone || evtEmail) && (
                               <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
                                 <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

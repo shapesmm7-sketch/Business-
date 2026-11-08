@@ -213,6 +213,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [itemName, setItemName] = useState<string>('');
   const [itemCategory, setItemCategory] = useState<string>('');
   const [itemPrice, setItemPrice] = useState<string>('');
+  const [itemSize, setItemSize] = useState<string>('');
   const [itemDescription, setItemDescription] = useState<string>('');
   const [itemPhotoUrl, setItemPhotoUrl] = useState<string>('');
   const [itemTagsInput, setItemTagsInput] = useState<string>('');
@@ -1096,6 +1097,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       setItemName(item.name);
       setItemCategory(item.category || '');
       setItemPrice(item.price ? item.price.toString() : '');
+      setItemSize(item.size || '');
       setItemDescription(item.description || '');
       setItemPhotoUrl(item.photoUrl || '');
       setItemTagsInput(item.tags && item.tags.length > 0 ? item.tags.join(', ') : '');
@@ -1115,6 +1117,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       setItemName('');
       setItemCategory(selectedCategoryFilter !== 'All' ? selectedCategoryFilter : '');
       setItemPrice('');
+      setItemSize('');
       setItemDescription('');
       setItemPhotoUrl('');
       setItemTagsInput('');
@@ -1143,6 +1146,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       name: itemName.trim(),
       category: finalCategory,
       price: priceNum,
+      size: itemSize.trim() || undefined,
       hasPromo: itemHasPromo,
       promoPrice: itemHasPromo && promoPriceNum ? promoPriceNum : undefined,
       promoDescription: itemHasPromo && itemPromoDescription.trim() ? itemPromoDescription.trim() : undefined,
@@ -1654,19 +1658,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleCreateNewPage}
-              className="px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-xs flex items-center gap-1.5 transition active:scale-95"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t('new_qr_page', business?.language)}</span>
-            </button>
-          </div>
         </div>
-
-        </div>
+      </div>
 
       {/* Screen Navigation Tabs: QR Code | Business Info | Hotel Menu | Photos */}
       <div className="grid grid-cols-4 gap-1 sm:gap-1.5 bg-slate-200 dark:bg-slate-800/80 p-1 rounded-2xl">
@@ -2504,6 +2497,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                         <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
                           {item.category}
                         </span>
+                        {item.size && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">
+                            Size: {item.size}
+                          </span>
+                        )}
                       </div>
                       {item.hasPromo ? (
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -3018,6 +3016,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
 
               <div>
+                <label className="font-bold text-slate-600 dark:text-slate-400">Size / Variant (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Medium, Large, 500ml, Size 42"
+                  value={itemSize}
+                  onChange={(e) => setItemSize(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
                 <label className="font-bold text-slate-600 dark:text-slate-400">Description & Ingredients</label>
                 <textarea
                   rows={2}
@@ -3046,11 +3055,21 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => itemPhotoInputRef.current?.click()}
-                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs"
+                    disabled={isUploadingToCloudflare}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold text-xs disabled:opacity-50"
                   >
-                    {itemPhotoUrl ? 'Replace Photo' : 'Upload Photo'}
+                    {isUploadingToCloudflare ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600 dark:text-sky-400" />
+                        <span>Uploading...</span>
+                      </span>
+                    ) : itemPhotoUrl ? (
+                      'Replace Photo'
+                    ) : (
+                      'Upload Photo'
+                    )}
                   </button>
-                  {itemPhotoUrl && (
+                  {itemPhotoUrl && !isUploadingToCloudflare && (
                     <button
                       type="button"
                       onClick={() => setItemPhotoUrl('')}

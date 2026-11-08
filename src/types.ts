@@ -195,6 +195,7 @@ export interface InventoryProduct {
   name: string;
   image?: string;
   sizes?: string[];
+  color?: string;
   quantity: number;
   stockQuantity?: number; // Synonym/alias for quantity
   unit?: string;
@@ -213,6 +214,8 @@ export interface InventorySale {
   itemId?: string;
   productName: string;
   quantity: number;
+  size?: string;
+  color?: string;
   costPrice: number;
   sellingPrice: number;
   totalPrice: number;
@@ -243,6 +246,9 @@ export interface InventoryDebt {
   id: string;
   customerName: string; // name of the debtor / person demanded
   productTaken: string; // product/item taken
+  quantity?: number;
+  size?: string;
+  color?: string;
   phone: string;        // debtor's phone number
   amount: number;       // total amount demanded/owed
   description?: string; // description / additional notes
@@ -275,6 +281,7 @@ export interface ShoppingListItem {
   id: string;
   name: string;
   quantity: string; // e.g., "5", "5kg", "2 boxes"
+  color?: string;
   estimatedPrice?: number;
   estimatedCost?: number; // Alias for estimatedPrice
   checked: boolean;
@@ -494,6 +501,8 @@ export interface EventQrItem {
   rsvpUrl: string;
   contactPhone?: string;
   contactEmail?: string;
+  guestOfHonor?: string;
+  speakers?: string[];
   description?: string;
   ctaText: string;
   photos?: string[];
@@ -511,6 +520,7 @@ export interface QRMenuItem {
   category: string;
   description?: string;
   price: number;
+  size?: string;
   promoPrice?: number;
   hasPromo?: boolean;
   promoDescription?: string;

@@ -1399,6 +1399,18 @@ export const StorageService = {
     CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
+  updateInventoryExpense(updated: InventoryExpense): boolean {
+    const expenses = this.getInventoryExpenses();
+    const idx = expenses.findIndex((e) => e.id === updated.id);
+    if (idx !== -1) {
+      expenses[idx] = updated;
+      writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, expenses);
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+      return true;
+    }
+    return false;
+  },
+
   getInventoryDebts(): InventoryDebt[] {
     return readFromStorage<InventoryDebt[]>(STORAGE_KEYS.INVENTORY_DEBTS, []);
   },

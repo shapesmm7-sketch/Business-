@@ -158,6 +158,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [shoppingItemName, setShoppingItemName] = useState<string>('');
   const [shoppingItemQty, setShoppingItemQty] = useState<string>('');
   const [shoppingItemEstPrice, setShoppingItemEstPrice] = useState<string>('');
+  const [shoppingItemColor, setShoppingItemColor] = useState<string>('');
   const [shoppingItemNotes, setShoppingItemNotes] = useState<string>('');
   const [shoppingItemCategoryId, setShoppingItemCategoryId] = useState<string>('');
   const [shoppingSearchQuery, setShoppingSearchQuery] = useState<string>('');
@@ -747,6 +748,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [showSizes, setShowSizes] = useState<boolean>(false);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [customSizeInput, setCustomSizeInput] = useState<string>('');
+  const [productColor, setProductColor] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [costPrice, setCostPrice] = useState<string>('0.0');
   const [sellingPrice, setSellingPrice] = useState<string>('0.0');
@@ -866,6 +868,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       name: name.trim(),
       image,
       sizes: selectedSizes.length > 0 ? selectedSizes : undefined,
+      color: productColor.trim() || undefined,
       quantity: Math.max(0, quantity),
       costPrice: cost,
       sellingPrice: selling,
@@ -893,6 +896,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setImage(undefined);
     setSelectedSizes([]);
     setShowSizes(false);
+    setProductColor('');
     setQuantity(1);
     setCostPrice('0.0');
     setSellingPrice('0.0');
@@ -943,6 +947,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setImage(prod.image);
     setSelectedSizes(prod.sizes || []);
     setShowSizes((prod.sizes && prod.sizes.length > 0) || false);
+    setProductColor(prod.color || '');
     setQuantity(prod.quantity);
     setCostPrice(String(prod.costPrice));
     setSellingPrice(String(prod.sellingPrice));
@@ -960,6 +965,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [saleItemId, setSaleItemId] = useState<string>('');
   const [saleSearchQuery, setSaleSearchQuery] = useState<string>('');
   const [saleSelectedSize, setSaleSelectedSize] = useState<string>('');
+  const [saleSelectedColor, setSaleSelectedColor] = useState<string>('');
   const [saleQuantity, setSaleQuantity] = useState<number>(1);
   const [saleSoldPrice, setSaleSoldPrice] = useState<string>('0.0');
   const [saleCategoryId, setSaleCategoryId] = useState<string>('');
@@ -976,6 +982,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   /* -------------------------------------------------------------------------- */
   /* TAB 4: EXPENSES FORM & FILTER STATE                                        */
   /* -------------------------------------------------------------------------- */
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [expenseTitle, setExpenseTitle] = useState<string>('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
   const [expenseNotes, setExpenseNotes] = useState<string>('');
@@ -1194,6 +1201,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       itemId: saleItemId.trim() || selectedProductForSale?.itemId,
       productName: prodName,
       quantity: saleQuantity,
+      size: saleSelectedSize.trim() || undefined,
+      color: saleSelectedColor.trim() || undefined,
       costPrice: selectedProductForSale?.costPrice || 0,
       sellingPrice: totalSold / saleQuantity,
       totalPrice: totalSold,
@@ -1219,6 +1228,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setSaleItemId('');
     setSaleSearchQuery('');
     setSaleSelectedSize('');
+    setSaleSelectedColor('');
     setSaleQuantity(1);
     setSaleSoldPrice('0.0');
     setSaleCategoryId('');
@@ -1237,17 +1247,48 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       return;
     }
 
-    StorageService.recordInventoryExpense({
-      title: expenseTitle.trim(),
-      amount,
-      notes: expenseNotes.trim() || undefined,
-      date: expenseDate,
-    });
+    if (editingExpenseId) {
+      StorageService.updateInventoryExpense({
+        id: editingExpenseId,
+        title: expenseTitle.trim(),
+        amount,
+        notes: expenseNotes.trim() || undefined,
+        date: expenseDate,
+        createdAt: expenses.find((e) => e.id === editingExpenseId)?.createdAt || new Date().toISOString(),
+      });
+      showToast('Expense updated & saved to Cloud Storage!');
+      setEditingExpenseId(null);
+    } else {
+      StorageService.recordInventoryExpense({
+        title: expenseTitle.trim(),
+        amount,
+        notes: expenseNotes.trim() || undefined,
+        date: expenseDate,
+      });
+      showToast('Expense recorded & saved to Cloud Storage!');
+    }
 
     refreshData();
-    showToast('Expense recorded & saved to Cloud Storage!');
     AdMobService.showInterstitial('expense_recorded');
 
+    setExpenseTitle('');
+    setExpenseAmount('');
+    setExpenseNotes('');
+    setShowExpenseForm(false);
+  };
+
+  const startEditExpense = (exp: InventoryExpense) => {
+    setEditingExpenseId(exp.id);
+    setExpenseTitle(exp.title);
+    setExpenseAmount(String(exp.amount));
+    setExpenseNotes(exp.notes || '');
+    setExpenseDate(exp.date || new Date().toISOString().split('T')[0]);
+    setShowExpenseForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditExpense = () => {
+    setEditingExpenseId(null);
     setExpenseTitle('');
     setExpenseAmount('');
     setExpenseNotes('');
@@ -1272,6 +1313,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [debtCustomerName, setDebtCustomerName] = useState<string>('');
   const [debtPhone, setDebtPhone] = useState<string>('');
   const [debtProductTaken, setDebtProductTaken] = useState<string>('');
+  const [debtQuantity, setDebtQuantity] = useState<number>(1);
+  const [debtSize, setDebtSize] = useState<string>('');
+  const [debtColor, setDebtColor] = useState<string>('');
   const [debtAmount, setDebtAmount] = useState<string>('');
   const [debtDescription, setDebtDescription] = useState<string>('');
   const [debtCategoryId, setDebtCategoryId] = useState<string>('');
@@ -1376,6 +1420,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         customerName: debtCustomerName.trim(),
         phone: debtPhone.trim(),
         productTaken: debtProductTaken.trim(),
+        quantity: debtQuantity || 1,
+        size: debtSize.trim() || undefined,
+        color: debtColor.trim() || undefined,
         amount,
         description: debtDescription.trim() || undefined,
         categoryId: debtCategoryId || undefined,
@@ -1390,6 +1437,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         customerName: debtCustomerName.trim(),
         phone: debtPhone.trim(),
         productTaken: debtProductTaken.trim(),
+        quantity: debtQuantity || 1,
+        size: debtSize.trim() || undefined,
+        color: debtColor.trim() || undefined,
         amount,
         description: debtDescription.trim() || undefined,
         categoryId: debtCategoryId || undefined,
@@ -1407,6 +1457,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setDebtCustomerName('');
     setDebtPhone('');
     setDebtProductTaken('');
+    setDebtQuantity(1);
+    setDebtSize('');
+    setDebtColor('');
     setDebtAmount('');
     setDebtDescription('');
     setDebtCategoryId('');
@@ -1423,6 +1476,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setDebtCustomerName(debt.customerName);
     setDebtPhone(debt.phone || '');
     setDebtProductTaken(debt.productTaken || '');
+    setDebtQuantity(debt.quantity || 1);
+    setDebtSize(debt.size || '');
+    setDebtColor(debt.color || '');
     setDebtAmount(String(debt.amount));
     setDebtDescription(debt.description || '');
     setDebtCategoryId(debt.categoryId || '');
@@ -1439,6 +1495,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setDebtCustomerName('');
     setDebtPhone('');
     setDebtProductTaken('');
+    setDebtQuantity(1);
+    setDebtSize('');
+    setDebtColor('');
     setDebtAmount('');
     setDebtDescription('');
     setDebtCategoryId('');
@@ -1768,6 +1827,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       StorageService.updateShoppingListItem(editingShoppingId, {
         name: shoppingItemName.trim(),
         quantity: qty,
+        color: shoppingItemColor.trim() || undefined,
         estimatedPrice: estPrice,
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
@@ -1777,6 +1837,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       StorageService.addShoppingListItem({
         name: shoppingItemName.trim(),
         quantity: qty,
+        color: shoppingItemColor.trim() || undefined,
         estimatedPrice: estPrice,
         notes: shoppingItemNotes.trim() || undefined,
         categoryId: shoppingItemCategoryId || undefined,
@@ -1794,6 +1855,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowShoppingForm(true);
     setShoppingItemName(item.name);
     setShoppingItemQty(item.quantity);
+    setShoppingItemColor(item.color || '');
     setShoppingItemEstPrice(item.estimatedPrice !== undefined ? String(item.estimatedPrice) : '');
     setShoppingItemNotes(item.notes || '');
     setShoppingItemCategoryId(item.categoryId || '');
@@ -1805,6 +1867,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowShoppingForm(false);
     setShoppingItemName('');
     setShoppingItemQty('');
+    setShoppingItemColor('');
     setShoppingItemEstPrice('');
     setShoppingItemNotes('');
     setShoppingItemCategoryId('');
@@ -4709,6 +4772,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             )}
           </div>
 
+          {/* COLOR */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              COLOR (OPTIONAL)
+            </label>
+            <input
+              id="input-product-color"
+              type="text"
+              value={productColor}
+              onChange={(e) => setProductColor(e.target.value)}
+              placeholder="e.g. Red, Black, Royal Blue, Silver"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+            />
+          </div>
+
           {/* QUANTITY */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
@@ -5439,44 +5517,74 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     )}
                   </div>
 
-                  {/* Size Selector for Sold Product (if product has sizes) */}
-                  {selectedProductForSale && selectedProductForSale.sizes && selectedProductForSale.sizes.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/80 space-y-1.5 mt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-sky-800 dark:text-sky-300 uppercase tracking-wider">
-                          Size Sold (Optional):
-                        </span>
+                  {/* Size & Color section for Sales */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Size (Optional)
+                        </label>
                         {saleSelectedSize && (
                           <button
                             type="button"
                             onClick={() => setSaleSelectedSize('')}
                             className="text-[10px] text-rose-500 hover:underline"
                           >
-                            Deselect
+                            Clear
                           </button>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedProductForSale.sizes.map((sz) => {
-                          const isSelected = saleSelectedSize === sz;
-                          return (
+                      <input
+                        type="text"
+                        value={saleSelectedSize}
+                        onChange={(e) => setSaleSelectedSize(e.target.value)}
+                        placeholder="e.g. XL, 42, Medium"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                      {selectedProductForSale && selectedProductForSale.sizes && selectedProductForSale.sizes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {selectedProductForSale.sizes.map((sz) => (
                             <button
                               key={sz}
                               type="button"
                               onClick={() => setSaleSelectedSize((prev) => (prev === sz ? '' : sz))}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                                isSelected
-                                  ? 'bg-sky-600 text-white shadow-2xs'
-                                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                                saleSelectedSize === sz
+                                  ? 'bg-sky-600 text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                               }`}
                             >
                               {sz}
                             </button>
-                          );
-                        })}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Color (Optional)
+                        </label>
+                        {saleSelectedColor && (
+                          <button
+                            type="button"
+                            onClick={() => setSaleSelectedColor('')}
+                            className="text-[10px] text-rose-500 hover:underline"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={saleSelectedColor}
+                        onChange={(e) => setSaleSelectedColor(e.target.value)}
+                        placeholder="e.g. Red, Blue, Black"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
 
                   {/* SECTION: CATEGORY */}
                   <div className="space-y-1">
@@ -5962,6 +6070,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 Qty: {sale.quantity} sold
                               </span>
                             )}
+                            {sale.size && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-extrabold text-[10px]">
+                                Size: {sale.size}
+                              </span>
+                            )}
+                            {sale.color && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-extrabold text-[10px]">
+                                Color: {sale.color}
+                              </span>
+                            )}
                             {sale.remainingStock !== undefined && (
                               <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-[10px]">
                                 Balance left: {sale.remainingStock}
@@ -6405,6 +6523,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                     ({prod.sizes.join(',')})
                                   </span>
                                 )}
+                                {prod.color && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-extrabold shrink-0">
+                                    Color: {prod.color}
+                                  </span>
+                                )}
                               </div>
 
                               {/* Row 2: Price details in one compact line */}
@@ -6561,7 +6684,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-                      {t('record_expense', business?.language)}
+                      {editingExpenseId ? 'Edit Expense Record' : t('record_expense', business?.language)}
                     </h3>
                     <p className="text-[11px] text-slate-400">{t('record_expense_sub', business?.language)}</p>
                   </div>
@@ -6635,12 +6758,23 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
 
                   {/* Submit button */}
-                  <button
-                    type="submit"
-                    className="w-full py-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-sky-600/30 active:scale-[0.99] transition"
-                  >
-                    RECORD EXPENSE
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="flex-1 py-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-sky-600/30 active:scale-[0.99] transition"
+                    >
+                      {editingExpenseId ? 'UPDATE EXPENSE' : 'RECORD EXPENSE'}
+                    </button>
+                    {editingExpenseId && (
+                      <button
+                        type="button"
+                        onClick={cancelEditExpense}
+                        className="px-4 py-4 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition"
+                      >
+                        CANCEL
+                      </button>
+                    )}
+                  </div>
                 </form>
               </div>
             )}
@@ -6783,6 +6917,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                               <span className="font-extrabold text-sm font-mono text-rose-600 dark:text-rose-400">
                                 - {currency} {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
+                              <button
+                                type="button"
+                                onClick={() => startEditExpense(exp)}
+                                className="p-1.5 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 transition rounded-lg"
+                                title="Edit expense"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteExpense(exp.id, exp.title)}
@@ -7092,6 +7234,47 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         type="date"
                         value={debtDueDate}
                         onChange={(e) => setDebtDueDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quantity, Size, and Color inputs for Debts */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
+                        Quantity Taken
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={debtQuantity || ''}
+                        onChange={(e) => setDebtQuantity(parseInt(e.target.value, 10) || 1)}
+                        placeholder="e.g. 1"
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
+                        Size (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={debtSize}
+                        onChange={(e) => setDebtSize(e.target.value)}
+                        placeholder="e.g. XL, 42, Medium"
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-0.5">
+                        Color (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={debtColor}
+                        onChange={(e) => setDebtColor(e.target.value)}
+                        placeholder="e.g. Red, Blue, Black"
                         className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
                       />
                     </div>
@@ -7430,6 +7613,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                   <Package className="w-3 h-3 text-sky-600 shrink-0" />
                                   <span className="truncate">{debt.productTaken}</span>
                                 </span>
+                                {debt.quantity && debt.quantity > 1 && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/70 text-sky-700 dark:text-sky-300 font-extrabold text-[9px] shrink-0">
+                                    Qty: {debt.quantity}
+                                  </span>
+                                )}
+                                {debt.size && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-extrabold text-[9px] shrink-0">
+                                    Size: {debt.size}
+                                  </span>
+                                )}
+                                {debt.color && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 font-extrabold text-[9px] shrink-0">
+                                    Color: {debt.color}
+                                  </span>
+                                )}
 
                                 {debt.categoryId && (() => {
                                   const cat = productCategories.find((c) => c.id === debt.categoryId);
@@ -7951,7 +8149,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                         Est. Unit Price ({currency})
@@ -7961,8 +8159,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         step="any"
                         value={shoppingItemEstPrice}
                         onChange={(e) => setShoppingItemEstPrice(e.target.value)}
-                        placeholder="Optional estimated cost per unit"
+                        placeholder="Optional cost"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Color (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={shoppingItemColor}
+                        onChange={(e) => setShoppingItemColor(e.target.value)}
+                        placeholder="e.g. Red, Blue"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
                       />
                     </div>
 
@@ -7974,7 +8185,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         type="text"
                         value={shoppingItemNotes}
                         onChange={(e) => setShoppingItemNotes(e.target.value)}
-                        placeholder="e.g. Super Basmati, Blue band"
+                        placeholder="e.g. Super Basmati"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
                       />
                     </div>
@@ -8356,6 +8567,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 <span className="font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.2 rounded font-mono">
                                   {t('qty', business?.language)}: {item.quantity}
                                 </span>
+                                {item.color && (
+                                  <span className="font-extrabold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1.5 py-0.2 rounded">
+                                    Color: {item.color}
+                                  </span>
+                                )}
                                 {item.estimatedPrice !== undefined && (
                                   <span className="font-medium">
                                     {t('est', business?.language)}: {currency} {item.estimatedPrice.toLocaleString()}
