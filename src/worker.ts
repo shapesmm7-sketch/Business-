@@ -86,6 +86,42 @@ export function getD1Database(env: any): any {
 // In-memory auth session cache for fast instant login polling across web and Android
 const authSessionsCache = new Map<string, { status: string; code?: string; user?: any; createdAt: number }>();
 
+export function hasRealUserContent(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const backup = data.backupData || data;
+  if (Array.isArray(backup.receipts) && backup.receipts.length > 0) return true;
+  if (Array.isArray(backup.inventoryProducts) && backup.inventoryProducts.length > 0) return true;
+  if (Array.isArray(backup.inventorySales) && backup.inventorySales.length > 0) return true;
+  if (Array.isArray(backup.inventoryExpenses) && backup.inventoryExpenses.length > 0) return true;
+  if (Array.isArray(backup.inventoryDebts) && backup.inventoryDebts.length > 0) return true;
+  if (Array.isArray(backup.customers) && backup.customers.length > 0) return true;
+  if (Array.isArray(backup.agents) && backup.agents.length > 0) return true;
+  if (Array.isArray(backup.workers) && backup.workers.length > 0) return true;
+  if (Array.isArray(backup.shoppingListItems) && backup.shoppingListItems.length > 0) return true;
+  if (Array.isArray(backup.eventsQrItems) && backup.eventsQrItems.length > 0) return true;
+  if (Array.isArray(backup.websitesQrItems) && backup.websitesQrItems.length > 0) return true;
+  if (Array.isArray(backup.socialsQrItems) && backup.socialsQrItems.length > 0) return true;
+
+  const prof = backup.profile;
+  if (prof && typeof prof === 'object') {
+    if (prof.phone || prof.address || prof.logo || prof.signature || prof.taxNumber || prof.bankName || prof.website) return true;
+    if (prof.name && prof.name !== 'Brivu Business' && prof.name !== 'QuickReceipt' && prof.name.trim() !== '') return true;
+  }
+  return false;
+}
+
+export function hasRealQrPageContent(page: any): boolean {
+  if (!page || typeof page !== 'object') return false;
+  if (Array.isArray(page.eventsQrItems) && page.eventsQrItems.length > 0) return true;
+  if (Array.isArray(page.websitesQrItems) && page.websitesQrItems.length > 0) return true;
+  if (Array.isArray(page.socialsQrItems) && page.socialsQrItems.length > 0) return true;
+  if (Array.isArray(page.menuItems) && page.menuItems.length > 0) return true;
+  if (Array.isArray(page.photos) && page.photos.length > 0) return true;
+  if (page.logo || page.coverImage || page.phone || page.address) return true;
+  if (page.title && page.title !== 'Brivu Business' && page.title !== 'Our Events' && page.title !== 'Our Sites' && page.title !== 'Social Media Hub' && page.title.trim() !== '') return true;
+  return false;
+}
+
 // 60s Query Cache & D1 metrics logger
 const queryCache = new Map<string, { data: any; expiry: number }>();
 
@@ -2162,6 +2198,17 @@ export default {
           ''
         ).toLowerCase().trim();
 
+        if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              error: 'Authentication required. File uploads are restricted to logged-in users with a valid email address.',
+            }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
         const lowerFolder = (folder || '').toLowerCase();
         const lowerFilename = (filename || '').toLowerCase();
 
@@ -2642,10 +2689,28 @@ export default {
           ''
         ).toLowerCase().trim();
 
-        if (!userEmail) {
+        if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
           return new Response(
-            JSON.stringify({ ok: false, error: 'User email is required to save QR page' }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            JSON.stringify({ ok: false, error: 'Authentication required. Saving QR pages is restricted to logged-in users with a valid email.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Check if QR page has real user content
+        const hasPageContent = Boolean(
+          (page?.eventsQrItems && page.eventsQrItems.length > 0) ||
+          (page?.websitesQrItems && page.websitesQrItems.length > 0) ||
+          (page?.socialsQrItems && page.socialsQrItems.length > 0) ||
+          (page?.menuItems && page.menuItems.length > 0) ||
+          (page?.photos && page.photos.length > 0) ||
+          (page?.tagline && page.tagline.trim() !== '') ||
+          (page?.description && page.description.trim() !== '')
+        );
+
+        if (!hasPageContent) {
+          return new Response(
+            JSON.stringify({ ok: true, success: true, skipped: true, message: 'QR page contains default template data. Save skipped until content is added.' }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
 
@@ -2771,7 +2836,47 @@ export default {
           body?.user?.email ||
           backupData?.profile?.email ||
           ''
-        ).toLowerCase().trim() || 'default_user';
+        ).toLowerCase().trim();
+
+        // 1. REJECT UNAUTHENTICATED OR GUEST SYNC REQUESTS
+        if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-') || userEmail.includes('default_user')) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              error: 'Authentication required. Server sync is restricted to logged-in users with a valid email address.',
+            }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // 2. CHECK IF USER HAS REAL CONTENT (Do not write empty default backups/qr_pages rows)
+        const hasReceipts = Array.isArray(backupData?.receipts) && backupData.receipts.length > 0;
+        const hasProducts = Array.isArray(backupData?.inventoryProducts) && backupData.inventoryProducts.length > 0;
+        const hasInvoices = Array.isArray(backupData?.invoices) && backupData.invoices.length > 0;
+        const hasCustomProfile = Boolean(
+          backupData?.profile?.name &&
+          backupData.profile.name.trim() !== '' &&
+          backupData.profile.name !== 'My Business' &&
+          backupData.profile.name !== 'brivu'
+        );
+        const hasWebsites = Array.isArray(backupData?.websitesQrItems) && backupData.websitesQrItems.length > 0;
+        const hasSocials = Array.isArray(backupData?.socialsQrItems) && backupData.socialsQrItems.length > 0;
+        const hasEvents = Array.isArray(backupData?.eventsQrItems) && backupData.eventsQrItems.length > 0;
+
+        const hasRealContent = hasReceipts || hasProducts || hasInvoices || hasCustomProfile || hasWebsites || hasSocials || hasEvents;
+
+        if (!hasRealContent) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              skipped: true,
+              message: 'User has no real content yet. Server backups/qr_pages write skipped until content is created.',
+            }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
 
         if (backupData && db) {
           const backupJson = JSON.stringify(backupData);
@@ -2779,7 +2884,18 @@ export default {
 
           await ensureD1Tables(db);
 
-          // 1. Persist exactly 1 row per user in D1 backups table (No latest_backup un-scoped row)
+          // Persist user record in users table
+          try {
+            await db.prepare(`
+              INSERT INTO users (id, email, name, provider, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, 'google', ?, ?, ?)
+              ON CONFLICT(email) DO UPDATE SET 
+                last_login = excluded.last_login,
+                updated_at = excluded.updated_at
+            `).bind(userEmail, userEmail, userEmail.split('@')[0], now, now, now).run();
+          } catch (_) {}
+
+          // 1. Persist exactly 1 row per user in D1 backups table
           await db.prepare(`
             INSERT INTO backups (id, user_email, backup_data, updated_at)
             VALUES (?, ?, ?, ?)
@@ -3407,36 +3523,79 @@ export default {
         if (db) {
           try {
             await ensureD1Tables(db);
-            const filesRes = await db.prepare('SELECT id, user_email, r2_key, filename, mime_type, size, created_at, updated_at FROM files').all();
-            report.d1Files = filesRes?.results || [];
+            try {
+              const filesRes = await db.prepare('SELECT id, user_email, r2_key, filename, mime_type, size, created_at FROM files').all();
+              report.d1Files = filesRes?.results || [];
+            } catch (fe: any) {
+              report.errors.push(`Files query note: ${fe.message}`);
+            }
 
-            const qrRes = await db.prepare('SELECT id, user_email, content_hash, updated_at, LENGTH(page_json) as json_len, page_json FROM qr_pages').all();
-            report.d1QrPages = (qrRes?.results || []).map((r: any) => {
-              let parsed: any = null;
-              try { parsed = JSON.parse(r.page_json); } catch (_) {}
-              return {
-                id: r.id,
-                user_email: r.user_email,
-                content_hash: r.content_hash,
-                updated_at: r.updated_at,
-                json_len: r.json_len,
-                page_title: parsed?.title || '',
-                page_type: parsed?.pageType || '',
-                internal_id: parsed?.id || '',
-                has_content: parsed ? (
+            try {
+              const qrRes = await db.prepare('SELECT id, user_email, content_hash, updated_at, LENGTH(page_json) as json_len, page_json FROM qr_pages').all();
+              report.d1QrPages = (qrRes?.results || []).map((r: any) => {
+                let parsed: any = null;
+                try { parsed = JSON.parse(r.page_json); } catch (_) {}
+                return {
+                  id: r.id,
+                  user_email: r.user_email,
+                  content_hash: r.content_hash,
+                  updated_at: r.updated_at,
+                  json_len: r.json_len,
+                  page_title: parsed?.title || '',
+                  page_type: parsed?.pageType || '',
+                  internal_id: parsed?.id || '',
+                  is_brivu_usr: String(r.id || '').includes('brivu-usr') || String(r.user_email || '').includes('brivu-usr'),
+                  has_content: parsed ? (
+                    (parsed.eventsQrItems?.length || 0) > 0 ||
+                    (parsed.websitesQrItems?.length || 0) > 0 ||
+                    (parsed.socialsQrItems?.length || 0) > 0 ||
+                    (parsed.menuItems?.length || 0) > 0 ||
+                    (parsed.photos?.length || 0) > 0
+                  ) : false,
+                };
+              });
+            } catch (qe: any) {
+              report.errors.push(`QrPages query note: ${qe.message}`);
+            }
+
+            try {
+              const backupsRes = await db.prepare('SELECT id, user_email, updated_at, LENGTH(backup_data) as json_len, backup_data FROM backups').all();
+              report.d1Backups = (backupsRes?.results || []).map((r: any) => {
+                let parsed: any = null;
+                try { parsed = JSON.parse(r.backup_data); } catch (_) {}
+                const isReal = parsed ? (
+                  (parsed.receipts?.length || 0) > 0 ||
+                  (parsed.inventoryProducts?.length || 0) > 0 ||
+                  (parsed.customers?.length || 0) > 0 ||
+                  (parsed.shoppingListItems?.length || 0) > 0 ||
                   (parsed.eventsQrItems?.length || 0) > 0 ||
                   (parsed.websitesQrItems?.length || 0) > 0 ||
                   (parsed.socialsQrItems?.length || 0) > 0 ||
-                  (parsed.menuItems?.length || 0) > 0 ||
-                  (parsed.photos?.length || 0) > 0
-                ) : false,
-              };
-            });
+                  Boolean(parsed.profile?.phone || parsed.profile?.logo || parsed.profile?.signature)
+                ) : false;
+                return {
+                  id: r.id,
+                  user_email: r.user_email,
+                  updated_at: r.updated_at,
+                  json_len: r.json_len,
+                  is_brivu_usr: String(r.id || '').includes('brivu-usr') || String(r.user_email || '').includes('brivu-usr'),
+                  has_content: isReal,
+                  is_default_only: !isReal,
+                };
+              });
+            } catch (be: any) {
+              report.errors.push(`Backups query note: ${be.message}`);
+            }
 
             try {
               const usersRes = await db.prepare('SELECT * FROM users').all();
-              report.d1Users = usersRes?.results || [];
-            } catch (_) {}
+              report.d1Users = (usersRes?.results || []).map((u: any) => ({
+                ...u,
+                is_brivu_usr: String(u.id || '').includes('brivu-usr') || String(u.email || '').includes('brivu-usr'),
+              }));
+            } catch (ue: any) {
+              report.errors.push(`Users query note: ${ue.message}`);
+            }
           } catch (e: any) {
             report.errors.push(`D1 query error: ${e.message}`);
           }

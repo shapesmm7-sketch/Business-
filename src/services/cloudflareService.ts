@@ -155,11 +155,15 @@ export const CloudflareService = {
   },
 
   shouldAutoSaveFiles(): boolean {
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email || !user.email.includes('@')) return false;
     const config = this.getConfig();
     return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSaveFiles !== false);
   },
 
   shouldAutoSyncData(): boolean {
+    const user = StorageService.getWorkOSUser();
+    if (!user || !user.email || !user.email.includes('@')) return false;
     const config = this.getConfig();
     return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSyncData !== false);
   },
@@ -349,6 +353,14 @@ export const CloudflareService = {
       };
     }
 
+    const userEmail = StorageService.getAuthenticatedEmail();
+    if (!userEmail || !userEmail.includes('@')) {
+      return {
+        success: false,
+        message: 'Visitor is not logged in: File upload skipped',
+      };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return {
@@ -488,6 +500,14 @@ export const CloudflareService = {
       };
     }
 
+    const userEmail = StorageService.getAuthenticatedEmail();
+    if (!userEmail || !userEmail.includes('@')) {
+      return {
+        success: false,
+        message: 'Visitor is not logged in: Server sync skipped',
+      };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return {
@@ -497,16 +517,6 @@ export const CloudflareService = {
     }
 
     try {
-      const user = StorageService.getWorkOSUser();
-      const profile = StorageService.getProfile();
-      const brivuId = StorageService.getBrivuUserId();
-      const userEmail = (
-        user?.email ||
-        profile?.email ||
-        brivuId ||
-        'brivu_user'
-      ).toLowerCase().trim();
-
       const rawBackup = customBackup || StorageService.exportBackup();
       const backupData = sanitizeBackupForD1Sync(rawBackup);
       const headers = this.getAuthHeaders();
@@ -526,7 +536,7 @@ export const CloudflareService = {
             'X-User-Id': userEmail,
           },
           signal: controller.signal,
-          body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user }),
+          body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user: StorageService.getWorkOSUser() }),
         });
       } finally {
         clearTimeout(timeoutId);
@@ -1051,24 +1061,16 @@ export const CloudflareService = {
     }
 
     try {
-      const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const profile = StorageService.getProfile();
-      const brivuId = StorageService.getBrivuUserId();
-      const userEmail = (
-        emailOverride ||
-        user?.email ||
-        profile?.email ||
-        (brivuId && brivuId.includes('@') ? brivuId : '') ||
-        page?.userEmail ||
-        page?.email ||
-        ''
-      ).toLowerCase().trim();
+      const authEmail = StorageService.getAuthenticatedEmail();
+      const userEmail = (emailOverride || authEmail || page?.userEmail || page?.email || '').toLowerCase().trim();
 
-      if (userEmail) {
-        headers['X-User-Email'] = userEmail;
-        headers['X-User-Id'] = userEmail;
+      if (!userEmail || !userEmail.includes('@')) {
+        return { success: false, message: 'Visitor is not logged in: Single QR page save skipped' };
       }
+
+      const headers = this.getAuthHeaders();
+      headers['X-User-Email'] = userEmail;
+      headers['X-User-Id'] = userEmail;
 
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
       const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))

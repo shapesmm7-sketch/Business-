@@ -2679,19 +2679,20 @@ export const StorageService = {
     return writeToStorage(STORAGE_KEYS.APP_LOCKED_STATE, locked);
   },
 
-  // --- CLOUDFLARE WORKER SYNC & STORAGE ---
-  getBrivuUserId(): string {
+  getAuthenticatedEmail(): string {
     const user = this.getWorkOSUser();
-    if (user && user.email && user.email.trim() !== '') {
+    if (user && user.email && user.email.includes('@')) {
       return user.email.toLowerCase().trim();
     }
-    let id = readFromStorage<string | null>(STORAGE_KEYS.BRIVU_USER_ID, null);
-    if (!id || typeof id !== 'string' || id.trim() === '') {
-      // Create a secure, non-guessable, unique random ID starting with brivu_usr_
-      id = 'brivu-usr-' + Array.from({ length: 4 }, () => Math.random().toString(36).substring(2, 10)).join('-');
-      writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, id);
+    const profile = this.getProfile();
+    if (profile && profile.email && profile.email.includes('@')) {
+      return profile.email.toLowerCase().trim();
     }
-    return id;
+    return '';
+  },
+
+  getBrivuUserId(): string {
+    return this.getAuthenticatedEmail();
   },
 
   getCloudflareConfig(): CloudflareConfig {
@@ -2708,11 +2709,9 @@ export const StorageService = {
       loaded.workerUrl = defaultVal.workerUrl;
       writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
     }
-    // Get the unique, secure, persistent Brivu User ID
-    const brivuId = this.getBrivuUserId();
-    // Ensure every single device has a unique, cryptographically-isolated API key to prevent data sharing/overwriting
-    if (!loaded.apiKey || loaded.apiKey.trim() === '') {
-      loaded.apiKey = brivuId;
+    const authEmail = this.getAuthenticatedEmail();
+    if (authEmail && (!loaded.apiKey || loaded.apiKey.trim() === '')) {
+      loaded.apiKey = authEmail;
       writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
     }
     return loaded;
