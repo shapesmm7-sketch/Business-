@@ -2297,25 +2297,7 @@ export default {
         const lowerFolder = (folder || '').toLowerCase();
         const lowerFilename = (filename || '').toLowerCase();
 
-        // 1. Never save generated documents, reports, shopping lists, or receipts to R2
-        if (
-          lowerFolder === 'documents' ||
-          lowerFolder === 'reports' ||
-          lowerFolder === 'receipts' ||
-          mimeType.includes('pdf') ||
-          lowerFilename.endsWith('.pdf')
-        ) {
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              success: false,
-              error: 'Generated documents and reports are generated on demand and not stored in R2.',
-            }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        // 2. Fixed key for logo and signature to prevent duplicate files
+        // Fixed key for logo and signature to prevent duplicate files
         const isSignature = lowerFolder === 'signatures' || lowerFilename.includes('signature');
         const isLogo = lowerFolder === 'photos' && (lowerFilename.includes('logo') || lowerFilename === 'logo.webp');
 

@@ -154,16 +154,24 @@ export const CloudflareService = {
     return Boolean(config.workerUrl && config.workerUrl.trim().length > 0);
   },
 
+  getUserEmail(): string {
+    const authEmail = StorageService.getAuthenticatedEmail();
+    if (authEmail && authEmail.includes('@')) return authEmail.toLowerCase().trim();
+    const config = this.getConfig();
+    if (config.apiKey && config.apiKey.includes('@')) return config.apiKey.toLowerCase().trim();
+    return '';
+  },
+
   shouldAutoSaveFiles(): boolean {
-    const user = StorageService.getWorkOSUser();
-    if (!user || !user.email || !user.email.includes('@')) return false;
+    const userEmail = this.getUserEmail();
+    if (!userEmail) return false;
     const config = this.getConfig();
     return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSaveFiles !== false);
   },
 
   shouldAutoSyncData(): boolean {
-    const user = StorageService.getWorkOSUser();
-    if (!user || !user.email || !user.email.includes('@')) return false;
+    const userEmail = this.getUserEmail();
+    if (!userEmail) return false;
     const config = this.getConfig();
     return Boolean(config.workerUrl && config.workerUrl.trim().length > 0 && config.autoSyncData !== false);
   },
@@ -176,9 +184,8 @@ export const CloudflareService = {
       headers['X-Sync-Key'] = key.trim();
       headers['Authorization'] = `Bearer ${key.trim()}`;
     }
-    const user = StorageService.getWorkOSUser();
-    if (user && user.email) {
-      const cleanEmail = user.email.toLowerCase().trim();
+    const cleanEmail = this.getUserEmail();
+    if (cleanEmail) {
       headers['X-User-Email'] = cleanEmail;
       headers['X-User-Id'] = cleanEmail;
     }
@@ -353,8 +360,8 @@ export const CloudflareService = {
       };
     }
 
-    const userEmail = StorageService.getAuthenticatedEmail();
-    if (!userEmail || !userEmail.includes('@')) {
+    const userEmail = this.getUserEmail();
+    if (!userEmail) {
       return {
         success: false,
         message: 'Visitor is not logged in: File upload skipped',
@@ -425,12 +432,15 @@ export const CloudflareService = {
           headers: {
             ...headers,
             'Content-Type': 'application/json',
+            'X-User-Email': userEmail,
+            'X-User-Id': userEmail,
           },
           body: JSON.stringify({
             filename,
             data: payloadBase64,
             mimeType,
             folder,
+            userEmail,
           }),
           signal: controller.signal,
         });
@@ -500,8 +510,8 @@ export const CloudflareService = {
       };
     }
 
-    const userEmail = StorageService.getAuthenticatedEmail();
-    if (!userEmail || !userEmail.includes('@')) {
+    const userEmail = this.getUserEmail();
+    if (!userEmail) {
       return {
         success: false,
         message: 'Visitor is not logged in: Server sync skipped',
@@ -614,8 +624,7 @@ export const CloudflareService = {
     }
     try {
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const userEmail = (user?.email || '').toLowerCase().trim();
+      const userEmail = this.getUserEmail();
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
       const targetUrl = `${config.workerUrl}/api/receipts${query}`;
       const response = await fetch(targetUrl, {
@@ -699,8 +708,7 @@ export const CloudflareService = {
     }
 
     try {
-      const user = StorageService.getWorkOSUser();
-      const email = (emailOverride || user?.email || '').toLowerCase().trim();
+      const email = (emailOverride || this.getUserEmail() || '').toLowerCase().trim();
       if (!email) {
         return {
           success: false,
@@ -810,8 +818,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     try {
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const userEmail = (user?.email || '').toLowerCase().trim();
+      const userEmail = this.getUserEmail();
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
       const targetUrl = `${config.workerUrl}/api/receipts${query}`;
 
@@ -862,8 +869,7 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const email = user?.email ? user.email.toLowerCase().trim() : '';
+      const email = this.getUserEmail();
       const params = new URLSearchParams();
       if (prefix) params.set('prefix', prefix);
       if (email) params.set('email', email);
@@ -902,8 +908,7 @@ export const CloudflareService = {
       cleanKey = decodeURIComponent(cleanKey);
 
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const userEmail = (user?.email || '').toLowerCase().trim();
+      const userEmail = this.getUserEmail();
       if (userEmail) {
         headers['X-User-Email'] = userEmail;
         headers['X-User-Id'] = userEmail;
@@ -940,8 +945,7 @@ export const CloudflareService = {
 
     try {
       const headers = this.getAuthHeaders();
-      const user = StorageService.getWorkOSUser();
-      const email = user?.email ? user.email.toLowerCase().trim() : '';
+      const email = this.getUserEmail();
       const params = new URLSearchParams();
       if (email) params.set('email', email);
       const queryParam = params.toString() ? `?${params.toString()}` : '';

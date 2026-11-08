@@ -104,26 +104,10 @@ export async function tryUploadToCloudflare(
   mimeType = 'application/octet-stream',
   folder = 'receipts'
 ): Promise<{ url?: string; key?: string } | null> {
-  // Generated PDFs, reports, shopping lists, receipts, and QR images are NOT saved to R2.
-  // Data is kept in D1 and files are generated on demand.
-  const lowerFolder = (folder || '').toLowerCase();
-  const lowerFilename = (filename || '').toLowerCase();
-  if (
-    lowerFolder === 'documents' ||
-    lowerFolder === 'reports' ||
-    lowerFolder === 'receipts' ||
-    lowerFolder === 'qr_codes' ||
-    lowerFolder === 'qr_stands' ||
-    lowerFolder === 'qr_pages' ||
-    lowerFolder.includes('qr') ||
-    mimeType.includes('pdf') ||
-    lowerFilename.endsWith('.pdf')
-  ) {
-    return null;
-  }
   try {
     const config = CloudflareService.getConfig();
     if (!config.workerUrl || config.autoSaveFiles === false) return null;
+    const lowerFolder = (folder || 'receipts').toLowerCase();
     const uploadRes = await CloudflareService.uploadFile({
       data,
       filename,
@@ -149,20 +133,6 @@ export async function saveFileToCloudflare(options: {
   folder?: string;
 }): Promise<{ success: boolean; url?: string; key?: string; message: string }> {
   const { data, filename, mimeType = 'application/octet-stream', folder = 'receipts' } = options;
-  const lowerFolder = (folder || '').toLowerCase();
-  const lowerFilename = (filename || '').toLowerCase();
-  if (
-    lowerFolder === 'documents' ||
-    lowerFolder === 'reports' ||
-    lowerFolder === 'receipts' ||
-    mimeType.includes('pdf') ||
-    lowerFilename.endsWith('.pdf')
-  ) {
-    return {
-      success: false,
-      message: 'Generated documents and reports are generated on demand and not stored in R2.',
-    };
-  }
   const config = CloudflareService.getConfig();
   if (!config.workerUrl) {
     return {
@@ -199,19 +169,6 @@ async function attachCloudflareUpload(
   mimeType: string,
   folder?: string
 ): Promise<SaveFileResult> {
-  // Never upload generated documents, reports or PDFs to R2 in the background
-  const lowerFolder = (folder || '').toLowerCase();
-  const lowerFilename = (filename || '').toLowerCase();
-  if (
-    lowerFolder === 'documents' ||
-    lowerFolder === 'reports' ||
-    lowerFolder === 'receipts' ||
-    mimeType.includes('pdf') ||
-    lowerFilename.endsWith('.pdf')
-  ) {
-    return result;
-  }
-
   tryUploadToCloudflare(data, filename, mimeType, folder)
     .then((cf) => {
       if (cf && cf.url) {
