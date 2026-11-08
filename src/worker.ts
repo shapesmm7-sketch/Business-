@@ -218,8 +218,13 @@ export async function ensureD1Tables(db: any): Promise<void> {
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_user_email ON receipts(user_email)`).run();
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_number ON receipts(receipt_number)`).run();
   } catch (_) {}
+  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN user_email TEXT`).run(); } catch (_) {}
+  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN receipt_number TEXT`).run(); } catch (_) {}
+  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN total REAL`).run(); } catch (_) {}
+  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN data_json TEXT`).run(); } catch (_) {}
   try { await db.prepare(`ALTER TABLE receipts ADD COLUMN items_json TEXT`).run(); } catch (_) {}
   try { await db.prepare(`ALTER TABLE receipts ADD COLUMN customer_json TEXT`).run(); } catch (_) {}
+  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN created_at TEXT`).run(); } catch (_) {}
 
   try {
     await db.prepare(`
@@ -249,6 +254,12 @@ export async function ensureD1Tables(db: any): Promise<void> {
         created_at INTEGER
       )
     `).run();
+    // Transient OAuth handshakes only: purge stale sessions (>15 mins) and any misplaced email keys
+    const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
+    await db.prepare(`
+      DELETE FROM auth_sessions 
+      WHERE created_at < ? OR session_id LIKE '%@%'
+    `).bind(fifteenMinsAgo).run();
   } catch (_) {}
 
   try {
@@ -1372,13 +1383,22 @@ export default {
       }
 
       if (session && session.status === 'completed') {
-        return new Response(JSON.stringify({
+        const payload = {
           ok: true,
           success: true,
           status: 'completed',
           user: session.user,
           code: session.code,
-        }), {
+        };
+        // Handshake consumed: clean up temporary session from in-memory cache and D1 table
+        authSessionsCache.delete(sessionId);
+        const db = getD1Database(env);
+        if (db) {
+          try {
+            await db.prepare('DELETE FROM auth_sessions WHERE session_id = ?').bind(sessionId).run();
+          } catch (_) {}
+        }
+        return new Response(JSON.stringify(payload), {
           status: 200,
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         });
@@ -1584,12 +1604,6 @@ export default {
               nowIso,
               nowIso
             ).run();
-
-            await db.prepare(`
-              INSERT INTO auth_sessions (session_id, status, code, user_json, created_at)
-              VALUES (?, 'authenticated', 'workos', ?, ?)
-              ON CONFLICT(session_id) DO UPDATE SET user_json = excluded.user_json
-            `).bind(cleanEmail, JSON.stringify(user), Date.now()).run();
           } catch (d1Err) {
             console.warn('D1 auth user store note:', d1Err);
           }
@@ -1667,12 +1681,6 @@ export default {
               nowIso,
               nowIso
             ).run();
-
-            await db.prepare(`
-              INSERT INTO auth_sessions (session_id, status, code, user_json, created_at)
-              VALUES (?, 'authenticated', 'profile', ?, ?)
-              ON CONFLICT(session_id) DO UPDATE SET user_json = excluded.user_json
-            `).bind(cleanEmail, JSON.stringify(userPayload), Date.now()).run();
 
             if (businessProfile) {
               await db.prepare(`
@@ -1804,15 +1812,48 @@ export default {
       );
     }
 
-    // GET /api/receipts/:id - View hosted receipt / invoice info page (with boxes and details)
-    if (url.pathname.startsWith('/api/receipts/') && request.method === 'GET') {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'Hosted receipt web copies have been decommissioned. Receipts are generated on demand on client.',
-        }),
-        { status: 410, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
+    // DELETE /api/receipts/:id - Delete receipt from D1 receipts table and update D1 backups
+    if (url.pathname.startsWith('/api/receipts/') && request.method === 'DELETE') {
+      try {
+        const receiptId = decodeURIComponent(url.pathname.replace('/api/receipts/', '')).trim();
+        const db = getD1Database(env);
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          url.searchParams.get('email') ||
+          url.searchParams.get('user_id') ||
+          ''
+        ).toLowerCase().trim();
+
+        if (db && receiptId) {
+          await ensureD1Tables(db);
+          await db.prepare('DELETE FROM receipts WHERE id = ? OR receipt_number = ?').bind(receiptId, receiptId).run();
+
+          if (userEmail) {
+            try {
+              const bRow: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
+              if (bRow?.backup_data) {
+                const bData = JSON.parse(bRow.backup_data);
+                if (Array.isArray(bData.receipts)) {
+                  bData.receipts = bData.receipts.filter((r: any) => r && r.id !== receiptId && r.receiptNumber !== receiptId);
+                  await db.prepare('UPDATE backups SET backup_data = ?, updated_at = ? WHERE id = ?')
+                    .bind(JSON.stringify(bData), new Date().toISOString(), `user_${userEmail}`).run();
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, success: true, message: `Receipt ${receiptId} deleted from D1` }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
     }
     if (false) {
       try {
@@ -2152,6 +2193,8 @@ export default {
               INSERT INTO receipts (id, user_email, receipt_number, total, data_json, items_json, customer_json, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET 
+                user_email = excluded.user_email,
+                receipt_number = excluded.receipt_number,
                 total = excluded.total,
                 data_json = excluded.data_json,
                 items_json = excluded.items_json,
@@ -2166,7 +2209,49 @@ export default {
               customerJson,
               receipt.createdAt || new Date().toISOString()
             ).run();
-          } catch (_) {}
+
+            // Also keep the user's backups record updated with this receipt
+            if (userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-')) {
+              try {
+                const bRow: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
+                let bData: any = null;
+                if (bRow?.backup_data) {
+                  try { bData = JSON.parse(bRow.backup_data); } catch (_) {}
+                }
+                if (!bData) {
+                  bData = {
+                    version: 1,
+                    exportedAt: new Date().toISOString(),
+                    profile: { name: '', currency: 'UGX' },
+                    receipts: [],
+                    inventoryProducts: [],
+                    customers: [],
+                  };
+                }
+                if (!Array.isArray(bData.receipts)) {
+                  bData.receipts = [];
+                }
+                const existingIdx = bData.receipts.findIndex((r: any) => r.id === receipt.id || r.receiptNumber === receipt.receiptNumber);
+                if (existingIdx >= 0) {
+                  bData.receipts[existingIdx] = { ...bData.receipts[existingIdx], ...compactData };
+                } else {
+                  bData.receipts.unshift(compactData);
+                }
+                await db.prepare(`
+                  INSERT INTO backups (id, user_email, backup_data, updated_at)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET 
+                    backup_data = excluded.backup_data,
+                    user_email = excluded.user_email,
+                    updated_at = excluded.updated_at
+                `).bind(`user_${userEmail}`, userEmail, JSON.stringify(bData), new Date().toISOString()).run();
+              } catch (bErr) {
+                console.warn('Backup sync on receipt save note:', bErr);
+              }
+            }
+          } catch (insertErr) {
+            console.error('Error inserting receipt into D1:', insertErr);
+          }
         }
 
         return new Response(
@@ -2609,16 +2694,23 @@ export default {
       if (request.method === 'DELETE') {
         let deletedR2 = false;
         let deletedD1 = false;
+        const decodedKey = decodeURIComponent(key);
+        const encodedKey = encodeURIComponent(decodedKey);
+
         if (bucket && key) {
           try {
             await bucket.delete(key);
+            if (decodedKey !== key) await bucket.delete(decodedKey).catch(() => {});
             deletedR2 = true;
           } catch {}
         }
         if (db && key) {
           try {
             await ensureD1Tables(db);
-            await db.prepare('DELETE FROM files WHERE id = ?').bind(key).run();
+            await db.prepare(`
+              DELETE FROM files 
+              WHERE id = ? OR r2_key = ? OR id = ? OR r2_key = ? OR id LIKE ? OR r2_key LIKE ?
+            `).bind(key, key, decodedKey, decodedKey, `%${decodedKey.split('/').pop() || decodedKey}%`, `%${decodedKey.split('/').pop() || decodedKey}%`).run();
             deletedD1 = true;
           } catch {}
         }
@@ -3595,6 +3687,13 @@ export default {
               }));
             } catch (ue: any) {
               report.errors.push(`Users query note: ${ue.message}`);
+            }
+
+            try {
+              const recRes = await db.prepare('SELECT id, user_email, receipt_number, total, created_at FROM receipts').all();
+              report.d1Receipts = recRes?.results || [];
+            } catch (re: any) {
+              report.errors.push(`Receipts query note: ${re.message}`);
             }
           } catch (e: any) {
             report.errors.push(`D1 query error: ${e.message}`);

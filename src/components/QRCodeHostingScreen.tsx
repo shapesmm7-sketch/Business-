@@ -521,7 +521,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleRemoveLogo = () => {
     if (!activePage) return;
+    if (activePage.logo) {
+      CloudflareService.deleteFile(activePage.logo).catch(() => {});
+    }
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
+    if (resolvedEmail) {
+      CloudflareService.deleteFile(`users/${resolvedEmail}/photos/logo.webp`).catch(() => {});
+      CloudflareService.deleteFile(`users/${encodeURIComponent(resolvedEmail)}/photos/logo.webp`).catch(() => {});
+    }
     const updated: QRCodeHostedPage = {
       ...activePage,
       logo: undefined,
@@ -540,6 +547,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleRemoveCoverImage = () => {
     if (!activePage) return;
+    if (activePage.coverImage) {
+      CloudflareService.deleteFile(activePage.coverImage).catch(() => {});
+    }
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated: QRCodeHostedPage = {
       ...activePage,
@@ -1023,6 +1033,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDeletePhoto = (photoId: string) => {
     if (!activePage) return;
+    const photoToDelete = activePage.photos.find((p) => p.id === photoId);
+    if (photoToDelete?.url) {
+      CloudflareService.deleteFile(photoToDelete.url).catch(() => {});
+    }
     handleUpdateActivePage({
       photos: activePage.photos.filter((p) => p.id !== photoId),
     });

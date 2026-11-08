@@ -647,6 +647,15 @@ export const StorageService = {
     }
 
     const localSuccess = this.saveReceipt(receipt);
+
+    // Also trigger full cloud backup sync so D1 backups table is immediately updated with this receipt
+    try {
+      const config = this.getCloudflareConfig();
+      if (config.workerUrl && config.autoSyncData !== false) {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    } catch (_) {}
+
     return {
       success: localSuccess,
       cloudSynced,
@@ -1241,8 +1250,18 @@ export const StorageService = {
   },
 
   deleteInventoryProduct(id: string): void {
-    const products = this.getInventoryProducts().filter((p) => p.id !== id);
-    writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+    const products = this.getInventoryProducts();
+    const productToDelete = products.find((p) => p.id === id);
+    if (productToDelete?.image) {
+      CloudflareService.deleteFile(productToDelete.image).catch(() => {});
+    }
+    const userEmail = this.getAuthenticatedEmail();
+    if (userEmail) {
+      CloudflareService.deleteFile(`users/${userEmail}/product/${id}.webp`).catch(() => {});
+      CloudflareService.deleteFile(`users/${encodeURIComponent(userEmail)}/product/${id}.webp`).catch(() => {});
+    }
+    const remaining = products.filter((p) => p.id !== id);
+    writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, remaining);
     CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
@@ -1730,6 +1749,10 @@ export const StorageService = {
 
   deleteCustomer(id: string): boolean {
     const customers = this.getCustomers();
+    const cust = customers.find((c) => c.id === id);
+    if (cust?.profilePic) {
+      CloudflareService.deleteFile(cust.profilePic).catch(() => {});
+    }
     const filtered = customers.filter((c) => c.id !== id);
     const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
     if (success) {
@@ -1825,6 +1848,10 @@ export const StorageService = {
 
   deleteAgent(id: string): boolean {
     const agents = this.getAgents();
+    const agent = agents.find((a) => a.id === id);
+    if (agent?.profilePic) {
+      CloudflareService.deleteFile(agent.profilePic).catch(() => {});
+    }
     const filtered = agents.filter((a) => a.id !== id);
     const success = writeToStorage(STORAGE_KEYS.AGENTS, filtered);
     if (success) {
@@ -1962,6 +1989,10 @@ export const StorageService = {
 
   deleteWorker(id: string): boolean {
     const workers = this.getWorkers();
+    const worker = workers.find((w) => w.id === id);
+    if (worker?.profilePic) {
+      CloudflareService.deleteFile(worker.profilePic).catch(() => {});
+    }
     const filtered = workers.filter((w) => w.id !== id);
     const success = writeToStorage(STORAGE_KEYS.WORKERS, filtered);
     if (success) {

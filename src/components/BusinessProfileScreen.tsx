@@ -302,10 +302,21 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   };
 
   const handleRemoveSignature = () => {
+    const prevSig = profile.signature;
     setProfile((prev) => ({ ...prev, signature: undefined }));
     if (sigFileInputRef.current) {
       sigFileInputRef.current.value = '';
     }
+    if (prevSig) {
+      CloudflareService.deleteFile(prevSig).catch(() => {});
+    }
+    const userEmail = StorageService.getAuthenticatedEmail();
+    if (userEmail) {
+      CloudflareService.deleteFile(`users/${userEmail}/photos/signature.webp`).catch(() => {});
+      CloudflareService.deleteFile(`users/${encodeURIComponent(userEmail)}/photos/signature.webp`).catch(() => {});
+    }
+    StorageService.saveProfile({ ...profile, signature: undefined });
+    CloudflareService.syncAllToCloudflare().catch(() => {});
   };
 
   // Image upload and client-side compression to avoid storage limits
@@ -361,10 +372,21 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   };
 
   const handleRemoveLogo = () => {
+    const prevLogo = profile.logo;
     setProfile((prev) => ({ ...prev, logo: undefined }));
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    if (prevLogo) {
+      CloudflareService.deleteFile(prevLogo).catch(() => {});
+    }
+    const userEmail = StorageService.getAuthenticatedEmail();
+    if (userEmail) {
+      CloudflareService.deleteFile(`users/${userEmail}/photos/logo.webp`).catch(() => {});
+      CloudflareService.deleteFile(`users/${encodeURIComponent(userEmail)}/photos/logo.webp`).catch(() => {});
+    }
+    StorageService.saveProfile({ ...profile, logo: undefined });
+    CloudflareService.syncAllToCloudflare().catch(() => {});
   };
 
   const [validationError, setValidationError] = useState<string | null>(null);

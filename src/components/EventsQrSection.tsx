@@ -288,6 +288,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   };
 
   const handleRemovePhoto = (index: number) => {
+    const photoToRemove = formPhotos[index];
+    if (photoToRemove) {
+      CloudflareService.deleteFile(photoToRemove).catch(() => {});
+    }
     setFormPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -370,6 +374,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
   const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const itemToDelete = items.find((i) => i.id === id);
+    if (itemToDelete?.photos && Array.isArray(itemToDelete.photos)) {
+      for (const ph of itemToDelete.photos) {
+        if (ph) CloudflareService.deleteFile(ph).catch(() => {});
+      }
+    }
     const remaining = items.filter((i) => i.id !== id);
     setItems(remaining);
     QRHostingService.removeEventPage(id, business);
@@ -380,6 +390,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         setSelectedItemId('');
       }
     }
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     showToast('Event QR deleted.');
   };
 

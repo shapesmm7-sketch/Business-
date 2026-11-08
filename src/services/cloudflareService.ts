@@ -887,15 +887,28 @@ export const CloudflareService = {
   },
 
   /**
-   * Deletes a file from Cloudflare R2
+   * Deletes a file from Cloudflare R2 and D1 files table
    */
-  async deleteFile(key: string): Promise<boolean> {
+  async deleteFile(keyOrUrl: string): Promise<boolean> {
+    if (!keyOrUrl || typeof keyOrUrl !== 'string') return false;
     const config = this.getConfig();
     if (!this.isConfigured()) return false;
 
     try {
+      let cleanKey = keyOrUrl.trim();
+      if (cleanKey.includes('/api/files/')) {
+        cleanKey = cleanKey.split('/api/files/')[1].split('?')[0].split('#')[0];
+      }
+      cleanKey = decodeURIComponent(cleanKey);
+
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/files/${encodeURIComponent(key)}`;
+      const user = StorageService.getWorkOSUser();
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      if (userEmail) {
+        headers['X-User-Email'] = userEmail;
+        headers['X-User-Id'] = userEmail;
+      }
+      const targetUrl = `${config.workerUrl}/api/files/${encodeURIComponent(cleanKey)}`;
 
       const res = await fetch(targetUrl, {
         method: 'DELETE',
