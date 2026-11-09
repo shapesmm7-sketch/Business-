@@ -97,6 +97,93 @@ async function loadImgDataUrl(src?: string): Promise<string | undefined> {
 }
 
 /**
+ * Creates a jsPDF document that adapts its height dynamically to the content
+ * instead of forcing arbitrary blank space or a fixed 297mm A4 page.
+ */
+export function createAdaptivePdf(widthMm: number, heightMm: number): jsPDF {
+  const h = Math.max(100, Math.ceil(heightMm));
+  if (widthMm <= h) {
+    return new jsPDF({ orientation: 'portrait', unit: 'mm', format: [widthMm, h] });
+  } else {
+    return new jsPDF({ orientation: 'landscape', unit: 'mm', format: [h, widthMm] });
+  }
+}
+
+/**
+ * Calculates the exact height needed by receipt/invoice content so the page adapts
+ * naturally to content without leaving unnecessary empty space.
+ */
+export function calculateReceiptPageHeight(receipt: Receipt, template: ReceiptTemplateId = 'modern'): number {
+  const itemsCount = receipt.items?.length || 1;
+  const custContactCount = [receipt.customerPhone, receipt.customerEmail, receipt.customerAddress].filter(Boolean).length;
+  
+  let h = 16; // top margin
+  const biz: Partial<BusinessProfile> = receipt.businessSnapshot || {};
+  const hasLogo = Boolean(biz.logo && biz.logo.startsWith('data:image'));
+  const hasBizName = Boolean((biz.name || '').trim() && (biz.name || '').trim().toLowerCase() !== 'business name');
+  
+  let headerH = 34;
+  if (template === 'classic') {
+    headerH = hasBizName ? 38 : 28;
+    if (biz.description) headerH += 6;
+    if (biz.phone || biz.email) headerH += 5;
+    if (biz.address) headerH += 5;
+  } else if (template === 'minimal') {
+    headerH = 28;
+    if (biz.description) headerH += 5;
+    if (biz.address) headerH += 5;
+  } else if (template === 'business') {
+    headerH = 42;
+    if (biz.taxNumber) headerH += 5;
+  } else {
+    // modern
+    headerH = 34;
+    if (hasBizName) headerH += 6;
+    if (biz.description) headerH += 5;
+    if (biz.phone || biz.email) headerH += 4;
+    if (biz.address) headerH += 4;
+    if (hasLogo) headerH = Math.max(headerH, 28);
+  }
+  h += headerH + 7;
+
+  // Info card / meta section
+  const infoCardH = Math.max(26, 16 + custContactCount * 4.5);
+  h += infoCardH + 7;
+
+  // Table header + items
+  const itemRowH = template === 'classic' ? 8 : 8.5;
+  h += 9 + itemsCount * itemRowH + 6;
+
+  // Totals & payments
+  h += 32;
+  if (receipt.discountAmount && receipt.discountAmount > 0) h += 6;
+  if (receipt.amountPaid && receipt.amountPaid > 0) h += 6;
+
+  // Financial info
+  if (receipt.taxAmount && receipt.taxAmount > 0) h += 5;
+  if (receipt.shippingFee && receipt.shippingFee > 0) h += 5;
+  if (receipt.balance && receipt.balance !== 0) h += 6;
+  if (receipt.amountInWords) h += 12;
+  if (receipt.bankDetails) h += 10;
+  if (receipt.notes) h += 10;
+
+  // 30-50px gap (~9mm) + Signature + Thank You
+  h += 9;
+  const sigH = (biz.signature && biz.signature.startsWith('data:image')) ? 24 : 16;
+  const thankH = (receipt.nonReturnable || receipt.nonRefundable) ? 18 : 12;
+  h += Math.max(sigH, thankH);
+
+  // Footer / Powered by Brivu
+  h += 14;
+  if (biz.customFooter && biz.customFooter.trim().length > 0) h += 8;
+
+  // Bottom margin
+  h += 14;
+
+  return Math.min(297, Math.max(130, Math.ceil(h)));
+}
+
+/**
  * High quality vector PDF generator for Brivu
  * Supports 15 professional templates with selectable text, business logos, and offline QR verification
  */
@@ -310,12 +397,13 @@ export const PdfGenerator = {
     pageWidth: number,
     size: number = 22
   ): Promise<number> {
-    // No QR code is embedded on receipts/invoices
+    // Single clean footer following naturally after receipt content
+    const footerY = startY + 8;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, startY + 6, { align: 'center' });
-    return startY + 10;
+    doc.text('Powered by Brivu', pageWidth / 2, footerY, { align: 'center' });
+    return footerY + 5;
   },
 
   async appendQrCodeToPdf(
@@ -486,16 +574,10 @@ export const PdfGenerator = {
         compactDoc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight, undefined, 'FAST');
         return compactDoc;
       } else {
-        const doc = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-        });
+        // Adapt PDF height naturally to receipt content instead of forcing arbitrary empty space
+        const naturalDocHeight = Math.ceil(imgHeight + margin * 2);
+        const doc = createAdaptivePdf(pdfWidth, naturalDocHeight);
         doc.addImage(imgData, 'PNG', margin, margin, usableWidth, imgHeight, undefined, 'FAST');
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text('Powered by Brivu', 105, 290, { align: 'center' });
         return doc;
       }
     } catch (err) {
@@ -658,7 +740,7 @@ export const PdfGenerator = {
 
         // Amount in Words
         if (receipt.amountInWords) {
-          y += 64;
+          y += 36;
           ctx.fillStyle = '#475569';
           ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
           ctx.fillText('Amount Paid in Words:', cardX + 40, y);
@@ -667,8 +749,8 @@ export const PdfGenerator = {
           ctx.fillText(receipt.amountInWords.toUpperCase(), cardX + 180, y);
         }
 
-        // Signature Line
-        y = cardY + cardH - 120;
+        // Signature Line below Amount Paid in Words
+        y += 36;
         const sigLineX = cardX + cardW - 240;
         ctx.strokeStyle = '#cbd5e1';
         ctx.beginPath();
@@ -680,14 +762,14 @@ export const PdfGenerator = {
         ctx.textAlign = 'center';
         ctx.fillText('Authorized Signature', sigLineX + 100, y + 16);
 
-        // Thank you notice
-        y += 28;
+        // Thank you notice below Authorized Signature
+        y += 40;
         ctx.fillStyle = '#0f172a';
         ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
         ctx.fillText('Thank you for your business!', cardX + cardW / 2, y);
         ctx.fillStyle = '#94a3b8';
         ctx.font = '10px system-ui, -apple-system, sans-serif';
-        ctx.fillText('Powered by Brivu', cardX + cardW / 2, y + 20);
+        ctx.fillText('Powered by Brivu', cardX + cardW / 2, y + 24);
 
         canvas = fbCanvas;
       }
@@ -775,7 +857,9 @@ export const PdfGenerator = {
    * Renders the Modern Template & Themed Variants (Clean contemporary layout with branded headers)
    */
   async renderModernTemplate(receipt: Receipt): Promise<jsPDF> {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = 210;
+    const naturalHeight = calculateReceiptPageHeight(receipt, 'modern');
+    const doc = createAdaptivePdf(pageWidth, naturalHeight);
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
@@ -803,11 +887,10 @@ export const PdfGenerator = {
     // Page background if theme specifies
     if (theme.pdf.pageBg) {
       doc.setFillColor(theme.pdf.pageBg[0], theme.pdf.pageBg[1], theme.pdf.pageBg[2]);
-      doc.rect(0, 0, 210, 297, 'F');
+      doc.rect(0, 0, pageWidth, naturalHeight, 'F');
     }
 
     // Dimensions
-    const pageWidth = 210;
     const margin = 16;
     const contentWidth = pageWidth - margin * 2;
     let y = 16;
@@ -1094,21 +1177,21 @@ export const PdfGenerator = {
       y += 6;
     }
 
-    // 1. Financial info
+    // 1. Financial info & Amount in Words
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Signature section ON TOP of thank you message
-    y = this.appendSignatureBlock(doc, receipt, y, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words
+    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
 
-    // 3. Centered Thank You message and terms
-    y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth);
+    // 3. Thank You message and return policies BELOW Signature block
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
 
-    // 4. Centered QR Code at bottom of receipt
+    // 4. Centered clean bottom footer (Powered by Brivu) BELOW Thank You message
     y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
 
     // Bottom footer (only if user explicitly provided a custom footer)
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
-      const footerY = Math.max(y + 6, 282);
+      const footerY = y + 4;
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, footerY - 4, pageWidth - margin, footerY - 4);
 
@@ -1118,11 +1201,6 @@ export const PdfGenerator = {
       doc.text(business.customFooter, pageWidth / 2, footerY, { align: 'center' });
     }
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
-
     return doc;
   },
 
@@ -1130,11 +1208,12 @@ export const PdfGenerator = {
    * Renders the Classic Template (Formal timeless design with traditional borders)
    */
   async renderClassicTemplate(receipt: Receipt): Promise<jsPDF> {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = 210;
+    const naturalHeight = calculateReceiptPageHeight(receipt, 'classic');
+    const doc = createAdaptivePdf(pageWidth, naturalHeight);
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
-    const pageWidth = 210;
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
     let y = 18;
@@ -1333,25 +1412,20 @@ export const PdfGenerator = {
     // 1. Financial info
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Classic Signature Line & Footer ON TOP of thank you message
-    y = this.appendSignatureBlock(doc, receipt, y, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words
+    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
 
-    // 3. Centered Thank you message
-    y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth);
+    // 3. Thank You message BELOW Signature block
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
 
-    // 4. Centered QR Code at bottom
+    // 4. Centered clean bottom footer
     y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
 
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFont('times', 'italic');
       doc.setFontSize(9.5);
-      doc.text(business.customFooter, pageWidth / 2, Math.max(y + 6, 282), { align: 'center' });
+      doc.text(business.customFooter, pageWidth / 2, y + 4, { align: 'center' });
     }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
 
     return doc;
   },
@@ -1360,11 +1434,12 @@ export const PdfGenerator = {
    * Renders the Minimal Template (Airy modern Scandinavian typography)
    */
   async renderMinimalTemplate(receipt: Receipt): Promise<jsPDF> {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = 210;
+    const naturalHeight = calculateReceiptPageHeight(receipt, 'minimal');
+    const doc = createAdaptivePdf(pageWidth, naturalHeight);
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
-    const pageWidth = 210;
     const margin = 22;
     const contentWidth = pageWidth - margin * 2;
     let y = 22;
@@ -1548,25 +1623,20 @@ export const PdfGenerator = {
     // 1. Financial info
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Minimal Signature Block ON TOP of Thank you
-    y = this.appendSignatureBlock(doc, receipt, y, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words
+    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
 
-    // 3. Centered Thank You message
-    y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth);
+    // 3. Thank You message BELOW Signature block
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
 
-    // 4. Centered QR Code at bottom
+    // 4. Centered clean bottom footer
     y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
 
     // Minimal footer
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFontSize(8.5);
-      doc.text(business.customFooter, margin, Math.max(y + 6, 282));
+      doc.text(business.customFooter, margin, y + 4);
     }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
 
     return doc;
   },
@@ -1575,13 +1645,14 @@ export const PdfGenerator = {
    * Renders the Business Template (Corporate layout with TIN/VAT and formal tax details)
    */
   async renderBusinessTemplate(receipt: Receipt): Promise<jsPDF> {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = 210;
+    const naturalHeight = calculateReceiptPageHeight(receipt, 'business');
+    const doc = createAdaptivePdf(pageWidth, naturalHeight);
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
     const accentColor = receipt.accentColor;
     const theme = resolveEffectiveTheme('business', accentColor);
-    const pageWidth = 210;
     const margin = 16;
     const contentWidth = pageWidth - margin * 2;
     let y = 16;
@@ -1804,23 +1875,21 @@ export const PdfGenerator = {
     // 1. Financial info
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
+    // Natural 30–50px spacing (approx 9mm) after Amount Paid in Words
+    y += 9;
+
     // 2. Thank you message below signature
     y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth);
 
-    // 3. Centered QR Code at bottom
+    // 3. Centered clean bottom footer
     y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
 
     // Legal Footer
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text(business.customFooter, pageWidth / 2, Math.max(y + 6, 282), { align: 'center' });
+      doc.text(business.customFooter, pageWidth / 2, y + 4, { align: 'center' });
     }
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text('Powered by Brivu', pageWidth / 2, 290, { align: 'center' });
 
     return doc;
   },

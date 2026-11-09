@@ -157,6 +157,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [shoppingCategories, setShoppingCategories] = useState<ShoppingCategory[]>(() => StorageService.getShoppingCategories());
   const [shoppingItemName, setShoppingItemName] = useState<string>('');
   const [shoppingItemQty, setShoppingItemQty] = useState<string>('');
+  const [shoppingItemSize, setShoppingItemSize] = useState<string>('');
   const [shoppingItemEstPrice, setShoppingItemEstPrice] = useState<string>('');
   const [shoppingItemColor, setShoppingItemColor] = useState<string>('');
   const [shoppingItemNotes, setShoppingItemNotes] = useState<string>('');
@@ -1827,6 +1828,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       StorageService.updateShoppingListItem(editingShoppingId, {
         name: shoppingItemName.trim(),
         quantity: qty,
+        size: shoppingItemSize.trim() || undefined,
         color: shoppingItemColor.trim() || undefined,
         estimatedPrice: estPrice,
         notes: shoppingItemNotes.trim() || undefined,
@@ -1837,6 +1839,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       StorageService.addShoppingListItem({
         name: shoppingItemName.trim(),
         quantity: qty,
+        size: shoppingItemSize.trim() || undefined,
         color: shoppingItemColor.trim() || undefined,
         estimatedPrice: estPrice,
         notes: shoppingItemNotes.trim() || undefined,
@@ -1855,6 +1858,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowShoppingForm(true);
     setShoppingItemName(item.name);
     setShoppingItemQty(item.quantity);
+    setShoppingItemSize(item.size || '');
     setShoppingItemColor(item.color || '');
     setShoppingItemEstPrice(item.estimatedPrice !== undefined ? String(item.estimatedPrice) : '');
     setShoppingItemNotes(item.notes || '');
@@ -1867,6 +1871,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setShowShoppingForm(false);
     setShoppingItemName('');
     setShoppingItemQty('');
+    setShoppingItemSize('');
     setShoppingItemColor('');
     setShoppingItemEstPrice('');
     setShoppingItemNotes('');
@@ -8113,7 +8118,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
 
                 <form onSubmit={handleSaveShoppingItem} className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                         Item Name *
@@ -8145,6 +8150,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         placeholder="e.g. 5, 10kg, 2 boxes"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
                         required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        Size (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={shoppingItemSize}
+                        onChange={(e) => setShoppingItemSize(e.target.value)}
+                        placeholder="e.g. XL, 42, Medium, 500ml"
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
                       />
                     </div>
                   </div>
@@ -8567,6 +8585,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 <span className="font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.2 rounded font-mono">
                                   {t('qty', business?.language)}: {item.quantity}
                                 </span>
+                                {item.size && (
+                                  <span className="font-extrabold bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 px-1.5 py-0.2 rounded">
+                                    Size: {item.size}
+                                  </span>
+                                )}
                                 {item.color && (
                                   <span className="font-extrabold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1.5 py-0.2 rounded">
                                     Color: {item.color}

@@ -281,6 +281,7 @@ export interface ShoppingListItem {
   id: string;
   name: string;
   quantity: string; // e.g., "5", "5kg", "2 boxes"
+  size?: string;
   color?: string;
   estimatedPrice?: number;
   estimatedCost?: number; // Alias for estimatedPrice
