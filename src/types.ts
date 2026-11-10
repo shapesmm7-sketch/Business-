@@ -193,6 +193,7 @@ export interface InventoryProduct {
   itemId: string;
   barcode?: string;
   name: string;
+  description?: string; // Optional customer-facing product description
   image?: string;
   sizes?: string[];
   color?: string;
@@ -204,8 +205,60 @@ export interface InventoryProduct {
   taxPercent: number;
   categoryId?: string; // product category referencing ProductCategory
   category?: string; // Legacy or direct category name alias
+  isPublicInCatalog?: boolean; // Show in public live store catalog (default: true)
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PublicCatalogSettings {
+  enabled: boolean;
+  slug: string;
+  businessName?: string;
+  tagline?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  currency?: string;
+  showExactQuantity: boolean; // true: "18 in stock", false: "In Stock"
+  hideOutOfStock: boolean; // true: hide 0-stock products from public view
+  allowWhatsAppOrders: boolean; // true: show "Order / Inquire via WhatsApp"
+  updatedAt?: string;
+}
+
+export interface PublicCatalogProduct {
+  id: string;
+  itemId: string;
+  name: string;
+  description?: string;
+  image?: string;
+  sizes?: string[];
+  color?: string;
+  quantity: number;
+  unit?: string;
+  sellingPrice: number;
+  categoryId?: string;
+  categoryName?: string;
+  categoryColor?: string;
+  isAvailable: boolean;
+  status: 'in-stock' | 'low-stock' | 'out-of-stock';
+}
+
+export interface PublicCatalogPayload {
+  settings: PublicCatalogSettings;
+  business: {
+    name: string;
+    description?: string;
+    logo?: string;
+    phone?: string;
+    whatsapp?: string;
+    email?: string;
+    address?: string;
+    currency: string;
+  };
+  categories: { id: string; name: string; color?: string; count: number }[];
+  products: PublicCatalogProduct[];
+  lastUpdated: string;
 }
 
 export interface InventorySale {
@@ -615,6 +668,7 @@ export type ActiveScreen =
   | 'settings'
   | 'qr-hosting'
   | 'qr-customer-view'
+  | 'public-catalog'
   | 'upgrade'
   | 'app-lock-setup'
   | 'cloud-backup';

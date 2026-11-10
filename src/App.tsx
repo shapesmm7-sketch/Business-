@@ -13,6 +13,7 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { QRCodeHostingScreen } from './components/QRCodeHostingScreen';
 import { QRCustomerViewScreen } from './components/QRCustomerViewScreen';
+import { StoreCatalogScreen } from './components/StoreCatalogScreen';
 import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
 import { UpgradeScreen } from './components/UpgradeScreen';
 import { AppLockScreen } from './components/AppLockScreen';
@@ -91,6 +92,44 @@ export function getQrPageIdFromUrl(): string | null {
   return null;
 }
 
+export function isStoreCatalogPathFromUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  const pathname = window.location.pathname || '';
+  const hash = window.location.hash || '';
+  return Boolean(
+    pathname.includes('/store/') ||
+    pathname === '/store' ||
+    pathname.endsWith('/store') ||
+    params.has('store') ||
+    hash.includes('/store/') ||
+    hash.startsWith('#/store')
+  );
+}
+
+export function getStoreSlugFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('store')) return params.get('store')!.trim();
+  const pathname = window.location.pathname || '';
+  if (pathname.includes('/store/')) {
+    const after = pathname.split('/store/')[1];
+    if (after) {
+      const slug = after.split('/')[0].split('?')[0].split('#')[0].trim();
+      if (slug) return decodeURIComponent(slug);
+    }
+  }
+  const hash = window.location.hash || '';
+  if (hash.includes('/store/')) {
+    const after = hash.split('/store/')[1];
+    if (after) {
+      const slug = after.split('/')[0].split('?')[0].trim();
+      if (slug) return decodeURIComponent(slug);
+    }
+  }
+  return null;
+}
+
 export function isCustomerPathFromUrl(): boolean {
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);
@@ -135,13 +174,16 @@ export function App() {
     StorageService.getAppLockConfig()
   );
   const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
-    if (isCustomerPathFromUrl()) {
+    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) {
       return false;
     }
     return StorageService.isAppLocked();
   });
 
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
+    if (isStoreCatalogPathFromUrl()) {
+      return 'public-catalog';
+    }
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
     }
@@ -1174,8 +1216,8 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Header - shown on all screens except Inventory and QR Customer View */}
-      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && (
+      {/* Header - shown on all screens except Inventory, QR Customer View, and Public Store Catalog */}
+      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'public-catalog' && (
         <Header
           business={business}
           darkMode={settings.darkMode}
@@ -1196,7 +1238,7 @@ export function App() {
       )}
 
       {/* Main Screen Content */}
-      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
+      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'public-catalog' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
         {activeScreen === 'home' && (
           <HomeScreen
             business={business}
@@ -1527,6 +1569,13 @@ export function App() {
           )
         )}
 
+        {activeScreen === 'public-catalog' && (
+          <StoreCatalogScreen
+            slug={getStoreSlugFromUrl()}
+            onNavigateHome={() => handleNavigate('home')}
+          />
+        )}
+
         {activeScreen === 'upgrade' && (
           <UpgradeScreen
             onBack={() => handleNavigate(previousScreen !== 'upgrade' ? previousScreen : 'home')}
@@ -1573,6 +1622,7 @@ export function App() {
           'settings',
           'qr-hosting',
           'qr-customer-view',
+          'public-catalog',
           'upgrade',
           'app-lock-setup',
           'cloud-backup',
@@ -1600,7 +1650,7 @@ export function App() {
       <AdMobModalOverlay />
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences'].includes(activeScreen) && (
+      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'public-catalog', 'app-lock-setup', 'onboarding-preferences'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}

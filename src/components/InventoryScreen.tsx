@@ -63,6 +63,8 @@ import {
   Eye,
   EyeOff,
   RotateCcw,
+  List,
+  Globe,
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
@@ -73,6 +75,7 @@ import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
 import { AgentManageModal } from './AgentManageModal';
+import { PublicCatalogModal } from './PublicCatalogModal';
 import { PhoneInputField } from './PhoneInputField';
 import { jsPDF } from 'jspdf';
 
@@ -755,6 +758,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [sellingPrice, setSellingPrice] = useState<string>('0.0');
   const [taxPercent, setTaxPercent] = useState<string>('0');
   const [isCompressingImage, setIsCompressingImage] = useState<boolean>(false);
+  const [isPublicInCatalog, setIsPublicInCatalog] = useState<boolean>(true);
+  const [productDescription, setProductDescription] = useState<string>('');
+  const [stockViewMode, setStockViewMode] = useState<'grid' | 'list'>(() => StorageService.getStockViewMode());
+  const [isPublicCatalogModalOpen, setIsPublicCatalogModalOpen] = useState<boolean>(false);
   const [showInlineCategoryInput, setShowInlineCategoryInput] = useState<boolean>(false);
   const [quickCategoryName, setQuickCategoryName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -867,6 +874,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       id: editingProductId || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       itemId: targetItemId,
       name: name.trim(),
+      description: productDescription.trim() || undefined,
       image,
       sizes: selectedSizes.length > 0 ? selectedSizes : undefined,
       color: productColor.trim() || undefined,
@@ -875,6 +883,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       sellingPrice: selling,
       taxPercent: tax,
       categoryId: productCategoryId || undefined,
+      isPublicInCatalog,
       createdAt: editingProductId ? (products.find((p) => p.id === editingProductId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -893,6 +902,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     // Reset form
     setEditingProductId(null);
     setName('');
+    setProductDescription('');
+    setIsPublicInCatalog(true);
     setProductCategoryId('');
     setImage(undefined);
     setSelectedSizes([]);
@@ -944,6 +955,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setEditingProductId(prod.id);
     setItemId(prod.itemId);
     setName(prod.name);
+    setProductDescription(prod.description || '');
+    setIsPublicInCatalog(prod.isPublicInCatalog !== false);
     setProductCategoryId(prod.categoryId || '');
     setImage(prod.image);
     setSelectedSizes(prod.sizes || []);
@@ -4898,6 +4911,68 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             </p>
           </div>
 
+          {/* CUSTOMER DESCRIPTION (OPTIONAL) */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              DESCRIPTION (OPTIONAL)
+            </label>
+            <textarea
+              rows={2}
+              value={productDescription}
+              onChange={(e) => setProductDescription(e.target.value)}
+              placeholder="Add key features or details for customers in your online store..."
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none resize-none"
+            />
+          </div>
+
+          {/* SHOW IN PUBLIC CATALOG TOGGLE */}
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  isPublicInCatalog
+                    ? 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400'
+                    : 'bg-slate-200 text-slate-500 dark:bg-slate-700'
+                }`}
+              >
+                <Globe className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                    Show in Public Catalog
+                  </span>
+                  <span
+                    className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                      isPublicInCatalog
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                        : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {isPublicInCatalog ? 'Public' : 'Hidden'}
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-slate-400">
+                  Allow customers to view and order this item in your online store
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isPublicInCatalog}
+              onClick={() => setIsPublicInCatalog(!isPublicInCatalog)}
+              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
+                isPublicInCatalog
+                  ? 'bg-sky-600 justify-end'
+                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
+              }`}
+            >
+              <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+            </button>
+          </div>
+
           {/* SAVE BUTTON */}
           <div className="pt-2">
             <button
@@ -6418,17 +6493,66 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                 )}
 
-                {/* Search & Filter bar - Compact */}
-                <div className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 space-y-1.5">
-                  <div className="relative flex items-center">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={stockSearch}
-                      onChange={(e) => setStockSearch(e.target.value)}
-                      placeholder="Search products by name or ID..."
-                      className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    />
+                {/* Search & Filter bar - Compact with View Mode Toggle */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex items-center flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={stockSearch}
+                        onChange={(e) => setStockSearch(e.target.value)}
+                        placeholder="Search products by name or ID..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      />
+                    </div>
+
+                    {/* View Mode Toggle: Grid vs List */}
+                    <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg shrink-0 border border-slate-200/80 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStockViewMode('grid');
+                          StorageService.setStockViewMode('grid');
+                        }}
+                        className={`p-1.5 rounded-md flex items-center gap-1 text-[11px] font-bold transition ${
+                          stockViewMode === 'grid'
+                            ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-xs'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                        title="Grid View (Photo Grid)"
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Grid</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStockViewMode('list');
+                          StorageService.setStockViewMode('list');
+                        }}
+                        className={`p-1.5 rounded-md flex items-center gap-1 text-[11px] font-bold transition ${
+                          stockViewMode === 'list'
+                            ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-xs'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                        title="List View (Detailed List)"
+                      >
+                        <List className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">List</span>
+                      </button>
+                    </div>
+
+                    {/* Live Catalog Quick Button */}
+                    <button
+                      type="button"
+                      onClick={() => setIsPublicCatalogModalOpen(true)}
+                      className="px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shrink-0 flex items-center gap-1 text-[11px] font-bold"
+                      title="Manage Live Public Catalog"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span className="hidden xs:inline">Catalog</span>
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
@@ -6479,178 +6603,399 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Compact Products List Items (fits ~5 items on mobile without scrolling) */}
-                <div className="space-y-1.5">
-                  {filteredProducts.map((prod, index) => {
-                    const isOutOfStock = prod.quantity === 0;
-                    const isLowStock = prod.quantity > 0 && prod.quantity < 5;
-                    const catObj = productCategories.find((c) => c.id === prod.categoryId);
+                {filteredProducts.length === 0 ? (
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 text-center border border-slate-100 dark:border-slate-800 shadow-xs space-y-2">
+                    <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                      <Package className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">No products found</p>
+                    <p className="text-xs text-slate-400">Try adjusting your search query or category filter</p>
+                  </div>
+                ) : stockViewMode === 'grid' ? (
+                  /* ========================================================== */
+                  /* FEATURE 1: 2-COLUMN MODERN PRODUCT GRID (Jiji style)        */
+                  /* ========================================================== */
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                    {filteredProducts.map((prod, index) => {
+                      const isOutOfStock = prod.quantity === 0;
+                      const isLowStock = prod.quantity > 0 && prod.quantity < 5;
+                      const catObj = productCategories.find((c) => c.id === prod.categoryId);
+                      const isPublic = prod.isPublicInCatalog !== false;
 
-                    return (
-                      <React.Fragment key={prod.id}>
-                        <div
-                          className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 transition hover:border-sky-300"
-                        >
-                        {/* Top Row: Thumbnail + Item info + Stock Badge */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {prod.image ? (
-                              <img
-                                src={prod.image}
-                                alt={prod.name}
-                                className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-lg bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 font-mono font-extrabold text-[11px] shrink-0">
-                                #{prod.itemId}
-                              </div>
-                            )}
+                      return (
+                        <React.Fragment key={prod.id}>
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col hover:border-sky-300 transition group">
+                            {/* Card Image Header with Overlaid Badges */}
+                            <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              {prod.image ? (
+                                <img
+                                  src={prod.image}
+                                  alt={prod.name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 text-sky-600 dark:text-sky-400 p-2">
+                                  <Package className="w-8 h-8 opacity-40 mb-1" />
+                                  <span className="text-[10px] font-mono font-bold text-slate-400">#{prod.itemId}</span>
+                                </div>
+                              )}
 
-                            <div className="min-w-0 flex-1">
-                              {/* Row 1: #ID + Product Name + Size tags */}
-                              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono font-bold shrink-0">
-                                  #{prod.itemId}
-                                </span>
-                                {catObj && (
+                              {/* Overlaid Badges */}
+                              {/* Top-Left: Category badge */}
+                              {catObj && (
+                                <div className="absolute top-2 left-2 z-10">
                                   <span
-                                    className="text-[9px] font-black px-1.5 py-0.2 rounded text-white shrink-0"
+                                    className="text-[9px] font-black px-2 py-0.5 rounded-md text-white shadow-xs drop-shadow-xs"
                                     style={{ backgroundColor: catObj.color || '#64748b' }}
                                   >
                                     {catObj.name}
                                   </span>
-                                )}
-                                <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                                  {prod.name}
-                                </h4>
-                                {prod.sizes && prod.sizes.length > 0 && (
-                                  <span className="text-[9px] text-slate-400 font-medium shrink-0 truncate max-w-[65px]">
-                                    ({prod.sizes.join(',')})
-                                  </span>
-                                )}
-                                {prod.color && (
-                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-extrabold shrink-0">
-                                    Color: {prod.color}
-                                  </span>
-                                )}
+                                </div>
+                              )}
+
+                              {/* Top-Right: Public Catalog Visibility Toggle */}
+                              <div className="absolute top-2 right-2 z-10">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    StorageService.toggleProductPublicCatalog(prod.id);
+                                    setProducts(StorageService.getInventoryProducts());
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold flex items-center gap-1 shadow-md backdrop-blur-xs transition ${
+                                    isPublic
+                                      ? 'bg-emerald-600/90 text-white hover:bg-emerald-600'
+                                      : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'
+                                  }`}
+                                  title={isPublic ? 'Public in Live Catalog (Click to hide)' : 'Hidden from Live Catalog (Click to show)'}
+                                >
+                                  <Globe className="w-2.5 h-2.5" />
+                                  <span>{isPublic ? 'Public' : 'Hidden'}</span>
+                                </button>
                               </div>
 
-                              {/* Row 2: Price details in one compact line */}
-                              <div className="flex items-center gap-2 text-[10.5px] mt-0.5 flex-wrap">
-                                <span className="font-extrabold text-sky-600 dark:text-sky-400 font-mono">
+                              {/* Bottom-Left: Stock Status Indicator */}
+                              <div className="absolute bottom-2 left-2 z-10">
+                                <span
+                                  className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full shadow-xs backdrop-blur-xs flex items-center gap-1 ${
+                                    isOutOfStock
+                                      ? 'bg-rose-500/90 text-white'
+                                      : isLowStock
+                                      ? 'bg-amber-500/90 text-white'
+                                      : 'bg-emerald-600/90 text-white'
+                                  }`}
+                                >
+                                  <span className="text-[8px]">
+                                    {isOutOfStock ? '🔴' : isLowStock ? '🟠' : '🟢'}
+                                  </span>
+                                  <span>
+                                    {isOutOfStock ? 'Out of Stock' : `${prod.quantity} In Stock`}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Card Content */}
+                            <div className="p-2.5 flex-1 flex flex-col justify-between space-y-2">
+                              <div>
+                                <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono font-bold mb-0.5">
+                                  <span>#{prod.itemId}</span>
+                                </div>
+                                <h4 className="font-extrabold text-xs sm:text-[13px] text-slate-900 dark:text-white line-clamp-2 leading-tight">
+                                  {prod.name}
+                                </h4>
+
+                                {/* Size & Color tags */}
+                                <div className="flex items-center gap-1 flex-wrap mt-1">
+                                  {prod.sizes && prod.sizes.length > 0 && (
+                                    <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 truncate max-w-[80px]">
+                                      {prod.sizes.join(', ')}
+                                    </span>
+                                  )}
+                                  {prod.color && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-bold truncate max-w-[70px]">
+                                      {prod.color}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Price Section */}
+                              <div className="pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                <div className="font-mono font-black text-xs sm:text-sm text-sky-600 dark:text-sky-400">
                                   {currency} {prod.sellingPrice.toLocaleString()}
-                                </span>
-                                <span className="text-slate-400 text-[9.5px]">
-                                  Cost: {prod.costPrice.toLocaleString()}
-                                </span>
-                                <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-[9.5px]">
-                                  +{(prod.sellingPrice - prod.costPrice).toLocaleString()}
-                                </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                                  <span>Cost: {prod.costPrice.toLocaleString()}</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                    +{(prod.sellingPrice - prod.costPrice).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Action Row */}
+                              <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1 flex-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRestockModalProduct(prod);
+                                      setRestockQtyInput(5);
+                                    }}
+                                    className="flex-1 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 font-bold text-[10px] flex items-center justify-center gap-0.5"
+                                    title="Restock Product"
+                                  >
+                                    <Plus className="w-2.5 h-2.5" />
+                                    <span>Stock</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSellModalProduct(prod);
+                                      setSellQtyInput(1);
+                                    }}
+                                    disabled={prod.quantity <= 0}
+                                    className="flex-1 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold text-[10px] flex items-center justify-center gap-0.5 disabled:opacity-40"
+                                    title="Record Sale"
+                                  >
+                                    <Tag className="w-2.5 h-2.5" />
+                                    <span>Sell</span>
+                                  </button>
+                                </div>
+
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditProduct(prod)}
+                                    className="p-1 text-slate-400 hover:text-sky-600 transition rounded"
+                                    title="Edit Product"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProduct(prod.id, prod.name)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 transition rounded"
+                                    title="Delete Product"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
 
-                          {/* Stock Status Badge */}
-                          <div className="shrink-0 text-right">
-                            <span
-                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block ${
-                                isOutOfStock
-                                  ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                                  : isLowStock
-                                  ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                                  : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                              }`}
-                            >
-                              {prod.quantity} in stock
-                            </span>
-                          </div>
-                        </div>
+                          {(index + 1) % 6 === 0 && (
+                            <div key={`inline-admob-grid-${prod.id}`} className="col-span-2 py-1">
+                              <AdMobNativeAd
+                                context="inventory"
+                                variant="in-feed"
+                                unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* ========================================================== */
+                  /* LIST VIEW (Existing detailed compact layout)               */
+                  /* ========================================================== */
+                  <div className="space-y-1.5">
+                    {filteredProducts.map((prod, index) => {
+                      const isOutOfStock = prod.quantity === 0;
+                      const isLowStock = prod.quantity > 0 && prod.quantity < 5;
+                      const catObj = productCategories.find((c) => c.id === prod.categoryId);
+                      const isPublic = prod.isPublicInCatalog !== false;
 
-                        {/* Bottom Row: Quick Actions Bar */}
-                        <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-800/80">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRestockModalProduct(prod);
-                                setRestockQtyInput(5);
-                              }}
-                              className="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 font-bold transition flex items-center gap-1 text-[10px]"
-                            >
-                              <Plus className="w-2.5 h-2.5" />
-                              <span>Restock</span>
-                            </button>
+                      return (
+                        <React.Fragment key={prod.id}>
+                          <div
+                            className="bg-white dark:bg-slate-900 rounded-xl px-2.5 py-2 shadow-xs border border-sky-100 dark:border-slate-800 transition hover:border-sky-300"
+                          >
+                          {/* Top Row: Thumbnail + Item info + Stock Badge */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {prod.image ? (
+                                <img
+                                  src={prod.image}
+                                  alt={prod.name}
+                                  className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 flex items-center justify-center text-sky-600 dark:text-sky-400 font-mono font-extrabold text-[11px] shrink-0">
+                                  #{prod.itemId}
+                                </div>
+                              )}
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSellModalProduct(prod);
-                                setSellQtyInput(1);
-                              }}
-                              disabled={prod.quantity <= 0}
-                              className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold transition flex items-center gap-1 text-[10px] disabled:opacity-40"
-                            >
-                              <Tag className="w-2.5 h-2.5" />
-                              <span>Sell</span>
-                            </button>
+                              <div className="min-w-0 flex-1">
+                                {/* Row 1: #ID + Product Name + Size tags */}
+                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono font-bold shrink-0">
+                                    #{prod.itemId}
+                                  </span>
+                                  {catObj && (
+                                    <span
+                                      className="text-[9px] font-black px-1.5 py-0.2 rounded text-white shrink-0"
+                                      style={{ backgroundColor: catObj.color || '#64748b' }}
+                                    >
+                                      {catObj.name}
+                                    </span>
+                                  )}
+                                  <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                    {prod.name}
+                                  </h4>
+                                  {prod.sizes && prod.sizes.length > 0 && (
+                                    <span className="text-[9px] text-slate-400 font-medium shrink-0 truncate max-w-[65px]">
+                                      ({prod.sizes.join(',')})
+                                    </span>
+                                  )}
+                                  {prod.color && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-extrabold shrink-0">
+                                      Color: {prod.color}
+                                    </span>
+                                  )}
+                                </div>
 
-                            {/* Create Receipt or Invoice with this item */}
-                            {onCreateReceiptWithItem && (
+                                {/* Row 2: Price details in one compact line */}
+                                <div className="flex items-center gap-2 text-[10.5px] mt-0.5 flex-wrap">
+                                  <span className="font-extrabold text-sky-600 dark:text-sky-400 font-mono">
+                                    {currency} {prod.sellingPrice.toLocaleString()}
+                                  </span>
+                                  <span className="text-slate-400 text-[9.5px]">
+                                    Cost: {prod.costPrice.toLocaleString()}
+                                  </span>
+                                  <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-[9.5px]">
+                                    +{(prod.sellingPrice - prod.costPrice).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Stock Status Badge & Public Toggle */}
+                            <div className="shrink-0 flex flex-col items-end gap-1">
+                              <span
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                  isOutOfStock
+                                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                                    : isLowStock
+                                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                                    : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                                }`}
+                              >
+                                <span className="text-[8px]">
+                                  {isOutOfStock ? '🔴' : isLowStock ? '🟠' : '🟢'}
+                                </span>
+                                <span>{isOutOfStock ? 'Out' : `${prod.quantity} in stock`}</span>
+                              </span>
+
                               <button
                                 type="button"
-                                onClick={() => onCreateReceiptWithItem({ name: prod.name, unitPrice: prod.sellingPrice, quantity: 1 })}
-                                className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
-                                title="Create receipt with this product"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  StorageService.toggleProductPublicCatalog(prod.id);
+                                  setProducts(StorageService.getInventoryProducts());
+                                }}
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5 transition ${
+                                  isPublic
+                                    ? 'text-emerald-600 dark:text-emerald-400 hover:underline'
+                                    : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                                title={isPublic ? 'Visible in Public Catalog (click to hide)' : 'Hidden from Public Catalog (click to show)'}
                               >
-                                <ReceiptIcon className="w-3 h-3" />
+                                <Globe className="w-2.5 h-2.5" />
+                                <span>{isPublic ? 'Public' : 'Hidden'}</span>
                               </button>
-                            )}
+                            </div>
+                          </div>
 
-                            {onCreateInvoiceWithItem && (
+                          {/* Bottom Row: Quick Actions Bar */}
+                          <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-slate-100 dark:border-slate-800/80">
+                            <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => onCreateInvoiceWithItem({ name: prod.name, unitPrice: prod.sellingPrice, quantity: 1 })}
-                                className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
-                                title="Create invoice with this product"
+                                onClick={() => {
+                                  setRestockModalProduct(prod);
+                                  setRestockQtyInput(5);
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 font-bold transition flex items-center gap-1 text-[10px]"
                               >
-                                <FileText className="w-3 h-3" />
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Restock</span>
                               </button>
-                            )}
-                          </div>
 
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => startEditProduct(prod)}
-                              className="p-1 text-slate-400 hover:text-sky-600 transition rounded"
-                              title="Edit product"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteProduct(prod.id, prod.name)}
-                              className="p-1 text-slate-400 hover:text-rose-500 transition rounded"
-                              title="Delete product"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSellModalProduct(prod);
+                                  setSellQtyInput(1);
+                                }}
+                                disabled={prod.quantity <= 0}
+                                className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold transition flex items-center gap-1 text-[10px] disabled:opacity-40"
+                              >
+                                <Tag className="w-2.5 h-2.5" />
+                                <span>Sell</span>
+                              </button>
+
+                              {/* Create Receipt or Invoice with this item */}
+                              {onCreateReceiptWithItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onCreateReceiptWithItem({ name: prod.name, unitPrice: prod.sellingPrice, quantity: 1 })}
+                                  className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+                                  title="Create receipt with this product"
+                                >
+                                  <ReceiptIcon className="w-3 h-3" />
+                                </button>
+                              )}
+
+                              {onCreateInvoiceWithItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onCreateInvoiceWithItem({ name: prod.name, unitPrice: prod.sellingPrice, quantity: 1 })}
+                                  className="p-1 rounded-md bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+                                  title="Create invoice with this product"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => startEditProduct(prod)}
+                                className="p-1 text-slate-400 hover:text-sky-600 transition rounded"
+                                title="Edit product"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProduct(prod.id, prod.name)}
+                                className="p-1 text-slate-400 hover:text-rose-500 transition rounded"
+                                title="Delete product"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      {(index + 1) % 6 === 0 && (
-                        <div key={`inline-admob-prod-${prod.id}`} className="py-1">
-                          <AdMobNativeAd
-                            context="inventory"
-                            variant="in-feed"
-                            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-                          />
-                        </div>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-                </div>
+                        {(index + 1) % 6 === 0 && (
+                          <div key={`inline-admob-prod-${prod.id}`} className="py-1">
+                            <AdMobNativeAd
+                              context="inventory"
+                              variant="in-feed"
+                              unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+                            />
+                          </div>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -11391,6 +11736,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           />
         </div>
       )}
+
+      {/* Feature 2: Public Live Stock Catalog Modal */}
+      <PublicCatalogModal
+        isOpen={isPublicCatalogModalOpen}
+        onClose={() => setIsPublicCatalogModalOpen(false)}
+        business={business}
+        products={products}
+        onProductsUpdated={refreshData}
+      />
 
     </div>
   );

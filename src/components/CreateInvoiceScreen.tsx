@@ -29,6 +29,7 @@ import {
   AlertCircle,
   Boxes,
   Scan,
+  Users,
 } from 'lucide-react';
 import {
   BusinessProfile,
@@ -46,6 +47,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
+import { ClientPickerModal, ClientOption } from './ClientPickerModal';
 import { t, formatNumber } from '../utils/i18n';
 
 interface CreateInvoiceScreenProps {
@@ -161,9 +163,18 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     documentNumber?: string;
   }>({ isOpen: false });
 
-  // Stock Product Picker & Barcode Scanner Modal States
+  // Client Picker, Stock Product Picker & Barcode Scanner Modal States
+  const [isClientPickerOpen, setIsClientPickerOpen] = useState<boolean>(false);
   const [isStockPickerOpen, setIsStockPickerOpen] = useState<boolean>(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
+
+  const handleSelectClient = (client: ClientOption) => {
+    if (client.name) setCustomerName(client.name);
+    if (client.contact) setCustomerPhone(client.contact);
+    if (client.email) setCustomerEmail(client.email);
+    if (client.location) setCustomerAddress(client.location);
+    if (client.taxNumber) setCustomerTaxNumber(client.taxNumber);
+  };
 
   // Initialize Invoice Data
   useEffect(() => {
@@ -742,6 +753,17 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
             <Building2 className="w-4 h-4" />
             <span>{t('client_details', business?.language)}</span>
           </div>
+
+          <button
+            id="btn-add-client-from-list-invoice"
+            type="button"
+            onClick={() => setIsClientPickerOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800 text-xs font-bold transition active:scale-95 shadow-2xs cursor-pointer"
+            title="Choose client from inventory list"
+          >
+            <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Add from list</span>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -1536,6 +1558,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         currency={currency}
         onClose={() => setIsBarcodeScannerOpen(false)}
         onScanResult={handleScanBarcodeResult}
+      />
+
+      {/* Client Picker Modal */}
+      <ClientPickerModal
+        isOpen={isClientPickerOpen}
+        onClose={() => setIsClientPickerOpen(false)}
+        onSelectClient={handleSelectClient}
+        language={business?.language}
       />
 
       <DownloadSuccessModal

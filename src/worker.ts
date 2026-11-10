@@ -395,8 +395,21 @@ export async function ensureD1Tables(db: any): Promise<void> {
         updated_at TEXT
       )
     `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_menus_hotel_id ON menus(hotel_id)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_menus_hotel_updated ON menus(hotel_id, updated_at)`).run();
+  } catch (_) {}
+
+  // Store Catalogs table (public live stock catalog by business slug)
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS store_catalogs (
+        slug TEXT PRIMARY KEY,
+        user_email TEXT,
+        business_name TEXT,
+        catalog_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_slug ON store_catalogs(slug)`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_user ON store_catalogs(user_email)`).run();
   } catch (_) {}
 }
 
@@ -2892,6 +2905,81 @@ export default {
       );
     }
 
+    // 6.5. Store Catalog Publish endpoint (/api/store/publish)
+    if (url.pathname === '/api/store/publish' && request.method === 'POST') {
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const rawSlug = String(body?.slug || body?.settings?.slug || '').trim().toLowerCase();
+        const slug = rawSlug.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (!slug) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'A valid business slug is required' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const payload = body?.payload || body;
+        const userEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          payload?.settings?.email ||
+          payload?.business?.email ||
+          ''
+        ).toLowerCase().trim();
+
+        const db = getD1Database(env);
+        const catalogJson = JSON.stringify(payload);
+        const now = new Date().toISOString();
+
+        if (db) {
+          await ensureD1Tables(db);
+          await db.prepare(`
+            INSERT INTO store_catalogs (slug, user_email, business_name, catalog_json, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+              user_email = excluded.user_email,
+              business_name = excluded.business_name,
+              catalog_json = excluded.catalog_json,
+              updated_at = excluded.updated_at
+          `).bind(slug, userEmail, payload?.business?.name || slug, catalogJson, now).run();
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, success: true, slug, url: `/store/${slug}` }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: err?.message || 'Failed to publish store catalog' }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 6.6. Store Catalog Fetch endpoint (/api/store/:slug) - PUBLIC NO AUTH REQUIRED
+    if (url.pathname.startsWith('/api/store/')) {
+      const slug = decodeURIComponent(url.pathname.replace('/api/store/', '')).trim().toLowerCase();
+      const db = getD1Database(env);
+      if (db && slug) {
+        try {
+          await ensureD1Tables(db);
+          const row: any = await db.prepare('SELECT catalog_json FROM store_catalogs WHERE slug = ?').bind(slug).first();
+          if (row?.catalog_json) {
+            const data = JSON.parse(row.catalog_json);
+            return new Response(
+              JSON.stringify({ ok: true, success: true, data }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+        } catch (_) {}
+      }
+
+      return new Response(
+        JSON.stringify({ ok: false, error: `Store "${slug}" not found` }),
+        { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // 7. Data Sync Push endpoint (/api/sync/push)
     if (url.pathname === '/api/sync/push' && request.method === 'POST') {
       try {
@@ -3772,6 +3860,35 @@ export default {
             }
             if (preloadedPage.title) {
               html = html.replace(/<title>.*?<\/title>/i, `<title>${preloadedPage.title} | Brivu</title>`);
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Check if this is a Store request (/store/:slug or ?store=slug)
+      let storeSlugParam = '';
+      if (url.pathname.includes('/store/')) {
+        storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
+      } else if (url.searchParams.has('store')) {
+        storeSlugParam = (url.searchParams.get('store') || '').trim().toLowerCase();
+      }
+
+      if (storeSlugParam) {
+        try {
+          const db = getD1Database(env);
+          if (db) {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT catalog_json FROM store_catalogs WHERE slug = ?').bind(storeSlugParam).first();
+            if (row?.catalog_json) {
+              const parsed = JSON.parse(row.catalog_json);
+              const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${JSON.stringify(parsed)};window.__STORE_SLUG__=${JSON.stringify(storeSlugParam)};</script>`;
+              if (html.includes('</head>')) {
+                html = html.replace('</head>', `${scriptTag}</head>`);
+              } else {
+                html = `${scriptTag}${html}`;
+              }
+              const storeTitle = parsed?.business?.name || parsed?.settings?.businessName || 'Live Catalog';
+              html = html.replace(/<title>.*?<\/title>/i, `<title>${storeTitle} | Brivu</title>`);
             }
           }
         } catch (_) {}

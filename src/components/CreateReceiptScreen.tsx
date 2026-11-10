@@ -22,6 +22,9 @@ import {
   CheckCircle2,
   Boxes,
   Scan,
+  Users,
+  Building2,
+  MapPin,
 } from 'lucide-react';
 import {
   BusinessProfile,
@@ -40,6 +43,7 @@ import { StockProductPickerModal, SelectedStockItem } from './StockProductPicker
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { PhoneInputField } from './PhoneInputField';
 import { DownloadSuccessModal } from './DownloadSuccessModal';
+import { ClientPickerModal, ClientOption } from './ClientPickerModal';
 import { t, formatNumber } from '../utils/i18n';
 
 interface CreateReceiptScreenProps {
@@ -96,6 +100,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
   const [customerName, setCustomerName] = useState<string>('');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customerEmail, setCustomerEmail] = useState<string>('');
+  const [customerAddress, setCustomerAddress] = useState<string>('');
+  const [customerTaxNumber, setCustomerTaxNumber] = useState<string>('');
 
   // Items
   const [items, setItems] = useState<ReceiptItem[]>([
@@ -119,9 +125,18 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
   // Form error states
   const [errorMessage, setErrorMessage] = useState<string>('');
 
-  // Stock Product Picker & Barcode Scanner Modal States
+  // Client Picker, Stock Product Picker & Barcode Scanner Modal States
+  const [isClientPickerOpen, setIsClientPickerOpen] = useState<boolean>(false);
   const [isStockPickerOpen, setIsStockPickerOpen] = useState<boolean>(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
+
+  const handleSelectClient = (client: ClientOption) => {
+    if (client.name) setCustomerName(client.name);
+    if (client.contact) setCustomerPhone(client.contact);
+    if (client.email) setCustomerEmail(client.email);
+    if (client.location) setCustomerAddress(client.location);
+    if (client.taxNumber) setCustomerTaxNumber(client.taxNumber);
+  };
   const [downloadModalData, setDownloadModalData] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -142,6 +157,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       setCustomerName(editingReceipt.customerName || '');
       setCustomerPhone(editingReceipt.customerPhone || '');
       setCustomerEmail(editingReceipt.customerEmail || '');
+      setCustomerAddress(editingReceipt.customerAddress || '');
+      setCustomerTaxNumber(editingReceipt.customerTaxNumber || '');
       setItems(
         editingReceipt.items.length > 0
           ? editingReceipt.items
@@ -162,6 +179,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       setCustomerName(duplicateFromReceipt.customerName || '');
       setCustomerPhone(duplicateFromReceipt.customerPhone || '');
       setCustomerEmail(duplicateFromReceipt.customerEmail || '');
+      setCustomerAddress(duplicateFromReceipt.customerAddress || '');
+      setCustomerTaxNumber(duplicateFromReceipt.customerTaxNumber || '');
       setItems(
         duplicateFromReceipt.items.map((it, idx) => ({
           ...it,
@@ -184,6 +203,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         setCustomerName(draft.customerName || '');
         setCustomerPhone(draft.customerPhone || '');
         setCustomerEmail(draft.customerEmail || '');
+        setCustomerAddress(draft.customerAddress || '');
+        setCustomerTaxNumber(draft.customerTaxNumber || '');
         setItems(draft.items);
         setDiscountType(draft.discountType || 'fixed');
         setDiscountValue(draft.discount || 0);
@@ -424,6 +445,8 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       customerName: customerName.trim() || undefined,
       customerPhone: customerPhone.trim() || undefined,
       customerEmail: customerEmail.trim() || undefined,
+      customerAddress: customerAddress.trim() || undefined,
+      customerTaxNumber: customerTaxNumber.trim() || undefined,
       items: validItems,
       subtotal,
       discount: discountValue,
@@ -600,27 +623,47 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Customer Information (Optional) */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <div>
-            <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
+      {/* 2. Client Details Card */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/60">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+            <Building2 className="w-4 h-4" />
+            <span>{t('client_details', business?.language)}</span>
+          </div>
+
+          <button
+            id="btn-add-client-from-list-receipt"
+            type="button"
+            onClick={() => setIsClientPickerOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-2xs cursor-pointer"
+            title="Choose client from inventory list"
+          >
+            <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Add from list</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
               <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('customer_name_opt', business?.language)}</span>
+              <span>{t('customer_name', business?.language)}</span>
             </label>
             <input
               id="input-customer-name"
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder={t('enter_customer_name', business?.language)}
+              placeholder="e.g. Acme Corp / John Doe"
               className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
             />
           </div>
 
           <PhoneInputField
             id="input-customer-phone"
-            label={t('customer_phone_opt', business?.language)}
+            label={t('customer_phone', business?.language)}
             value={customerPhone}
             onChange={(val) => setCustomerPhone(val)}
             language={business?.language}
@@ -628,16 +671,45 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
           />
 
           <div>
-            <label className="flex items-center gap-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
+            <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
               <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>{t('customer_email_opt', business?.language)}</span>
+              <span>{t('customer_email', business?.language)}</span>
             </label>
             <input
               id="input-customer-email"
               type="email"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="customer@example.com"
+              placeholder="billing@company.com"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+              <span>{t('customer_address', business?.language)}</span>
+            </label>
+            <input
+              id="input-customer-address"
+              type="text"
+              value={customerAddress}
+              onChange={(e) => setCustomerAddress(e.target.value)}
+              placeholder="e.g. Plot 10, Industrial Park"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+              <span>{t('tax_id', business?.language)}</span>
+            </label>
+            <input
+              id="input-customer-tax"
+              type="text"
+              value={customerTaxNumber}
+              onChange={(e) => setCustomerTaxNumber(e.target.value)}
+              placeholder="e.g. TIN-1002938475"
               className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
             />
           </div>
@@ -1109,6 +1181,14 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         currency={currency}
         onClose={() => setIsBarcodeScannerOpen(false)}
         onScanResult={handleScanBarcodeResult}
+      />
+
+      {/* Client Picker Modal */}
+      <ClientPickerModal
+        isOpen={isClientPickerOpen}
+        onClose={() => setIsClientPickerOpen(false)}
+        onSelectClient={handleSelectClient}
+        language={business?.language}
       />
 
       <DownloadSuccessModal

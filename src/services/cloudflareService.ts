@@ -1465,9 +1465,71 @@ export const CloudflareService = {
           emails: data.emails || [],
         };
       }
+      return { success: false };
     } catch (err) {
       console.warn('Error fetching users from Cloudflare:', err);
+      return { success: false };
     }
-    return { success: false, users: [], emails: [] };
+  },
+
+  /**
+   * Publish or update the public stock catalog to Cloudflare
+   */
+  async publishStoreCatalog(slug: string, payload: any): Promise<{ success: boolean; error?: string }> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const headers = this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
+        const res = await fetch(`${cleanUrl}/api/store/publish`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({ slug, payload }),
+        });
+        const text = await res.text();
+        const parsed = parseWorkerResponse(text);
+        if (res.ok && (parsed.ok || (parsed as any).success)) {
+          return { success: true };
+        }
+        return { success: false, error: parsed.error || 'Failed to publish store catalog' };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err: any) {
+      console.warn('Cloudflare store catalog publish note:', err);
+      return { success: false, error: err?.message || 'Network error publishing catalog' };
+    }
+  },
+
+  /**
+   * Public unauthenticated fetch of store catalog by slug
+   */
+  async fetchPublicStoreCatalog(slug: string): Promise<{ success: boolean; data?: any; error?: string }> {
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`${cleanUrl}/api/store/${encodeURIComponent(slug)}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const text = await res.text();
+          const parsed = parseWorkerResponse(text);
+          return { success: true, data: parsed.data || parsed };
+        }
+        return { success: false, error: `Store "${slug}" not found` };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error fetching store catalog' };
+    }
   },
 };

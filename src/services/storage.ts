@@ -28,6 +28,9 @@ import {
   CloudflareConfig,
   ThermalPrinterDevice,
   WorkOSUser,
+  PublicCatalogSettings,
+  PublicCatalogProduct,
+  PublicCatalogPayload,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 import { CloudflareService } from './cloudflareService';
@@ -67,6 +70,8 @@ const STORAGE_KEYS = {
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
   WORKOS_USER: 'quickreceipt_workos_user_v1',
   ACTIVE_WORKSPACE_USER: 'quickreceipt_active_workspace_user_v1',
+  STOCK_VIEW_MODE: 'quickreceipt_stock_view_mode_v1',
+  PUBLIC_CATALOG_SETTINGS: 'quickreceipt_public_catalog_settings_v1',
 };
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -1314,6 +1319,182 @@ export const StorageService = {
           type: 'low_stock',
         }).catch(() => {});
       }
+    }
+  },
+
+  // --- STOCK VIEW PREFERENCE (Grid vs List) ---
+  getStockViewMode(): 'grid' | 'list' {
+    return readFromStorage<'grid' | 'list'>(STORAGE_KEYS.STOCK_VIEW_MODE, 'grid');
+  },
+
+  setStockViewMode(mode: 'grid' | 'list'): void {
+    writeToStorage(STORAGE_KEYS.STOCK_VIEW_MODE, mode);
+  },
+
+  // --- PUBLIC LIVE STOCK CATALOG ---
+  generateStoreSlug(businessName: string): string {
+    if (!businessName || !businessName.trim()) return 'store';
+    return businessName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'store';
+  },
+
+  getPublicCatalogSettings(): PublicCatalogSettings {
+    const profile = this.getProfile();
+    const defaultSlug = this.generateStoreSlug(profile.name || 'store');
+    const saved = readFromStorage<Partial<PublicCatalogSettings>>(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, {});
+    return {
+      enabled: saved.enabled !== false, // default true
+      slug: (saved.slug && saved.slug.trim()) || defaultSlug,
+      businessName: saved.businessName || profile.name || '',
+      tagline: saved.tagline || profile.description || '',
+      phone: saved.phone || profile.phone || '',
+      whatsapp: saved.whatsapp || profile.whatsapp || profile.phone || '',
+      email: saved.email || profile.email || '',
+      address: saved.address || profile.address || '',
+      currency: saved.currency || profile.currency || 'UGX',
+      showExactQuantity: saved.showExactQuantity !== false, // default true
+      hideOutOfStock: saved.hideOutOfStock === true, // default false (show Out of Stock badge)
+      allowWhatsAppOrders: saved.allowWhatsAppOrders !== false, // default true
+      updatedAt: saved.updatedAt || new Date().toISOString(),
+    };
+  },
+
+  savePublicCatalogSettings(settings: Partial<PublicCatalogSettings>): PublicCatalogSettings {
+    const current = this.getPublicCatalogSettings();
+    const updated: PublicCatalogSettings = {
+      ...current,
+      ...settings,
+      slug: settings.slug ? this.generateStoreSlug(settings.slug) : current.slug,
+      updatedAt: new Date().toISOString(),
+    };
+    writeToStorage(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, updated);
+    this.publishPublicCatalog().catch(() => {});
+    return updated;
+  },
+
+  toggleProductPublicCatalog(productId: string): boolean {
+    const products = this.getInventoryProducts();
+    const product = products.find((p) => p.id === productId);
+    if (!product) return false;
+    const currentStatus = product.isPublicInCatalog !== false;
+    product.isPublicInCatalog = !currentStatus;
+    product.updatedAt = new Date().toISOString();
+    writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+    this.publishPublicCatalog().catch(() => {});
+    return product.isPublicInCatalog;
+  },
+
+  setAllProductsPublicCatalog(makePublic: boolean): void {
+    const products = this.getInventoryProducts().map((p) => ({
+      ...p,
+      isPublicInCatalog: makePublic,
+      updatedAt: new Date().toISOString(),
+    }));
+    writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+    CloudflareService.syncAllToCloudflare().catch(() => {});
+    this.publishPublicCatalog().catch(() => {});
+  },
+
+  getPublicCatalogPayload(overrideSlug?: string): PublicCatalogPayload {
+    const settings = this.getPublicCatalogSettings();
+    const profile = this.getProfile();
+    const categories = this.getProductCategories();
+    const rawProducts = this.getInventoryProducts();
+
+    // Security: Filter to only products marked as public
+    const publicProducts = rawProducts.filter((p) => p.isPublicInCatalog !== false);
+
+    // Filter out of stock if business owner enabled hideOutOfStock
+    const visibleProducts = settings.hideOutOfStock
+      ? publicProducts.filter((p) => p.quantity > 0)
+      : publicProducts;
+
+    const categoryMap = new Map<string, ProductCategory>(categories.map((c: ProductCategory) => [c.id, c]));
+
+    const catalogProducts: PublicCatalogProduct[] = visibleProducts.map((p) => {
+      const cat = p.categoryId ? categoryMap.get(p.categoryId) : undefined;
+      const isAvailable = p.quantity > 0;
+      let status: 'in-stock' | 'low-stock' | 'out-of-stock' = 'in-stock';
+      if (p.quantity === 0) {
+        status = 'out-of-stock';
+      } else if (p.quantity < 5) {
+        status = 'low-stock';
+      }
+
+      // STRICT PRIVACY: NEVER expose costPrice, profit, tax details, or private notes!
+      return {
+        id: p.id,
+        itemId: p.itemId,
+        name: p.name,
+        description: p.description,
+        image: p.image,
+        sizes: p.sizes,
+        color: p.color,
+        quantity: p.quantity,
+        unit: p.unit,
+        sellingPrice: p.sellingPrice,
+        categoryId: p.categoryId,
+        categoryName: cat?.name || p.category,
+        categoryColor: cat?.color,
+        isAvailable,
+        status,
+      };
+    });
+
+    const categoryCounts = categories.map((cat) => {
+      const count = catalogProducts.filter((cp) => cp.categoryId === cat.id).length;
+      return {
+        id: cat.id,
+        name: cat.name,
+        color: cat.color,
+        count,
+      };
+    });
+
+    return {
+      settings: {
+        ...settings,
+        slug: overrideSlug || settings.slug,
+      },
+      business: {
+        name: profile.name || settings.businessName || 'Brivu Store',
+        description: profile.description || settings.tagline || '',
+        logo: profile.logo,
+        phone: profile.phone || settings.phone || '',
+        whatsapp: profile.whatsapp || profile.phone || settings.whatsapp || '',
+        email: profile.email || settings.email || '',
+        address: profile.address || settings.address || '',
+        currency: profile.currency || settings.currency || 'UGX',
+      },
+      categories: categoryCounts,
+      products: catalogProducts,
+      lastUpdated: new Date().toISOString(),
+    };
+  },
+
+  async publishPublicCatalog(): Promise<{ success: boolean; url: string; error?: string }> {
+    const settings = this.getPublicCatalogSettings();
+    const payload = this.getPublicCatalogPayload();
+    const workerUrl = this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev';
+    const storeUrl = `${workerUrl.replace(/\/+$/, '')}/store/${settings.slug}`;
+
+    try {
+      const res = await CloudflareService.publishStoreCatalog(settings.slug, payload);
+      return {
+        success: res.success,
+        url: storeUrl,
+        error: res.error,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        url: storeUrl,
+        error: err?.message || 'Failed to sync catalog with cloud',
+      };
     }
   },
 
