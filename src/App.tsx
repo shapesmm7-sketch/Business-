@@ -22,6 +22,7 @@ import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { QrCodeScannerModal } from './components/QrCodeScannerModal';
 import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
+import { GoogleDriveSyncModal } from './components/GoogleDriveSyncModal';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
@@ -382,6 +383,7 @@ export function App() {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
+  const [isGoogleDriveModalOpen, setIsGoogleDriveModalOpen] = useState<boolean>(false);
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -1234,6 +1236,7 @@ export function App() {
             setIsAppLocked(true);
           }}
           onOpenQrScanner={() => setIsQrScannerOpen(true)}
+          onOpenGoogleDriveSync={() => setIsGoogleDriveModalOpen(true)}
         />
       )}
 
@@ -1515,6 +1518,7 @@ export function App() {
               setLockConfig(StorageService.getAppLockConfig());
               setIsAppLocked(true);
             }}
+            onOpenGoogleDriveSync={() => setIsGoogleDriveModalOpen(true)}
           />
         )}
 
@@ -1723,6 +1727,13 @@ export function App() {
           setDuplicateSeed(draftInvoice as Receipt);
           setActiveScreen('create-invoice');
         }}
+      />
+
+      {/* Google Drive Text Backup & Sync Modal */}
+      <GoogleDriveSyncModal
+        isOpen={isGoogleDriveModalOpen}
+        onClose={() => setIsGoogleDriveModalOpen(false)}
+        onDataRestored={refreshData}
       />
 
     </div>

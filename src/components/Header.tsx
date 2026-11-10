@@ -52,6 +52,7 @@ interface HeaderProps {
   onUpdateBusiness?: (business: BusinessProfile) => void;
   onLockApp?: () => void;
   onOpenQrScanner?: () => void;
+  onOpenGoogleDriveSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -67,6 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
   onUpdateBusiness,
   onLockApp,
   onOpenQrScanner,
+  onOpenGoogleDriveSync,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -582,7 +584,35 @@ export const Header: React.FC<HeaderProps> = ({
                 {t('sections_and_management', lang)}
               </div>
 
-
+              {/* Google Drive Text Sync Button */}
+              {onOpenGoogleDriveSync && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onOpenGoogleDriveSync();
+                  }}
+                  className="w-full text-left p-3 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/60 transition-all flex items-center gap-3.5 group active:scale-[0.99]"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-extrabold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        Google Drive Sync
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-200 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 uppercase">
+                        Text
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+                      Backup & restore receipts, invoices, inventory JSON
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-all shrink-0" />
+                </button>
+              )}
 
               {menuSections.map((sec) => {
                 const Icon = sec.icon;

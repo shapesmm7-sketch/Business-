@@ -27,6 +27,7 @@ interface SettingsScreenProps {
   onNavigate?: (screen: ActiveScreen) => void;
   onDataRestored: () => void;
   onLockApp?: () => void;
+  onOpenGoogleDriveSync?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -34,6 +35,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
   onNavigate,
   onDataRestored,
+  onOpenGoogleDriveSync,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
 
@@ -255,7 +257,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </button>
       </div>
 
-      {/* 4. Data Backup & Restore */}
+      {/* 4. Google Drive Data Sync Card */}
+      {onOpenGoogleDriveSync && (
+        <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-indigo-200/80 dark:border-indigo-900/60 shadow-xs overflow-hidden">
+          <button
+            id="btn-settings-open-drive-sync"
+            type="button"
+            onClick={onOpenGoogleDriveSync}
+            className="w-full p-4 flex items-center justify-between text-left hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 transition active:scale-[0.99] cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <Cloud className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span>Google Drive Data Sync</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                    Text JSON
+                  </span>
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Export & restore receipts, invoices & stock data to Google Drive
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* 5. Data Backup & Restore */}
       <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         <div className="flex items-center gap-2">
           <Download className="w-4 h-4 text-emerald-500" />
