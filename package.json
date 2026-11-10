@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && rm -rf dist/assets/aistudio",
     "lint": "tsc --noEmit",
     "preview": "vite preview"
   },

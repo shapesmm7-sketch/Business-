@@ -14,6 +14,7 @@ workflows:
       - name: Build Web Production Bundle
         script: |
           npm run build
+          rm -rf dist/assets/aistudio
       - name: Generate App Icons
         script: |
           # Create assets directory if it doesn't exist
@@ -41,7 +42,9 @@ workflows:
             rm -rf android
             npx cap add android
           fi
+          rm -rf dist/assets/aistudio android/app/src/main/assets/public/assets/aistudio
           npx cap sync android
+          rm -rf android/app/src/main/assets/public/assets/aistudio
       - name: Generate and Setup Release Keystore
         script: |
           cd android/app
@@ -85,6 +88,7 @@ workflows:
       - name: Build Web Production Bundle
         script: |
           npm run build
+          rm -rf dist/assets/aistudio
       - name: Generate App Icons
         script: |
           # Create assets directory if it doesn't exist
@@ -112,7 +116,9 @@ workflows:
             rm -rf android
             npx cap add android
           fi
+          rm -rf dist/assets/aistudio android/app/src/main/assets/public/assets/aistudio
           npx cap sync android
+          rm -rf android/app/src/main/assets/public/assets/aistudio
       - name: Build Android Debug APK
         script: |
           cd android
