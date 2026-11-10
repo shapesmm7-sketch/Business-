@@ -123,35 +123,26 @@ export const WorkOSAuthService = {
       });
     }
 
-    // 4. BROADCAST USER UPDATE IMMEDIATELY so the user logs in and sees the welcome message instantly!
+    // 4. Pull user's receipts, invoices, products, and photos from Cloudflare (D1 & R2)
+    if (cleanEmail) {
+      try {
+        await CloudflareService.pullFromCloudflare(cleanEmail);
+      } catch (pullErr) {
+        console.warn('Login cloud pull note:', pullErr);
+      }
+    }
+
+    // 5. Broadcast user update and data refresh so all restored files & records display immediately
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
       window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
       window.dispatchEvent(new Event('storage'));
     }
 
-    // 5. Run cloud restoration & sync in background without blocking or delaying login!
+    // 6. Run background sync (user profile & push unsynced local content)
     const runBackgroundSync = async () => {
-      if (cleanEmail) {
-        try {
-          const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
-          if (pullRes.success) {
-            // Notify UI to refresh restored receipts and products immediately
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
-              window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
-              window.dispatchEvent(new Event('storage'));
-            }
-          }
-        } catch (pullErr) {
-          console.warn('Background cloud pull note:', pullErr);
-        }
-      }
-
-      // Save user profile to Cloudflare
       await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
 
-      // Push records to Cloudflare only if active workspace has content
       const receipts = StorageService.getReceipts();
       const products = StorageService.getInventoryProducts();
       const qrPages = StorageService.getHostedQRPages();
@@ -159,7 +150,6 @@ export const WorkOSAuthService = {
         await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
       }
 
-      // Final refresh dispatch
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
       }

@@ -1497,7 +1497,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               title="Download Invoice PDF"
             >
               <Download className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
-              <span className="whitespace-nowrap">{t('download_pdf', business?.language)}</span>
+              <span className="whitespace-nowrap">{t('pdf_format', business?.language)}</span>
             </button>
 
             {/* Quick Save Photo */}
