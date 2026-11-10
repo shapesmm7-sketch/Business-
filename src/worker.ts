@@ -2567,9 +2567,8 @@ export default {
           let query = 'SELECT id, filename, mime_type, size, created_at FROM files';
           const params: any[] = [];
           const whereClauses: string[] = [
-            '(user_email = ? OR id LIKE ? OR id LIKE ?)'
+            '(id LIKE ? OR id LIKE ?)'
           ];
-          params.push(userEmail);
           params.push(`users/${encodeURIComponent(userEmail)}/%`);
           params.push(`users/${userEmail}/%`);
 
@@ -3456,13 +3455,10 @@ export default {
           } catch (_) {}
         }
 
-        // 3. Enrich backupData with all live records in D1 (receipts, products, clients, staff, qr_pages, files)
+        // 3. Enrich backupData with all live hosted QR pages stored in D1 qr_pages table for this user email
         if (db) {
           try {
             await ensureD1Tables(db);
-            if (!backupData) backupData = {};
-
-            // A. QR Pages
             const qrRows = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ?').bind(userEmail).all();
             const hostedPages: any[] = [];
             if (qrRows?.results) {
@@ -3478,6 +3474,7 @@ export default {
               }
             }
             if (hostedPages.length > 0) {
+              if (!backupData) backupData = {};
               const existingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
               const pageMap = new Map();
               for (const p of [...existingPages, ...hostedPages]) {
@@ -3485,78 +3482,6 @@ export default {
               }
               backupData.qrHostedPages = Array.from(pageMap.values());
             }
-
-            // B. Receipts & Invoices
-            const receiptRows = await db.prepare('SELECT data_json FROM receipts WHERE user_email = ?').bind(userEmail).all();
-            if (receiptRows?.results && receiptRows.results.length > 0) {
-              const existingReceipts = Array.isArray(backupData.receipts) ? backupData.receipts : [];
-              const receiptMap = new Map();
-              for (const r of existingReceipts) {
-                if (r?.id) receiptMap.set(r.id, r);
-              }
-              for (const row of receiptRows.results as any[]) {
-                if (row?.data_json) {
-                  try {
-                    const parsed = JSON.parse(row.data_json);
-                    if (parsed?.id && !receiptMap.has(parsed.id)) {
-                      receiptMap.set(parsed.id, parsed);
-                    }
-                  } catch (_) {}
-                }
-              }
-              backupData.receipts = Array.from(receiptMap.values());
-            }
-
-            // C. Inventory Products
-            const productRows = await db.prepare('SELECT id, name, barcode, category, selling_price, cost_price, stock_quantity, image FROM products WHERE shop_id = ?').bind(userEmail).all();
-            if (productRows?.results && productRows.results.length > 0) {
-              const existingProducts = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : [];
-              const productMap = new Map();
-              for (const p of existingProducts) {
-                if (p?.id) productMap.set(p.id, p);
-              }
-              for (const row of productRows.results as any[]) {
-                if (row?.id && !productMap.has(row.id)) {
-                  productMap.set(row.id, {
-                    id: row.id,
-                    itemId: row.barcode || row.id,
-                    name: row.name,
-                    category: row.category || 'General',
-                    sellingPrice: Number(row.selling_price || 0),
-                    costPrice: Number(row.cost_price || 0),
-                    quantity: Number(row.stock_quantity || 0),
-                    image: row.image || undefined,
-                    unit: 'Pcs'
-                  });
-                }
-              }
-              backupData.inventoryProducts = Array.from(productMap.values());
-            }
-
-            // D. Uploaded Files & Photos
-            const fileRows = await db.prepare('SELECT id, filename, mime_type, size, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ?').bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`).all();
-            if (fileRows?.results && fileRows.results.length > 0) {
-              const existingFiles = Array.isArray(backupData.files) ? backupData.files : [];
-              const fileMap = new Map();
-              for (const f of existingFiles) {
-                if (f?.key || f?.id) fileMap.set(f.key || f.id, f);
-              }
-              for (const row of fileRows.results as any[]) {
-                if (row?.id && !fileMap.has(row.id)) {
-                  fileMap.set(row.id, {
-                    key: row.id,
-                    id: row.id,
-                    filename: row.filename,
-                    mimeType: row.mime_type,
-                    size: row.size,
-                    uploadedAt: row.created_at,
-                    url: `${url.origin}/api/files/${encodeURIComponent(row.id)}`,
-                  });
-                }
-              }
-              backupData.files = Array.from(fileMap.values());
-            }
-
           } catch (_) {}
         }
 

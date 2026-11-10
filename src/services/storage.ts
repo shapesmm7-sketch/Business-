@@ -936,20 +936,11 @@ export const StorageService = {
     if (!backupData || typeof backupData !== 'object') {
       return { success: false, message: 'Invalid backup file format' };
     }
-    const hasAnyContent =
-      (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) ||
-      (Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0) ||
-      (Array.isArray(backupData.inventorySales) && backupData.inventorySales.length > 0) ||
-      (Array.isArray(backupData.inventoryExpenses) && backupData.inventoryExpenses.length > 0) ||
-      (Array.isArray(backupData.inventoryDebts) && backupData.inventoryDebts.length > 0) ||
-      (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) ||
-      (Array.isArray(backupData.customers) && backupData.customers.length > 0) ||
-      (Array.isArray(backupData.workers) && backupData.workers.length > 0) ||
-      (Array.isArray(backupData.shoppingListItems) && backupData.shoppingListItems.length > 0) ||
-      (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) ||
-      (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) ||
-      (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) ||
-      (Array.isArray((backupData as any).files) && (backupData as any).files.length > 0) ||
+    const hasAnyContent = Array.isArray(backupData.receipts) ||
+      Array.isArray(backupData.inventoryProducts) ||
+      Array.isArray(backupData.inventorySales) ||
+      Array.isArray(backupData.inventoryExpenses) ||
+      Array.isArray(backupData.inventoryDebts) ||
       Boolean(backupData.profile);
     if (!hasAnyContent) {
       return { success: false, message: 'Backup file is empty or missing data' };
@@ -3268,8 +3259,8 @@ export const StorageService = {
       if (vaultJson) {
         try {
           const vaultData = JSON.parse(vaultJson);
-          // Restore user's cached local vault records immediately into active workspace
-          this.importBackup(vaultData, true);
+          // Non-destructive merge: preserve local records and combine with user's vault
+          this.importBackup(vaultData, false);
         } catch (_) {}
       }
       const prof = this.getProfile();
