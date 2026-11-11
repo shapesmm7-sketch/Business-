@@ -967,122 +967,162 @@ export const StorageService = {
         }
       }
 
+      // 3. Receipts & Invoices
       if (Array.isArray(backupData.receipts)) {
-        const deletedList = this.getDeletedReceiptIds();
-        const deletedSet = new Set(deletedList.map((s) => String(s).trim().toLowerCase()));
-
-        const isDeleted = (r: any) => {
-          if (!r || typeof r !== 'object') return true;
-          if (r.id && String(r.id).startsWith('sample-')) return true;
-          const rId = String(r.id || '').trim().toLowerCase();
-          return deletedSet.has(rId);
-        };
-
-        const cloudReceipts = backupData.receipts.filter((r) => !isDeleted(r));
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.RECEIPTS, cloudReceipts);
+          if (Array.isArray(backupData.deletedReceiptIds)) {
+            writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, backupData.deletedReceiptIds);
+          } else {
+            writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
+          }
+          writeToStorage(STORAGE_KEYS.RECEIPTS, backupData.receipts);
         } else {
-          const existing = this.getReceipts().filter((r) => !isDeleted(r));
-          const cloudIds = new Set(cloudReceipts.map((r) => r.id));
-          const localOnly = existing.filter((r) => !cloudIds.has(r.id));
-          const mergedReceipts = [...cloudReceipts, ...localOnly];
-          writeToStorage(STORAGE_KEYS.RECEIPTS, mergedReceipts);
+          // Merge Mode: Unmark incoming backup receipts from deleted list so tombstones don't block them
+          const currentDeleted = this.getDeletedReceiptIds();
+          const incomingIds = new Set(backupData.receipts.map((r) => String(r.id || '').trim().toLowerCase()));
+          const incomingNums = new Set(backupData.receipts.map((r) => String(r.receiptNumber || '').trim().toLowerCase()));
+          
+          const cleanDeleted = currentDeleted.filter((item) => {
+            const itemLower = String(item).trim().toLowerCase();
+            return !incomingIds.has(itemLower) && !incomingNums.has(itemLower);
+          });
+          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, cleanDeleted);
+
+          const existing = this.getReceipts();
+          const receiptMap = new Map<string, any>();
+          existing.forEach((r) => {
+            if (r && r.id && !String(r.id).startsWith('sample-')) {
+              receiptMap.set(r.id, r);
+            }
+          });
+          backupData.receipts.forEach((r) => {
+            if (r && r.id && !String(r.id).startsWith('sample-')) {
+              receiptMap.set(r.id, r);
+            }
+          });
+
+          writeToStorage(STORAGE_KEYS.RECEIPTS, Array.from(receiptMap.values()));
         }
 
-        // If cloud backup still held receipts that were locally deleted, push sanitized state back to D1 immediately
-        const hadDeletedInCloud = backupData.receipts.some((r) => isDeleted(r));
-        if (hadDeletedInCloud) {
-          setTimeout(() => {
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }, 100);
-        }
+        // Background sync state to Cloudflare D1
+        setTimeout(() => {
+          CloudflareService.syncAllToCloudflare().catch(() => {});
+        }, 100);
       }
+
+      // 4. Inventory Products
       if (Array.isArray(backupData.inventoryProducts)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
         } else {
           const existing = this.getInventoryProducts();
-          const cloudIds = new Set(backupData.inventoryProducts.map((p) => p.id));
-          const localOnly = existing.filter((p) => !cloudIds.has(p.id));
-          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, [...backupData.inventoryProducts, ...localOnly]);
+          const productMap = new Map<string, any>();
+          existing.forEach((p) => { if (p && p.id) productMap.set(p.id, p); });
+          backupData.inventoryProducts.forEach((p) => { if (p && p.id) productMap.set(p.id, p); });
+          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, Array.from(productMap.values()));
         }
       }
+
+      // 5. Inventory Sales
       if (Array.isArray(backupData.inventorySales)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.INVENTORY_SALES, backupData.inventorySales);
         } else {
           const existing = this.getInventorySales();
-          const cloudIds = new Set(backupData.inventorySales.map((s) => s.id));
-          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
-          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, [...backupData.inventorySales, ...localOnly]);
+          const salesMap = new Map<string, any>();
+          existing.forEach((s) => { if (s && s.id) salesMap.set(s.id, s); });
+          backupData.inventorySales.forEach((s) => { if (s && s.id) salesMap.set(s.id, s); });
+          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, Array.from(salesMap.values()));
         }
       }
+
+      // 6. Inventory Expenses
       if (Array.isArray(backupData.inventoryExpenses)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, backupData.inventoryExpenses);
         } else {
           const existing = this.getInventoryExpenses();
-          const cloudIds = new Set(backupData.inventoryExpenses.map((e) => e.id));
-          const localOnly = existing.filter((e) => !cloudIds.has(e.id));
-          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, [...backupData.inventoryExpenses, ...localOnly]);
+          const expenseMap = new Map<string, any>();
+          existing.forEach((e) => { if (e && e.id) expenseMap.set(e.id, e); });
+          backupData.inventoryExpenses.forEach((e) => { if (e && e.id) expenseMap.set(e.id, e); });
+          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, Array.from(expenseMap.values()));
         }
       }
+
+      // 7. Inventory Debts
       if (Array.isArray(backupData.inventoryDebts)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, backupData.inventoryDebts);
         } else {
           const existing = this.getInventoryDebts();
-          const cloudIds = new Set(backupData.inventoryDebts.map((d) => d.id));
-          const localOnly = existing.filter((d) => !cloudIds.has(d.id));
-          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, [...backupData.inventoryDebts, ...localOnly]);
+          const debtMap = new Map<string, any>();
+          existing.forEach((d) => { if (d && d.id) debtMap.set(d.id, d); });
+          backupData.inventoryDebts.forEach((d) => { if (d && d.id) debtMap.set(d.id, d); });
+          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, Array.from(debtMap.values()));
         }
       }
+
+      // 8. Shopping List Items
       if (Array.isArray(backupData.shoppingListItems)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.SHOPPING_LIST, backupData.shoppingListItems);
         } else {
           const existing = this.getShoppingListItems();
-          const cloudIds = new Set(backupData.shoppingListItems.map((s) => s.id));
-          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
-          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, [...backupData.shoppingListItems, ...localOnly]);
+          const shopMap = new Map<string, any>();
+          existing.forEach((s) => { if (s && s.id) shopMap.set(s.id, s); });
+          backupData.shoppingListItems.forEach((s) => { if (s && s.id) shopMap.set(s.id, s); });
+          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, Array.from(shopMap.values()));
         }
       }
+
+      // 9. Categories
       if (Array.isArray(backupData.shoppingCategories)) {
         writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, backupData.shoppingCategories);
       }
       if (Array.isArray(backupData.productCategories)) {
         writeToStorage(STORAGE_KEYS.PRODUCT_CATEGORIES, backupData.productCategories);
       }
+
+      // 10. Customers / Clients
       if (Array.isArray(backupData.customers)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.CUSTOMERS, backupData.customers);
         } else {
           const existing = this.getCustomers();
-          const cloudIds = new Set(backupData.customers.map((c) => c.id));
-          const localOnly = existing.filter((c) => !cloudIds.has(c.id));
-          writeToStorage(STORAGE_KEYS.CUSTOMERS, [...backupData.customers, ...localOnly]);
+          const customerMap = new Map<string, any>();
+          existing.forEach((c) => { if (c && c.id) customerMap.set(c.id, c); });
+          backupData.customers.forEach((c) => { if (c && c.id) customerMap.set(c.id, c); });
+          writeToStorage(STORAGE_KEYS.CUSTOMERS, Array.from(customerMap.values()));
         }
       }
+
+      // 11. Agents
       if (Array.isArray(backupData.agents)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
         } else {
           const existing = this.getAgents();
-          const cloudIds = new Set(backupData.agents.map((a) => a.id));
-          const localOnly = existing.filter((a) => !cloudIds.has(a.id));
-          writeToStorage(STORAGE_KEYS.AGENTS, [...backupData.agents, ...localOnly]);
+          const agentMap = new Map<string, any>();
+          existing.forEach((a) => { if (a && a.id) agentMap.set(a.id, a); });
+          backupData.agents.forEach((a) => { if (a && a.id) agentMap.set(a.id, a); });
+          writeToStorage(STORAGE_KEYS.AGENTS, Array.from(agentMap.values()));
         }
       }
+
+      // 12. Workers / Staff
       if (Array.isArray(backupData.workers)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.WORKERS, backupData.workers);
         } else {
           const existing = this.getWorkers();
-          const cloudIds = new Set(backupData.workers.map((w) => w.id));
-          const localOnly = existing.filter((w) => !cloudIds.has(w.id));
-          writeToStorage(STORAGE_KEYS.WORKERS, [...backupData.workers, ...localOnly]);
+          const workerMap = new Map<string, any>();
+          existing.forEach((w) => { if (w && w.id) workerMap.set(w.id, w); });
+          backupData.workers.forEach((w) => { if (w && w.id) workerMap.set(w.id, w); });
+          writeToStorage(STORAGE_KEYS.WORKERS, Array.from(workerMap.values()));
         }
       }
+
+      // 13. Staff Records
       if (Array.isArray(backupData.staffAttendance)) {
         writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, backupData.staffAttendance);
       }
@@ -1095,15 +1135,17 @@ export const StorageService = {
       if (Array.isArray(backupData.staffIncidents)) {
         writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, backupData.staffIncidents);
       }
+
+      // 14. QR Hosted Pages & Items
       if (Array.isArray(backupData.qrHostedPages)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
         } else {
           const existing = this.getHostedQRPages();
-          const cloudIds = new Set(backupData.qrHostedPages.map((p) => p.id));
-          const localOnly = existing.filter((p) => !cloudIds.has(p.id));
-          const merged = [...backupData.qrHostedPages, ...localOnly];
-          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, merged.length > 0 ? merged : existing);
+          const qrMap = new Map<string, any>();
+          existing.forEach((p) => { if (p && p.id) qrMap.set(p.id, p); });
+          backupData.qrHostedPages.forEach((p) => { if (p && p.id) qrMap.set(p.id, p); });
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, Array.from(qrMap.values()));
         }
       }
       if (Array.isArray(backupData.websitesQrItems)) {
@@ -1111,9 +1153,10 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
         } else {
           const existing = this.getWebsitesQrItems();
-          const cloudIds = new Set(backupData.websitesQrItems.map((w) => w.id));
-          const localOnly = existing.filter((w) => !cloudIds.has(w.id));
-          writeToStorage(STORAGE_KEYS.WEBSITES_QR, [...backupData.websitesQrItems, ...localOnly]);
+          const webMap = new Map<string, any>();
+          existing.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
+          backupData.websitesQrItems.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
+          writeToStorage(STORAGE_KEYS.WEBSITES_QR, Array.from(webMap.values()));
         }
       }
       if (Array.isArray(backupData.socialsQrItems)) {
@@ -1121,9 +1164,10 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
         } else {
           const existing = this.getSocialsQrItems();
-          const cloudIds = new Set(backupData.socialsQrItems.map((s) => s.id));
-          const localOnly = existing.filter((s) => !cloudIds.has(s.id));
-          writeToStorage(STORAGE_KEYS.SOCIALS_QR, [...backupData.socialsQrItems, ...localOnly]);
+          const socialMap = new Map<string, any>();
+          existing.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
+          backupData.socialsQrItems.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
+          writeToStorage(STORAGE_KEYS.SOCIALS_QR, Array.from(socialMap.values()));
         }
       }
       if (Array.isArray(backupData.eventsQrItems)) {
@@ -1131,9 +1175,10 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
         } else {
           const existing = this.getEventsQrItems();
-          const cloudIds = new Set(backupData.eventsQrItems.map((e) => e.id));
-          const localOnly = existing.filter((e) => !cloudIds.has(e.id));
-          writeToStorage(STORAGE_KEYS.EVENTS_QR, [...backupData.eventsQrItems, ...localOnly]);
+          const evtMap = new Map<string, any>();
+          existing.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
+          backupData.eventsQrItems.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
+          writeToStorage(STORAGE_KEYS.EVENTS_QR, Array.from(evtMap.values()));
         }
       }
       return {
