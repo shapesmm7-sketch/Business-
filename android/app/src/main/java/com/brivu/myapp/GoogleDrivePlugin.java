@@ -83,26 +83,33 @@ public class GoogleDrivePlugin extends Plugin {
                         Log.i(TAG, "AuthorizationResult contains pending resolution");
                         if (authorizationResult.getPendingIntent() != null) {
                             try {
-                                Intent resolutionIntent = authorizationResult.getPendingIntent().getIntent();
-                                if (resolutionIntent != null) {
-                                    startActivityForResult(call, resolutionIntent, "handleSignInResult");
-                                    return;
-                                }
+                                getActivity().startIntentSenderForResult(
+                                    authorizationResult.getPendingIntent().getIntentSender(),
+                                    1001,
+                                    null,
+                                    0,
+                                    0,
+                                    0
+                                );
+                                return;
                             } catch (Exception ex) {
-                                Log.e(TAG, "Failed launching resolution intent", ex);
+                                Log.e(TAG, "Failed launching resolution IntentSender", ex);
                             }
                         }
                     } else {
                         String accessToken = authorizationResult.getAccessToken();
                         if (accessToken != null && !accessToken.isEmpty()) {
-                            String email = authorizationResult.getAccount() != null ? authorizationResult.getAccount().getEmail() : null;
-                            if (email == null) {
-                                GoogleSignInAccount lastAcc = GoogleSignIn.getLastSignedInAccount(getContext());
-                                if (lastAcc != null) email = lastAcc.getEmail();
-                            }
+                            GoogleSignInAccount lastAcc = GoogleSignIn.getLastSignedInAccount(getContext());
+                            String email = lastAcc != null && lastAcc.getEmail() != null ? lastAcc.getEmail() : null;
                             if (email != null) {
                                 Log.i(TAG, "Successfully retrieved access token via Identity AuthorizationClient for: " + email);
-                                resolveWithToken(call, email, email, "", accessToken);
+                                resolveWithToken(
+                                    call,
+                                    email,
+                                    lastAcc.getDisplayName() != null ? lastAcc.getDisplayName() : email,
+                                    lastAcc.getPhotoUrl() != null ? lastAcc.getPhotoUrl().toString() : "",
+                                    accessToken
+                                );
                                 return;
                             }
                         }
