@@ -47,7 +47,6 @@ public class GoogleDrivePlugin extends Plugin {
         if (googleSignInClient == null) {
             GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestIdToken(WEB_CLIENT_ID)
                 .build();
             googleSignInClient = GoogleSignIn.getClient(getActivity(), gso);
         }
