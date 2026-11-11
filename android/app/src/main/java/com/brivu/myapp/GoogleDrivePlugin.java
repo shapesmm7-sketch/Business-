@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "GoogleDrivePlugin")
 public class GoogleDrivePlugin extends Plugin {
+    private static final String TAG = "GoogleDrivePlugin";
     private static final String SCOPE_FILE = "https://www.googleapis.com/auth/drive.file";
     private static final String OAUTH_SCOPES_STRING = "oauth2:" + SCOPE_FILE + " https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 
