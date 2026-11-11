@@ -14,14 +14,21 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import com.google.android.gms.auth.GoogleAuthUtil;
 import com.google.android.gms.auth.UserRecoverableAuthException;
+import com.google.android.gms.auth.api.identity.AuthorizationClient;
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
 import com.google.android.gms.auth.api.signin.GoogleSignIn;
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes;
 import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
 import com.google.android.gms.common.api.Scope;
 import com.google.android.gms.tasks.Task;
 
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,6 +55,7 @@ public class GoogleDrivePlugin extends Plugin {
     @PluginMethod
     public void connectGoogleDrive(PluginCall call) {
         try {
+            Log.i(TAG, "Launching Google Account Chooser interface...");
             GoogleSignInClient client = getClient();
             Intent signInIntent = client.getSignInIntent();
             startActivityForResult(call, signInIntent, "handleSignInResult");
@@ -61,49 +69,127 @@ public class GoogleDrivePlugin extends Plugin {
     private void handleSignInResult(PluginCall call, ActivityResult result) {
         if (call == null) return;
 
+        int resultCode = result.getResultCode();
         Intent data = result.getData();
+        Log.i(TAG, "Google Account Chooser activity callback returned with resultCode: " + resultCode);
+
+        // 1. Try parsing Google Identity Services (GIS) AuthorizationResult from intent data
+        if (data != null) {
+            try {
+                AuthorizationResult authorizationResult = Identity.getAuthorizationClient(getActivity())
+                    .getAuthorizationResultFromIntent(data);
+                if (authorizationResult != null) {
+                    if (authorizationResult.hasResolution()) {
+                        Log.i(TAG, "AuthorizationResult contains pending resolution");
+                        if (authorizationResult.getPendingIntent() != null) {
+                            try {
+                                Intent resolutionIntent = authorizationResult.getPendingIntent().getIntent();
+                                if (resolutionIntent != null) {
+                                    startActivityForResult(call, resolutionIntent, "handleSignInResult");
+                                    return;
+                                }
+                            } catch (Exception ex) {
+                                Log.e(TAG, "Failed launching resolution intent", ex);
+                            }
+                        }
+                    } else {
+                        String accessToken = authorizationResult.getAccessToken();
+                        if (accessToken != null && !accessToken.isEmpty()) {
+                            String email = authorizationResult.getAccount() != null ? authorizationResult.getAccount().getEmail() : null;
+                            if (email == null) {
+                                GoogleSignInAccount lastAcc = GoogleSignIn.getLastSignedInAccount(getContext());
+                                if (lastAcc != null) email = lastAcc.getEmail();
+                            }
+                            if (email != null) {
+                                Log.i(TAG, "Successfully retrieved access token via Identity AuthorizationClient for: " + email);
+                                resolveWithToken(call, email, email, "", accessToken);
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.d(TAG, "Intent data was not GIS AuthorizationResult: " + e.getMessage());
+            }
+        }
+
+        // 2. Try parsing GoogleSignInAccount task from intent data
         if (data != null) {
             Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
             try {
                 GoogleSignInAccount account = task.getResult(ApiException.class);
                 if (account != null && account.getEmail() != null) {
-                    Log.i(TAG, "Successfully selected account from intent: " + account.getEmail());
+                    Log.i(TAG, "Successfully selected Google account from intent: " + account.getEmail());
                     fetchTokenAndResolve(call, account);
                     return;
                 }
             } catch (ApiException e) {
-                Log.w(TAG, "Google sign in ApiException code: " + e.getStatusCode());
+                int statusCode = e.getStatusCode();
+                String statusMsg = e.getMessage() != null ? e.getMessage() : "No status message";
+                Log.e(TAG, "Google Account Chooser ApiException - Code: " + statusCode + ", Message: " + statusMsg, e);
+
+                if (statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
+                    Log.i(TAG, "User explicitly canceled the Google Account chooser (Code 12501).");
+                    call.reject("Google account selection was canceled by user");
+                    return;
+                } else if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
+                    Log.e(TAG, "Google Sign-In DEVELOPER_ERROR (10): Package name (com.brivu.myapp) or SHA-1 key mismatch in Google Cloud Console.");
+                    call.reject("Google OAuth configuration error (Code 10 DEVELOPER_ERROR). Please register SHA-1 fingerprint in Google Cloud Console.");
+                    return;
+                } else if (statusCode == GoogleSignInStatusCodes.SIGN_IN_FAILED) {
+                    Log.e(TAG, "Google Sign-In failed (Code 12500 SIGN_IN_FAILED). Check Google Play Services and connection.");
+                    call.reject("Google Sign-In failed (Code 12500). Please check network and Google Play Services.");
+                    return;
+                } else if (statusCode == GoogleSignInStatusCodes.SIGN_IN_REQUIRED) {
+                    call.reject("Google Sign-In required (Code 4). Please select a valid Google account.");
+                    return;
+                } else {
+                    call.reject("Google Sign-In error (Code " + statusCode + "): " + statusMsg);
+                    return;
+                }
             } catch (Exception e) {
-                Log.w(TAG, "Unexpected error parsing account intent", e);
+                Log.e(TAG, "Unexpected error parsing account intent", e);
+                call.reject("Failed to process Google account selection: " + e.getMessage());
+                return;
             }
         }
 
-        // Fallback: Check if an active Google account exists on device after chooser dialog completes
+        // 3. Fallback check if user previously signed in or chooser updated session
         GoogleSignInAccount lastAccount = GoogleSignIn.getLastSignedInAccount(getContext());
         if (lastAccount != null && lastAccount.getEmail() != null) {
-            Log.i(TAG, "Using last active signed-in account: " + lastAccount.getEmail());
+            Log.i(TAG, "Found last active signed-in account: " + lastAccount.getEmail());
             fetchTokenAndResolve(call, lastAccount);
             return;
         }
 
-        call.reject("Google account selection was canceled by user");
+        // 4. If resultCode was RESULT_CANCELED, only then reject with user cancellation
+        if (resultCode == Activity.RESULT_CANCELED) {
+            Log.i(TAG, "User canceled Google Account selection dialog (RESULT_CANCELED).");
+            call.reject("Google account selection was canceled by user");
+            return;
+        }
+
+        call.reject("Google account selection completed without valid account credentials.");
     }
 
     @ActivityCallback
     private void handleConsentResult(PluginCall call, ActivityResult result) {
         if (call == null) return;
 
-        if (result.getResultCode() != Activity.RESULT_OK) {
-            call.reject("Google Drive permission was not granted");
+        int resultCode = result.getResultCode();
+        if (resultCode != Activity.RESULT_OK) {
+            Log.w(TAG, "Google Drive consent request denied or canceled with resultCode: " + resultCode);
+            call.reject("Google Drive permission was denied by user");
             return;
         }
 
         GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(getContext());
         if (account == null) {
-            call.reject("No active Google account found after consent");
+            call.reject("No active Google account found after consent prompt");
             return;
         }
 
+        Log.i(TAG, "User granted consent. Re-fetching OAuth token for: " + account.getEmail());
         fetchTokenAndResolve(call, account);
     }
 
@@ -111,40 +197,54 @@ public class GoogleDrivePlugin extends Plugin {
         executor.execute(() -> {
             try {
                 String token = GoogleAuthUtil.getToken(getContext(), account.getAccount(), OAUTH_SCOPES_STRING);
-                JSObject ret = new JSObject();
-                ret.put("success", true);
-                ret.put("connected", true);
-                ret.put("email", account.getEmail());
-                ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
-                ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
-                ret.put("accessToken", token);
-                call.resolve(ret);
+                if (token != null && !token.isEmpty()) {
+                    Log.i(TAG, "Successfully retrieved Google Drive OAuth access token for: " + account.getEmail());
+                    resolveWithToken(
+                        call,
+                        account.getEmail(),
+                        account.getDisplayName() != null ? account.getDisplayName() : account.getEmail(),
+                        account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "",
+                        token
+                    );
+                } else {
+                    Log.e(TAG, "GoogleAuthUtil returned an empty access token for: " + account.getEmail());
+                    call.reject("Google authorization returned an empty access token");
+                }
             } catch (UserRecoverableAuthException ure) {
-                Log.i(TAG, "User consent needed for Google Drive scopes, launching consent intent...");
+                Log.i(TAG, "User consent needed for Google Drive scope, launching consent intent...");
                 getActivity().runOnUiThread(() -> {
                     try {
                         startActivityForResult(call, ure.getIntent(), "handleConsentResult");
                     } catch (Exception ex) {
+                        Log.e(TAG, "Failed launching consent intent", ex);
                         call.reject("Failed to request Drive permissions: " + ex.getMessage());
                     }
                 });
-            } catch (Exception e) {
-                Log.e(TAG, "Failed retrieving Google Drive OAuth token", e);
-                if (account.getEmail() != null) {
-                    JSObject ret = new JSObject();
-                    ret.put("success", true);
-                    ret.put("connected", true);
-                    ret.put("email", account.getEmail());
-                    ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
-                    ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
-                    ret.put("accessToken", "");
-                    ret.put("tokenError", e.getMessage());
-                    call.resolve(ret);
+            } catch (ApiException apiEx) {
+                int statusCode = apiEx.getStatusCode();
+                String statusMsg = apiEx.getMessage() != null ? apiEx.getMessage() : "Google API Error";
+                Log.e(TAG, "Failed retrieving OAuth token. ApiException Code: " + statusCode + ", Message: " + statusMsg, apiEx);
+                if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
+                    call.reject("Google OAuth setup error (Code 10 DEVELOPER_ERROR). Please register Android SHA-1 fingerprint in Google Cloud Console.");
                 } else {
-                    call.reject("Failed to get Google Drive authorization token: " + e.getMessage(), e);
+                    call.reject("Google Drive token retrieval error (Code " + statusCode + "): " + statusMsg);
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed retrieving Google Drive OAuth token for " + account.getEmail(), e);
+                call.reject("Failed to get Google Drive access token: " + e.getMessage());
             }
         });
+    }
+
+    private void resolveWithToken(PluginCall call, String email, String displayName, String photoUrl, String accessToken) {
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("connected", true);
+        ret.put("email", email);
+        ret.put("displayName", displayName);
+        ret.put("photoUrl", photoUrl);
+        ret.put("accessToken", accessToken);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -161,20 +261,23 @@ public class GoogleDrivePlugin extends Plugin {
             executor.execute(() -> {
                 try {
                     String token = GoogleAuthUtil.getToken(getContext(), account.getAccount(), OAUTH_SCOPES_STRING);
-                    JSObject ret = new JSObject();
-                    ret.put("connected", true);
-                    ret.put("email", account.getEmail());
-                    ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
-                    ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
-                    ret.put("accessToken", token);
-                    call.resolve(ret);
+                    if (token != null && !token.isEmpty()) {
+                        JSObject ret = new JSObject();
+                        ret.put("connected", true);
+                        ret.put("email", account.getEmail());
+                        ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
+                        ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
+                        ret.put("accessToken", token);
+                        call.resolve(ret);
+                    } else {
+                        JSObject ret = new JSObject();
+                        ret.put("connected", false);
+                        call.resolve(ret);
+                    }
                 } catch (Exception e) {
+                    Log.w(TAG, "getConnectedAccount token check note: " + e.getMessage());
                     JSObject ret = new JSObject();
-                    ret.put("connected", true);
-                    ret.put("email", account.getEmail());
-                    ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
-                    ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
-                    ret.put("tokenError", e.getMessage());
+                    ret.put("connected", false);
                     call.resolve(ret);
                 }
             });
@@ -196,9 +299,13 @@ public class GoogleDrivePlugin extends Plugin {
         executor.execute(() -> {
             try {
                 String token = GoogleAuthUtil.getToken(getContext(), account.getAccount(), OAUTH_SCOPES_STRING);
-                JSObject ret = new JSObject();
-                ret.put("accessToken", token);
-                call.resolve(ret);
+                if (token != null && !token.isEmpty()) {
+                    JSObject ret = new JSObject();
+                    ret.put("accessToken", token);
+                    call.resolve(ret);
+                } else {
+                    call.reject("Retrieved empty access token");
+                }
             } catch (UserRecoverableAuthException ure) {
                 getActivity().runOnUiThread(() -> {
                     try {
@@ -234,3 +341,4 @@ public class GoogleDrivePlugin extends Plugin {
         }
     }
 }
+
