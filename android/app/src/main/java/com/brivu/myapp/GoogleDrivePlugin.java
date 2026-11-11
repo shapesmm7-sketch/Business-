@@ -229,18 +229,20 @@ public class GoogleDrivePlugin extends Plugin {
                         call.reject("Failed to request Drive permissions: " + ex.getMessage());
                     }
                 });
-            } catch (ApiException apiEx) {
-                int statusCode = apiEx.getStatusCode();
-                String statusMsg = apiEx.getMessage() != null ? apiEx.getMessage() : "Google API Error";
-                Log.e(TAG, "Failed retrieving OAuth token. ApiException Code: " + statusCode + ", Message: " + statusMsg, apiEx);
-                if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
-                    call.reject("Google OAuth setup error (Code 10 DEVELOPER_ERROR). Please register Android SHA-1 fingerprint in Google Cloud Console.");
-                } else {
-                    call.reject("Google Drive token retrieval error (Code " + statusCode + "): " + statusMsg);
-                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed retrieving Google Drive OAuth token for " + account.getEmail(), e);
-                call.reject("Failed to get Google Drive access token: " + e.getMessage());
+                if (e instanceof ApiException) {
+                    ApiException apiEx = (ApiException) e;
+                    int statusCode = apiEx.getStatusCode();
+                    String statusMsg = apiEx.getMessage() != null ? apiEx.getMessage() : "Google API Error";
+                    if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
+                        call.reject("Google OAuth setup error (Code 10 DEVELOPER_ERROR). Please register Android SHA-1 fingerprint in Google Cloud Console.");
+                    } else {
+                        call.reject("Google Drive token retrieval error (Code " + statusCode + "): " + statusMsg);
+                    }
+                } else {
+                    call.reject("Failed to get Google Drive access token: " + e.getMessage());
+                }
             }
         });
     }
