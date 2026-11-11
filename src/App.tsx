@@ -764,6 +764,19 @@ export function App() {
     setLockConfig(StorageService.getAppLockConfig());
   }, []);
 
+  // Listen for data restoration events globally to refresh state instantly
+  useEffect(() => {
+    const handleDataRestored = () => {
+      refreshData();
+    };
+    window.addEventListener('brivu_data_restored', handleDataRestored);
+    window.addEventListener('storage', handleDataRestored);
+    return () => {
+      window.removeEventListener('brivu_data_restored', handleDataRestored);
+      window.removeEventListener('storage', handleDataRestored);
+    };
+  }, [refreshData]);
+
   // App Lock Lifecycle: automatically enforce auto-lock on app launch, background/resume, reload, or visibility change
   useEffect(() => {
     let lastBackgroundTimestamp = 0;

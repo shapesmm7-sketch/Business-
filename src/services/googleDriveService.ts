@@ -601,6 +601,12 @@ export const GoogleDriveService = {
       // Sync to cloudflare background if available
       CloudflareService.syncAllToCloudflare().catch(() => {});
 
+      // Dispatch global restoration events so all active React screens re-render with restored items
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+        window.dispatchEvent(new Event('storage'));
+      }
+
       return {
         success: true,
         itemCount: {

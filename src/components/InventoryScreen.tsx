@@ -149,9 +149,13 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     };
     window.addEventListener('workos_user_updated', handleSync);
     window.addEventListener('storage_updated', handleSync);
+    window.addEventListener('brivu_data_restored', handleSync);
+    window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('workos_user_updated', handleSync);
       window.removeEventListener('storage_updated', handleSync);
+      window.removeEventListener('brivu_data_restored', handleSync);
+      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
