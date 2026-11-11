@@ -41,7 +41,7 @@ public class GoogleDrivePlugin extends Plugin {
     private GoogleSignInClient googleSignInClient;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private static final String WEB_CLIENT_ID = "678983214298-hdd6pm80q4kdsvb7roti9rhu9260v75g.apps.googleusercontent.com";
+    private static final String WEB_CLIENT_ID = "97897075021-nm7g3g62r1hluqo2gc19k95fa32083k7.apps.googleusercontent.com";
 
     private GoogleSignInClient getClient() {
         if (googleSignInClient == null) {

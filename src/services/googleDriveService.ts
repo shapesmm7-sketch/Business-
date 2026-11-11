@@ -55,7 +55,7 @@ const STORAGE_LAST_SYNC_KEY = 'brivu_google_drive_last_sync';
 
 // Google Cloud Console OAuth 2.0 Web Client ID
 export const GOOGLE_OAUTH_CLIENT_ID =
-  '678983214298-hdd6pm80q4kdsvb7roti9rhu9260v75g.apps.googleusercontent.com';
+  '97897075021-nm7g3g62r1hluqo2gc19k95fa32083k7.apps.googleusercontent.com';
 
 // Required Google Drive and User profile scopes (drive.file for minimum app permissions)
 const OAUTH_SCOPES = [
