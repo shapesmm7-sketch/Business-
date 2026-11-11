@@ -671,7 +671,8 @@ export type ActiveScreen =
   | 'public-catalog'
   | 'upgrade'
   | 'app-lock-setup'
-  | 'cloud-backup';
+  | 'cloud-backup'
+  | 'google-drive-sync';
 
 export type SubscriptionPlanId = '1-month' | '6-months' | '1-year';
 

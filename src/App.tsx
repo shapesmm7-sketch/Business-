@@ -22,7 +22,7 @@ import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { QrCodeScannerModal } from './components/QrCodeScannerModal';
 import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
-import { GoogleDriveSyncModal } from './components/GoogleDriveSyncModal';
+import { SyncToGoogleDriveScreen } from './components/SyncToGoogleDriveScreen';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
@@ -383,7 +383,6 @@ export function App() {
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
-  const [isGoogleDriveModalOpen, setIsGoogleDriveModalOpen] = useState<boolean>(false);
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -1014,6 +1013,7 @@ export function App() {
             'upgrade',
             'app-lock-setup',
             'cloud-backup',
+            'google-drive-sync',
             'receipts-invoices',
           ].includes(activeScreen)
         ) {
@@ -1218,8 +1218,8 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Header - shown on all screens except Inventory, QR Customer View, and Public Store Catalog */}
-      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'public-catalog' && (
+      {/* Header - shown on all screens except Inventory, QR Customer View, Public Store Catalog, and Google Drive Sync */}
+      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'public-catalog' && activeScreen !== 'google-drive-sync' && (
         <Header
           business={business}
           darkMode={settings.darkMode}
@@ -1236,12 +1236,12 @@ export function App() {
             setIsAppLocked(true);
           }}
           onOpenQrScanner={() => setIsQrScannerOpen(true)}
-          onOpenGoogleDriveSync={() => setIsGoogleDriveModalOpen(true)}
+          onOpenGoogleDriveSync={() => handleNavigate('google-drive-sync')}
         />
       )}
 
       {/* Main Screen Content */}
-      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'public-catalog' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
+      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'public-catalog' || activeScreen === 'google-drive-sync' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
         {activeScreen === 'home' && (
           <HomeScreen
             business={business}
@@ -1518,7 +1518,7 @@ export function App() {
               setLockConfig(StorageService.getAppLockConfig());
               setIsAppLocked(true);
             }}
-            onOpenGoogleDriveSync={() => setIsGoogleDriveModalOpen(true)}
+            onOpenGoogleDriveSync={() => handleNavigate('google-drive-sync')}
           />
         )}
 
@@ -1610,6 +1610,13 @@ export function App() {
           />
         )}
 
+        {activeScreen === 'google-drive-sync' && (
+          <SyncToGoogleDriveScreen
+            onBack={() => handleNavigate(previousScreen || 'settings')}
+            onDataRestored={refreshData}
+          />
+        )}
+
         {/* Safety Catch-All Screen: Guarantees the UI never renders empty white space */}
         {![
           'home',
@@ -1630,6 +1637,7 @@ export function App() {
           'upgrade',
           'app-lock-setup',
           'cloud-backup',
+          'google-drive-sync',
         ].includes(activeScreen) && (
           <HomeScreen
             business={business}
@@ -1653,8 +1661,8 @@ export function App() {
       {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
       <AdMobModalOverlay />
 
-      {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'public-catalog', 'app-lock-setup', 'onboarding-preferences'].includes(activeScreen) && (
+      {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
+      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'public-catalog', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}
@@ -1729,12 +1737,6 @@ export function App() {
         }}
       />
 
-      {/* Google Drive Text Backup & Sync Modal */}
-      <GoogleDriveSyncModal
-        isOpen={isGoogleDriveModalOpen}
-        onClose={() => setIsGoogleDriveModalOpen(false)}
-        onDataRestored={refreshData}
-      />
 
     </div>
   );

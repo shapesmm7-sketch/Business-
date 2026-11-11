@@ -204,15 +204,6 @@ function writeToStorage<T>(key: string, value: T): boolean {
         }
       } catch {}
 
-      // 3. Global cleanup: strip heavy images from stored inventory products
-      try {
-        const rawInventory = localStorage.getItem(STORAGE_KEYS.INVENTORY_PRODUCTS);
-        if (rawInventory && rawInventory.length > 300000) {
-          const parsed = JSON.parse(rawInventory) as InventoryProduct[];
-          const cleaned = parsed.map((p, idx) => (idx > 2 ? { ...p, image: undefined } : p));
-          localStorage.setItem(STORAGE_KEYS.INVENTORY_PRODUCTS, JSON.stringify(cleaned));
-        }
-      } catch {}
 
       // 4. Global cleanup: if target is NOT QR_HOSTED_PAGES, sanitize stored QR pages to free up quota
       if (key !== STORAGE_KEYS.QR_HOSTED_PAGES) {
@@ -257,24 +248,10 @@ function writeToStorage<T>(key: string, value: T): boolean {
       // 6. Targeted recovery: INVENTORY_PRODUCTS
       if (key === STORAGE_KEYS.INVENTORY_PRODUCTS && Array.isArray(value)) {
         try {
-          const optimized = (value as InventoryProduct[]).map((p, idx) => {
-            if (idx > 3 || (p.image && p.image.length > 50000)) {
-              return { ...p, image: undefined };
-            }
-            return p;
-          });
-          localStorage.setItem(key, JSON.stringify(optimized));
-          console.info('Successfully saved inventory products after image compression cleanup.');
+          localStorage.setItem(key, JSON.stringify(value));
           return true;
-        } catch {
-          try {
-            const noImages = (value as InventoryProduct[]).map((p) => ({ ...p, image: undefined }));
-            localStorage.setItem(key, JSON.stringify(noImages));
-            console.warn('Saved inventory products without images to avoid quota failure.');
-            return true;
-          } catch (lastErr) {
-            console.error('Failed to save inventory products even without images:', lastErr);
-          }
+        } catch (err) {
+          console.warn('Could not persist inventory products to localStorage:', err);
         }
       }
 
@@ -1174,23 +1151,6 @@ export const StorageService = {
   // --- INVENTORY & STOCK MANAGEMENT ---
   getInventoryProducts(): InventoryProduct[] {
     const products = readFromStorage<InventoryProduct[]>(STORAGE_KEYS.INVENTORY_PRODUCTS, []);
-
-    // Check if any product has an enormous uncompressed photo that could cause quota issues
-    const hasBloatedImage = products.some((p) => p.image && p.image.length > 50000);
-    if (hasBloatedImage) {
-      setTimeout(() => {
-        try {
-          const sanitized = products.map((p) => {
-            if (p.image && p.image.length > 50000) {
-              return { ...p, image: undefined };
-            }
-            return p;
-          });
-          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, sanitized);
-        } catch {}
-      }, 50);
-    }
-
     return products;
   },
 
