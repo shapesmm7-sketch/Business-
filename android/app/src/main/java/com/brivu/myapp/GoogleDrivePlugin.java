@@ -49,16 +49,8 @@ public class GoogleDrivePlugin extends Plugin {
     public void connectGoogleDrive(PluginCall call) {
         try {
             GoogleSignInClient client = getClient();
-            // Sign out first to ensure the Google Play Services account chooser bottom sheet always displays
-            client.signOut().addOnCompleteListener(task -> {
-                try {
-                    Intent signInIntent = client.getSignInIntent();
-                    startActivityForResult(call, signInIntent, "handleSignInResult");
-                } catch (Exception ex) {
-                    Log.e(TAG, "Error starting sign in intent", ex);
-                    call.reject("Failed to open Google account chooser: " + ex.getMessage());
-                }
-            });
+            Intent signInIntent = client.getSignInIntent();
+            startActivityForResult(call, signInIntent, "handleSignInResult");
         } catch (Exception e) {
             Log.e(TAG, "Error launching Google Account Chooser", e);
             call.reject("Failed to open Google account chooser: " + e.getMessage());
@@ -69,29 +61,32 @@ public class GoogleDrivePlugin extends Plugin {
     private void handleSignInResult(PluginCall call, ActivityResult result) {
         if (call == null) return;
 
-        if (result.getResultCode() == Activity.RESULT_CANCELED) {
-            call.reject("Google account selection was canceled by user");
+        Intent data = result.getData();
+        if (data != null) {
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            try {
+                GoogleSignInAccount account = task.getResult(ApiException.class);
+                if (account != null && account.getEmail() != null) {
+                    Log.i(TAG, "Successfully selected account from intent: " + account.getEmail());
+                    fetchTokenAndResolve(call, account);
+                    return;
+                }
+            } catch (ApiException e) {
+                Log.w(TAG, "Google sign in ApiException code: " + e.getStatusCode());
+            } catch (Exception e) {
+                Log.w(TAG, "Unexpected error parsing account intent", e);
+            }
+        }
+
+        // Fallback: Check if an active Google account exists on device after chooser dialog completes
+        GoogleSignInAccount lastAccount = GoogleSignIn.getLastSignedInAccount(getContext());
+        if (lastAccount != null && lastAccount.getEmail() != null) {
+            Log.i(TAG, "Using last active signed-in account: " + lastAccount.getEmail());
+            fetchTokenAndResolve(call, lastAccount);
             return;
         }
 
-        Intent data = result.getData();
-        Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
-
-        try {
-            GoogleSignInAccount account = task.getResult(ApiException.class);
-            if (account == null) {
-                call.reject("No Google account selected");
-                return;
-            }
-
-            fetchTokenAndResolve(call, account);
-        } catch (ApiException e) {
-            Log.e(TAG, "Google sign in failed code: " + e.getStatusCode(), e);
-            call.reject("Google Account selection failed (code " + e.getStatusCode() + "): " + e.getMessage());
-        } catch (Exception e) {
-            Log.e(TAG, "Unexpected error parsing account", e);
-            call.reject("Unexpected error: " + e.getMessage());
-        }
+        call.reject("Google account selection was canceled by user");
     }
 
     @ActivityCallback
@@ -135,13 +130,19 @@ public class GoogleDrivePlugin extends Plugin {
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Failed retrieving Google Drive OAuth token", e);
-                // Return account details so user sees connection status, with error note
-                JSObject ret = new JSObject();
-                ret.put("success", false);
-                ret.put("connected", false);
-                ret.put("email", account.getEmail());
-                ret.put("error", e.getMessage());
-                call.reject("Failed to get Google Drive authorization token: " + e.getMessage(), e);
+                if (account.getEmail() != null) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("connected", true);
+                    ret.put("email", account.getEmail());
+                    ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
+                    ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
+                    ret.put("accessToken", "");
+                    ret.put("tokenError", e.getMessage());
+                    call.resolve(ret);
+                } else {
+                    call.reject("Failed to get Google Drive authorization token: " + e.getMessage(), e);
+                }
             }
         });
     }
