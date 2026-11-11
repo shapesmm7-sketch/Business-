@@ -41,11 +41,13 @@ public class GoogleDrivePlugin extends Plugin {
     private GoogleSignInClient googleSignInClient;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
+    private static final String WEB_CLIENT_ID = "678983214298-hdd6pm80q4kdsvb7roti9rhu9260v75g.apps.googleusercontent.com";
+
     private GoogleSignInClient getClient() {
         if (googleSignInClient == null) {
             GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
-                .requestScopes(new Scope(SCOPE_FILE))
+                .requestIdToken(WEB_CLIENT_ID)
                 .build();
             googleSignInClient = GoogleSignIn.getClient(getActivity(), gso);
         }
@@ -136,22 +138,22 @@ public class GoogleDrivePlugin extends Plugin {
                 Log.e(TAG, "Google Account Chooser ApiException - Code: " + statusCode + ", Message: " + statusMsg, e);
 
                 if (statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
-                    Log.i(TAG, "User explicitly canceled the Google Account chooser (Code 12501).");
-                    call.reject("Google account selection was canceled by user");
+                    Log.w(TAG, "Google Sign-In returned status code 12501 SIGN_IN_CANCELLED.");
+                    call.reject("Google Sign-In authorization error (Code 12501). Google Play Services refused scope authorization. Please verify OAuth Client ID and SHA-1 certificate in Google Cloud Console.");
                     return;
                 } else if (statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
                     Log.e(TAG, "Google Sign-In DEVELOPER_ERROR (10): Package name (com.brivu.myapp) or SHA-1 key mismatch in Google Cloud Console.");
-                    call.reject("Google OAuth configuration error (Code 10 DEVELOPER_ERROR). Please register SHA-1 fingerprint in Google Cloud Console.");
+                    call.reject("Google OAuth configuration error (Code 10 DEVELOPER_ERROR). Package name com.brivu.myapp or SHA-1 key mismatch in Google Cloud Console.");
                     return;
                 } else if (statusCode == GoogleSignInStatusCodes.SIGN_IN_FAILED) {
                     Log.e(TAG, "Google Sign-In failed (Code 12500 SIGN_IN_FAILED). Check Google Play Services and connection.");
-                    call.reject("Google Sign-In failed (Code 12500). Please check network and Google Play Services.");
+                    call.reject("Google Sign-In error (Code 12500 SIGN_IN_FAILED). Please check network connection and Google Play Services.");
                     return;
                 } else if (statusCode == GoogleSignInStatusCodes.SIGN_IN_REQUIRED) {
-                    call.reject("Google Sign-In required (Code 4). Please select a valid Google account.");
+                    call.reject("Google Sign-In required (Code 4). Please re-select a valid Google account.");
                     return;
                 } else {
-                    call.reject("Google Sign-In error (Code " + statusCode + "): " + statusMsg);
+                    call.reject("Google Play Services error (Code " + statusCode + "): " + statusMsg);
                     return;
                 }
             } catch (Exception e) {
@@ -169,10 +171,10 @@ public class GoogleDrivePlugin extends Plugin {
             return;
         }
 
-        // 4. If resultCode was RESULT_CANCELED, only then reject with user cancellation
+        // 4. If user dismissed the account chooser without selecting
         if (resultCode == Activity.RESULT_CANCELED) {
-            Log.i(TAG, "User canceled Google Account selection dialog (RESULT_CANCELED).");
-            call.reject("Google account selection was canceled by user");
+            Log.i(TAG, "User explicitly dismissed Google Account selection dialog.");
+            call.reject("Google account chooser was dismissed by user");
             return;
         }
 
