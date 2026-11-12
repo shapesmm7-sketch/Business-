@@ -31,10 +31,14 @@ import com.google.android.gms.ads.nativead.NativeAdView;
 
 @CapacitorPlugin(name = "NativeAdPlugin")
 public class NativeAdPlugin extends Plugin {
-    private static final String TAG = "AdMobNativeAdvanced";
+    private static final String TAG = "ADS";
 
     // Live Google AdMob Native Ad Unit ID
-    public static final String NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/9630358215";
+    public static final String LIVE_NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/9630358215";
+
+    public static String getNativeAdUnitId() {
+        return LIVE_NATIVE_AD_UNIT_ID;
+    }
 
     private static volatile NativeAdPlugin instance;
 
@@ -109,15 +113,14 @@ public class NativeAdPlugin extends Plugin {
                 }
 
                 parentLayout.addView(adContainer);
-                Log.i(TAG, "AdMob Native ad container initialized for dynamic inline placement");
+                Log.d(TAG, "AdMob Native ad container initialized");
             }
 
             if (currentNativeAd != null) {
                 displayNativeAd(currentNativeAd);
-            } else {
-                // Begin loading native ad on startup
-                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
             }
+            // Do NOT load ad here before MobileAds is initialized.
+            // Ads are loaded only after MobileAds.initialize() completes.
         } catch (Exception e) {
             Log.e(TAG, "Error initializing ad container", e);
         }
@@ -130,18 +133,25 @@ public class NativeAdPlugin extends Plugin {
         final Activity activity = getActivity();
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
 
+        if (!MainActivity.isInitialized()) {
+            Log.d(TAG, "Cannot load Native Ad yet: MobileAds not initialized. Waiting for initialization.");
+            return;
+        }
+
+        final String finalUnitId = (adUnitId != null && !adUnitId.isEmpty()) ? adUnitId : getNativeAdUnitId();
+
         activity.runOnUiThread(() -> {
             if (isLoading) return;
             isLoading = true;
 
-            Log.i(TAG, "Requesting Live Google AdMob Native Advanced Ad with Unit ID: " + adUnitId);
+            Log.d(TAG, "Requesting Native Ad. AdUnitId: " + finalUnitId);
 
-            AdLoader adLoader = new AdLoader.Builder(activity, adUnitId)
+            AdLoader adLoader = new AdLoader.Builder(activity, finalUnitId)
                 .forNativeAd(new NativeAd.OnNativeAdLoadedListener() {
                     @Override
                     public void onNativeAdLoaded(@NonNull NativeAd nativeAd) {
                         isLoading = false;
-                        Log.i(TAG, "AdMob Native Advanced Ad loaded successfully! Headline: " + nativeAd.getHeadline());
+                        Log.d(TAG, "Native Ad loaded successfully. AdUnitId: " + finalUnitId + ", Headline: " + nativeAd.getHeadline());
 
                         if (currentNativeAd != null) {
                             currentNativeAd.destroy();
@@ -155,19 +165,9 @@ public class NativeAdPlugin extends Plugin {
                     @Override
                     public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
                         isLoading = false;
-                        Log.e(TAG, "AdMob Native Advanced Ad FAILED TO LOAD: Code=" + loadAdError.getCode()
-                            + ", Message=" + loadAdError.getMessage()
-                            + ", Domain=" + loadAdError.getDomain());
-
-                        // Automatically retry once after 5s if failed on cold launch
-                        if (!isRetry) {
-                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                                if (currentNativeAd == null && !isLoading) {
-                                    Log.i(TAG, "Retrying AdMob Native Advanced request...");
-                                    requestAdMobNativeAd(adUnitId, true);
-                                }
-                            }, 5000);
-                        }
+                        Log.d(TAG, "Native Ad failed to load. AdUnitId: " + finalUnitId
+                            + ", ErrorCode: " + loadAdError.getCode()
+                            + ", Message: " + loadAdError.getMessage());
                     }
                 })
                 .withNativeAdOptions(new NativeAdOptions.Builder().build())
@@ -376,8 +376,8 @@ public class NativeAdPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             applyAdPosition(x, y, width, height, visible);
-            if (visible && currentNativeAd == null && !isLoading) {
-                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
+            if (visible && currentNativeAd == null && !isLoading && MainActivity.isInitialized()) {
+                requestAdMobNativeAd(getNativeAdUnitId(), false);
             }
         });
 
@@ -388,7 +388,7 @@ public class NativeAdPlugin extends Plugin {
 
     @PluginMethod
     public void loadNativeAd(PluginCall call) {
-        String unitId = call.getString("adUnitId", NATIVE_AD_UNIT_ID);
+        String unitId = call.getString("adUnitId", getNativeAdUnitId());
         requestAdMobNativeAd(unitId, false);
         JSObject ret = new JSObject();
         ret.put("success", true);
@@ -407,8 +407,8 @@ public class NativeAdPlugin extends Plugin {
             if (adContainer != null && currentNativeAd != null && targetVisible) {
                 adContainer.setVisibility(View.VISIBLE);
                 isVisible = true;
-            } else if (currentNativeAd == null && !isLoading) {
-                requestAdMobNativeAd(NATIVE_AD_UNIT_ID, false);
+            } else if (currentNativeAd == null && !isLoading && MainActivity.isInitialized()) {
+                requestAdMobNativeAd(getNativeAdUnitId(), false);
             }
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -453,8 +453,9 @@ public class NativeAdPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             com.google.android.gms.ads.interstitial.InterstitialAd interstitialAd = MainActivity.getInterstitialAd();
+            final String interstitialId = MainActivity.getInterstitialAdUnitId();
             if (interstitialAd != null) {
-                Log.i(TAG, "Showing preloaded live AdMob Interstitial ad...");
+                Log.d(TAG, "Showing Interstitial Ad. AdUnitId: " + interstitialId);
                 interstitialAd.show(activity);
                 MainActivity.clearInterstitialAd();
                 if (activity instanceof MainActivity) {
@@ -464,7 +465,7 @@ public class NativeAdPlugin extends Plugin {
                 ret.put("success", true);
                 call.resolve(ret);
             } else {
-                Log.w(TAG, "No preloaded interstitial ad ready, initiating fresh request...");
+                Log.d(TAG, "No preloaded Interstitial Ad ready. AdUnitId: " + interstitialId + ". Requesting fresh preload.");
                 if (activity instanceof MainActivity) {
                     ((MainActivity) activity).preloadInterstitial();
                 }

@@ -8,7 +8,7 @@ import { StorageService } from './storage';
 import { NativeAdBridge } from './nativeAdBridge';
 
 /**
- * User Live Google AdMob Ad Unit IDs for Android
+ * Live Google AdMob Ad Unit IDs for Android
  * App ID: ca-app-pub-8582659585800553~8957324812
  * Interstitial ID: ca-app-pub-8582659585800553/1482159477
  * Native Advanced ID: ca-app-pub-8582659585800553/9630358215
@@ -28,69 +28,45 @@ class AdMobManager {
 
   constructor() {
     this.initNativeAdMob();
-    if (typeof window !== 'undefined') {
-      this.preloadNativeAdvanced().catch(() => {});
-      setTimeout(() => {
-        this.pingAdMobRequests().catch(() => {});
-      }, 100);
-      this.startAdMobHeartbeat();
-    }
-  }
-
-  startAdMobHeartbeat() {
-    if (typeof window === 'undefined') return;
-    setInterval(() => {
-      if (Capacitor.isNativePlatform() && this.shouldShowAds()) {
-        this.preloadInterstitial().catch(() => {});
-        this.preloadNativeAdvanced().catch(() => {});
-      }
-    }, 30000);
-  }
-
-  async pingAdMobRequests() {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await this.initNativeAdMob();
-        await this.preloadInterstitial();
-        await this.preloadNativeAdvanced();
-      } catch (_) {}
-    }
   }
 
   async preloadInterstitial() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await this.initNativeAdMob();
+      const adId = ADMOB_UNITS.INTERSTITIAL;
+      console.log(`[ADS] Requesting Interstitial Ad. AdUnitId: ${adId}`);
       await NativeAdBridge.prepareInterstitial();
       await AdMob.prepareInterstitial({
-        adId: ADMOB_UNITS.INTERSTITIAL,
+        adId,
         isTesting: false,
       });
     } catch (err) {
-      console.warn('[AdMob Native] Preload interstitial note:', err);
+      console.warn(`[ADS] Interstitial Ad failed to load. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}, Error:`, err);
     }
   }
 
   async preloadNativeAdvanced() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
+      const adUnitId = ADMOB_UNITS.NATIVE_ADVANCED;
+      console.log(`[ADS] Requesting Native Ad. AdUnitId: ${adUnitId}`);
       await NativeAdBridge.loadNativeAd({
-        adUnitId: ADMOB_UNITS.NATIVE_ADVANCED,
+        adUnitId,
       });
-      console.info(`[AdMob Native] Live AdMob Native Advanced Ad Unit registered: ${ADMOB_UNITS.NATIVE_ADVANCED}`);
     } catch (err) {
-      console.warn('[AdMob Native] Preload native advanced note:', err);
+      console.warn(`[ADS] Native Ad failed to load. AdUnitId: ${ADMOB_UNITS.NATIVE_ADVANCED}, Error:`, err);
     }
   }
 
   async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
+      console.log(`[ADS] Requesting Native Ad. AdUnitId: ${unitId}`);
       await NativeAdBridge.loadNativeAd({ adUnitId: unitId });
       await NativeAdBridge.showNativeAd();
-      console.info(`[AdMob Native] Live AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
     } catch (err) {
-      console.warn('[AdMob Native] Native ad request note:', err);
+      console.warn(`[ADS] Native Ad failed to load. AdUnitId: ${unitId}, Error:`, err);
     }
   }
 
@@ -111,6 +87,7 @@ class AdMobManager {
     if (this.isInitialized) return;
     if (Capacitor.isNativePlatform()) {
       try {
+        console.log('[ADS] Initializing Google MobileAds SDK');
         await AdMob.initialize({
           initializeForTesting: false,
         });
@@ -118,19 +95,19 @@ class AdMobManager {
 
         try {
           AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-            console.info('[AdMob Live] Interstitial Ad loaded from Google AdMob servers');
+            console.log(`[ADS] Interstitial Ad loaded successfully. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}`);
           });
           AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
             this.preloadInterstitial().catch(() => {});
           });
           AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-            console.warn('[AdMob Live] Interstitial load note:', err);
+            console.warn(`[ADS] Interstitial Ad failed to load. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}, Error:`, err);
           });
         } catch (_) {}
 
         await this.preloadInterstitial();
       } catch (err) {
-        console.warn('[AdMob Native] Initialization note:', err);
+        console.warn('[ADS] MobileAds initialization failed:', err);
       }
     }
   }
@@ -168,6 +145,7 @@ class AdMobManager {
           adId: ADMOB_UNITS.INTERSTITIAL,
           isTesting: false,
         };
+        console.log(`[ADS] Showing Interstitial Ad. AdUnitId: ${options.adId}`);
         await AdMob.prepareInterstitial(options);
         await AdMob.showInterstitial();
         onClosed?.();
@@ -176,7 +154,7 @@ class AdMobManager {
         }, 1500);
         return true;
       } catch (err) {
-        console.warn('[AdMob Native] Interstitial display note:', err);
+        console.warn('[ADS] Interstitial display error:', err);
       }
     }
 

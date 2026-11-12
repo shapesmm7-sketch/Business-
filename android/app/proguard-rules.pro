@@ -51,6 +51,9 @@
 -keep public class com.brivu.myapp.MediaStorePlugin {
     public *;
 }
+-keep public class com.brivu.myapp.GoogleDrivePlugin {
+    public *;
+}
 
 # 6. AndroidX & WebKit
 -keep public class * extends android.app.Activity

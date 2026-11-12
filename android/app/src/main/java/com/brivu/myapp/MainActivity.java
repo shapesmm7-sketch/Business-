@@ -1,8 +1,6 @@
 package com.brivu.myapp;
 
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
@@ -15,9 +13,20 @@ import com.google.android.gms.ads.interstitial.InterstitialAd;
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback;
 
 public class MainActivity extends BridgeActivity {
-    private static final String TAG = "AdMobNative";
+    private static final String TAG = "ADS";
+
     // Live Google AdMob Interstitial Unit ID for Android
-    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-8582659585800553/1482159477";
+    public static final String LIVE_INTERSTITIAL_UNIT_ID = "ca-app-pub-8582659585800553/1482159477";
+
+    public static String getInterstitialAdUnitId() {
+        return LIVE_INTERSTITIAL_UNIT_ID;
+    }
+
+    private static volatile boolean isMobileAdsInitialized = false;
+
+    public static boolean isInitialized() {
+        return isMobileAdsInitialized;
+    }
 
     private static InterstitialAd mInterstitialAd;
 
@@ -29,9 +38,6 @@ public class MainActivity extends BridgeActivity {
         mInterstitialAd = null;
     }
 
-    private Handler adHandler;
-    private Runnable adPingRunnable;
-
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // Register custom NativeAd, PlayBilling, MediaStore, and GoogleDrive plugins with Capacitor Bridge
@@ -42,39 +48,43 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
 
-        adHandler = new Handler(Looper.getMainLooper());
-
-        // Native Android MobileAds initialization immediately on launch
+        // Initialize Google MobileAds SDK once at app start BEFORE any ad is loaded
         try {
             MobileAds.initialize(this, new OnInitializationCompleteListener() {
                 @Override
                 public void onInitializationComplete(@NonNull InitializationStatus initializationStatus) {
-                    Log.i(TAG, "Google MobileAds initialized successfully on Android for live AdMob App ID: ca-app-pub-8582659585800553~8957324812");
+                    isMobileAdsInitialized = true;
+                    Log.d(TAG, "Google MobileAds SDK initialized successfully at app start. App ID: ca-app-pub-8582659585800553~8957324812");
                     preloadInterstitial();
                     preloadNativeAd();
-                    startPeriodicAdPings();
                 }
             });
         } catch (Exception e) {
-            Log.e(TAG, "MobileAds initialization error", e);
+            Log.e(TAG, "MobileAds initialization error: " + e.getMessage(), e);
         }
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        preloadInterstitial();
-        preloadNativeAd();
+        if (isMobileAdsInitialized) {
+            preloadInterstitial();
+            preloadNativeAd();
+        }
     }
 
     /**
-     * Request authentic Native Advanced ad on startup
+     * Request authentic Native Advanced ad after initialization
      */
     public void preloadNativeAd() {
+        if (!isMobileAdsInitialized) {
+            Log.d(TAG, "Cannot load Native Ad yet: MobileAds not initialized.");
+            return;
+        }
         try {
             if (NativeAdPlugin.getInstance() != null) {
-                NativeAdPlugin.getInstance().requestAdMobNativeAd(NativeAdPlugin.NATIVE_AD_UNIT_ID, false);
-                Log.i(TAG, "Live Native Advanced ad requested on startup from MainActivity.");
+                String nativeUnitId = NativeAdPlugin.getNativeAdUnitId();
+                NativeAdPlugin.getInstance().requestAdMobNativeAd(nativeUnitId, false);
             }
         } catch (Exception e) {
             Log.w(TAG, "preloadNativeAd note: " + e.getMessage());
@@ -82,25 +92,34 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Preload real AdMob Interstitial ad
+     * Preload real AdMob Interstitial ad after initialization
      */
     public void preloadInterstitial() {
+        if (!isMobileAdsInitialized) {
+            Log.d(TAG, "Cannot load Interstitial Ad yet: MobileAds not initialized.");
+            return;
+        }
+        final String adUnitId = getInterstitialAdUnitId();
         try {
+            Log.d(TAG, "Requesting Interstitial Ad. AdUnitId: " + adUnitId);
             AdRequest interstitialRequest = new AdRequest.Builder().build();
             InterstitialAd.load(
                 this,
-                INTERSTITIAL_UNIT_ID,
+                adUnitId,
                 interstitialRequest,
                 new InterstitialAdLoadCallback() {
                     @Override
                     public void onAdLoaded(@NonNull InterstitialAd interstitialAd) {
                         mInterstitialAd = interstitialAd;
-                        Log.i(TAG, "AdMob Live Interstitial Ad Preloaded Successfully from Google Servers!");
+                        Log.d(TAG, "Interstitial Ad loaded successfully. AdUnitId: " + adUnitId);
                     }
 
                     @Override
                     public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
-                        Log.w(TAG, "AdMob Interstitial Ad load status: " + loadAdError.getMessage() + " (Code: " + loadAdError.getCode() + ")");
+                        mInterstitialAd = null;
+                        Log.d(TAG, "Interstitial Ad failed to load. AdUnitId: " + adUnitId +
+                            ", ErrorCode: " + loadAdError.getCode() +
+                            ", Message: " + loadAdError.getMessage());
                     }
                 }
             );
@@ -109,24 +128,8 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void startPeriodicAdPings() {
-        if (adHandler == null) return;
-        adPingRunnable = new Runnable() {
-            @Override
-            public void run() {
-                preloadInterstitial();
-                preloadNativeAd();
-                adHandler.postDelayed(this, 60000); // Check interstitial & native status every 60s
-            }
-        };
-        adHandler.postDelayed(adPingRunnable, 60000);
-    }
-
     @Override
     public void onDestroy() {
-        if (adHandler != null && adPingRunnable != null) {
-            adHandler.removeCallbacks(adPingRunnable);
-        }
         super.onDestroy();
     }
 }

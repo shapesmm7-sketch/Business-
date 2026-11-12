@@ -15,8 +15,8 @@ export interface AdMobNativeAdProps {
  * 
  * In compliance with user requirements:
  * 1. ZERO mock HTML ads or sample cards are rendered in DOM / web preview (returns null).
- * 2. On Android native app, requests real test Native Advanced ads from Google AdMob SDK
- *    via AdMobService using official Google AdMob test IDs, exactly mirroring interstitial ads.
+ * 2. On Android native app, requests authentic live Native Advanced ads from Google AdMob SDK
+ *    via NativeAdBridge/AdMobService using live AdMob ID ca-app-pub-8582659585800553/9630358215.
  * 3. Positioned inline within page content via measured slot coordinates instead of a fixed bottom overlay.
  */
 export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
