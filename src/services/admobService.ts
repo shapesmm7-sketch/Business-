@@ -61,6 +61,7 @@ class AdMobManager {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await this.initNativeAdMob();
+      await NativeAdBridge.prepareInterstitial();
       await AdMob.prepareInterstitial({
         adId: ADMOB_UNITS.INTERSTITIAL,
         isTesting: false,
@@ -85,6 +86,7 @@ class AdMobManager {
   async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
+      await NativeAdBridge.loadNativeAd({ adUnitId: unitId });
       await NativeAdBridge.showNativeAd();
       console.info(`[AdMob Native] Live AdMob Native Advanced ad requested via NativeAdBridge: ${unitId}`);
     } catch (err) {
@@ -153,6 +155,14 @@ class AdMobManager {
 
     if (Capacitor.isNativePlatform()) {
       try {
+        // Try showing native preloaded interstitial ad first
+        const nativeRes = await NativeAdBridge.showInterstitial();
+        if (nativeRes && nativeRes.success) {
+          onClosed?.();
+          return true;
+        }
+
+        // Fallback to Capacitor AdMob plugin
         await this.initNativeAdMob();
         const options: AdOptions = {
           adId: ADMOB_UNITS.INTERSTITIAL,

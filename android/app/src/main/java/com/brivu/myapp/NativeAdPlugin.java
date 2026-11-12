@@ -432,6 +432,50 @@ public class NativeAdPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    @PluginMethod
+    public void prepareInterstitial(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity instanceof MainActivity) {
+            ((MainActivity) activity).preloadInterstitial();
+        }
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void showInterstitial(PluginCall call) {
+        final Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity is null");
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            com.google.android.gms.ads.interstitial.InterstitialAd interstitialAd = MainActivity.getInterstitialAd();
+            if (interstitialAd != null) {
+                Log.i(TAG, "Showing preloaded live AdMob Interstitial ad...");
+                interstitialAd.show(activity);
+                MainActivity.clearInterstitialAd();
+                if (activity instanceof MainActivity) {
+                    ((MainActivity) activity).preloadInterstitial();
+                }
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            } else {
+                Log.w(TAG, "No preloaded interstitial ad ready, initiating fresh request...");
+                if (activity instanceof MainActivity) {
+                    ((MainActivity) activity).preloadInterstitial();
+                }
+                JSObject ret = new JSObject();
+                ret.put("success", false);
+                ret.put("message", "Ad loading in background");
+                call.resolve(ret);
+            }
+        });
+    }
+
     @Override
     protected void handleOnDestroy() {
         if (currentNativeAd != null) {

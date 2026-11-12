@@ -12,6 +12,8 @@ export interface NativeAdPluginInterface {
     height: number;
     visible: boolean;
   }): Promise<{ success: boolean }>;
+  prepareInterstitial(): Promise<{ success: boolean }>;
+  showInterstitial(): Promise<{ success: boolean; message?: string }>;
 }
 
 /**
@@ -26,5 +28,7 @@ export const NativeAdBridge = registerPlugin<NativeAdPluginInterface>('NativeAdP
     hideNativeAd: async () => ({ success: false }),
     isAdLoaded: async () => ({ loaded: false, visible: false }),
     updatePosition: async () => ({ success: false }),
+    prepareInterstitial: async () => ({ success: false }),
+    showInterstitial: async () => ({ success: false }),
   }),
 });

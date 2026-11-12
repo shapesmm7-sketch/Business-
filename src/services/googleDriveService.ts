@@ -30,6 +30,14 @@ interface GoogleDrivePluginInterface {
     photoUrl?: string;
     accessToken: string;
   }>;
+  switchGoogleAccount(): Promise<{
+    success: boolean;
+    connected: boolean;
+    email: string;
+    displayName?: string;
+    photoUrl?: string;
+    accessToken: string;
+  }>;
   getConnectedAccount(): Promise<{
     connected: boolean;
     email?: string;
@@ -273,6 +281,42 @@ export const GoogleDriveService = {
         reject(initErr);
       }
     });
+  },
+
+  /**
+   * Switches the active Google account.
+   * On Android: Signs out active session first then launches Google Play Services account chooser.
+   * On Web: Revokes session and prompts account selection.
+   */
+  async switchGoogleAccount(): Promise<GoogleDriveAccount> {
+    if (this.isNativeAndroid()) {
+      try {
+        const res = await GoogleDriveNative.switchGoogleAccount();
+        if (!res || !res.connected || !res.email || !res.accessToken) {
+          throw new Error('Google account selection was cancelled or failed.');
+        }
+
+        const lastSync = localStorage.getItem(STORAGE_LAST_SYNC_KEY) || '';
+        const account: GoogleDriveAccount = {
+          connected: true,
+          email: res.email,
+          displayName: res.displayName || res.email.split('@')[0],
+          photoUrl: res.photoUrl || '',
+          accessToken: res.accessToken,
+          tokenExpiresAt: Date.now() + 3600 * 1000,
+          lastSyncTime: lastSync,
+        };
+
+        localStorage.setItem(STORAGE_ACCOUNT_KEY, JSON.stringify(account));
+        return account;
+      } catch (nativeErr: any) {
+        console.error('Native Android Google Drive account switch error:', nativeErr);
+        throw new Error(nativeErr?.message || 'Failed to switch Google Account on Android.');
+      }
+    }
+
+    await this.disconnectGoogleDrive();
+    return this.connectGoogleDrive();
   },
 
   /**
@@ -553,6 +597,54 @@ export const GoogleDriveService = {
       console.error('Error during Google Drive restore:', err);
       return { success: false, error: err?.message || 'Failed restoring backup from Google Drive' };
     }
+  },
+
+  /**
+   * Sequentially downloads and restores ALL backup files from the "Brivu Backups" folder
+   * from oldest to newest in Merge Mode to consolidate complete business data.
+   */
+  async restoreAllBackups(
+    onProgress?: (current: number, total: number, fileName: string) => void
+  ): Promise<{ success: boolean; restoredCount?: number; totalItems?: any; error?: string }> {
+    const backups = await this.listBackups();
+    if (backups.length === 0) {
+      return { success: false, error: 'No backup files found in "Brivu Backups" folder.' };
+    }
+
+    // Sort backups by modifiedTime/createdTime ascending (oldest first, newest last)
+    const sorted = [...backups].sort(
+      (a, b) => new Date(a.modifiedTime || a.createdTime).getTime() - new Date(b.modifiedTime || b.createdTime).getTime()
+    );
+
+    let restoredCount = 0;
+    const combinedItems = { receipts: 0, products: 0, customers: 0, agents: 0, staff: 0, photos: 0 };
+
+    for (let i = 0; i < sorted.length; i++) {
+      const file = sorted[i];
+      if (onProgress) {
+        onProgress(i + 1, sorted.length, file.name);
+      }
+      const res = await this.restoreBackup(file.id, 'merge');
+      if (res.success && res.itemCount) {
+        restoredCount++;
+        combinedItems.receipts += res.itemCount.receipts || 0;
+        combinedItems.products += res.itemCount.products || 0;
+        combinedItems.customers += res.itemCount.customers || 0;
+        combinedItems.agents += res.itemCount.agents || 0;
+        combinedItems.staff += res.itemCount.staff || 0;
+        combinedItems.photos += res.itemCount.photos || 0;
+      }
+    }
+
+    if (restoredCount === 0) {
+      return { success: false, error: 'Failed to restore backup files from Google Drive.' };
+    }
+
+    return {
+      success: true,
+      restoredCount,
+      totalItems: combinedItems,
+    };
   },
 
   /**

@@ -2,6 +2,17 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure pdfjs worker for converting jsPDF documents directly to PNG photo canvases
+if (typeof window !== 'undefined') {
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
+  } catch (e) {
+    console.warn('pdfjs worker initialization note:', e);
+  }
+}
+
 import { Receipt, ReceiptTemplateId, TemplateCustomization, BusinessProfile } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
@@ -587,192 +598,66 @@ export const PdfGenerator = {
   },
 
   /**
+   * Converts a jsPDF document instance directly into a high-DPI HTML Canvas element
+   * using pdfjs-dist so PNG photos and PDF downloads are 100% pixel-for-pixel identical.
+   */
+  async convertPdfDocToCanvas(doc: jsPDF, scale = 3.0): Promise<HTMLCanvasElement | null> {
+    try {
+      const pdfData = new Uint8Array(doc.output('arraybuffer'));
+      const loadingTask = pdfjsLib.getDocument({
+        data: pdfData,
+        cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.0.379'}/cmaps/`,
+        cMapPacked: true,
+      });
+
+      const pdfDoc = await loadingTask.promise;
+      const page = await pdfDoc.getPage(1);
+
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const renderContext = {
+        canvasContext: ctx,
+        canvas: canvas,
+        viewport: viewport,
+      };
+
+      await page.render(renderContext).promise;
+      return canvas;
+    } catch (e) {
+      console.warn('pdfjs-dist convertPdfDocToCanvas rendering note, fallback to DOM canvas:', e);
+      return null;
+    }
+  },
+
+  /**
    * Saves high-resolution Photo (PNG) directly to device Photos / Gallery (Pictures/Brivu)
+   * Converts the exact jsPDF document to PNG so PNG and PDF outputs match 100%.
    */
   async downloadReceiptPhoto(receipt: Receipt): Promise<SaveFileResult> {
     await ensureStoragePermission();
-    let canvas = await this.captureReceiptElementAsCanvas(receipt);
     const isInvoice = receipt.documentType === 'invoice';
     const prefix = isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.png`;
 
+    // 1. Generate the exact same PDF document that downloadPdf produces
+    const doc = await this.createPdfDoc(receipt);
+
+    // 2. Render the exact PDF document onto a high-resolution 300+ DPI PNG canvas
+    let canvas = await this.convertPdfDocToCanvas(doc, 3.0);
+
+    // 3. Fallback to DOM element capture if PDF-to-Canvas rendering is unavailable
     if (!canvas) {
-      // High-resolution 2D Canvas Fallback matching exact PDF template styling
-      const fbCanvas = document.createElement('canvas');
-      const scale = 2.0;
-      const baseWidth = 800;
-      const itemsCount = receipt.items?.length || 0;
-      const baseHeight = Math.max(900, 520 + itemsCount * 44 + 320);
-      fbCanvas.width = baseWidth * scale;
-      fbCanvas.height = baseHeight * scale;
-      const ctx = fbCanvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(scale, scale);
-        const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
-        const curr = resolvedBiz.currency || receipt.currency || 'UGX';
-
-        // Background paper canvas
-        ctx.fillStyle = '#faf8f5';
-        ctx.fillRect(0, 0, baseWidth, baseHeight);
-
-        // White receipt container
-        const cardX = 40;
-        const cardY = 40;
-        const cardW = baseWidth - 80;
-        const cardH = baseHeight - 80;
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
-        ctx.shadowBlur = 16;
-        ctx.shadowOffsetY = 4;
-        ctx.fillRect(cardX, cardY, cardW, cardH);
-        ctx.shadowColor = 'transparent';
-
-        // Dark header block
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(cardX + 24, cardY + 24, cardW - 48, 110);
-
-        // Badge pill
-        const badgeText = isInvoice ? 'INVOICE' : 'RECEIPT';
-        ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
-        const badgeW = 90;
-        const badgeH = 22;
-        const badgeX = cardX + (cardW - badgeW) / 2;
-        const badgeY = cardY + 36;
-        ctx.beginPath();
-        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 11);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + 15);
-
-        let y = cardY + 160;
-
-        // Received from / Receipt info card
-        ctx.fillStyle = '#f8fafc';
-        ctx.beginPath();
-        ctx.roundRect(cardX + 24, y, cardW - 48, 100, 12);
-        ctx.fill();
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
-        ctx.fillText(isInvoice ? 'BILLED TO:' : 'RECEIVED WITH THANKS FROM:', cardX + 44, y + 26);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
-        ctx.fillText(receipt.customerName || 'John Doe', cardX + 44, y + 48);
-        ctx.fillStyle = '#475569';
-        ctx.font = '11px system-ui, -apple-system, sans-serif';
-        if (receipt.customerPhone) ctx.fillText(`Phone: ${receipt.customerPhone}`, cardX + 44, y + 66);
-        if (receipt.customerEmail) ctx.fillText(`Email: ${receipt.customerEmail}`, cardX + 44, y + 82);
-
-        const rightColX = cardX + cardW / 2 + 20;
-        ctx.fillStyle = '#64748b';
-        ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
-        ctx.fillText(`${prefix.toUpperCase()} NO:`, rightColX, y + 26);
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
-        ctx.fillText(receipt.receiptNumber, rightColX + 90, y + 26);
-        ctx.fillStyle = '#475569';
-        ctx.font = '11px system-ui, -apple-system, sans-serif';
-        ctx.fillText(`Date: ${receipt.createdAt ? new Date(receipt.createdAt).toLocaleString() : new Date().toLocaleDateString()}`, rightColX, y + 50);
-        ctx.fillText(`Payment: ${receipt.paymentMethod || 'Cash'} (Paid)`, rightColX, y + 68);
-
-        y += 124;
-
-        // Table Header
-        ctx.fillStyle = '#f1f5f9';
-        ctx.fillRect(cardX + 24, y, cardW - 48, 32);
-        ctx.fillStyle = '#475569';
-        ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-        ctx.fillText('PAID FOR', cardX + 40, y + 20);
-        ctx.textAlign = 'center';
-        ctx.fillText('QTY', cardX + cardW - 280, y + 20);
-        ctx.textAlign = 'right';
-        ctx.fillText('PRICE', cardX + cardW - 170, y + 20);
-        ctx.fillText('AMOUNT', cardX + cardW - 44, y + 20);
-
-        y += 32;
-
-        // Line Items
-        ctx.textAlign = 'left';
-        ctx.font = '12px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = '#1e293b';
-
-        (receipt.items || []).forEach((item) => {
-          y += 24;
-          ctx.fillText(item.name || 'Item', cardX + 40, y);
-          ctx.textAlign = 'center';
-          ctx.fillText(String(item.quantity || 1), cardX + cardW - 280, y);
-          ctx.textAlign = 'right';
-          ctx.fillText((item.unitPrice || 0).toLocaleString(), cardX + cardW - 170, y);
-          const lTotal = (item as any).total ?? ((item.quantity || 1) * (item.unitPrice || 0));
-          ctx.fillText(`${curr} ${lTotal.toLocaleString()}`, cardX + cardW - 44, y);
-          ctx.textAlign = 'left';
-          y += 12;
-          ctx.strokeStyle = '#f1f5f9';
-          ctx.beginPath();
-          ctx.moveTo(cardX + 24, y);
-          ctx.lineTo(cardX + cardW - 24, y);
-          ctx.stroke();
-        });
-
-        // Subtotal & Grand Total Card
-        y += 20;
-        const totalCardW = 280;
-        const totalCardX = cardX + cardW - 24 - totalCardW;
-
-        ctx.fillStyle = isInvoice ? '#2563eb' : '#059669';
-        ctx.beginPath();
-        ctx.roundRect(totalCardX, y, totalCardW, 44, 10);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
-        ctx.fillText('GRAND TOTAL:', totalCardX + 16, y + 27);
-        ctx.textAlign = 'right';
-        ctx.fillText(`${curr} ${(receipt.total || 0).toLocaleString()}`, totalCardX + totalCardW - 16, y + 27);
-        ctx.textAlign = 'left';
-
-        // Amount in Words
-        if (receipt.amountInWords) {
-          y += 36;
-          ctx.fillStyle = '#475569';
-          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-          ctx.fillText('Amount Paid in Words:', cardX + 40, y);
-          ctx.font = 'italic 11px system-ui, -apple-system, sans-serif';
-          ctx.fillStyle = '#0f172a';
-          ctx.fillText(receipt.amountInWords.toUpperCase(), cardX + 180, y);
-        }
-
-        // Signature Line below Amount Paid in Words
-        y += 36;
-        const sigLineX = cardX + cardW - 240;
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.beginPath();
-        ctx.moveTo(sigLineX, y);
-        ctx.lineTo(cardX + cardW - 40, y);
-        ctx.stroke();
-        ctx.fillStyle = '#64748b';
-        ctx.font = '10px system-ui, -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Authorized Signature', sigLineX + 100, y + 16);
-
-        // Thank you notice below Authorized Signature
-        y += 40;
-        ctx.fillStyle = '#0f172a';
-        ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
-        ctx.fillText('Thank you for your business!', cardX + cardW / 2, y);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '10px system-ui, -apple-system, sans-serif';
-        ctx.fillText('Powered by Brivu', cardX + cardW / 2, y + 24);
-
-        canvas = fbCanvas;
-      }
+      canvas = await this.captureReceiptElementAsCanvas(receipt);
     }
 
     if (!canvas) {
@@ -786,7 +671,7 @@ export const PdfGenerator = {
       try {
         dataUrl = canvas.toDataURL('image/jpeg', 0.95);
       } catch (err) {
-        console.warn('Canvas toDataURL security note, using fallback:', err);
+        console.warn('Canvas toDataURL security note:', err);
       }
     }
 

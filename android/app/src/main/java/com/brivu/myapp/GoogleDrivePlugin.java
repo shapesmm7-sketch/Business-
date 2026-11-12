@@ -66,6 +66,26 @@ public class GoogleDrivePlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void switchGoogleAccount(PluginCall call) {
+        try {
+            Log.i(TAG, "Signing out existing account session to force Google Account Chooser list...");
+            GoogleSignInClient client = getClient();
+            client.signOut().addOnCompleteListener(getActivity(), task -> {
+                try {
+                    Intent signInIntent = client.getSignInIntent();
+                    startActivityForResult(call, signInIntent, "handleSignInResult");
+                } catch (Exception e) {
+                    Log.e(TAG, "Error launching Google Account Chooser after sign out", e);
+                    call.reject("Failed to open Google account chooser: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Error switching Google account", e);
+            call.reject("Failed to switch Google account: " + e.getMessage());
+        }
+    }
+
     @ActivityCallback
     private void handleSignInResult(PluginCall call, ActivityResult result) {
         if (call == null) return;

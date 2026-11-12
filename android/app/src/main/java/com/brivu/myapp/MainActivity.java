@@ -19,6 +19,16 @@ public class MainActivity extends BridgeActivity {
     // Live Google AdMob Interstitial Unit ID for Android
     private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-8582659585800553/1482159477";
 
+    private static InterstitialAd mInterstitialAd;
+
+    public static InterstitialAd getInterstitialAd() {
+        return mInterstitialAd;
+    }
+
+    public static void clearInterstitialAd() {
+        mInterstitialAd = null;
+    }
+
     private Handler adHandler;
     private Runnable adPingRunnable;
 
@@ -39,7 +49,7 @@ public class MainActivity extends BridgeActivity {
             MobileAds.initialize(this, new OnInitializationCompleteListener() {
                 @Override
                 public void onInitializationComplete(@NonNull InitializationStatus initializationStatus) {
-                    Log.i(TAG, "Google MobileAds initialized successfully on Android. Ready for Interstitial and Native Advanced ads.");
+                    Log.i(TAG, "Google MobileAds initialized successfully on Android for live AdMob App ID: ca-app-pub-8582659585800553~8957324812");
                     preloadInterstitial();
                     preloadNativeAd();
                     startPeriodicAdPings();
@@ -60,11 +70,11 @@ public class MainActivity extends BridgeActivity {
     /**
      * Request authentic Native Advanced ad on startup
      */
-    private void preloadNativeAd() {
+    public void preloadNativeAd() {
         try {
             if (NativeAdPlugin.getInstance() != null) {
                 NativeAdPlugin.getInstance().requestAdMobNativeAd(NativeAdPlugin.NATIVE_AD_UNIT_ID, false);
-                Log.i(TAG, "Native Advanced ad requested on startup from MainActivity.");
+                Log.i(TAG, "Live Native Advanced ad requested on startup from MainActivity.");
             }
         } catch (Exception e) {
             Log.w(TAG, "preloadNativeAd note: " + e.getMessage());
@@ -72,9 +82,9 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Preload real AdMob Interstitial test ad
+     * Preload real AdMob Interstitial ad
      */
-    private void preloadInterstitial() {
+    public void preloadInterstitial() {
         try {
             AdRequest interstitialRequest = new AdRequest.Builder().build();
             InterstitialAd.load(
@@ -84,7 +94,8 @@ public class MainActivity extends BridgeActivity {
                 new InterstitialAdLoadCallback() {
                     @Override
                     public void onAdLoaded(@NonNull InterstitialAd interstitialAd) {
-                        Log.i(TAG, "AdMob Real Test Interstitial Ad Preloaded Successfully from Google Servers!");
+                        mInterstitialAd = interstitialAd;
+                        Log.i(TAG, "AdMob Live Interstitial Ad Preloaded Successfully from Google Servers!");
                     }
 
                     @Override

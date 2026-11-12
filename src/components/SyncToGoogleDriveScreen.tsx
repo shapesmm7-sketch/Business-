@@ -17,7 +17,9 @@ import {
   Upload,
   Sparkles,
   ShieldCheck,
-  ExternalLink,
+  Layers,
+  X,
+  ChevronRight,
 } from 'lucide-react';
 import {
   GoogleDriveService,
@@ -40,10 +42,20 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFetchingBackups, setIsFetchingBackups] = useState(false);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
+  
+  // Backups List Modal state
+  const [showBackupsModal, setShowBackupsModal] = useState(false);
+  
+  // Single backup restore confirmation state
   const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<DriveBackupFile | null>(null);
   const [localJsonContent, setLocalJsonContent] = useState<string | null>(null);
   const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge');
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // Restore All state
+  const [isRestoringAll, setIsRestoringAll] = useState(false);
+  const [restoreAllProgress, setRestoreAllProgress] = useState<{ current: number; total: number; file: string } | null>(null);
+
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -76,9 +88,8 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
 
   /**
    * Opens Google's REAL account selection and authorization interface
-   * using official Google Identity Services (GIS) / Google Play Services
    */
-  const handleConnect = async (autoRestore = false) => {
+  const handleConnect = async (openModalAfter = false) => {
     setIsConnecting(true);
     try {
       const connectedAccount = await GoogleDriveService.connectGoogleDrive();
@@ -87,12 +98,31 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       const files = await GoogleDriveService.listBackups();
       setBackups(files);
 
-      if (autoRestore && files.length > 0) {
-        setSelectedBackupForRestore(files[0]);
+      if (openModalAfter) {
+        setShowBackupsModal(true);
       }
     } catch (err: any) {
       console.error('Google authorization error:', err);
       showToast('error', err?.message || 'Google account authorization was cancelled or failed.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  /**
+   * Triggers native Google Play Services account chooser by signing out active session first
+   */
+  const handleSwitchAccount = async () => {
+    setIsConnecting(true);
+    try {
+      const connectedAccount = await GoogleDriveService.switchGoogleAccount();
+      setAccount(connectedAccount);
+      showToast('success', `Switched Google Drive account to ${connectedAccount.email}`);
+      const files = await GoogleDriveService.listBackups();
+      setBackups(files);
+    } catch (err: any) {
+      console.error('Google switch account error:', err);
+      showToast('error', err?.message || 'Failed to switch Google account.');
     } finally {
       setIsConnecting(false);
     }
@@ -103,6 +133,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       await GoogleDriveService.disconnectGoogleDrive();
       setAccount(null);
       setBackups([]);
+      setShowBackupsModal(false);
       showToast('success', 'Disconnected from Google Drive');
     } catch (err: any) {
       showToast('error', 'Error disconnecting Google Drive');
@@ -134,6 +165,49 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
     }
   };
 
+  /**
+   * Handles opening the Backups Modal or connecting Google Drive first
+   */
+  const handleOpenRestoreModal = () => {
+    if (!account?.connected) {
+      handleConnect(true);
+    } else {
+      loadBackups();
+      setShowBackupsModal(true);
+    }
+  };
+
+  /**
+   * Sequentially restores & merges ALL backups found in Google Drive
+   */
+  const handleRestoreAllBackups = async () => {
+    setIsRestoringAll(true);
+    setRestoreAllProgress({ current: 0, total: backups.length, file: 'Starting...' });
+    try {
+      const res = await GoogleDriveService.restoreAllBackups((curr, total, fileName) => {
+        setRestoreAllProgress({ current: curr, total, file: fileName });
+      });
+
+      if (res.success) {
+        const photosCount = res.totalItems?.photos || 0;
+        const photoInfo = photosCount > 0 ? ` and ${photosCount} photos` : '';
+        showToast(
+          'success',
+          `Successfully restored & merged ALL ${res.restoredCount} backups (${res.totalItems?.receipts || 0} receipts${photoInfo}) from Google Drive!`
+        );
+        setShowBackupsModal(false);
+        if (onDataRestored) onDataRestored();
+      } else {
+        showToast('error', res.error || 'Failed to restore all backups');
+      }
+    } catch (err: any) {
+      showToast('error', err?.message || 'Error restoring all backups');
+    } finally {
+      setIsRestoringAll(false);
+      setRestoreAllProgress(null);
+    }
+  };
+
   const handleConfirmRestore = async () => {
     setIsRestoring(true);
     try {
@@ -149,9 +223,10 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       if (res.success) {
         const photosCount = res.itemCount?.photos || 0;
         const photoInfo = photosCount > 0 ? ` and ${photosCount} photos` : '';
-        showToast('success', `Business data${photoInfo} successfully restored from Google Drive!`);
+        showToast('success', `Business data${photoInfo} successfully restored!`);
         setSelectedBackupForRestore(null);
         setLocalJsonContent(null);
+        setShowBackupsModal(false);
         if (onDataRestored) onDataRestored();
       } else {
         showToast('error', res.error || 'Restore failed');
@@ -258,8 +333,9 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                 {account?.connected && (
                   <button
                     type="button"
-                    onClick={() => handleConnect(false)}
-                    className="text-[10px] text-blue-600 dark:text-blue-400 font-bold hover:underline shrink-0"
+                    onClick={handleSwitchAccount}
+                    disabled={isConnecting}
+                    className="text-[11px] text-blue-600 dark:text-blue-400 font-bold hover:underline shrink-0 disabled:opacity-50"
                   >
                     Switch Account
                   </button>
@@ -413,176 +489,280 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
           </div>
         </div>
 
-        {/* RESTORE SECTION: View and restore backups from Google Drive */}
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
+        {/* RESTORE CARD: Clean single button card replacing the raw backup list */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3.5">
+          <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Download className="w-4 h-4 text-emerald-600" />
-              <span>Restore from Google Drive</span>
+              <span>Restore Data &amp; Photos</span>
             </h3>
 
-            {account?.connected && (
-              <button
-                type="button"
-                onClick={loadBackups}
-                disabled={isFetchingBackups}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                title="Refresh Google Drive Backups"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isFetchingBackups ? 'animate-spin' : ''}`} />
-              </button>
+            {account?.connected && backups.length > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                {backups.length} {backups.length === 1 ? 'Backup' : 'Backups'} Available
+              </span>
             )}
           </div>
 
-          {/* Action Button: When not connected */}
-          {!account?.connected ? (
-            <div className="py-2 space-y-3 text-center">
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Connect your Google Drive account to view and restore your backed-up inventory, clients, agents, staff photos, receipts, and invoices.
-              </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Access your saved cloud backups to restore your business records, products, inventory, clients, staff, and photos.
+          </p>
 
-              <button
-                type="button"
-                onClick={() => handleConnect(true)}
-                disabled={isConnecting}
-                className="w-full py-3 px-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 active:scale-[0.98] transition disabled:opacity-50"
-              >
-                {isConnecting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Opening Google Accounts...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    <span>Connect &amp; Restore from Google Drive</span>
-                  </>
-                )}
-              </button>
+          {/* Primary "Restore from Google Drive" Button */}
+          <button
+            type="button"
+            onClick={handleOpenRestoreModal}
+            disabled={isConnecting}
+            className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2.5 active:scale-[0.98] transition disabled:opacity-50 group"
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Opening Google Accounts...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>Restore from Google Drive</span>
+                <ChevronRight className="w-4 h-4 ml-auto opacity-70 group-hover:translate-x-0.5 transition-transform" />
+              </>
+            )}
+          </button>
 
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
-                >
-                  Or restore from a local backup file (.json)
-                </button>
-              </div>
-            </div>
-          ) : isFetchingBackups ? (
-            <div className="flex items-center justify-center py-6 text-xs text-slate-400 gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-              <span>Checking your "Brivu Backups" folder in Google Drive...</span>
-            </div>
-          ) : backups.length === 0 ? (
-            <div className="text-center py-6 text-xs text-slate-400 space-y-3">
-              <Folder className="w-8 h-8 mx-auto opacity-30 text-slate-400" />
-              <p className="font-semibold text-slate-600 dark:text-slate-300">
-                No backup files found in "Brivu Backups" folder on this Google Drive account.
-              </p>
-              <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
-                Tap "Tap to Sync" above to create your first backup in your Google Drive, or restore from a downloaded .json backup file below.
-              </p>
-
-              <div className="flex items-center justify-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleSyncNow}
-                  className="px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs"
-                >
-                  Backup Now
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 rounded-full border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Import Local File
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Quick Restore Latest Button */}
-              {backups.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedBackupForRestore(backups[0])}
-                  className="w-full py-2.5 px-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center justify-between hover:bg-emerald-100/70 transition group"
-                >
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Restore Latest Backup ({new Date(backups[0].modifiedTime || backups[0].createdTime).toLocaleDateString()})</span>
-                  </span>
-                  <span className="text-[11px] underline group-hover:translate-x-0.5 transition-transform">
-                    Restore Now &rarr;
-                  </span>
-                </button>
-              )}
-
-              {/* Backups List */}
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
-                {backups.map((file, idx) => (
-                  <div
-                    key={file.id}
-                    className="p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between gap-2.5 hover:border-emerald-400 dark:hover:border-emerald-600 transition"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
-                        <span>{file.name}</span>
-                        {idx === 0 && (
-                          <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200">
-                            Latest
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                        <span>
-                          {new Date(file.modifiedTime || file.createdTime).toLocaleDateString('en-GB', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        {file.size && (
-                          <span className="font-mono text-slate-500">
-                            {(parseInt(file.size, 10) / 1024).toFixed(1)} KB
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedBackupForRestore(file)}
-                      className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs active:scale-95 transition shrink-0 flex items-center gap-1.5"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Restore</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Local File Fallback Option */}
-              <div className="pt-1 text-center">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center justify-center gap-1.5 mx-auto transition"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Restore from downloaded JSON file</span>
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Local File Import Fallback */}
+          <div className="pt-1 text-center">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center justify-center gap-1.5 mx-auto transition"
+            >
+              <Upload className="w-3.5 h-3.5 text-slate-400" />
+              <span>Or restore from downloaded JSON file</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* DEDICATED BACKUPS MODAL */}
+      {showBackupsModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white leading-tight">
+                    Google Drive Backups
+                  </h3>
+                  <p className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                    {account?.email}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={loadBackups}
+                  disabled={isFetchingBackups}
+                  className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-600 transition"
+                  title="Refresh Backups"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isFetchingBackups ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBackupsModal(false)}
+                  className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body Content */}
+            <div className="overflow-y-auto space-y-4 pr-0.5 flex-1">
+              {isFetchingBackups ? (
+                <div className="flex flex-col items-center justify-center py-10 text-xs text-slate-400 gap-2.5">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  <span>Loading backup files from "Brivu Backups" folder...</span>
+                </div>
+              ) : backups.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-400 space-y-3">
+                  <Folder className="w-10 h-10 mx-auto opacity-30 text-slate-400" />
+                  <p className="font-semibold text-slate-600 dark:text-slate-300 text-sm">
+                    No backup files found
+                  </p>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                    No backup files were found in the "Brivu Backups" folder of your Google Drive account ({account?.email}).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSyncNow}
+                    className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm"
+                  >
+                    Create First Backup Now
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Progress overlay for Restore All */}
+                  {isRestoringAll && (
+                    <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 space-y-2">
+                      <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-bold text-xs">
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        <span>Restoring &amp; Merging All Backups...</span>
+                      </div>
+                      {restoreAllProgress && (
+                        <div className="space-y-1">
+                          <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                            Processing backup file {restoreAllProgress.current} of {restoreAllProgress.total}
+                          </div>
+                          <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-blue-600 h-full transition-all duration-300"
+                              style={{ width: `${(restoreAllProgress.current / restoreAllProgress.total) * 100}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {restoreAllProgress.file}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Top Action Options: Restore All vs Restore Latest */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Quick Restore Options
+                    </label>
+
+                    {/* Button 1: Restore All Backups */}
+                    <button
+                      type="button"
+                      onClick={handleRestoreAllBackups}
+                      disabled={isRestoringAll || isFetchingBackups}
+                      className="w-full p-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-left shadow-md shadow-emerald-600/15 transition active:scale-[0.99] disabled:opacity-50 space-y-1"
+                    >
+                      <div className="flex items-center justify-between font-bold text-xs">
+                        <span className="flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-emerald-200 shrink-0" />
+                          <span>Restore All Backups ({backups.length} Files)</span>
+                        </span>
+                        <span className="text-[10px] bg-emerald-700/80 px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold">
+                          Merge Mode
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-emerald-100 opacity-90 pl-6 leading-relaxed">
+                        Sequentially restores and merges all historical backups from oldest to newest so no past records are lost.
+                      </p>
+                    </button>
+
+                    {/* Button 2: Restore Latest Backup */}
+                    {backups.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBackupForRestore(backups[0])}
+                        disabled={isRestoringAll}
+                        className="w-full p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-slate-800 dark:text-slate-100 text-left hover:bg-sky-100/70 transition flex items-center justify-between group disabled:opacity-50"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Sparkles className="w-4 h-4 text-sky-600 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-sky-900 dark:text-sky-200">
+                              Restore Latest Backup
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                              {new Date(backups[0].modifiedTime || backups[0].createdTime).toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 underline group-hover:translate-x-0.5 transition-transform shrink-0">
+                          Select &rarr;
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Individual Backup Files Section */}
+                  <div className="space-y-2 pt-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Individual Backups ({backups.length})
+                    </label>
+
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+                      {backups.map((file, idx) => (
+                        <div
+                          key={file.id}
+                          className="p-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between gap-2.5 hover:border-emerald-400 dark:hover:border-emerald-600 transition"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                              <span>{file.name}</span>
+                              {idx === 0 && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200">
+                                  Latest
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                              <span>
+                                {new Date(file.modifiedTime || file.createdTime).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {file.size && (
+                                <span className="font-mono text-slate-500">
+                                  {(parseInt(file.size, 10) / 1024).toFixed(1)} KB
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBackupForRestore(file)}
+                            disabled={isRestoringAll}
+                            className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs active:scale-95 transition shrink-0 flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Restore</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 shrink-0 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowBackupsModal(false)}
+                className="px-5 py-2 rounded-full border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Dialog for Restoration with Merge & Replace Modes */}
       {selectedBackupForRestore && (
