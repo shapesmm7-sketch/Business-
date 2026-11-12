@@ -600,8 +600,8 @@ export const GoogleDriveService = {
   },
 
   /**
-   * Sequentially downloads and restores ALL backup files from the "Brivu Backups" folder
-   * from oldest to newest in Merge Mode to consolidate complete business data.
+   * Sequentially downloads ALL backup files from the "Brivu Backups" folder
+   * and restores complete business data using Replace Mode.
    */
   async restoreAllBackups(
     onProgress?: (current: number, total: number, fileName: string) => void
@@ -616,34 +616,129 @@ export const GoogleDriveService = {
       (a, b) => new Date(a.modifiedTime || a.createdTime).getTime() - new Date(b.modifiedTime || b.createdTime).getTime()
     );
 
-    let restoredCount = 0;
-    const combinedItems = { receipts: 0, products: 0, customers: 0, agents: 0, staff: 0, photos: 0 };
+    const accessToken = await this.getValidAccessToken();
+    if (!accessToken) {
+      return { success: false, error: 'Not authenticated with Google Drive. Please connect first.' };
+    }
+
+    let consolidatedBackup: any = null;
+    let processedFiles = 0;
 
     for (let i = 0; i < sorted.length; i++) {
       const file = sorted[i];
       if (onProgress) {
         onProgress(i + 1, sorted.length, file.name);
       }
-      const res = await this.restoreBackup(file.id, 'merge');
-      if (res.success && res.itemCount) {
-        restoredCount++;
-        combinedItems.receipts += res.itemCount.receipts || 0;
-        combinedItems.products += res.itemCount.products || 0;
-        combinedItems.customers += res.itemCount.customers || 0;
-        combinedItems.agents += res.itemCount.agents || 0;
-        combinedItems.staff += res.itemCount.staff || 0;
-        combinedItems.photos += res.itemCount.photos || 0;
+
+      try {
+        const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+        const res = await fetch(downloadUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && typeof data === 'object') {
+            if (!consolidatedBackup) {
+              consolidatedBackup = { ...data };
+            } else {
+              if (data.profile) consolidatedBackup.profile = { ...consolidatedBackup.profile, ...data.profile };
+              if (data.settings) consolidatedBackup.settings = { ...consolidatedBackup.settings, ...data.settings };
+
+              // Receipts & Invoices: merge by id
+              if (Array.isArray(data.receipts)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.receipts || []).forEach((r: any) => { if (r?.id) map.set(r.id, r); });
+                data.receipts.forEach((r: any) => { if (r?.id) map.set(r.id, r); });
+                consolidatedBackup.receipts = Array.from(map.values());
+              }
+
+              // Inventory Products: merge by id
+              if (Array.isArray(data.inventoryProducts)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.inventoryProducts || []).forEach((p: any) => { if (p?.id) map.set(p.id, p); });
+                data.inventoryProducts.forEach((p: any) => { if (p?.id) map.set(p.id, p); });
+                consolidatedBackup.inventoryProducts = Array.from(map.values());
+              }
+
+              // Customers / Clients: merge by id
+              if (Array.isArray(data.customers)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.customers || []).forEach((c: any) => { if (c?.id) map.set(c.id, c); });
+                data.customers.forEach((c: any) => { if (c?.id) map.set(c.id, c); });
+                consolidatedBackup.customers = Array.from(map.values());
+              }
+
+              // Agents: merge by id
+              if (Array.isArray(data.agents)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.agents || []).forEach((a: any) => { if (a?.id) map.set(a.id, a); });
+                data.agents.forEach((a: any) => { if (a?.id) map.set(a.id, a); });
+                consolidatedBackup.agents = Array.from(map.values());
+              }
+
+              // Workers / Staff: merge by id
+              if (Array.isArray(data.workers)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.workers || []).forEach((w: any) => { if (w?.id) map.set(w.id, w); });
+                data.workers.forEach((w: any) => { if (w?.id) map.set(w.id, w); });
+                consolidatedBackup.workers = Array.from(map.values());
+              }
+
+              // Inventory Sales: merge by id
+              if (Array.isArray(data.inventorySales)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.inventorySales || []).forEach((s: any) => { if (s?.id) map.set(s.id, s); });
+                data.inventorySales.forEach((s: any) => { if (s?.id) map.set(s.id, s); });
+                consolidatedBackup.inventorySales = Array.from(map.values());
+              }
+
+              // Inventory Expenses: merge by id
+              if (Array.isArray(data.inventoryExpenses)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.inventoryExpenses || []).forEach((e: any) => { if (e?.id) map.set(e.id, e); });
+                data.inventoryExpenses.forEach((e: any) => { if (e?.id) map.set(e.id, e); });
+                consolidatedBackup.inventoryExpenses = Array.from(map.values());
+              }
+
+              // Inventory Debts: merge by id
+              if (Array.isArray(data.inventoryDebts)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.inventoryDebts || []).forEach((d: any) => { if (d?.id) map.set(d.id, d); });
+                data.inventoryDebts.forEach((d: any) => { if (d?.id) map.set(d.id, d); });
+                consolidatedBackup.inventoryDebts = Array.from(map.values());
+              }
+
+              // QR Hosted Pages: merge by id
+              if (Array.isArray(data.qrHostedPages)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.qrHostedPages || []).forEach((q: any) => { if (q?.id) map.set(q.id, q); });
+                data.qrHostedPages.forEach((q: any) => { if (q?.id) map.set(q.id, q); });
+                consolidatedBackup.qrHostedPages = Array.from(map.values());
+              }
+            }
+            processedFiles++;
+          }
+        }
+      } catch (fileErr) {
+        console.warn(`Could not process backup file ${file.name}:`, fileErr);
       }
     }
 
-    if (restoredCount === 0) {
+    if (!consolidatedBackup || processedFiles === 0) {
       return { success: false, error: 'Failed to restore backup files from Google Drive.' };
+    }
+
+    // Apply the consolidated data in REPLACE MODE so all records show up immediately
+    const finalResult = this.applyRestoredData(consolidatedBackup, 'replace');
+    if (!finalResult.success) {
+      return { success: false, error: finalResult.error };
     }
 
     return {
       success: true,
-      restoredCount,
-      totalItems: combinedItems,
+      restoredCount: processedFiles,
+      totalItems: finalResult.itemCount,
     };
   },
 

@@ -970,25 +970,27 @@ export const StorageService = {
       // 3. Receipts & Invoices
       if (Array.isArray(backupData.receipts)) {
         if (replaceExisting) {
-          if (Array.isArray(backupData.deletedReceiptIds)) {
-            writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, backupData.deletedReceiptIds);
-          } else {
-            writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
-          }
+          // Fresh restore: clear all deleted tombstones so all restored items appear immediately
+          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
           writeToStorage(STORAGE_KEYS.RECEIPTS, backupData.receipts);
         } else {
-          // Merge Mode: Unmark incoming backup receipts from deleted list so tombstones don't block them
+          // Merge Mode: Unmark all incoming backup receipts from deleted list (ID, number, and customer tombstone)
           const currentDeleted = this.getDeletedReceiptIds();
-          const incomingIds = new Set(backupData.receipts.map((r) => String(r.id || '').trim().toLowerCase()));
-          const incomingNums = new Set(backupData.receipts.map((r) => String(r.receiptNumber || '').trim().toLowerCase()));
-          
+          const incomingTombstonesToRemove = new Set<string>();
+          backupData.receipts.forEach((r) => {
+            if (r.id) incomingTombstonesToRemove.add(String(r.id).trim().toLowerCase());
+            if (r.receiptNumber) incomingTombstonesToRemove.add(String(r.receiptNumber).trim().toLowerCase());
+            if (r.customerName) incomingTombstonesToRemove.add(`cust:${String(r.customerName).trim().toLowerCase()}`);
+          });
+
           const cleanDeleted = currentDeleted.filter((item) => {
             const itemLower = String(item).trim().toLowerCase();
-            return !incomingIds.has(itemLower) && !incomingNums.has(itemLower);
+            return !incomingTombstonesToRemove.has(itemLower);
           });
           writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, cleanDeleted);
 
-          const existing = this.getReceipts();
+          // Read raw storage so no items are filtered out by stale memory caches
+          const existing = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
           const receiptMap = new Map<string, any>();
           existing.forEach((r) => {
             if (r && r.id && !String(r.id).startsWith('sample-')) {
@@ -1181,9 +1183,10 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.EVENTS_QR, Array.from(evtMap.values()));
         }
       }
+      const recCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
       return {
         success: true,
-        message: `Successfully restored ${backupData.receipts.length} receipts and settings!`,
+        message: `Successfully restored ${recCount} receipts and settings!`,
       };
     } catch (err: unknown) {
       return {

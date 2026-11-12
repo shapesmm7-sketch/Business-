@@ -49,7 +49,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   // Single backup restore confirmation state
   const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<DriveBackupFile | null>(null);
   const [localJsonContent, setLocalJsonContent] = useState<string | null>(null);
-  const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('merge');
+  const [restoreMode, setRestoreMode] = useState<'merge' | 'replace'>('replace');
   const [isRestoring, setIsRestoring] = useState(false);
 
   // Restore All state
@@ -193,7 +193,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
         const photoInfo = photosCount > 0 ? ` and ${photosCount} photos` : '';
         showToast(
           'success',
-          `Successfully restored & merged ALL ${res.restoredCount} backups (${res.totalItems?.receipts || 0} receipts${photoInfo}) from Google Drive!`
+          `Successfully restored ALL ${res.restoredCount} backups (${res.totalItems?.receipts || 0} receipts${photoInfo}) using Replace Mode!`
         );
         setShowBackupsModal(false);
         if (onDataRestored) onDataRestored();
@@ -641,25 +641,44 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                       Quick Restore Options
                     </label>
 
-                    {/* Button 1: Restore All Backups */}
+                    {/* Button 1: Restore All Backups - Prominent Clickable Button */}
                     <button
                       type="button"
                       onClick={handleRestoreAllBackups}
                       disabled={isRestoringAll || isFetchingBackups}
-                      className="w-full p-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-left shadow-md shadow-emerald-600/15 transition active:scale-[0.99] disabled:opacity-50 space-y-1"
+                      className="w-full p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white text-left shadow-lg shadow-emerald-700/25 border-2 border-emerald-400/50 transition-all active:scale-[0.98] disabled:opacity-50 group cursor-pointer block"
                     >
-                      <div className="flex items-center justify-between font-bold text-xs">
-                        <span className="flex items-center gap-2">
-                          <Layers className="w-4 h-4 text-emerald-200 shrink-0" />
-                          <span>Restore All Backups ({backups.length} Files)</span>
-                        </span>
-                        <span className="text-[10px] bg-emerald-700/80 px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold">
-                          Merge Mode
-                        </span>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+                            <Layers className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-extrabold text-sm text-white flex items-center gap-2">
+                              <span>Restore All Backups</span>
+                              <span className="text-[10px] bg-white/25 text-white px-2 py-0.5 rounded-full font-bold">
+                                {backups.length} Files
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[9px] bg-emerald-950/80 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-md uppercase tracking-wider font-black">
+                                Replace Mode
+                              </span>
+                              <span className="text-[11px] text-emerald-100/90 truncate">
+                                Restores all files &amp; photos into place
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Distinct clickable button pill */}
+                        <div className="shrink-0">
+                          <div className="px-3.5 py-2 rounded-xl bg-white text-emerald-800 font-extrabold text-xs shadow-md flex items-center gap-1.5 group-hover:bg-emerald-50 group-hover:scale-105 active:scale-95 transition-all">
+                            <Download className="w-4 h-4 text-emerald-700" />
+                            <span>Restore All</span>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-emerald-100 opacity-90 pl-6 leading-relaxed">
-                        Sequentially restores and merges all historical backups from oldest to newest so no past records are lost.
-                      </p>
                     </button>
 
                     {/* Button 2: Restore Latest Backup */}
@@ -805,31 +824,36 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
+                  onClick={() => setRestoreMode('replace')}
+                  className={`p-2.5 rounded-2xl border text-left transition ${
+                    restoreMode === 'replace'
+                      ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div className="text-xs font-bold flex items-center justify-between">
+                    <span>Replace Mode</span>
+                    <span className="text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.2 rounded bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-100">
+                      Best
+                    </span>
+                  </div>
+                  <div className="text-[9px] mt-0.5 opacity-80 leading-tight">
+                    Fresh restore into all app records &amp; lists
+                  </div>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setRestoreMode('merge')}
                   className={`p-2.5 rounded-2xl border text-left transition ${
                     restoreMode === 'merge'
-                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-200'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-200 ring-2 ring-blue-500/20'
                       : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   <div className="text-xs font-bold">Merge Mode</div>
                   <div className="text-[9px] mt-0.5 opacity-80 leading-tight">
                     Keeps local items &amp; adds missing ones
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRestoreMode('replace')}
-                  className={`p-2.5 rounded-2xl border text-left transition ${
-                    restoreMode === 'replace'
-                      ? 'border-rose-600 bg-rose-50 dark:bg-rose-950/60 text-rose-900 dark:text-rose-200'
-                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  <div className="text-xs font-bold">Replace Mode</div>
-                  <div className="text-[9px] mt-0.5 opacity-80 leading-tight">
-                    Fresh restore after reinstall / new phone
                   </div>
                 </button>
               </div>
