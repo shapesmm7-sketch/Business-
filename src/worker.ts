@@ -935,17 +935,53 @@ export async function resolveHostedQrPage(
     try {
       await ensureD1Tables(db);
 
-      // 1a. Standalone single-event lookup (never return the whole Hub for a single event ID unless match fails)
+      // 1a. Standalone single-event lookup (prefer freshest event item between standalone row and canonical events hub)
       if (isSingleEvent) {
         const singleKey = `user_${userEmail}_event_${pageId}`;
-        const singleRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? LIMIT 1').bind(singleKey, pageId).first();
+        const hubKey = `user_${userEmail}_events`;
+        const [singleRow, hubRow]: [any, any] = await Promise.all([
+          db.prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? LIMIT 1').bind(singleKey, pageId).first(),
+          db.prepare('SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(hubKey).first(),
+        ]);
+
+        let parsedSingle: any = null;
         if (singleRow?.page_json) {
           try {
-            const parsedSingle = JSON.parse(singleRow.page_json);
-            if (parsedSingle && hasRealQrPageContent(parsedSingle)) {
-              return sanitizePublicQrPage(parsedSingle);
-            }
+            parsedSingle = JSON.parse(singleRow.page_json);
           } catch (_) {}
+        }
+
+        let parsedHub: any = null;
+        if (hubRow?.page_json) {
+          try {
+            parsedHub = JSON.parse(hubRow.page_json);
+          } catch (_) {}
+        }
+
+        const matchedHubEvt =
+          parsedHub && Array.isArray(parsedHub.eventsQrItems)
+            ? matchEventItemById(parsedHub.eventsQrItems, pageId)
+            : null;
+
+        if (parsedSingle && hasRealQrPageContent(parsedSingle)) {
+          if (matchedHubEvt) {
+            const singleEvt = parsedSingle.eventsQrItems?.[0] || {};
+            const singleTs = new Date(parsedSingle.updatedAt || singleEvt.createdAt || 0).getTime();
+            const hubTs = new Date(parsedHub.updatedAt || matchedHubEvt.createdAt || 0).getTime();
+            const hubHasExtraFields = Boolean(
+              (matchedHubEvt.guestOfHonor && !singleEvt.guestOfHonor) ||
+              (Array.isArray(matchedHubEvt.speakers) && matchedHubEvt.speakers.length > 0 && (!Array.isArray(singleEvt.speakers) || singleEvt.speakers.length === 0)) ||
+              (matchedHubEvt.websiteUrl && !singleEvt.websiteUrl)
+            );
+            if (hubTs >= singleTs || hubHasExtraFields) {
+              return buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
+            }
+          }
+          return sanitizePublicQrPage(parsedSingle);
+        }
+
+        if (matchedHubEvt) {
+          return buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
         }
       }
 
@@ -3869,6 +3905,14 @@ export default {
               }),
             };
             await saveCanonicalQrPage(db, userEmail, 'events', evtPage, { preserveExistingIfEmpty: true });
+            for (const singleEvt of syncEvtItems) {
+              if (singleEvt && singleEvt.id) {
+                const singlePage = buildSingleEventPublicPage(singleEvt, userEmail, profile);
+                await saveCanonicalQrPage(db, userEmail, 'events', singlePage, {
+                  explicitId: `user_${userEmail}_event_${String(singleEvt.id).trim()}`,
+                });
+              }
+            }
           }
 
           // D. Business Showcase — read from backupData.qrHostedPages instead of non-existent backupData.photos
