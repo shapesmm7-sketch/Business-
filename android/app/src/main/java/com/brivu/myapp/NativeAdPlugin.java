@@ -53,6 +53,7 @@ public class NativeAdPlugin extends Plugin {
         instance = this;
     }
 
+    private FrameLayout viewportClipContainer;
     private FrameLayout adContainer;
     private NativeAd currentNativeAd;
     private boolean isLoading = false;
@@ -61,12 +62,14 @@ public class NativeAdPlugin extends Plugin {
     private String pendingNativeUnitId = LIVE_NATIVE_AD_UNIT_ID;
     private int nativeRetryCount = 0;
 
-    // Last requested slot coordinates & slot ownership token for inline placement
+    // Last requested slot coordinates, safe viewport clip bounds, and slot ownership token
     private String activeSlotId = null;
     private int lastX = 0;
     private int lastY = 0;
     private int lastWidth = 0;
     private int lastHeight = 0;
+    private int lastClipTop = 0;
+    private int lastClipBottom = 0;
     private boolean targetVisible = false;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -78,7 +81,8 @@ public class NativeAdPlugin extends Plugin {
     }
 
     /**
-     * Set up the overlay container directly on android.R.id.content so setX/setY always layer above WebView
+     * Set up a clipped viewport container on android.R.id.content so the native ad layers above
+     * scrolled page content yet passes cleanly beneath fixed header and bottom navigation bars.
      */
     private void initAdContainer() {
         try {
@@ -89,12 +93,34 @@ public class NativeAdPlugin extends Plugin {
             if (!(content instanceof ViewGroup)) return;
             ViewGroup rootContent = (ViewGroup) content;
 
+            if (viewportClipContainer == null) {
+                viewportClipContainer = new FrameLayout(activity);
+                viewportClipContainer.setId(View.generateViewId());
+                viewportClipContainer.setVisibility(View.GONE);
+                viewportClipContainer.setClipChildren(true);
+                viewportClipContainer.setClipToPadding(true);
+                viewportClipContainer.setOutlineProvider(android.view.ViewOutlineProvider.BOUNDS);
+                viewportClipContainer.setClipToOutline(true);
+
+                FrameLayout.LayoutParams clipParams = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                clipParams.gravity = Gravity.TOP | Gravity.START;
+                clipParams.setMargins(0, 0, 0, 0);
+                viewportClipContainer.setLayoutParams(clipParams);
+
+                rootContent.addView(viewportClipContainer);
+            }
+
             if (adContainer == null) {
                 adContainer = new FrameLayout(activity);
                 adContainer.setId(View.generateViewId());
                 adContainer.setVisibility(View.GONE);
-                adContainer.setElevation(24f);
                 adContainer.setClickable(true);
+                adContainer.setClipChildren(true);
+                adContainer.setOutlineProvider(android.view.ViewOutlineProvider.BOUNDS);
+                adContainer.setClipToOutline(true);
 
                 FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -104,9 +130,9 @@ public class NativeAdPlugin extends Plugin {
                 params.setMargins(0, 0, 0, 0);
                 adContainer.setLayoutParams(params);
 
-                rootContent.addView(adContainer);
-                adContainer.bringToFront();
-                Log.d(TAG, "AdMob Native ad container initialized");
+                viewportClipContainer.addView(adContainer);
+                viewportClipContainer.bringToFront();
+                Log.d(TAG, "AdMob Native ad clipped container initialized");
             }
 
             if (currentNativeAd != null) {
@@ -353,9 +379,10 @@ public class NativeAdPlugin extends Plugin {
 
                 // Apply target placement if one was already requested
                 if (targetVisible && lastWidth > 0) {
-                    applyAdPosition(lastX, lastY, lastWidth, lastHeight, true);
+                    applyAdPosition(lastX, lastY, lastWidth, lastHeight, lastClipTop, lastClipBottom, true);
                 } else {
                     adContainer.setVisibility(View.GONE);
+                    if (viewportClipContainer != null) viewportClipContainer.setVisibility(View.GONE);
                     isVisible = false;
                 }
 
@@ -366,14 +393,15 @@ public class NativeAdPlugin extends Plugin {
         });
     }
 
-    private void applyAdPosition(int x, int y, int width, int height, boolean visible) {
-        if (adContainer == null) {
+    private void applyAdPosition(int x, int y, int width, int height, int clipTop, int clipBottom, boolean visible) {
+        if (adContainer == null || viewportClipContainer == null) {
             initAdContainer();
         }
-        if (adContainer == null) return;
+        if (adContainer == null || viewportClipContainer == null) return;
 
         if (!visible || currentNativeAd == null || width <= 0 || height <= 0) {
             adContainer.setVisibility(View.GONE);
+            viewportClipContainer.setVisibility(View.GONE);
             isVisible = false;
             return;
         }
@@ -381,18 +409,45 @@ public class NativeAdPlugin extends Plugin {
         // Map WebView DOM coordinates (viewport px) accurately onto android.R.id.content
         int offsetX = 0;
         int offsetY = 0;
+        int webViewWidth = 0;
+        int webViewHeight = 0;
         try {
             View webView = getBridge() != null ? getBridge().getWebView() : null;
-            View parent = adContainer.getParent() instanceof View ? (View) adContainer.getParent() : null;
-            if (webView != null && parent != null) {
+            View root = viewportClipContainer.getParent() instanceof View ? (View) viewportClipContainer.getParent() : null;
+            if (webView != null && root != null) {
                 int[] webLoc = new int[2];
-                int[] parentLoc = new int[2];
+                int[] rootLoc = new int[2];
                 webView.getLocationInWindow(webLoc);
-                parent.getLocationInWindow(parentLoc);
-                offsetX = webLoc[0] - parentLoc[0];
-                offsetY = webLoc[1] - parentLoc[1];
+                root.getLocationInWindow(rootLoc);
+                offsetX = webLoc[0] - rootLoc[0];
+                offsetY = webLoc[1] - rootLoc[1];
+                webViewWidth = webView.getWidth();
+                webViewHeight = webView.getHeight();
             }
         } catch (Exception ignored) {}
+
+        int effectiveClipTop = Math.max(0, clipTop);
+        int effectiveClipBottom = (clipBottom > effectiveClipTop)
+            ? clipBottom
+            : (webViewHeight > 0 ? webViewHeight : Integer.MAX_VALUE);
+
+        if (effectiveClipBottom <= effectiveClipTop) {
+            adContainer.setVisibility(View.GONE);
+            viewportClipContainer.setVisibility(View.GONE);
+            isVisible = false;
+            return;
+        }
+
+        ViewGroup.LayoutParams clipLp = viewportClipContainer.getLayoutParams();
+        if (clipLp != null) {
+            clipLp.width = webViewWidth > 0 ? webViewWidth : ViewGroup.LayoutParams.MATCH_PARENT;
+            clipLp.height = effectiveClipBottom - effectiveClipTop;
+            viewportClipContainer.setLayoutParams(clipLp);
+        }
+        viewportClipContainer.setX((float) offsetX);
+        viewportClipContainer.setY((float) (offsetY + effectiveClipTop));
+        viewportClipContainer.bringToFront();
+        viewportClipContainer.setVisibility(View.VISIBLE);
 
         ViewGroup.LayoutParams lp = adContainer.getLayoutParams();
         if (lp != null) {
@@ -401,11 +456,12 @@ public class NativeAdPlugin extends Plugin {
             adContainer.setLayoutParams(lp);
         }
 
-        adContainer.setX((float) (x + offsetX));
-        adContainer.setY((float) (y + offsetY));
-        adContainer.bringToFront();
+        // Position ad relative to viewportClipContainer top so scrolling past clipTop/clipBottom clips cleanly
+        adContainer.setX((float) x);
+        adContainer.setY((float) (y - effectiveClipTop));
         adContainer.setVisibility(View.VISIBLE);
         adContainer.requestLayout();
+        viewportClipContainer.requestLayout();
         isVisible = true;
     }
 
@@ -420,8 +476,11 @@ public class NativeAdPlugin extends Plugin {
             targetVisible = false;
             if (adContainer != null) {
                 adContainer.setVisibility(View.GONE);
-                isVisible = false;
             }
+            if (viewportClipContainer != null) {
+                viewportClipContainer.setVisibility(View.GONE);
+            }
+            isVisible = false;
         });
     }
 
@@ -442,6 +501,8 @@ public class NativeAdPlugin extends Plugin {
         final int y = call.getInt("y", 0);
         final int width = call.getInt("width", 0);
         final int height = call.getInt("height", 0);
+        final int clipTop = call.getInt("clipTop", 0);
+        final int clipBottom = call.getInt("clipBottom", 0);
         final boolean visible = call.getBoolean("visible", false);
         final String slotId = call.getString("slotId");
 
@@ -461,6 +522,8 @@ public class NativeAdPlugin extends Plugin {
         lastY = y;
         lastWidth = width;
         lastHeight = height;
+        lastClipTop = clipTop;
+        lastClipBottom = clipBottom;
         targetVisible = visible;
 
         Activity activity = getActivity();
@@ -470,7 +533,7 @@ public class NativeAdPlugin extends Plugin {
         }
 
         activity.runOnUiThread(() -> {
-            applyAdPosition(x, y, width, height, visible);
+            applyAdPosition(x, y, width, height, clipTop, clipBottom, visible);
             if (visible && currentNativeAd == null && !isLoading) {
                 requestAdMobNativeAd(getNativeAdUnitId(), false);
             }
@@ -500,7 +563,7 @@ public class NativeAdPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             if (adContainer != null && currentNativeAd != null && targetVisible && lastWidth > 0) {
-                applyAdPosition(lastX, lastY, lastWidth, lastHeight, true);
+                applyAdPosition(lastX, lastY, lastWidth, lastHeight, lastClipTop, lastClipBottom, true);
             } else if (currentNativeAd == null && !isLoading) {
                 requestAdMobNativeAd(getNativeAdUnitId(), false);
             }

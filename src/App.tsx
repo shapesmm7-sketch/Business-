@@ -160,14 +160,45 @@ export function isCustomerPathFromUrl(): boolean {
   return Boolean(pathname.includes('/qr/') || pathname === '/qr' || pathname.startsWith('/qr/'));
 }
 
-export function hasCustomerQrItems(p: any): boolean {
-  if (!p) return false;
+export function hasMeaningfulQrData(p: any): boolean {
+  if (!p || typeof p !== 'object' || p.isEmptyFallback) return false;
   if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
   if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
   if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
   if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
   if (Array.isArray(p.photos) && p.photos.length > 0) return true;
+  if (Array.isArray(p.customSocialLinks) && p.customSocialLinks.length > 0) return true;
+  if (p.socialLinks && typeof p.socialLinks === 'object' && Object.values(p.socialLinks).some((v: any) => typeof v === 'string' && v.trim().length > 0)) return true;
+  if (p.wifiName || p.wifiPassword || p.openingHours || p.whatsapp || p.announcement || p.description || p.googleMapsUrl || p.phone || p.address) return true;
+  if (p.logo || p.coverImage) return true;
+  const tagline = typeof p.tagline === 'string' ? p.tagline.trim() : '';
+  if (tagline && tagline !== 'Welcome to our official business page') return true;
+  const title = typeof p.title === 'string' ? p.title.trim() : '';
+  if (
+    title &&
+    !title.endsWith("'s Business") &&
+    ![
+      'Brivu Business',
+      'My Business',
+      'Business Page',
+      'Official Website & App Links',
+      'Official Social Media Channels',
+      'Official Upcoming Events',
+      'Our Upcoming Events',
+      'Our Events',
+      'Our Sites',
+      'Social Media Hub',
+      'Official Social Links',
+      'our social media platforms',
+    ].includes(title)
+  ) {
+    return true;
+  }
   return false;
+}
+
+export function hasCustomerQrItems(p: any): boolean {
+  return hasMeaningfulQrData(p);
 }
 
 export function App() {
@@ -206,7 +237,7 @@ export function App() {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     const pathname = window.location.pathname || '';
-    return Boolean(
+    const hasQrParams = Boolean(
       isCustomerPathFromUrl() ||
       params.get('qr') ||
       params.get('page') ||
@@ -220,12 +251,30 @@ export function App() {
       params.get('photo') ||
       pathname.includes('/qr/')
     );
+    if (!hasQrParams) return false;
+    const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
+    const initialPage = (window as any).__INITIAL_QR_PAGE__;
+    const initialEmail = (initialPage?.userEmail || initialPage?.email || '').toLowerCase().trim();
+    if (initialPage && hasMeaningfulQrData(initialPage) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
+      return false;
+    }
+    return true;
   });
 
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const pathname = window.location.pathname || '';
+      const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
+      const initialPage = (window as any).__INITIAL_QR_PAGE__;
+      const initialEmail = (initialPage?.userEmail || initialPage?.email || '').toLowerCase().trim();
+      if (initialPage && initialPage.id && hasMeaningfulQrData(initialPage) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
+        if (emailParam && !initialPage.userEmail) {
+          initialPage.userEmail = emailParam;
+        }
+        return initialPage;
+      }
+
       const hasQrLink = Boolean(
         isCustomerPathFromUrl() ||
         params.get('qr') ||
@@ -238,14 +287,6 @@ export function App() {
       );
       if (hasQrLink) {
         return null;
-      }
-      const emailParam = params.get('email')?.toLowerCase().trim();
-      const initialPage = (window as any).__INITIAL_QR_PAGE__;
-      if (initialPage && initialPage.id) {
-        if (emailParam && !initialPage.userEmail) {
-          initialPage.userEmail = emailParam;
-        }
-        return initialPage;
       }
 
       const qrPageId = getQrPageIdFromUrl();
@@ -434,23 +475,59 @@ export function App() {
         const isEvents = !isWebsites && !isSocials && normFetchId.includes('event');
         const isBiz = !isWebsites && !isSocials && !isEvents;
 
-        const hasItems = (p: any) => {
-          if (!p) return false;
-          if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
-          if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
-          if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
-          if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
-          if (Array.isArray(p.photos) && p.photos.length > 0) return true;
-          return false;
+        const initialSsrPage = (window as any).__INITIAL_QR_PAGE__;
+        const initialSsrEmail = (initialSsrPage?.userEmail || initialSsrPage?.email || '').toLowerCase().trim();
+        const hasValidInitialSsr = Boolean(
+          initialSsrPage &&
+          hasMeaningfulQrData(initialSsrPage) &&
+          (!emailFromUrl || !initialSsrEmail || initialSsrEmail === emailFromUrl)
+        );
+
+        const resolveSignedInEmail = (): string => {
+          const authEmail = StorageService.getAuthenticatedEmail();
+          if (authEmail) return authEmail.toLowerCase().trim();
+          const workosUser = StorageService.getWorkOSUser();
+          if (workosUser?.email) return workosUser.email.toLowerCase().trim();
+          const profEmail = StorageService.getProfile()?.email;
+          return profEmail ? profEmail.toLowerCase().trim() : '';
+        };
+
+        const buildFallbackCleanPage = (): QRCodeHostedPage => {
+          const nowIso = new Date().toISOString();
+          return {
+            id: fetchId,
+            title: 'Brivu Business',
+            tagline: 'Welcome to our official business page',
+            description: '',
+            pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+            accentColor: '#059669',
+            theme: 'emerald',
+            phone: '',
+            whatsapp: '',
+            email: emailFromUrl || '',
+            address: '',
+            currency: 'UGX',
+            allowWhatsAppOrdering: true,
+            photos: [],
+            menuCategories: ['All'],
+            menuItems: [],
+            websitesQrItems: [],
+            socialsQrItems: [],
+            eventsQrItems: [],
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
         };
 
         if (fetchId || emailFromUrl) {
-          setIsCustomerDataResolving(true);
+          if (!hasValidInitialSsr) {
+            setIsCustomerDataResolving(true);
+          }
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
 
           CloudflareService.getHostedQrPage(fetchId, emailFromUrl).then(async (remotePage) => {
-            if (remotePage) {
+            if (remotePage && !remotePage.isEmptyFallback && hasMeaningfulQrData(remotePage)) {
               setActiveCustomerPage(remotePage);
               setIsCustomerDataResolving(false);
               return;
@@ -462,22 +539,43 @@ export function App() {
                 const bData = await CloudflareService.fetchUserBackupData(emailFromUrl);
                 if (bData) {
                   const profile = bData.profile || { name: 'Business', currency: 'UGX', phone: '', address: '' };
+                  const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
                   if (isWebsites) {
-                    const websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
+                    let websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
+                    if (websites.length === 0) {
+                      const hub = hostedPages.find((p: any) => Array.isArray(p?.websitesQrItems) && p.websitesQrItems.length > 0);
+                      if (hub) websites = hub.websitesQrItems;
+                    }
                     if (websites.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
                       setIsCustomerDataResolving(false);
                       return;
                     }
                   } else if (isSocials) {
-                    const socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
+                    let socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
+                    if (socials.length === 0) {
+                      const hub = hostedPages.find((p: any) => Array.isArray(p?.socialsQrItems) && p.socialsQrItems.length > 0);
+                      if (hub) socials = hub.socialsQrItems;
+                    }
                     if (socials.length > 0) {
                       setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
                       setIsCustomerDataResolving(false);
                       return;
                     }
                   } else if (isEvents) {
-                    const events = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
+                    const evtHub = hostedPages.find((p: any) => Array.isArray(p?.eventsQrItems) && p.eventsQrItems.length > 0);
+                    const singleEvtItems = hostedPages
+                      .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
+                      .flatMap((p: any) => p.eventsQrItems);
+                    const mergedEvtMap = new Map<string, any>();
+                    for (const e of [
+                      ...(Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : []),
+                      ...(Array.isArray(evtHub?.eventsQrItems) ? evtHub.eventsQrItems : []),
+                      ...singleEvtItems,
+                    ]) {
+                      if (e && e.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+                    }
+                    const events = Array.from(mergedEvtMap.values());
                     if (events.length > 0) {
                       if (normFetchId.includes('event') && !normFetchId.includes('events-hub') && normFetchId !== 'events') {
                         const rawTarget = fetchId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
@@ -498,7 +596,7 @@ export function App() {
                     }
                   } else if (isBiz) {
                     const bizPage = QRHostingService.convertBackupToHostedPage(bData);
-                    if (bizPage) {
+                    if (bizPage && hasMeaningfulQrData(bizPage)) {
                       setActiveCustomerPage({ ...bizPage, id: fetchId });
                       setIsCustomerDataResolving(false);
                       return;
@@ -508,59 +606,70 @@ export function App() {
               } catch (_) {}
             }
 
-            // If not found in Cloudflare, render a clean empty page structure for unauthenticated visitors
-            const nowIso = new Date().toISOString();
-            const fallbackCleanPage: QRCodeHostedPage = {
-              id: fetchId,
-              title: 'Brivu Business',
-              tagline: 'Welcome to our official business page',
-              description: '',
-              pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
-              accentColor: '#059669',
-              theme: 'emerald',
-              phone: '',
-              whatsapp: '',
-              email: emailFromUrl || '',
-              address: '',
-              currency: 'UGX',
-              allowWhatsAppOrdering: true,
-              photos: [],
-              menuCategories: ['All'],
-              menuItems: [],
-              websitesQrItems: [],
-              socialsQrItems: [],
-              eventsQrItems: [],
-              createdAt: nowIso,
-              updatedAt: nowIso,
-            };
-            setActiveCustomerPage(fallbackCleanPage);
+            // If SSR injected meaningful data, preserve it instead of clobbering with empty shell
+            if (hasValidInitialSsr) {
+              setActiveCustomerPage(initialSsrPage);
+              setIsCustomerDataResolving(false);
+              return;
+            }
+
+            // Same-device owner fallback only when viewing own email or without conflicting email param
+            const signedInEmail = resolveSignedInEmail();
+            if (!emailFromUrl || (signedInEmail && signedInEmail === emailFromUrl)) {
+              const profile = StorageService.getProfile();
+              if (isWebsites) {
+                const websites = StorageService.getWebsitesQrItems();
+                if (websites.length > 0) {
+                  setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
+                  setIsCustomerDataResolving(false);
+                  return;
+                }
+              } else if (isSocials) {
+                const socials = StorageService.getSocialsQrItems();
+                if (socials.length > 0) {
+                  setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
+                  setIsCustomerDataResolving(false);
+                  return;
+                }
+              } else if (isEvents) {
+                const events = StorageService.getEventsQrItems();
+                if (events.length > 0) {
+                  if (normFetchId.includes('event') && !normFetchId.includes('events-hub') && normFetchId !== 'events') {
+                    const rawTarget = fetchId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
+                    const singleEvt = events.find((e: any) => {
+                      const eId = String(e.id || '').toLowerCase();
+                      const eRaw = eId.replace(/^event-/, '').replace(/^qr-/, '');
+                      return eId === fetchId.toLowerCase() || eRaw === rawTarget || `event-${eId}` === fetchId.toLowerCase();
+                    });
+                    if (singleEvt) {
+                      setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
+                      setIsCustomerDataResolving(false);
+                      return;
+                    }
+                  }
+                  setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
+                  setIsCustomerDataResolving(false);
+                  return;
+                }
+              } else if (isBiz) {
+                const localCandidate = found || StorageService.getHostedQRPage(fetchId) || StorageService.getHostedQRPages()[0];
+                if (localCandidate && hasMeaningfulQrData(localCandidate)) {
+                  setActiveCustomerPage(localCandidate);
+                  setIsCustomerDataResolving(false);
+                  return;
+                }
+              }
+            }
+
+            // If not found with data anywhere, preserve minimal remotePage if present, else render clean fallback
+            setActiveCustomerPage(remotePage || buildFallbackCleanPage());
             setIsCustomerDataResolving(false);
           }).catch(() => {
-            const nowIso = new Date().toISOString();
-            const fallbackCleanPage: QRCodeHostedPage = {
-              id: fetchId,
-              title: 'Brivu Business',
-              tagline: 'Welcome to our official business page',
-              description: '',
-              pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
-              accentColor: '#059669',
-              theme: 'emerald',
-              phone: '',
-              whatsapp: '',
-              email: emailFromUrl || '',
-              address: '',
-              currency: 'UGX',
-              allowWhatsAppOrdering: true,
-              photos: [],
-              menuCategories: ['All'],
-              menuItems: [],
-              websitesQrItems: [],
-              socialsQrItems: [],
-              eventsQrItems: [],
-              createdAt: nowIso,
-              updatedAt: nowIso,
-            };
-            setActiveCustomerPage(fallbackCleanPage);
+            if (hasValidInitialSsr) {
+              setActiveCustomerPage(initialSsrPage);
+            } else {
+              setActiveCustomerPage(buildFallbackCleanPage());
+            }
             setIsCustomerDataResolving(false);
           });
         } else {

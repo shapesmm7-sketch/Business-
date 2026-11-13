@@ -334,13 +334,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const activeBoxBorderColor = activePage.qrBoxBorderColor || '#e2e8f0';
 
   const ownerEmail = useMemo(() => {
-    const user = StorageService.getWorkOSUser();
-    if (user?.email) return user.email.toLowerCase().trim();
-    const profile = StorageService.getProfile();
-    if (profile?.email) return profile.email.toLowerCase().trim();
-    const brivuId = StorageService.getBrivuUserId();
-    if (brivuId && brivuId.includes('@')) return brivuId.toLowerCase().trim();
-    return QRHostingService.resolveOwnerEmail(activePage?.email || activePage?.userEmail || business.email);
+    return QRHostingService.resolveOwnerEmail(activePage?.userEmail || activePage?.email || business.email);
   }, [activePage?.email, activePage?.userEmail, business.email]);
 
   // Scoped URLs
@@ -470,7 +464,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setShowQuickQrModal(true);
   };
 
-  const handleUpdateActivePage = (updates: Partial<QRCodeHostedPage>) => {
+  const handleUpdateActivePage = (updates: Partial<QRCodeHostedPage>, immediate = false) => {
     if (!activePage) return;
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated = {
@@ -482,9 +476,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    StorageService.saveHostedQRPage(updated, immediate ? { immediate: true } : undefined);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -523,9 +515,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const newPages = [newPage, ...pages];
     setPages(newPages);
     setActivePageId(newPage.id);
-    StorageService.saveHostedQRPage(newPage);
-    CloudflareService.saveSingleQrPage(newPage, resolvedEmail).catch(() => {});
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    StorageService.saveHostedQRPage(newPage, { immediate: true });
   };
 
   const handleDeletePage = (id: string) => {
@@ -570,9 +560,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    StorageService.saveHostedQRPage(updated, { immediate: true });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -592,15 +580,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated);
-    CloudflareService.saveSingleQrPage(updated, resolvedEmail).catch(() => {});
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    StorageService.saveHostedQRPage(updated, { immediate: true });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
 
   const handleCopyLink = async () => {
     if (!activePage) return;
+    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
     const success = await QRHostingService.copyCustomerUrl(activePage.id, qrScope, ownerEmail);
     if (success) {
       setIsCopied(true);
@@ -610,6 +597,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCopyQuickQrLink = async () => {
     if (!activePage) return;
+    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
     const success = await QRHostingService.copyCustomerUrl(activePage.id, quickQrScope, ownerEmail);
     if (success) {
       setQuickQrCopied(true);
@@ -619,6 +607,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
+    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
     const qrName = tableNumberForPrint || activePage.title;
     const bizName = business.name || activePage.title;
 
@@ -720,6 +709,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleShareLink = async (scope: QRScope) => {
     if (!activePage) return;
+    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
     const url = QRHostingService.getCustomerPageUrl(activePage.id, scope, ownerEmail);
     const scopeObj = SCOPE_OPTIONS.find((s) => s.id === scope);
     const title = `${activePage.title} - ${scopeObj?.label || 'QR Menu'}`;
@@ -757,7 +747,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleCopyItemLink = async () => {
     if (!activePage || !itemQrModalItem) return;
-    const success = await QRHostingService.copyItemUrl(activePage.id, itemQrModalItem.id);
+    const success = await QRHostingService.copyItemUrl(activePage.id, itemQrModalItem.id, ownerEmail);
     if (success) {
       setItemQrCopied(true);
       setTimeout(() => setItemQrCopied(false), 2000);
@@ -1043,7 +1033,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             }
           : p
       );
-      handleUpdateActivePage({ photos: updatedPhotos });
+      handleUpdateActivePage({ photos: updatedPhotos }, true);
     } else {
       const newPhoto: QRBusinessPhoto = {
         id: `photo-${Date.now()}`,
@@ -1054,7 +1044,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         description: finalDesc,
         caption: finalDesc,
       };
-      handleUpdateActivePage({ photos: [newPhoto, ...activePage.photos] });
+      handleUpdateActivePage({ photos: [newPhoto, ...activePage.photos] }, true);
     }
 
     setShowPhotoModal(false);
@@ -1071,7 +1061,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
     handleUpdateActivePage({
       photos: activePage.photos.filter((p) => p.id !== photoId),
-    });
+    }, true);
   };
 
   // Menu Item Management
@@ -1208,7 +1198,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     handleUpdateActivePage({
       menuItems: updatedList,
       menuCategories: Array.from(cats),
-    });
+    }, true);
 
     setShowAddItemModal(false);
     showToast(editingItem ? 'Item updated & saved!' : 'Item added & saved!');
@@ -1219,14 +1209,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage) return;
     handleUpdateActivePage({
       menuItems: activePage.menuItems.filter((i) => i.id !== id),
-    });
+    }, true);
   };
 
   const handleToggleItemAvailability = (id: string) => {
     if (!activePage) return;
     handleUpdateActivePage({
       menuItems: activePage.menuItems.map((i) => (i.id === id ? { ...i, isAvailable: !i.isAvailable } : i)),
-    });
+    }, true);
   };
 
   const handleOpenAddSocial = () => {
@@ -1278,7 +1268,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       updatedSocials = [...existingSocials, newSocial];
     }
 
-    handleUpdateActivePage({ customSocialLinks: updatedSocials });
+    handleUpdateActivePage({ customSocialLinks: updatedSocials }, true);
     setShowSocialModal(false);
     showToast(editingSocial ? 'Social link updated!' : 'Social link added!');
   };
@@ -1286,7 +1276,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleDeleteSocial = (id: string) => {
     const existingSocials = activePage.customSocialLinks || [];
     const updatedSocials = existingSocials.filter((s) => s.id !== id);
-    handleUpdateActivePage({ customSocialLinks: updatedSocials });
+    handleUpdateActivePage({ customSocialLinks: updatedSocials }, true);
     showToast('Social link removed');
   };
 
@@ -1311,7 +1301,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       const updatedCats = [...existingCats.filter((c) => c !== 'All'), trimmed];
       handleUpdateActivePage({
         menuCategories: updatedCats,
-      });
+      }, true);
       setCategoryFeedback(`Category "${trimmed}" added!`);
     } else {
       setCategoryFeedback(`Category "${trimmed}" selected.`);
@@ -1330,7 +1320,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const updatedCats = (activePage.menuCategories || []).filter((c) => c !== categoryToDelete);
     handleUpdateActivePage({
       menuCategories: updatedCats,
-    });
+    }, true);
     if (selectedCategoryFilter.toLowerCase() === categoryToDelete.toLowerCase()) {
       setSelectedCategoryFilter('All');
     }
@@ -1373,7 +1363,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       <QRCodeColorEditorScreen
         page={activePage}
         language={business?.language}
-        onSave={(updates) => handleUpdateActivePage(updates)}
+        onSave={(updates) => handleUpdateActivePage(updates, true)}
         onBack={() => setIsEditingQrColors(false)}
       />
     );
@@ -1401,14 +1391,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }), { maxDimension: 1200, fileTypeLabel: 'Cover Banner' })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }, true), { maxDimension: 1200, fileTypeLabel: 'Cover Banner' })}
       />
       <input
         ref={logoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }), { maxDimension: 1200, fileTypeLabel: 'Business Logo' })}
+        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }, true), { maxDimension: 1200, fileTypeLabel: 'Business Logo' })}
       />
 
       {/* Uploading Overlay */}
@@ -1464,14 +1454,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  if (!ownerEmail) {
+                    showToast('Sign in or add your business email to sync QR data to Cloud.');
+                    return;
+                  }
                   const freshPages = StorageService.getHostedQRPages();
                   setPages(freshPages);
-                  if (activePage) {
-                    CloudflareService.saveSingleQrPage(activePage, ownerEmail).catch(() => {});
+                  const latestPage = freshPages.find((p) => p.id === activePage?.id) || activePage;
+                  const pageRes = latestPage
+                    ? await CloudflareService.saveSingleQrPage(latestPage, ownerEmail, { immediate: true })
+                    : { success: true, message: '' };
+                  const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true });
+                  if (pageRes.success || syncRes.success) {
+                    showToast('Data synced & saved!');
+                  } else {
+                    showToast(pageRes.message || syncRes.message || 'Cloud sync failed. Please check your connection.');
                   }
-                  CloudflareService.syncAllToCloudflare().catch(() => {});
-                  showToast('Data synced & saved!');
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
                 title="Save and sync all QR code files, stand PDFs, photos, and items"
@@ -1488,7 +1487,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               )}
 
               <button
-                onClick={() => onOpenCustomerView(activePage)}
+                onClick={() => {
+                  if (activePage) {
+                    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
+                  }
+                  onOpenCustomerView(activePage);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 active:scale-95 transition cursor-pointer"
               >
                 <Eye className="w-3.5 h-3.5" />
@@ -1869,7 +1873,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
 
               <button
-                onClick={() => onOpenCustomerView(activePage, qrScope === 'all' ? undefined : (qrScope as any))}
+                onClick={() => {
+                  if (activePage) {
+                    CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
+                  }
+                  onOpenCustomerView(activePage, qrScope === 'all' ? undefined : (qrScope as any));
+                }}
                 className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98 shadow-sm shadow-emerald-600/20 sm:col-span-1 col-span-1"
               >
                 <Eye className="w-3.5 h-3.5" />

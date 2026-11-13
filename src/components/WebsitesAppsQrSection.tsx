@@ -157,24 +157,15 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
     );
   };
 
-  // Save to storage & Cloudflare on update
+  // Save to storage & Cloudflare on update (skip redundant mount writes)
+  const isFirstRenderRef = React.useRef(true);
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
     StorageService.saveWebsitesQrItems(items);
-    if (items.length > 0) {
-      QRHostingService.syncAllWebsitesPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
   }, [items, business]);
-
-  // Cloudflare sync on mount
-  useEffect(() => {
-    if (items.length > 0) {
-      QRHostingService.syncAllWebsitesPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-  }, [business]);
 
   // Generate QR for active item or ALL hub
   useEffect(() => {

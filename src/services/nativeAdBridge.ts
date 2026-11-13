@@ -11,6 +11,8 @@ export interface NativeAdPluginInterface {
     y: number;
     width: number;
     height: number;
+    clipTop?: number;
+    clipBottom?: number;
     visible: boolean;
     slotId?: string;
   }): Promise<{ success: boolean }>;

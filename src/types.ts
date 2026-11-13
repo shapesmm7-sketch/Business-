@@ -553,6 +553,7 @@ export interface EventQrItem {
   endTime?: string;
   location: string;
   rsvpUrl: string;
+  websiteUrl?: string;
   contactPhone?: string;
   contactEmail?: string;
   guestOfHonor?: string;
@@ -585,6 +586,9 @@ export interface QRMenuItem {
   isSpecial?: boolean;
   tags?: string[];
   url?: string;
+  websiteUrl?: string;
+  guestOfHonor?: string;
+  speakers?: string[];
   ctaText?: string;
   itemType?: string;
   phone?: string;

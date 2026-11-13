@@ -38,14 +38,21 @@ export class QRHostingService {
     return cleaned;
   }
 
-  static resolveOwnerEmail(emailOverride?: string): string {
-    if (emailOverride && emailOverride.includes('@')) {
+  static resolveOwnerEmail(emailOverride?: string, preferOverride = false): string {
+    if (preferOverride && emailOverride && emailOverride.includes('@')) {
       return emailOverride.toLowerCase().trim();
     }
+    // Signed-in account email is canonical for D1/R2 QR storage so links match saved cloud records
     const user = StorageService.getWorkOSUser();
-    // If the user is currently signed in, their authenticated email MUST ALWAYS BE USED for QR links
     if (user && user.email && user.email.includes('@')) {
       return user.email.toLowerCase().trim();
+    }
+    const authEmail = StorageService.getAuthenticatedEmail();
+    if (authEmail && authEmail.includes('@')) {
+      return authEmail.toLowerCase().trim();
+    }
+    if (emailOverride && emailOverride.includes('@')) {
+      return emailOverride.toLowerCase().trim();
     }
     const profile = StorageService.getProfile();
     if (profile && profile.email && profile.email.includes('@')) {
@@ -115,9 +122,9 @@ export class QRHostingService {
   /**
    * Generates direct Cloudflare-hosted URL for a specific Photo with owner email
    */
-  static getCustomerPhotoUrl(pageId: string, photoId: string, emailOverride?: string): string {
+  static getCustomerPhotoUrl(pageId: string, photoId: string, emailOverride?: string, preferOverride = false): string {
     const base = this.getWorkerBaseUrl();
-    const email = this.resolveOwnerEmail(emailOverride);
+    const email = this.resolveOwnerEmail(emailOverride, preferOverride);
     const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
     const cleanId = this.formatBusinessPageId(pageId);
     return `${base}/qr/${encodeURIComponent(cleanId)}?tab=photos&photoId=${encodeURIComponent(photoId)}${emailParam}`;
@@ -174,29 +181,69 @@ export class QRHostingService {
    */
   static convertBackupToHostedPage(bData: any): QRCodeHostedPage {
     const pages = Array.isArray(bData?.qrHostedPages) ? bData.qrHostedPages : [];
-    const populated = pages.find((p: any) =>
+    const bizPages = pages.filter((p: any) =>
       p &&
       p.pageType !== 'websites_hub' &&
       p.pageType !== 'socials_hub' &&
       p.pageType !== 'events_hub' &&
-      ((p?.menuItems && p.menuItems.length > 0) || (p?.photos && p.photos.length > 0))
+      p.pageType !== 'event' &&
+      !String(p.id || '').startsWith('event-') &&
+      !String(p.id || '').startsWith('events-hub') &&
+      !String(p.id || '').startsWith('websites-hub') &&
+      !String(p.id || '').startsWith('socials-hub')
     );
-    if (populated) return populated;
 
+    const hasBizContent = (p: any) => Boolean(
+      (Array.isArray(p?.menuItems) && p.menuItems.length > 0) ||
+      (Array.isArray(p?.photos) && p.photos.length > 0) ||
+      (Array.isArray(p?.customSocialLinks) && p.customSocialLinks.length > 0) ||
+      p?.phone ||
+      p?.whatsapp ||
+      p?.address ||
+      p?.openingHours ||
+      p?.wifiName ||
+      p?.logo ||
+      p?.coverImage ||
+      p?.description ||
+      p?.announcement
+    );
+
+    const populated = bizPages.find(hasBizContent);
     const profile = bData?.profile || {};
     const inventory = Array.isArray(bData?.inventoryProducts)
       ? bData.inventoryProducts
       : (Array.isArray(bData?.inventory) ? bData.inventory : []);
-    const photos = Array.isArray(bData?.photos) ? bData.photos : [];
+    const fallbackPhotos = Array.isArray(bData?.photos) ? bData.photos : [];
     const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
 
-    const firstBusinessPage = pages.find((p: any) =>
-      p &&
-      p.pageType !== 'websites_hub' &&
-      p.pageType !== 'socials_hub' &&
-      p.pageType !== 'events_hub'
-    );
-    if (inventory.length === 0 && photos.length === 0 && firstBusinessPage) {
+    if (populated) {
+      const photos = Array.isArray(populated.photos) && populated.photos.length > 0
+        ? populated.photos
+        : fallbackPhotos.map((p: any, idx: number) =>
+            typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
+          );
+      const menuItems = Array.isArray(populated.menuItems) && populated.menuItems.length > 0
+        ? populated.menuItems
+        : inventory.map((item: any) => ({
+            id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: item.name,
+            category: item.category || 'All',
+            price: item.sellingPrice || item.price || 0,
+            description: item.description || '',
+            photoUrl: item.image || item.photoUrl,
+            isAvailable: item.inStock !== false,
+          }));
+      return {
+        ...populated,
+        photos,
+        menuItems,
+        coverImage: populated.coverImage || photos[0]?.url,
+        logo: populated.logo || profile.logo,
+      };
+    }
+
+    const firstBusinessPage = bizPages[0];
+    if (inventory.length === 0 && fallbackPhotos.length === 0 && firstBusinessPage) {
       return firstBusinessPage;
     }
 
@@ -211,7 +258,7 @@ export class QRHostingService {
       accentColor: profile.themeColor || '#059669',
       theme: 'emerald',
       logo: profile.logo,
-      coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+      coverImage: fallbackPhotos[0]?.url || (typeof fallbackPhotos[0] === 'string' ? fallbackPhotos[0] : undefined),
       phone: profile.phone || '',
       whatsapp: cleanWa,
       email,
@@ -220,7 +267,7 @@ export class QRHostingService {
       currency: profile.currency || 'UGX',
       openingHours: '',
       allowWhatsAppOrdering: true,
-      photos: photos.map((p: any, idx: number) =>
+      photos: fallbackPhotos.map((p: any, idx: number) =>
         typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
       ),
       menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
@@ -280,28 +327,11 @@ export class QRHostingService {
     }
 
     const ownerEmail = this.resolveOwnerEmail(business.email);
-    const formattedStartTime = this.formatTimeToAMPM(event.startTime);
-    const formattedEndTime = this.formatTimeToAMPM(event.endTime);
-
-    const dateParts: string[] = [];
-    if (event.startDate) {
-      dateParts.push(`Start Date: ${event.startDate}`);
-    } else if (event.eventDate) {
-      dateParts.push(`Start Date: ${event.eventDate}`);
-    }
-    if (event.endDate && event.endDate !== event.startDate) {
-      dateParts.push(`End Date: ${event.endDate}`);
-    }
-    if (formattedStartTime && formattedEndTime) {
-      dateParts.push(`Time: ${formattedStartTime} - ${formattedEndTime}`);
-    } else if (formattedStartTime) {
-      dateParts.push(`Start Time: ${formattedStartTime}`);
-    } else if (formattedEndTime) {
-      dateParts.push(`End Time: ${formattedEndTime}`);
-    }
-
-    const dateScheduleText = dateParts.length > 0 ? dateParts.join(' • ') : '';
-    const announcementText = `📅 ${dateScheduleText || 'Upcoming Event'} • 📍 Location: ${event.location}`;
+    const isWaRsvp = Boolean(event.rsvpUrl && /wa\.me\/|whatsapp\.com\//i.test(event.rsvpUrl));
+    const rawSite = (event.websiteUrl || (!isWaRsvp ? event.rsvpUrl : '') || '').trim();
+    const normalizedWebsiteUrl = rawSite && !/^https?:\/\//i.test(rawSite) && rawSite !== 'https://' && rawSite !== 'http://'
+      ? `https://${rawSite}`
+      : (rawSite === 'https://' || rawSite === 'http://' ? '' : rawSite);
 
     const cssStyle = `
       #tab-btn-photos, #tab-btn-about { display: none !important; }
@@ -337,7 +367,12 @@ export class QRHostingService {
         name: `${event.title} - Entry & RSVP Pass`,
         category: 'Event Pass & RSVP',
         price: 0,
-        description: `${event.description ? event.description + ' • ' : ''}Location: ${event.location}. Click to RSVP!`,
+        description: event.description ? event.description : `${event.location ? `Location: ${event.location}. ` : ''}Click to RSVP!`,
+        url: normalizedWebsiteUrl || event.rsvpUrl || undefined,
+        websiteUrl: normalizedWebsiteUrl || undefined,
+        guestOfHonor: event.guestOfHonor || undefined,
+        speakers: event.speakers && event.speakers.length > 0 ? event.speakers : undefined,
+        ctaText: event.ctaText || 'RSVP & Join',
         tags: ['RSVP', 'Invitation', 'Entry Pass'],
         isSpecial: true,
         isAvailable: true,
@@ -351,7 +386,7 @@ export class QRHostingService {
       id: event.id,
       title: this.cleanText(event.title),
       tagline: this.cleanText(event.ctaText || 'Official Event Invitation & RSVP Pass'),
-      description: this.cleanText(event.description || `Location: ${event.location}`),
+      description: this.cleanText(event.description || ''),
       pageType: 'event',
       accentColor: injectedAccentColor,
       theme: 'indigo',
@@ -363,8 +398,9 @@ export class QRHostingService {
       userEmail: ownerEmail || business.email || '',
       address: event.location,
       googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`,
+      socialLinks: normalizedWebsiteUrl ? { website: normalizedWebsiteUrl } : undefined,
       currency: business.currency || 'UGX',
-      announcement: announcementText,
+      announcement: undefined,
       allowWhatsAppOrdering: true,
       photos,
       menuCategories: ['Event Pass & RSVP'],
@@ -402,22 +438,23 @@ export class QRHostingService {
     );
 
     const menuItems: QRMenuItem[] = events.map((evt) => {
-      const formattedStartTime = this.formatTimeToAMPM(evt.startTime);
-      const formattedEndTime = this.formatTimeToAMPM(evt.endTime);
-      const parts: string[] = [];
-      if (evt.startDate) parts.push(`Start Date: ${evt.startDate}`);
-      if (evt.endDate && evt.endDate !== evt.startDate) parts.push(`End Date: ${evt.endDate}`);
-      if (formattedStartTime && formattedEndTime) parts.push(`Time: ${formattedStartTime} - ${formattedEndTime}`);
-      else if (formattedStartTime) parts.push(`Start Time: ${formattedStartTime}`);
-      else if (formattedEndTime) parts.push(`End Time: ${formattedEndTime}`);
-      parts.push(`Location: ${evt.location}`);
+      const isWaRsvp = Boolean(evt.rsvpUrl && /wa\.me\/|whatsapp\.com\//i.test(evt.rsvpUrl));
+      const rawSite = (evt.websiteUrl || (!isWaRsvp ? evt.rsvpUrl : '') || '').trim();
+      const evtWebsiteUrl = rawSite && !/^https?:\/\//i.test(rawSite) && rawSite !== 'https://' && rawSite !== 'http://'
+        ? `https://${rawSite}`
+        : (rawSite === 'https://' || rawSite === 'http://' ? '' : rawSite);
 
       return {
         id: `rsvp-${evt.id}`,
         name: evt.title,
         category: 'Our Events',
         price: 0,
-        description: `${parts.join(' • ')}${evt.description ? ' • ' + evt.description : ''}`,
+        description: evt.description || '',
+        url: evtWebsiteUrl || evt.rsvpUrl || undefined,
+        websiteUrl: evtWebsiteUrl || undefined,
+        guestOfHonor: evt.guestOfHonor || undefined,
+        speakers: evt.speakers && evt.speakers.length > 0 ? evt.speakers : undefined,
+        ctaText: evt.ctaText || 'RSVP & Join',
         photoUrl: evt.photos?.[0] || undefined,
         tags: ['RSVP', 'Invitation', 'Entry Pass'],
         isSpecial: true,
@@ -463,7 +500,7 @@ export class QRHostingService {
       address: business.address || '',
       googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
       currency: business.currency || 'UGX',
-      announcement: `🎉 ${events.length} Upcoming Event${events.length === 1 ? '' : 's'} Available`,
+      announcement: undefined,
       allowWhatsAppOrdering: true,
       photos,
       menuCategories: ['Our Events'],
@@ -546,9 +583,7 @@ export class QRHostingService {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
       const hubPage = this.convertWebsitesHubToHostedPage(websites, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites-hub-all' }, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'websites' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync websites hub page to Cloudflare:', err);
@@ -620,9 +655,7 @@ export class QRHostingService {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
       const hubPage = this.convertSocialsHubToHostedPage(socials, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials-hub-all' }, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'socials' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync socials hub page to Cloudflare:', err);
@@ -632,18 +665,16 @@ export class QRHostingService {
   /**
    * Syncs an individual event page to local storage and Cloudflare D1
    */
-  static async syncEventPage(event: EventQrItem, business: BusinessProfile): Promise<void> {
+  static async syncEventPage(event: EventQrItem, business: BusinessProfile, allEventsOverride?: EventQrItem[]): Promise<void> {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
       const page = this.convertEventToHostedPage(event, business);
-      await CloudflareService.saveSingleQrPage(page, ownerEmail).catch(() => {});
-      // Also update the Events Hub page
-      const allEvents = StorageService.getEventsQrItems();
+      await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
+      // Also update the canonical Events Hub page using full list
+      const allEvents = Array.isArray(allEventsOverride) ? allEventsOverride : StorageService.getEventsQrItems();
       const updatedList = [event, ...allEvents.filter((e) => e.id !== event.id)];
       const hubPage = this.convertEventsHubToHostedPage(updatedList, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }, ownerEmail).catch(() => {});
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
       // Trigger Cloudflare D1 full backup sync
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
@@ -657,14 +688,12 @@ export class QRHostingService {
   static async syncAllEventsPages(events: EventQrItem[], business: BusinessProfile): Promise<void> {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
+      const hubPage = this.convertEventsHubToHostedPage(events, business);
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
       for (const evt of events) {
         const page = this.convertEventToHostedPage(evt, business);
-        await CloudflareService.saveSingleQrPage(page, ownerEmail).catch(() => {});
+        await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
       }
-      const hubPage = this.convertEventsHubToHostedPage(events, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events-hub-all' }, ownerEmail).catch(() => {});
-      await CloudflareService.saveSingleQrPage({ ...hubPage, id: 'events' }, ownerEmail).catch(() => {});
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to sync all event pages to Cloudflare:', err);
@@ -1376,7 +1405,7 @@ export class QRHostingService {
     currentY += 8;
 
     // QR Code generation for this item
-    const itemUrl = this.getCustomerItemUrl(page.id, item.id);
+    const itemUrl = this.getCustomerItemUrl(page.id, item.id, page.userEmail || page.email);
     const qrDataUrl = await this.generateQrCodeDataUrl(itemUrl, {
       width: 800,
       margin: 1,
@@ -1549,7 +1578,7 @@ export class QRHostingService {
     currentY += 8;
 
     // QR Code generation for this photo
-    const photoUrl = this.getCustomerPhotoUrl(page.id, photo.id);
+    const photoUrl = this.getCustomerPhotoUrl(page.id, photo.id, page.userEmail || page.email);
     const qrDataUrl = await this.generateQrCodeDataUrl(photoUrl, {
       width: 800,
       margin: 1,

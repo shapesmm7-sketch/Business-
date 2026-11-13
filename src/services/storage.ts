@@ -2590,8 +2590,23 @@ export const StorageService = {
 
   getHostedQRPage(id: string): QRCodeHostedPage | undefined {
     const pages = this.getHostedQRPages();
-    const found = pages.find((p) => p.id === id);
+    const cleanId = (id || '').trim();
+    const found = pages.find(
+      (p) =>
+        p.id === cleanId ||
+        `business-${p.id}` === cleanId ||
+        p.id.replace(/^qr-/, 'business-') === cleanId
+    );
     if (found) return found;
+
+    if (
+      cleanId.startsWith('business-hub-') ||
+      cleanId === 'business-latest' ||
+      cleanId === 'default' ||
+      cleanId === 'latest'
+    ) {
+      if (pages.length > 0) return pages[0];
+    }
 
     try {
       const business = this.getProfile();
@@ -2696,7 +2711,7 @@ export const StorageService = {
     return success;
   },
 
-  saveHostedQRPage(page: QRCodeHostedPage): boolean {
+  saveHostedQRPage(page: QRCodeHostedPage, options?: { immediate?: boolean }): boolean {
     if (
       page.id.startsWith('event-') ||
       page.id.startsWith('events-hub-') ||
@@ -2707,7 +2722,7 @@ export const StorageService = {
       page.id.startsWith('social-')
     ) {
       // Special QR page - sync directly to Cloudflare
-      CloudflareService.saveSingleQrPage(page).catch(() => {});
+      CloudflareService.saveSingleQrPage(page, undefined, options).catch(() => {});
       return true;
     }
     const pages = this.getHostedQRPages();
@@ -2829,12 +2844,12 @@ export const StorageService = {
       if (uploadPromises.length > 0) {
         Promise.all(uploadPromises).then(() => {
           const fresh = this.getHostedQRPage(pageId) || updatedPage;
-          CloudflareService.saveSingleQrPage(fresh).catch(() => {});
-          CloudflareService.syncAllToCloudflare().catch(() => {});
+          CloudflareService.saveSingleQrPage(fresh, undefined, { immediate: true }).catch(() => {});
+          CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => {});
         }).catch(() => {});
       } else {
-        CloudflareService.saveSingleQrPage(updatedPage).catch(() => {});
-        CloudflareService.syncAllToCloudflare().catch(() => {});
+        CloudflareService.saveSingleQrPage(updatedPage, undefined, options).catch(() => {});
+        CloudflareService.syncAllToCloudflare(undefined, options).catch(() => {});
       }
     }
 

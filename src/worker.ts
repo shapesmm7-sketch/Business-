@@ -86,6 +86,63 @@ export function getD1Database(env: any): any {
 // In-memory auth session cache for fast instant login polling across web and Android
 const authSessionsCache = new Map<string, { status: string; code?: string; user?: any; createdAt: number }>();
 
+export function hasRealQrPageContent(page: any): boolean {
+  if (!page || typeof page !== 'object') return false;
+  if (Array.isArray(page.eventsQrItems) && page.eventsQrItems.length > 0) return true;
+  if (Array.isArray(page.websitesQrItems) && page.websitesQrItems.length > 0) return true;
+  if (Array.isArray(page.socialsQrItems) && page.socialsQrItems.length > 0) return true;
+  if (Array.isArray(page.menuItems) && page.menuItems.length > 0) return true;
+  if (
+    Array.isArray(page.photos) &&
+    page.photos.some((p: any) => (typeof p === 'string' ? p.trim() !== '' : Boolean(p && p.url)))
+  ) {
+    return true;
+  }
+  if (Array.isArray(page.customSocialLinks) && page.customSocialLinks.length > 0) return true;
+  if (Array.isArray(page.socialLinks) && page.socialLinks.length > 0) return true;
+  if (
+    page.socialLinks &&
+    typeof page.socialLinks === 'object' &&
+    !Array.isArray(page.socialLinks) &&
+    Object.values(page.socialLinks).some((v: any) => typeof v === 'string' && v.trim() !== '')
+  ) {
+    return true;
+  }
+  if (page.logo || page.coverImage) return true;
+  if (
+    (typeof page.phone === 'string' && page.phone.trim() !== '') ||
+    (typeof page.whatsapp === 'string' && page.whatsapp.trim() !== '') ||
+    (typeof page.address === 'string' && page.address.trim() !== '') ||
+    (typeof page.googleMapsUrl === 'string' && page.googleMapsUrl.trim() !== '') ||
+    (typeof page.openingHours === 'string' && page.openingHours.trim() !== '') ||
+    (typeof page.wifiName === 'string' && page.wifiName.trim() !== '') ||
+    (typeof page.wifiPassword === 'string' && page.wifiPassword.trim() !== '') ||
+    (typeof page.announcement === 'string' && page.announcement.trim() !== '') ||
+    (typeof page.description === 'string' && page.description.trim() !== '')
+  ) {
+    return true;
+  }
+  const tagline = typeof page.tagline === 'string' ? page.tagline.trim() : '';
+  if (tagline !== '' && tagline !== 'Welcome to our official business page') {
+    return true;
+  }
+  const title = typeof page.title === 'string' ? page.title.trim() : '';
+  const defaultTitles = new Set([
+    '',
+    'Brivu Business',
+    'My Business',
+    'Our Events',
+    'Our Sites',
+    'Social Media Hub',
+    'Official Social Links',
+    'our social media platforms',
+  ]);
+  if (title && !defaultTitles.has(title) && !title.endsWith("'s Business")) {
+    return true;
+  }
+  return false;
+}
+
 export function hasRealUserContent(data: any): boolean {
   if (!data || typeof data !== 'object') return false;
   const backup = data.backupData || data;
@@ -101,24 +158,14 @@ export function hasRealUserContent(data: any): boolean {
   if (Array.isArray(backup.eventsQrItems) && backup.eventsQrItems.length > 0) return true;
   if (Array.isArray(backup.websitesQrItems) && backup.websitesQrItems.length > 0) return true;
   if (Array.isArray(backup.socialsQrItems) && backup.socialsQrItems.length > 0) return true;
+  if (Array.isArray(backup.photos) && backup.photos.length > 0) return true;
+  if (Array.isArray(backup.qrHostedPages) && backup.qrHostedPages.some(hasRealQrPageContent)) return true;
 
   const prof = backup.profile;
   if (prof && typeof prof === 'object') {
-    if (prof.phone || prof.address || prof.logo || prof.signature || prof.taxNumber || prof.bankName || prof.website) return true;
-    if (prof.name && prof.name !== 'Brivu Business' && prof.name !== 'QuickReceipt' && prof.name.trim() !== '') return true;
+    if (prof.phone || prof.whatsapp || prof.address || prof.logo || prof.signature || prof.taxNumber || prof.bankName || prof.website || prof.description) return true;
+    if (prof.name && prof.name !== 'Brivu Business' && prof.name !== 'QuickReceipt' && prof.name !== 'My Business' && prof.name !== 'brivu' && prof.name.trim() !== '') return true;
   }
-  return false;
-}
-
-export function hasRealQrPageContent(page: any): boolean {
-  if (!page || typeof page !== 'object') return false;
-  if (Array.isArray(page.eventsQrItems) && page.eventsQrItems.length > 0) return true;
-  if (Array.isArray(page.websitesQrItems) && page.websitesQrItems.length > 0) return true;
-  if (Array.isArray(page.socialsQrItems) && page.socialsQrItems.length > 0) return true;
-  if (Array.isArray(page.menuItems) && page.menuItems.length > 0) return true;
-  if (Array.isArray(page.photos) && page.photos.length > 0) return true;
-  if (page.logo || page.coverImage || page.phone || page.address) return true;
-  if (page.title && page.title !== 'Brivu Business' && page.title !== 'Our Events' && page.title !== 'Our Sites' && page.title !== 'Social Media Hub' && page.title.trim() !== '') return true;
   return false;
 }
 
@@ -556,26 +603,65 @@ export function sanitizePublicQrPage(rawPage: any): any {
     name: String(item?.name || ''),
     category: String(item?.category || 'All'),
     price: Number(item?.price || item?.sellingPrice || 0),
+    size: item?.size ? String(item.size) : undefined,
     description: item?.description ? String(item.description).slice(0, 500) : '',
     photoUrl: item?.photoUrl || item?.image || undefined,
     url: item?.url || undefined,
+    websiteUrl: item?.websiteUrl || undefined,
+    guestOfHonor: item?.guestOfHonor ? String(item.guestOfHonor) : undefined,
+    speakers: Array.isArray(item?.speakers) ? item.speakers : undefined,
     ctaText: item?.ctaText || undefined,
+    itemType: item?.itemType || undefined,
+    phone: item?.phone || undefined,
+    phoneAction: item?.phoneAction || undefined,
     tags: Array.isArray(item?.tags) ? item.tags : undefined,
     isSpecial: Boolean(item?.isSpecial),
     isAvailable: item?.isAvailable !== false,
+    hasPromo: Boolean(item?.hasPromo),
+    promoPrice: item?.promoPrice !== undefined ? Number(item.promoPrice) : undefined,
+    promoDescription: item?.promoDescription ? String(item.promoDescription) : undefined,
+    promoStartDate: item?.promoStartDate || undefined,
+    promoEndDate: item?.promoEndDate || undefined,
   }));
 
   // Clean photos
   const rawPhotos = Array.isArray(rawPage.photos) ? rawPage.photos : [];
-  const cleanPhotos = rawPhotos.map((p: any, idx: number) => {
-    if (typeof p === 'string') return { id: `photo-${idx}`, url: p, title: 'Photo' };
-    return {
-      id: p?.id || `photo-${idx}`,
-      url: p?.url || '',
-      title: p?.title || 'Photo',
-      description: p?.description || '',
-    };
-  });
+  const cleanPhotos = rawPhotos
+    .filter((p: any) => (typeof p === 'string' ? p.trim() !== '' : Boolean(p && p.url)))
+    .map((p: any, idx: number) => {
+      if (typeof p === 'string') return { id: `photo-${idx}`, url: p, title: 'Photo' };
+      return {
+        id: p?.id || `photo-${idx}`,
+        url: p?.url || '',
+        title: p?.title || 'Photo',
+        description: p?.description || '',
+        category: p?.category || undefined,
+        badge: p?.badge || undefined,
+        caption: p?.caption || undefined,
+      };
+    });
+
+  const cleanCustomSocials = Array.isArray(rawPage.customSocialLinks)
+    ? rawPage.customSocialLinks
+        .filter((s: any) => s && (typeof s === 'string' || s.url || s.name || s.label))
+        .map((s: any, idx: number) => {
+          if (typeof s === 'string') {
+            return { id: `soc-link-${idx}`, name: 'Link', label: 'Link', url: s };
+          }
+          const resolvedName = String(s.name || s.label || s.platform || 'Link');
+          return {
+            id: s.id || `soc-link-${idx}`,
+            name: resolvedName,
+            label: resolvedName,
+            url: String(s.url || ''),
+          };
+        })
+    : undefined;
+
+  const isEvtType =
+    rawPage.pageType === 'event' ||
+    rawPage.pageType === 'events_hub' ||
+    String(rawPage.id || '').toLowerCase().startsWith('event');
 
   return {
     id: String(rawPage.id || 'business'),
@@ -590,35 +676,135 @@ export function sanitizePublicQrPage(rawPage: any): any {
     phone: rawPage.phone || '',
     whatsapp: rawPage.whatsapp ? String(rawPage.whatsapp).replace(/[^0-9+]/g, '') : '',
     email: rawPage.email || '',
+    userEmail: rawPage.userEmail || rawPage.email || '',
     address: rawPage.address || '',
+    googleMapsUrl: rawPage.googleMapsUrl || undefined,
     currency: rawPage.currency || 'UGX',
+    language: rawPage.language || undefined,
     openingHours: rawPage.openingHours || '',
+    wifiName: rawPage.wifiName || undefined,
+    wifiPassword: rawPage.wifiPassword || undefined,
     allowWhatsAppOrdering: rawPage.allowWhatsAppOrdering !== false,
-    announcement: rawPage.announcement || '',
+    announcement: isEvtType ? '' : (rawPage.announcement || ''),
+    customSocialLinks: cleanCustomSocials,
+    socialLinks: rawPage.socialLinks || undefined,
     photos: cleanPhotos,
     menuCategories: Array.isArray(rawPage.menuCategories) && rawPage.menuCategories.length > 0 ? rawPage.menuCategories : ['All'],
     menuItems: cleanMenuItems,
     websitesQrItems: Array.isArray(rawPage.websitesQrItems) ? rawPage.websitesQrItems : [],
     socialsQrItems: Array.isArray(rawPage.socialsQrItems) ? rawPage.socialsQrItems : [],
     eventsQrItems: Array.isArray(rawPage.eventsQrItems) ? rawPage.eventsQrItems : [],
+    qrDarkColor: rawPage.qrDarkColor || undefined,
+    qrLightColor: rawPage.qrLightColor || undefined,
+    qrEyeColor: rawPage.qrEyeColor || undefined,
+    qrBoxBgColor: rawPage.qrBoxBgColor || undefined,
+    qrBoxBorderColor: rawPage.qrBoxBorderColor || undefined,
+    createdAt: rawPage.createdAt || undefined,
     updatedAt: rawPage.updatedAt || new Date().toISOString(),
   };
 }
 
+function matchEventItemById(events: any[], rawTargetId: string): any | null {
+  if (!Array.isArray(events) || events.length === 0 || !rawTargetId) return null;
+  const target = rawTargetId.toLowerCase().trim();
+  const strippedTarget = target.replace(/^event-/, '').replace(/^qr-/, '');
+  return (
+    events.find((e: any) => {
+      if (!e || !e.id) return false;
+      const eId = String(e.id).toLowerCase().trim();
+      const strippedE = eId.replace(/^event-/, '').replace(/^qr-/, '');
+      return eId === target || strippedE === strippedTarget || `event-${eId}` === target;
+    }) || null
+  );
+}
+
+function buildSingleEventPublicPage(evt: any, userEmail: string, baseInfo?: any): any {
+  const cleanPhone = String(evt?.contactPhone || evt?.phone || baseInfo?.phone || baseInfo?.whatsapp || '').replace(/[^0-9+]/g, '');
+  let cleanWa = '';
+  if (evt?.rsvpUrl && String(evt.rsvpUrl).includes('wa.me/')) {
+    const m = String(evt.rsvpUrl).match(/wa\.me\/([0-9]+)/);
+    if (m?.[1]) cleanWa = m[1];
+  }
+  if (!cleanWa) cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+  const isWaRsvp = Boolean(evt?.rsvpUrl && /wa\.me\/|whatsapp\.com\//i.test(String(evt.rsvpUrl)));
+  const rawSite = String(evt?.websiteUrl || (!isWaRsvp ? evt?.rsvpUrl : '') || '').trim();
+  const evtWebsiteUrl = rawSite && rawSite !== 'https://' && rawSite !== 'http://'
+    ? (/^https?:\/\//i.test(rawSite) ? rawSite : `https://${rawSite}`)
+    : '';
+  const evtPhotos = Array.isArray(evt?.photos) ? evt.photos : [];
+  const photos = evtPhotos.map((u: string, idx: number) => ({
+    id: `${evt.id}-photo-${idx}`,
+    url: u,
+    title: evt.title,
+    description: `Location: ${evt.location || ''}`,
+    badge: 'Event Photo',
+    caption: evt.title,
+  }));
+
+  return sanitizePublicQrPage({
+    id: evt.id,
+    title: evt.title || 'Event Invitation',
+    tagline: evt.ctaText || 'Official Event Invitation & RSVP Pass',
+    description: evt.description || '',
+    pageType: 'event',
+    accentColor: evt.darkColor || '#7c3aed',
+    theme: 'indigo',
+    coverImage: evtPhotos[0] || undefined,
+    logo: evtPhotos[0] || baseInfo?.logo || undefined,
+    phone: evt.contactPhone || baseInfo?.phone || baseInfo?.whatsapp || '',
+    whatsapp: cleanWa,
+    email: evt.contactEmail || baseInfo?.email || userEmail,
+    userEmail: userEmail || baseInfo?.email || '',
+    address: evt.location || baseInfo?.address || '',
+    googleMapsUrl: evt.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evt.location)}` : undefined,
+    socialLinks: evtWebsiteUrl ? { website: evtWebsiteUrl } : undefined,
+    currency: baseInfo?.currency || 'UGX',
+    announcement: '',
+    allowWhatsAppOrdering: true,
+    photos,
+    menuCategories: ['Event Pass & RSVP'],
+    menuItems: [
+      {
+        id: `rsvp-${evt.id}`,
+        name: `${evt.title} - Entry & RSVP Pass`,
+        category: 'Event Pass & RSVP',
+        price: 0,
+        description: evt.description || '',
+        url: evtWebsiteUrl || evt.rsvpUrl,
+        websiteUrl: evtWebsiteUrl || undefined,
+        guestOfHonor: evt.guestOfHonor || undefined,
+        speakers: Array.isArray(evt.speakers) && evt.speakers.length > 0 ? evt.speakers : undefined,
+        ctaText: evt.ctaText || 'RSVP & Join',
+        tags: ['RSVP', 'Invitation', 'Entry Pass'],
+        isSpecial: true,
+        isAvailable: true,
+        photoUrl: evtPhotos[0] || undefined,
+      },
+    ],
+    eventsQrItems: [evt],
+    qrDarkColor: evt.darkColor || '#7c3aed',
+    qrLightColor: evt.lightColor || '#ffffff',
+    qrEyeColor: evt.eyeColor || evt.darkColor || '#6d28d9',
+    qrBoxBgColor: evt.boxBgColor || '#ffffff',
+    qrBoxBorderColor: evt.boxBorderColor || '#cbd5e1',
+    createdAt: evt.createdAt || new Date().toISOString(),
+  });
+}
+
 /**
  * Saves a canonical QR page to D1 with hash-comparison write reduction.
- * Strictly 4 records per user: business, events, socials, websites.
+ * Strictly canonical records per user: business, events, socials, websites (plus optional individual event IDs).
  */
 export async function saveCanonicalQrPage(
   db: any,
   userEmail: string,
   category: 'business' | 'events' | 'socials' | 'websites',
   rawPage: any,
-  options?: { preserveExistingPhotosIfEmpty?: boolean }
+  options?: { preserveExistingPhotosIfEmpty?: boolean; preserveExistingIfEmpty?: boolean; explicitId?: string }
 ): Promise<void> {
   if (!db || !userEmail || !rawPage) return;
   const cleanEmail = userEmail.toLowerCase().trim();
-  const canonicalId = `user_${cleanEmail}_${category}`;
+  const canonicalId = options?.explicitId || `user_${cleanEmail}_${category}`;
 
   try {
     await ensureD1Tables(db);
@@ -626,13 +812,13 @@ export async function saveCanonicalQrPage(
 
     let pageToSave = {
       ...rawPage,
-      id: canonicalId,
+      id: options?.explicitId ? rawPage.id || canonicalId : canonicalId,
       userEmail: cleanEmail,
-      email: cleanEmail,
+      email: rawPage.email || cleanEmail,
     };
 
-    // Never allow a background sync with empty photos to wipe existing D1 photos
-    if (options?.preserveExistingPhotosIfEmpty && existing?.page_json) {
+    const preserveEmpty = Boolean(options?.preserveExistingPhotosIfEmpty || options?.preserveExistingIfEmpty);
+    if (preserveEmpty && existing?.page_json) {
       try {
         const existingParsed = JSON.parse(existing.page_json);
         if (Array.isArray(existingParsed?.photos) && existingParsed.photos.length > 0 && (!Array.isArray(pageToSave.photos) || pageToSave.photos.length === 0)) {
@@ -646,6 +832,29 @@ export async function saveCanonicalQrPage(
         }
         if (Array.isArray(existingParsed?.menuItems) && existingParsed.menuItems.length > 0 && (!Array.isArray(pageToSave.menuItems) || pageToSave.menuItems.length === 0)) {
           pageToSave.menuItems = existingParsed.menuItems;
+        }
+        if (Array.isArray(existingParsed?.customSocialLinks) && existingParsed.customSocialLinks.length > 0 && (!Array.isArray(pageToSave.customSocialLinks) || pageToSave.customSocialLinks.length === 0)) {
+          pageToSave.customSocialLinks = existingParsed.customSocialLinks;
+        }
+        if (!pageToSave.wifiName && existingParsed?.wifiName) {
+          pageToSave.wifiName = existingParsed.wifiName;
+          pageToSave.wifiPassword = existingParsed.wifiPassword;
+        }
+        if (!pageToSave.openingHours && existingParsed?.openingHours) {
+          pageToSave.openingHours = existingParsed.openingHours;
+        }
+        if (!pageToSave.phone && existingParsed?.phone) pageToSave.phone = existingParsed.phone;
+        if (!pageToSave.whatsapp && existingParsed?.whatsapp) pageToSave.whatsapp = existingParsed.whatsapp;
+        if (!pageToSave.address && existingParsed?.address) pageToSave.address = existingParsed.address;
+        if (!pageToSave.announcement && existingParsed?.announcement) pageToSave.announcement = existingParsed.announcement;
+        if (Array.isArray(existingParsed?.websitesQrItems) && existingParsed.websitesQrItems.length > 0 && (!Array.isArray(pageToSave.websitesQrItems) || pageToSave.websitesQrItems.length === 0)) {
+          pageToSave.websitesQrItems = existingParsed.websitesQrItems;
+        }
+        if (Array.isArray(existingParsed?.socialsQrItems) && existingParsed.socialsQrItems.length > 0 && (!Array.isArray(pageToSave.socialsQrItems) || pageToSave.socialsQrItems.length === 0)) {
+          pageToSave.socialsQrItems = existingParsed.socialsQrItems;
+        }
+        if (Array.isArray(existingParsed?.eventsQrItems) && existingParsed.eventsQrItems.length > 0 && (!Array.isArray(pageToSave.eventsQrItems) || pageToSave.eventsQrItems.length === 0)) {
+          pageToSave.eventsQrItems = existingParsed.eventsQrItems;
         }
       } catch (_) {}
     }
@@ -685,9 +894,10 @@ export async function resolveHostedQrPage(
   const db = getD1Database(env);
 
   // Identify category
-  const isWebsites = normId.includes('website') || normId === 'websites_hub';
-  const isSocials = !isWebsites && (normId.includes('social') || normId === 'socials_hub');
-  const isEvents = !isWebsites && !isSocials && (normId.includes('event') || normId === 'events_hub');
+  const isWebsites = normId.includes('website') || normId.includes('web-hub') || normId === 'websites_hub' || normId === 'websites';
+  const isSocials = !isWebsites && (normId.includes('social') || normId === 'socials_hub' || normId === 'socials');
+  const isEvents = !isWebsites && !isSocials && (normId.includes('event') || normId === 'events_hub' || normId === 'events');
+  const isSingleEvent = isEvents && !normId.includes('events-hub') && !normId.includes('event-hub') && normId !== 'events' && normId !== 'events_hub';
   const category: 'business' | 'events' | 'socials' | 'websites' = isWebsites
     ? 'websites'
     : isSocials
@@ -701,7 +911,7 @@ export async function resolveHostedQrPage(
     try {
       await ensureD1Tables(db);
       // Check qr_pages by ID
-      const row: any = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ?').bind(pageId).first();
+      const row: any = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? OR id LIKE ? LIMIT 1').bind(pageId, `%_${pageId}`).first();
       if (row?.user_email) {
         userEmail = row.user_email.toLowerCase().trim();
       } else if (row?.page_json) {
@@ -720,22 +930,77 @@ export async function resolveHostedQrPage(
     } catch (_) {}
   }
 
-  // 1. Primary lookup in D1 qr_pages table for canonical record
+  // 1. Primary lookup in D1 qr_pages table
   if (db && userEmail) {
     try {
       await ensureD1Tables(db);
+
+      // 1a. Standalone single-event lookup (never return the whole Hub for a single event ID unless match fails)
+      if (isSingleEvent) {
+        const singleKey = `user_${userEmail}_event_${pageId}`;
+        const singleRow: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? LIMIT 1').bind(singleKey, pageId).first();
+        if (singleRow?.page_json) {
+          try {
+            const parsedSingle = JSON.parse(singleRow.page_json);
+            if (parsedSingle && hasRealQrPageContent(parsedSingle)) {
+              return sanitizePublicQrPage(parsedSingle);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 1a-bis. Specific non-hub business page lookup if multiple business QR pages exist
+      const isSpecificBusinessId =
+        category === 'business' &&
+        pageId &&
+        normId !== 'default' &&
+        normId !== 'latest' &&
+        normId !== 'business' &&
+        normId !== 'business-latest' &&
+        !normId.startsWith('business-hub-');
+      if (isSpecificBusinessId) {
+        const strippedBizId = pageId.replace(/^business-/, '');
+        const bizSpecificRow: any = await db
+          .prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? OR id = ? LIMIT 1')
+          .bind(
+            `user_${userEmail}_biz_${pageId}`,
+            `user_${userEmail}_biz_${strippedBizId}`,
+            pageId
+          )
+          .first();
+        if (bizSpecificRow?.page_json) {
+          try {
+            const parsedSpecific = JSON.parse(bizSpecificRow.page_json);
+            if (parsedSpecific && hasRealQrPageContent(parsedSpecific)) {
+              return sanitizePublicQrPage(parsedSpecific);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 1b. Canonical category lookup (business / events / socials / websites)
       const canonicalId = `user_${userEmail}_${category}`;
       const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ?').bind(canonicalId).first();
       if (row?.page_json) {
         try {
           const parsed = JSON.parse(row.page_json);
-          if (parsed) return sanitizePublicQrPage(parsed);
+          if (parsed && hasRealQrPageContent(parsed)) {
+            if (isSingleEvent && Array.isArray(parsed.eventsQrItems) && parsed.eventsQrItems.length > 0) {
+              const matchedEvt = matchEventItemById(parsed.eventsQrItems, pageId);
+              if (matchedEvt) {
+                return buildSingleEventPublicPage(matchedEvt, userEmail, parsed);
+              }
+            }
+            if (!isSingleEvent) {
+              return sanitizePublicQrPage(parsed);
+            }
+          }
         } catch (_) {}
       }
     } catch (_) {}
   }
 
-  // 2. Direct fallback lookup in D1 by pageId
+  // 2. Direct fallback lookup in D1 by exact pageId
   if (db && pageId) {
     try {
       await ensureD1Tables(db);
@@ -743,13 +1008,15 @@ export async function resolveHostedQrPage(
       if (row?.page_json) {
         try {
           const parsed = JSON.parse(row.page_json);
-          if (parsed) return sanitizePublicQrPage(parsed);
+          if (parsed && hasRealQrPageContent(parsed)) {
+            return sanitizePublicQrPage(parsed);
+          }
         } catch (_) {}
       }
     } catch (_) {}
   }
 
-  // 3. Fallback: Reconstruct from user's D1 backup data if page row not yet created
+  // 3. Fallback: Reconstruct from user's D1 backup data if qr_pages row missing or empty
   if (db && userEmail) {
     try {
       await ensureD1Tables(db);
@@ -762,100 +1029,156 @@ export async function resolveHostedQrPage(
       if (bRow?.backup_data) {
         const bData = JSON.parse(bRow.backup_data);
         const profile = bData?.profile || {};
+        const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
         const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
 
         if (category === 'websites') {
-          const webItems = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
-          return sanitizePublicQrPage({
-            id: `user_${userEmail}_websites`,
-            title: 'Our Sites',
-            tagline: profile.tagline || '',
-            description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
-            pageType: 'websites_hub',
-            accentColor: '#2563eb',
-            theme: 'indigo',
-            logo: profile.logo,
-            phone: profile.phone || '',
-            whatsapp: cleanWa,
-            email: profile.email || userEmail,
-            address: profile.address || '',
-            currency: profile.currency || 'USD',
-            websitesQrItems: webItems,
-            menuCategories: ['Our Sites'],
-            menuItems: webItems.map((w: any) => ({
-              id: `web-${w.id}`,
-              name: w.title,
-              category: 'Our Sites',
-              price: 0,
-              description: w.description || w.url,
-              url: w.url,
-              ctaText: w.ctaText || 'Visit Website',
-            })),
-          });
+          const webHubPage = hostedPages.find((p: any) => p && (p.pageType === 'websites_hub' || String(p.id || '').includes('websites')));
+          const webItems = Array.isArray(bData.websitesQrItems) && bData.websitesQrItems.length > 0
+            ? bData.websitesQrItems
+            : (Array.isArray(webHubPage?.websitesQrItems) ? webHubPage.websitesQrItems : []);
+          if (webItems.length > 0 || (webHubPage && hasRealQrPageContent(webHubPage))) {
+            return sanitizePublicQrPage({
+              ...(webHubPage || {}),
+              id: `user_${userEmail}_websites`,
+              userEmail,
+              title: webHubPage?.title || 'Our Sites',
+              tagline: webHubPage?.tagline ?? (profile.tagline || ''),
+              description: webHubPage?.description || `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+              pageType: 'websites_hub',
+              accentColor: '#2563eb',
+              theme: 'indigo',
+              logo: webHubPage?.logo || profile.logo,
+              phone: webHubPage?.phone || profile.phone || '',
+              whatsapp: webHubPage?.whatsapp || cleanWa,
+              email: webHubPage?.email || profile.email || userEmail,
+              address: webHubPage?.address || profile.address || '',
+              currency: webHubPage?.currency || profile.currency || 'USD',
+              websitesQrItems: webItems,
+              menuCategories: ['Our Sites'],
+              menuItems: webItems.map((w: any) => ({
+                id: `web-${w.id}`,
+                name: w.title,
+                category: 'Our Sites',
+                price: 0,
+                description: w.description || w.url,
+                url: w.url,
+                ctaText: w.ctaText || 'Visit Website',
+                itemType: w.type,
+                phone: w.phone,
+                phoneAction: w.phoneAction,
+              })),
+            });
+          }
         }
 
         if (category === 'socials') {
-          const socItems = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
-          return sanitizePublicQrPage({
-            id: `user_${userEmail}_socials`,
-            title: 'Official Social Links',
-            tagline: 'Connect Across All Official Channels & Messaging Apps',
-            description: `Official social media profiles and community links for ${profile.name || 'our brand'}.`,
-            pageType: 'socials_hub',
-            accentColor: '#059669',
-            theme: 'emerald',
-            logo: profile.logo,
-            phone: profile.phone || '',
-            whatsapp: cleanWa,
-            email: profile.email || userEmail,
-            address: profile.address || '',
-            currency: profile.currency || 'USD',
-            socialsQrItems: socItems,
-            menuCategories: ['Social Channels'],
-            menuItems: socItems.map((s: any) => ({
-              id: `soc-${s.id}`,
-              name: s.title || s.customPlatformName || s.platform,
-              category: 'Social Channels',
-              price: 0,
-              description: s.prefilledMessage || s.fullUrl,
-              url: s.fullUrl,
-              ctaText: s.ctaText || 'Connect',
-            })),
-          });
+          const socHubPage = hostedPages.find((p: any) => p && (p.pageType === 'socials_hub' || String(p.id || '').includes('socials')));
+          const socItems = Array.isArray(bData.socialsQrItems) && bData.socialsQrItems.length > 0
+            ? bData.socialsQrItems
+            : (Array.isArray(socHubPage?.socialsQrItems) ? socHubPage.socialsQrItems : []);
+          if (socItems.length > 0 || (socHubPage && hasRealQrPageContent(socHubPage))) {
+            return sanitizePublicQrPage({
+              ...(socHubPage || {}),
+              id: `user_${userEmail}_socials`,
+              userEmail,
+              title: socHubPage?.title || 'Official Social Links',
+              tagline: socHubPage?.tagline || 'Connect Across All Official Social Channels & Messaging Apps',
+              description: socHubPage?.description || `Official social media profiles and community links for ${profile.name || 'our brand'}.`,
+              pageType: 'socials_hub',
+              accentColor: '#059669',
+              theme: 'emerald',
+              logo: socHubPage?.logo || profile.logo,
+              phone: socHubPage?.phone || profile.phone || '',
+              whatsapp: socHubPage?.whatsapp || cleanWa,
+              email: socHubPage?.email || profile.email || userEmail,
+              address: socHubPage?.address || profile.address || '',
+              currency: socHubPage?.currency || profile.currency || 'USD',
+              socialsQrItems: socItems,
+              menuCategories: ['Social Channels'],
+              menuItems: socItems.map((s: any) => ({
+                id: `soc-${s.id}`,
+                name: s.title || s.customPlatformName || s.platform,
+                category: 'Social Channels',
+                price: 0,
+                description: s.prefilledMessage || s.fullUrl,
+                url: s.fullUrl,
+                ctaText: s.ctaText || 'Connect',
+                itemType: s.platform,
+              })),
+            });
+          }
         }
 
         if (category === 'events') {
-          const evtItems = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
-          return sanitizePublicQrPage({
-            id: `user_${userEmail}_events`,
-            title: 'Our Events',
-            description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
-            pageType: 'events_hub',
-            accentColor: '#7c3aed',
-            theme: 'indigo',
-            logo: profile.logo,
-            phone: profile.phone || '',
-            whatsapp: cleanWa,
-            email: profile.email || userEmail,
-            address: profile.address || '',
-            currency: profile.currency || 'USD',
-            eventsQrItems: evtItems,
-            menuCategories: ['Our Events'],
-            menuItems: evtItems.map((e: any) => ({
-              id: `evt-${e.id}`,
-              name: e.title,
-              category: 'Our Events',
-              price: 0,
-              description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}`,
-              url: e.rsvpUrl,
-              ctaText: e.ctaText || 'RSVP & Join',
-            })),
-          });
+          const evtHubPage = hostedPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id || '').includes('events-hub')));
+          const topLevelEvents = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
+          const hubEvents = Array.isArray(evtHubPage?.eventsQrItems) ? evtHubPage.eventsQrItems : [];
+          const singleEventItems = hostedPages
+            .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
+            .flatMap((p: any) => p.eventsQrItems);
+          const mergedEvtMap = new Map<string, any>();
+          for (const e of [...topLevelEvents, ...hubEvents, ...singleEventItems]) {
+            if (e && e.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+          }
+          const evtItems = Array.from(mergedEvtMap.values());
+
+          if (isSingleEvent) {
+            const matchedEvt = matchEventItemById(evtItems, pageId);
+            if (matchedEvt) {
+              return buildSingleEventPublicPage(matchedEvt, userEmail, profile);
+            }
+            const matchedHostedEvt = hostedPages.find((p: any) => p && p.id === pageId && hasRealQrPageContent(p));
+            if (matchedHostedEvt) {
+              return sanitizePublicQrPage({ ...matchedHostedEvt, userEmail });
+            }
+          }
+
+          if (evtItems.length > 0 || (evtHubPage && hasRealQrPageContent(evtHubPage))) {
+            return sanitizePublicQrPage({
+              ...(evtHubPage || {}),
+              id: `user_${userEmail}_events`,
+              userEmail,
+              title: evtHubPage?.title || 'Our Events',
+              description: evtHubPage?.description || `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+              pageType: 'events_hub',
+              accentColor: '#7c3aed',
+              theme: 'indigo',
+              logo: evtHubPage?.logo || profile.logo,
+              phone: evtHubPage?.phone || profile.phone || '',
+              whatsapp: evtHubPage?.whatsapp || cleanWa,
+              email: evtHubPage?.email || profile.email || userEmail,
+              address: evtHubPage?.address || profile.address || '',
+              currency: evtHubPage?.currency || profile.currency || 'USD',
+              announcement: '',
+              eventsQrItems: evtItems,
+              menuCategories: ['Our Events'],
+              menuItems: evtItems.map((e: any) => {
+                const isWa = Boolean(e?.rsvpUrl && /wa\.me\/|whatsapp\.com\//i.test(String(e.rsvpUrl)));
+                const rawSite = String(e?.websiteUrl || (!isWa ? e?.rsvpUrl : '') || '').trim();
+                const evtSite = rawSite && rawSite !== 'https://' && rawSite !== 'http://'
+                  ? (/^https?:\/\//i.test(rawSite) ? rawSite : `https://${rawSite}`)
+                  : '';
+                return {
+                  id: `rsvp-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: e.description || '',
+                  url: evtSite || e.rsvpUrl,
+                  websiteUrl: evtSite || undefined,
+                  guestOfHonor: e.guestOfHonor || undefined,
+                  speakers: Array.isArray(e.speakers) && e.speakers.length > 0 ? e.speakers : undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  photoUrl: e.photos?.[0] || undefined,
+                };
+              }),
+            });
+          }
         }
 
-        // Business Showcase / Menu Page (prefer qrHostedPages business entry, fall back to backup inventory/photos)
-        const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
-        const hostedBiz = hostedPages.find((p: any) =>
+        // Business Showcase / Menu Page (prefer exact match or populated qrHostedPages business entry, fall back to backup inventory/photos)
+        const bizCandidates = hostedPages.filter((p: any) =>
           p &&
           p.pageType !== 'websites_hub' &&
           p.pageType !== 'socials_hub' &&
@@ -866,6 +1189,20 @@ export async function resolveHostedQrPage(
           !String(p.id || '').startsWith('websites-hub') &&
           !String(p.id || '').startsWith('socials-hub')
         );
+        const matchesBizPageId = (p: any) => {
+          if (!p?.id || !pageId) return false;
+          const pid = String(p.id).trim();
+          return (
+            pid === pageId ||
+            `business-${pid}` === pageId ||
+            pid.replace(/^qr-/, 'business-') === pageId ||
+            pageId.replace(/^business-/, '') === pid
+          );
+        };
+        const hostedBiz =
+          bizCandidates.find((p: any) => matchesBizPageId(p) && hasRealQrPageContent(p)) ||
+          bizCandidates.find((p: any) => hasRealQrPageContent(p)) ||
+          bizCandidates[0];
         const inventory = Array.isArray(bData.inventoryProducts) ? bData.inventoryProducts : (Array.isArray(bData.inventory) ? bData.inventory : []);
         let photos = Array.isArray(hostedBiz?.photos) && hostedBiz.photos.length > 0
           ? hostedBiz.photos
@@ -901,6 +1238,7 @@ export async function resolveHostedQrPage(
         return sanitizePublicQrPage({
           ...(hostedBiz || {}),
           id: `user_${userEmail}_business`,
+          userEmail,
           title: hostedBiz?.title || profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
           tagline: hostedBiz?.tagline || profile.description || 'Welcome to our official business page',
           description: hostedBiz?.description || profile.description || '',
@@ -926,18 +1264,22 @@ export async function resolveHostedQrPage(
     } catch (_) {}
   }
 
-  // 4. Default empty fallback
-  return sanitizePublicQrPage({
-    id: pageId || 'business',
-    title: userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business',
-    tagline: 'Welcome to our official business page',
-    pageType: 'menu',
-    email: userEmail,
-    currency: 'UGX',
-    menuCategories: ['All'],
-    menuItems: [],
-    photos: [],
-  });
+  // 4. Default empty fallback (marked so client can distinguish empty template from saved data and run backup recovery)
+  return {
+    ...sanitizePublicQrPage({
+      id: pageId || 'business',
+      title: userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business',
+      tagline: 'Welcome to our official business page',
+      pageType: isSingleEvent ? 'event' : isEvents ? 'events_hub' : isWebsites ? 'websites_hub' : isSocials ? 'socials_hub' : 'menu',
+      email: userEmail,
+      userEmail,
+      currency: 'UGX',
+      menuCategories: ['All'],
+      menuItems: [],
+      photos: [],
+    }),
+    isEmptyFallback: true,
+  };
 }
 
 export default {
@@ -2888,41 +3230,45 @@ export default {
           );
         }
 
-        // Check if QR page has real user content
-        const hasPageContent = Boolean(
-          (page?.eventsQrItems && page.eventsQrItems.length > 0) ||
-          (page?.websitesQrItems && page.websitesQrItems.length > 0) ||
-          (page?.socialsQrItems && page.socialsQrItems.length > 0) ||
-          (page?.menuItems && page.menuItems.length > 0) ||
-          (page?.photos && page.photos.length > 0) ||
-          (page?.tagline && page.tagline.trim() !== '') ||
-          (page?.description && page.description.trim() !== '')
-        );
+        // Determine category: canonical types (business, events, socials, websites) + single events
+        const rawType = (page?.pageType || '').toLowerCase();
+        const rawPageId = (page?.id || '').toLowerCase();
+        let category: 'business' | 'events' | 'socials' | 'websites' = 'business';
+        if (rawType.includes('website') || rawPageId.includes('website') || rawType === 'websites_hub') {
+          category = 'websites';
+        } else if (rawType.includes('social') || rawPageId.includes('social') || rawType === 'socials_hub') {
+          category = 'socials';
+        } else if (rawType.includes('event') || rawPageId.includes('event') || rawType === 'events_hub') {
+          category = 'events';
+        }
 
-        if (!hasPageContent) {
+        const isSingleEvent =
+          category === 'events' &&
+          (rawType === 'event' || (rawPageId.startsWith('event-') && !rawPageId.startsWith('events-hub') && !rawPageId.startsWith('event-hub')));
+        const canonicalId = isSingleEvent
+          ? `user_${userEmail}_event_${String(page?.id || 'item').trim()}`
+          : `user_${userEmail}_${category}`;
+
+        let existing: any = null;
+        if (db) {
+          await ensureD1Tables(db);
+          existing = await db.prepare('SELECT content_hash FROM qr_pages WHERE id = ?').bind(canonicalId).first();
+        }
+
+        // Only skip empty template saves when creating a brand-new row; allow explicit updates to existing rows (e.g. deletions)
+        const hasPageContent = hasRealQrPageContent(page);
+        if (!hasPageContent && !existing) {
           return new Response(
             JSON.stringify({ ok: true, success: true, skipped: true, message: 'QR page contains default template data. Save skipped until content is added.' }),
             { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
 
-        // Determine category: exactly 1 of 4 canonical types (business, events, socials, websites)
-        const rawType = (page?.pageType || page?.id || '').toLowerCase();
-        let category = 'business';
-        if (rawType.includes('website') || rawType === 'websites_hub') {
-          category = 'websites';
-        } else if (rawType.includes('social') || rawType === 'socials_hub') {
-          category = 'socials';
-        } else if (rawType.includes('event') || rawType === 'events_hub') {
-          category = 'events';
-        }
-
-        const canonicalId = `user_${userEmail}_${category}`;
         const sanitized = sanitizePublicQrPage({
           ...page,
-          id: canonicalId,
+          id: isSingleEvent ? (page?.id || canonicalId) : canonicalId,
           userEmail,
-          email: userEmail,
+          email: page?.email || userEmail,
         });
         const sanitizedJson = JSON.stringify(sanitized);
 
@@ -2931,10 +3277,17 @@ export default {
         const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 
         if (db) {
-          await ensureD1Tables(db);
-          // Check if content hash matches existing record
-          const existing: any = await db.prepare('SELECT content_hash FROM qr_pages WHERE id = ?').bind(canonicalId).first();
-          if (existing?.content_hash === hashHex) {
+          const isSpecificBizPage =
+            category === 'business' &&
+            page?.id &&
+            rawPageId !== 'default' &&
+            rawPageId !== 'latest' &&
+            rawPageId !== 'business' &&
+            rawPageId !== 'business-latest' &&
+            !rawPageId.startsWith('business-hub-');
+          const specificBizKey = isSpecificBizPage ? `user_${userEmail}_biz_${String(page.id).trim()}` : '';
+
+          if (existing?.content_hash === hashHex && !specificBizKey) {
             return new Response(
               JSON.stringify({
                 ok: true,
@@ -2948,15 +3301,32 @@ export default {
           }
 
           const now = new Date().toISOString();
-          await db.prepare(`
-            INSERT INTO qr_pages (id, user_email, page_json, content_hash, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET 
-              user_email = excluded.user_email,
-              page_json = excluded.page_json,
-              content_hash = excluded.content_hash,
-              updated_at = excluded.updated_at
-          `).bind(canonicalId, userEmail, sanitizedJson, hashHex, now).run();
+          if (existing?.content_hash !== hashHex) {
+            await db.prepare(`
+              INSERT INTO qr_pages (id, user_email, page_json, content_hash, updated_at)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET 
+                user_email = excluded.user_email,
+                page_json = excluded.page_json,
+                content_hash = excluded.content_hash,
+                updated_at = excluded.updated_at
+            `).bind(canonicalId, userEmail, sanitizedJson, hashHex, now).run();
+          }
+
+          if (specificBizKey) {
+            const specificExisting: any = await db.prepare('SELECT content_hash FROM qr_pages WHERE id = ?').bind(specificBizKey).first();
+            if (specificExisting?.content_hash !== hashHex) {
+              await db.prepare(`
+                INSERT INTO qr_pages (id, user_email, page_json, content_hash, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET 
+                  user_email = excluded.user_email,
+                  page_json = excluded.page_json,
+                  content_hash = excluded.content_hash,
+                  updated_at = excluded.updated_at
+              `).bind(specificBizKey, userEmail, sanitizedJson, hashHex, now).run();
+            }
+          }
         }
 
         return new Response(
@@ -2999,8 +3369,20 @@ export default {
 
       if (page) {
         return new Response(
-          JSON.stringify({ ok: true, success: true, data: { page } }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          JSON.stringify({
+            ok: true,
+            success: true,
+            isEmptyFallback: Boolean(page.isEmptyFallback),
+            data: { page },
+          }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+            },
+          }
         );
       }
 
@@ -3118,20 +3500,7 @@ export default {
         }
 
         // 2. CHECK IF USER HAS REAL CONTENT (Do not write empty default backups/qr_pages rows)
-        const hasReceipts = Array.isArray(backupData?.receipts) && backupData.receipts.length > 0;
-        const hasProducts = Array.isArray(backupData?.inventoryProducts) && backupData.inventoryProducts.length > 0;
-        const hasInvoices = Array.isArray(backupData?.invoices) && backupData.invoices.length > 0;
-        const hasCustomProfile = Boolean(
-          backupData?.profile?.name &&
-          backupData.profile.name.trim() !== '' &&
-          backupData.profile.name !== 'My Business' &&
-          backupData.profile.name !== 'brivu'
-        );
-        const hasWebsites = Array.isArray(backupData?.websitesQrItems) && backupData.websitesQrItems.length > 0;
-        const hasSocials = Array.isArray(backupData?.socialsQrItems) && backupData.socialsQrItems.length > 0;
-        const hasEvents = Array.isArray(backupData?.eventsQrItems) && backupData.eventsQrItems.length > 0;
-
-        const hasRealContent = hasReceipts || hasProducts || hasInvoices || hasCustomProfile || hasWebsites || hasSocials || hasEvents;
+        const hasRealContent = hasRealUserContent(backupData);
 
         if (!hasRealContent) {
           return new Response(
@@ -3151,13 +3520,15 @@ export default {
 
           await ensureD1Tables(db);
 
-          // Fast short-circuit if backup_data is completely identical to last saved backup (avoids N+1 CPU spikes)
+          // Fast short-circuit if backup_data is completely identical AND qr_pages already populated
           let existingBackupRow: any = null;
+          let existingQrRow: any = null;
           try {
             existingBackupRow = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
+            existingQrRow = await db.prepare('SELECT id FROM qr_pages WHERE user_email = ? LIMIT 1').bind(userEmail).first();
           } catch (_) {}
 
-          if (existingBackupRow?.backup_data === backupJson) {
+          if (existingBackupRow?.backup_data === backupJson && existingQrRow?.id) {
             return new Response(
               JSON.stringify({
                 ok: true,
@@ -3379,26 +3750,32 @@ export default {
 
           await executeD1Batch(db, batchStatements, 40);
 
-          // 8. Update canonical QR records safely (reading from qrHostedPages first so photos are NEVER overwritten with [])
+          // 8. Update canonical QR records safely (reading from qrHostedPages first so photos & styling are NEVER overwritten)
           const profile = backupData.profile || {};
           const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+          const incomingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
 
-          if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
+          const incomingWebHub = incomingPages.find((p: any) => p && (p.pageType === 'websites_hub' || String(p.id || '').includes('websites-hub')));
+          const syncWebItems = Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0
+            ? backupData.websitesQrItems
+            : (Array.isArray(incomingWebHub?.websitesQrItems) ? incomingWebHub.websitesQrItems : []);
+          if (syncWebItems.length > 0) {
             const webPage = {
-              title: 'Our Sites',
-              description: `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
+              ...(incomingWebHub || {}),
+              title: incomingWebHub?.title || 'Our Sites',
+              description: incomingWebHub?.description || `Official web links and verified online apps directory for ${profile.name || 'our company'}.`,
               pageType: 'websites_hub',
               accentColor: '#2563eb',
               theme: 'indigo',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || userEmail,
-              address: profile.address || '',
-              currency: profile.currency || 'USD',
-              websitesQrItems: backupData.websitesQrItems,
+              logo: incomingWebHub?.logo || profile.logo,
+              phone: incomingWebHub?.phone || profile.phone || '',
+              whatsapp: incomingWebHub?.whatsapp || cleanWa,
+              email: incomingWebHub?.email || profile.email || userEmail,
+              address: incomingWebHub?.address || profile.address || '',
+              currency: incomingWebHub?.currency || profile.currency || 'USD',
+              websitesQrItems: syncWebItems,
               menuCategories: ['Our Sites'],
-              menuItems: backupData.websitesQrItems.map((w: any) => ({
+              menuItems: syncWebItems.map((w: any) => ({
                 id: `web-${w.id}`,
                 name: w.title,
                 category: 'Our Sites',
@@ -3406,71 +3783,96 @@ export default {
                 description: w.description || w.url,
                 url: w.url,
                 ctaText: w.ctaText || 'Visit Website',
+                itemType: w.type,
+                phone: w.phone,
+                phoneAction: w.phoneAction,
               })),
             };
-            await saveCanonicalQrPage(db, userEmail, 'websites', webPage);
+            await saveCanonicalQrPage(db, userEmail, 'websites', webPage, { preserveExistingIfEmpty: true });
           }
 
-          if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
+          const incomingSocHub = incomingPages.find((p: any) => p && (p.pageType === 'socials_hub' || String(p.id || '').includes('socials-hub')));
+          const syncSocItems = Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0
+            ? backupData.socialsQrItems
+            : (Array.isArray(incomingSocHub?.socialsQrItems) ? incomingSocHub.socialsQrItems : []);
+          if (syncSocItems.length > 0) {
             const socPage = {
-              title: 'Official Social Links',
-              tagline: 'Connect Across All Official Social Channels & Messaging Apps',
-              description: `Official social media profiles and community links for ${profile.name || 'our brand'}.`,
+              ...(incomingSocHub || {}),
+              title: incomingSocHub?.title || 'our social media platforms',
+              tagline: incomingSocHub?.tagline || 'Connect Across All Official Social Channels & Messaging Apps',
+              description: incomingSocHub?.description || `Official social media profiles and community links for ${profile.name || 'our brand'}.`,
               pageType: 'socials_hub',
               accentColor: '#059669',
               theme: 'emerald',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || userEmail,
-              address: profile.address || '',
-              currency: profile.currency || 'USD',
-              socialsQrItems: backupData.socialsQrItems,
-              menuCategories: ['Social Channels'],
-              menuItems: backupData.socialsQrItems.map((s: any) => ({
-                id: `soc-${s.id}`,
+              logo: incomingSocHub?.logo || profile.logo,
+              phone: incomingSocHub?.phone || profile.phone || '',
+              whatsapp: incomingSocHub?.whatsapp || cleanWa,
+              email: incomingSocHub?.email || profile.email || userEmail,
+              address: incomingSocHub?.address || profile.address || '',
+              currency: incomingSocHub?.currency || profile.currency || 'USD',
+              socialsQrItems: syncSocItems,
+              menuCategories: ['Official Social Media & Messaging'],
+              menuItems: syncSocItems.map((s: any) => ({
+                id: `social-${s.id}`,
                 name: s.title || s.customPlatformName || s.platform,
-                category: 'Social Channels',
+                category: 'Official Social Media & Messaging',
                 price: 0,
                 description: s.prefilledMessage || s.fullUrl,
                 url: s.fullUrl,
                 ctaText: s.ctaText || 'Connect',
+                itemType: s.platform,
               })),
             };
-            await saveCanonicalQrPage(db, userEmail, 'socials', socPage);
+            await saveCanonicalQrPage(db, userEmail, 'socials', socPage, { preserveExistingIfEmpty: true });
           }
 
-          if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
+          const incomingEvtHub = incomingPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id || '').includes('events-hub')));
+          const syncEvtItems = Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0
+            ? backupData.eventsQrItems
+            : (Array.isArray(incomingEvtHub?.eventsQrItems) ? incomingEvtHub.eventsQrItems : []);
+          if (syncEvtItems.length > 0) {
             const evtPage = {
-              title: 'Our Events',
-              description: `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
+              ...(incomingEvtHub || {}),
+              title: incomingEvtHub?.title || 'Our Events',
+              description: incomingEvtHub?.description || `Browse our events and get access passes for ${profile.name || 'our organization'}.`,
               pageType: 'events_hub',
-              accentColor: '#7c3aed',
+              accentColor: incomingEvtHub?.accentColor || '#7c3aed',
               theme: 'indigo',
-              logo: profile.logo,
-              phone: profile.phone || '',
-              whatsapp: cleanWa,
-              email: profile.email || userEmail,
-              address: profile.address || '',
-              currency: profile.currency || 'USD',
-              eventsQrItems: backupData.eventsQrItems,
+              logo: incomingEvtHub?.logo || profile.logo,
+              phone: incomingEvtHub?.phone || profile.phone || '',
+              whatsapp: incomingEvtHub?.whatsapp || cleanWa,
+              email: incomingEvtHub?.email || profile.email || userEmail,
+              address: incomingEvtHub?.address || profile.address || '',
+              currency: incomingEvtHub?.currency || profile.currency || 'UGX',
+              announcement: '',
+              eventsQrItems: syncEvtItems,
               menuCategories: ['Our Events'],
-              menuItems: backupData.eventsQrItems.map((e: any) => ({
-                id: `evt-${e.id}`,
-                name: e.title,
-                category: 'Our Events',
-                price: 0,
-                description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}`,
-                url: e.rsvpUrl,
-                ctaText: e.ctaText || 'RSVP & Join',
-              })),
+              menuItems: syncEvtItems.map((e: any) => {
+                const isWa = Boolean(e?.rsvpUrl && /wa\.me\/|whatsapp\.com\//i.test(String(e.rsvpUrl)));
+                const rawSite = String(e?.websiteUrl || (!isWa ? e?.rsvpUrl : '') || '').trim();
+                const evtSite = rawSite && rawSite !== 'https://' && rawSite !== 'http://'
+                  ? (/^https?:\/\//i.test(rawSite) ? rawSite : `https://${rawSite}`)
+                  : '';
+                return {
+                  id: `rsvp-${e.id}`,
+                  name: e.title,
+                  category: 'Our Events',
+                  price: 0,
+                  description: e.description || '',
+                  url: evtSite || e.rsvpUrl,
+                  websiteUrl: evtSite || undefined,
+                  guestOfHonor: e.guestOfHonor || undefined,
+                  speakers: Array.isArray(e.speakers) && e.speakers.length > 0 ? e.speakers : undefined,
+                  ctaText: e.ctaText || 'RSVP & Join',
+                  photoUrl: e.photos?.[0] || undefined,
+                };
+              }),
             };
-            await saveCanonicalQrPage(db, userEmail, 'events', evtPage);
+            await saveCanonicalQrPage(db, userEmail, 'events', evtPage, { preserveExistingIfEmpty: true });
           }
 
           // D. Business Showcase — read from backupData.qrHostedPages instead of non-existent backupData.photos
-          const incomingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
-          const incomingBizPage = incomingPages.find((p: any) =>
+          const bizCandidates = incomingPages.filter((p: any) =>
             p &&
             p.pageType !== 'websites_hub' &&
             p.pageType !== 'socials_hub' &&
@@ -3481,6 +3883,7 @@ export default {
             !String(p.id || '').startsWith('websites-hub') &&
             !String(p.id || '').startsWith('socials-hub')
           );
+          const incomingBizPage = bizCandidates.find(hasRealQrPageContent) || bizCandidates[0];
           const inv = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : (Array.isArray(backupData.inventory) ? backupData.inventory : []);
           const photos = Array.isArray(incomingBizPage?.photos) && incomingBizPage.photos.length > 0
             ? incomingBizPage.photos
@@ -3521,9 +3924,12 @@ export default {
               : Array.from(new Set(['All', ...inv.map((i: any) => i.category || 'Items')])),
             menuItems: bizMenuItems,
           };
-          await saveCanonicalQrPage(db, userEmail, 'business', bizPage, {
-            preserveExistingPhotosIfEmpty: !incomingBizPage || photos.length === 0,
-          });
+          if (hasRealQrPageContent(bizPage)) {
+            await saveCanonicalQrPage(db, userEmail, 'business', bizPage, {
+              preserveExistingPhotosIfEmpty: true,
+              preserveExistingIfEmpty: true,
+            });
+          }
         }
 
         return new Response(
@@ -3811,7 +4217,11 @@ export default {
           }),
           {
             status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+            },
           }
         );
       } catch (err: any) {
@@ -4098,39 +4508,71 @@ export default {
       }
     }
 
-    // 5. Try serving exact static asset from ASSETS binding
-    try {
-      const response = await env.ASSETS.fetch(request);
-      if (response.status !== 404) {
-        const newHeaders = new Headers(response.headers);
-        Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
-        return new Response(response.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: newHeaders,
-        });
+    // Detect QR & Store HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
+    const isStaticAssetExt = /\.[a-z0-9]{1,8}$/i.test(url.pathname) && !url.pathname.endsWith('.html');
+    const isQrRoute =
+      url.pathname === '/qr' ||
+      url.pathname.startsWith('/qr/') ||
+      url.pathname === '/menu' ||
+      url.pathname.startsWith('/menu/') ||
+      url.searchParams.has('qr') ||
+      url.searchParams.has('email') ||
+      url.searchParams.has('u') ||
+      url.searchParams.has('user') ||
+      url.searchParams.has('event') ||
+      url.searchParams.has('eventId') ||
+      url.searchParams.has('events') ||
+      url.searchParams.has('website') ||
+      url.searchParams.has('websiteId') ||
+      url.searchParams.has('websites') ||
+      url.searchParams.has('social') ||
+      url.searchParams.has('socialId') ||
+      url.searchParams.has('socials');
+    const isStoreRoute =
+      url.pathname === '/store' ||
+      url.pathname.startsWith('/store/') ||
+      url.searchParams.has('store');
+    const shouldInjectSsrHtml =
+      request.method === 'GET' && !isStaticAssetExt && (isQrRoute || isStoreRoute);
+
+    // 5. Try serving exact static asset from ASSETS binding (skip for HTML QR/Store routes so Step 6 preloads user data)
+    if (!shouldInjectSsrHtml) {
+      try {
+        const response = await env.ASSETS.fetch(request);
+        if (response.status !== 404) {
+          const newHeaders = new Headers(response.headers);
+          Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+          return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: newHeaders,
+          });
+        }
+      } catch {
+        // Ignore asset lookup errors and proceed to SPA fallback
       }
-    } catch {
-      // Ignore asset lookup errors and proceed to SPA fallback
     }
 
-    // 6. SPA Fallback: Serve /index.html for client-side React routes with pre-injected QR data
+    // 6. SPA Fallback: Serve /index.html for client-side React routes with pre-injected QR / Store data
     try {
       const indexUrl = new URL('/index.html', url.origin);
       const indexResponse = await env.ASSETS.fetch(new Request(indexUrl, request));
       let html = await indexResponse.text();
 
-      // Check if this is a QR customer request or request with explicit email / qr params (skip bare /)
-      const isQrRoute =
-        url.pathname.includes('/qr') ||
-        url.pathname.includes('/menu') ||
-        url.searchParams.has('qr') ||
-        url.searchParams.has('email') ||
-        url.searchParams.has('u') ||
-        url.searchParams.has('user') ||
-        url.searchParams.has('event') ||
-        url.searchParams.has('website') ||
-        url.searchParams.has('social');
+      const safeScriptJson = (val: any): string =>
+        JSON.stringify(val)
+          .replace(/</g, '\\u003c')
+          .replace(/>/g, '\\u003e')
+          .replace(/&/g, '\\u0026')
+          .replace(/\u2028/g, '\\u2028')
+          .replace(/\u2029/g, '\\u2029');
+      const escapeHtmlText = (str: string): string =>
+        String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
 
       const emailParam = (
         url.searchParams.get('email') ||
@@ -4142,37 +4584,42 @@ export default {
         ''
       ).toLowerCase().trim();
 
-      let pageIdParam = url.searchParams.get('qr') || url.searchParams.get('event') || url.searchParams.get('website') || url.searchParams.get('social') || '';
+      const tabParam = (url.searchParams.get('tab') || '').toLowerCase().trim();
+      let pageIdParam =
+        url.searchParams.get('qr') ||
+        url.searchParams.get('event') ||
+        url.searchParams.get('eventId') ||
+        (url.searchParams.get('events') ? 'events-hub-all' : '') ||
+        url.searchParams.get('website') ||
+        url.searchParams.get('websiteId') ||
+        (url.searchParams.get('websites') ? 'websites-hub-all' : '') ||
+        url.searchParams.get('social') ||
+        url.searchParams.get('socialId') ||
+        (url.searchParams.get('socials') ? 'socials-hub-all' : '') ||
+        '';
       if (!pageIdParam && url.pathname.includes('/qr/')) {
         pageIdParam = decodeURIComponent(url.pathname.split('/qr/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
       }
-      if (!pageIdParam && isQrRoute) {
-        pageIdParam = 'latest';
+      if (!pageIdParam) {
+        if (tabParam === 'websites' || tabParam === 'website') pageIdParam = 'websites-hub-all';
+        else if (tabParam === 'socials' || tabParam === 'social') pageIdParam = 'socials-hub-all';
+        else if (tabParam === 'events' || tabParam === 'event') pageIdParam = 'events-hub-all';
+        else if (isQrRoute) pageIdParam = 'latest';
       }
 
       if (isQrRoute) {
         try {
           const preloadedPage = await resolveHostedQrPage(env, pageIdParam, emailParam);
-          const hasItems = (p: any): boolean => {
-            if (!p) return false;
-            if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
-            if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
-            if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
-            if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
-            if (Array.isArray(p.photos) && p.photos.length > 0) return true;
-            return false;
-          };
-
-          if (preloadedPage && hasItems(preloadedPage)) {
+          if (preloadedPage && !preloadedPage.isEmptyFallback && hasRealQrPageContent(preloadedPage)) {
             const resolvedEmail = emailParam || preloadedPage.userEmail || preloadedPage.email || '';
-            const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${JSON.stringify(preloadedPage)};window.__OWNER_EMAIL__=${JSON.stringify(resolvedEmail)};</script>`;
+            const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${safeScriptJson(preloadedPage)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
             if (html.includes('</head>')) {
               html = html.replace('</head>', `${scriptTag}</head>`);
             } else {
               html = `${scriptTag}${html}`;
             }
             if (preloadedPage.title) {
-              html = html.replace(/<title>.*?<\/title>/i, `<title>${preloadedPage.title} | Brivu</title>`);
+              html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(preloadedPage.title)} | Brivu</title>`);
             }
           }
         } catch (_) {}
@@ -4194,14 +4641,14 @@ export default {
             const row: any = await db.prepare('SELECT catalog_json FROM store_catalogs WHERE slug = ?').bind(storeSlugParam).first();
             if (row?.catalog_json) {
               const parsed = JSON.parse(row.catalog_json);
-              const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${JSON.stringify(parsed)};window.__STORE_SLUG__=${JSON.stringify(storeSlugParam)};</script>`;
+              const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(parsed)};window.__STORE_SLUG__=${safeScriptJson(storeSlugParam)};</script>`;
               if (html.includes('</head>')) {
                 html = html.replace('</head>', `${scriptTag}</head>`);
               } else {
                 html = `${scriptTag}${html}`;
               }
               const storeTitle = parsed?.business?.name || parsed?.settings?.businessName || 'Live Catalog';
-              html = html.replace(/<title>.*?<\/title>/i, `<title>${storeTitle} | Brivu</title>`);
+              html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
             }
           }
         } catch (_) {}
@@ -4210,6 +4657,9 @@ export default {
       const newHeaders = new Headers(indexResponse.headers);
       Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
       newHeaders.set('Content-Type', 'text/html; charset=utf-8');
+      if (isQrRoute || storeSlugParam) {
+        newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      }
       return new Response(html, {
         status: indexResponse.status,
         statusText: indexResponse.statusText,

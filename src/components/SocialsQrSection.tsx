@@ -438,24 +438,15 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     );
   };
 
-  // Save to storage & Cloudflare
+  // Save to storage & Cloudflare (skip redundant mount writes)
+  const isFirstRenderRef = React.useRef(true);
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
     StorageService.saveSocialsQrItems(items);
-    if (items.length > 0) {
-      QRHostingService.syncAllSocialsPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
   }, [items, business]);
-
-  // Cloudflare sync on mount
-  useEffect(() => {
-    if (items.length > 0) {
-      QRHostingService.syncAllSocialsPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-  }, [business]);
 
   // Generate QR for active item or ALL hub
   useEffect(() => {

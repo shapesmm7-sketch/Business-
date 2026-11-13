@@ -26,6 +26,7 @@ import {
   Mail,
   Layers,
   Eye,
+  Globe,
 } from 'lucide-react';
 import { BusinessProfile, EventQrItem, QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
@@ -73,6 +74,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [rsvpMode, setRsvpMode] = useState<'phone' | 'url'>('phone');
   const [formRsvpPhone, setFormRsvpPhone] = useState<string>('');
   const [formRsvpUrl, setFormRsvpUrl] = useState<string>('https://');
+  const [formWebsiteUrl, setFormWebsiteUrl] = useState<string>('');
   const [formContactPhone, setFormContactPhone] = useState<string>('');
   const [formContactEmail, setFormContactEmail] = useState<string>('');
   const [formCta, setFormCta] = useState<string>('Scan to RSVP & Join Event');
@@ -156,24 +158,15 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     );
   };
 
-  // Persistence & Cloudflare Sync
+  // Persistence & Cloudflare Sync (skip redundant mount writes; StorageService.saveEventsQrItems handles hub/item sync)
+  const isFirstRenderRef = React.useRef(true);
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
     StorageService.saveEventsQrItems(items);
-    if (items.length > 0) {
-      QRHostingService.syncAllEventsPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
   }, [items, business]);
-
-  // Cloudflare sync on mount
-  useEffect(() => {
-    if (items.length > 0) {
-      QRHostingService.syncAllEventsPages(items, business);
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-  }, []);
 
   // Generate QR
   useEffect(() => {
@@ -202,6 +195,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     const defaultPhone = (business.whatsapp || business.phone || '').trim();
     setFormRsvpPhone(defaultPhone);
     setFormRsvpUrl(business.website || 'https://');
+    setFormWebsiteUrl(business.website || '');
     setRsvpMode(defaultPhone ? 'phone' : 'url');
     setFormContactPhone(defaultPhone);
     setFormContactEmail(business.email || '');
@@ -235,6 +229,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       setFormRsvpUrl(item.rsvpUrl || 'https://');
       setFormRsvpPhone(item.contactPhone || '');
     }
+    setFormWebsiteUrl(item.websiteUrl || '');
     setFormContactPhone(item.contactPhone || '');
     setFormContactEmail(item.contactEmail || '');
     setFormCta(item.ctaText);
@@ -327,6 +322,12 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       }
     }
 
+    const rawWebsite = formWebsiteUrl.trim();
+    let cleanWebsiteUrl = '';
+    if (rawWebsite && rawWebsite !== 'https://' && rawWebsite !== 'http://') {
+      cleanWebsiteUrl = /^https?:\/\//i.test(rawWebsite) ? rawWebsite : `https://${rawWebsite}`;
+    }
+
     const parsedSpeakers = formSpeakers
       .split(',')
       .map((s) => s.trim())
@@ -343,6 +344,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         eventDate: formStartDate || editingItem.eventDate || '',
         location: formLocation.trim() || 'Venue Location',
         rsvpUrl: cleanRsvp,
+        websiteUrl: cleanWebsiteUrl || undefined,
         contactPhone: formContactPhone.trim() || undefined,
         contactEmail: formContactEmail.trim() || undefined,
         ctaText: formCta.trim() || 'Scan to RSVP',
@@ -351,10 +353,9 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         speakers: parsedSpeakers.length > 0 ? parsedSpeakers : undefined,
         photos: formPhotos,
       };
-      setItems((prev) =>
-        prev.map((i) => (i.id === editingItem.id ? updatedItem : i))
-      );
-      QRHostingService.syncEventPage(updatedItem, business);
+      const nextItems = items.map((i) => (i.id === editingItem.id ? updatedItem : i));
+      setItems(nextItems);
+      QRHostingService.syncEventPage(updatedItem, business, nextItems);
       showToast('Event QR updated & hosted on Cloud!');
     } else {
       const newItem: EventQrItem = {
@@ -367,6 +368,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         eventDate: formStartDate || '',
         location: formLocation.trim() || 'Venue Location',
         rsvpUrl: cleanRsvp,
+        websiteUrl: cleanWebsiteUrl || undefined,
         contactPhone: formContactPhone.trim() || undefined,
         contactEmail: formContactEmail.trim() || undefined,
         ctaText: formCta.trim() || 'Scan to RSVP',
@@ -379,9 +381,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         eyeColor: '#6d28d9',
         createdAt: new Date().toISOString(),
       };
-      setItems((prev) => [newItem, ...prev]);
+      const nextItems = [newItem, ...items];
+      setItems(nextItems);
       setSelectedItemId(newItem.id);
-      QRHostingService.syncEventPage(newItem, business);
+      QRHostingService.syncEventPage(newItem, business, nextItems);
       showToast('New Event QR created & hosted on Cloud!');
     }
     setShowModal(false);
@@ -851,6 +854,19 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                           </a>
                         </div>
                       )}
+
+                      {(() => {
+                        const siteUrl = activeItem?.websiteUrl || (activeItem?.rsvpUrl && !/wa\.me\/|whatsapp\.com\//i.test(activeItem.rsvpUrl) ? activeItem.rsvpUrl : '');
+                        if (!siteUrl) return null;
+                        return (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                            <Globe className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                            <a href={siteUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-purple-600 dark:text-purple-400 break-all">
+                              Website: {siteUrl}
+                            </a>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <a
@@ -1288,6 +1304,21 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   {t('organizer_email_help', business?.language)}
                 </p>
+              </div>
+
+              {/* Event Website URL (Optional) */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span>Event Website URL (Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://yourevent.com"
+                  value={formWebsiteUrl}
+                  onChange={(e) => setFormWebsiteUrl(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs font-mono focus:ring-2 focus:ring-purple-500 focus:outline-hidden text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                />
               </div>
 
               {/* Call-To-Action Text */}

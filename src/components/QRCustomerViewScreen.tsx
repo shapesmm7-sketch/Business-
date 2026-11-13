@@ -400,7 +400,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   };
 
   const handleSharePhoto = async (photo: QRBusinessPhoto) => {
-    const url = QRHostingService.getCustomerPhotoUrl(page.id, photo.id);
+    const url = QRHostingService.getCustomerPhotoUrl(page.id, photo.id, page.userEmail || page.email, true);
     const title = `${photo.title || 'Photo'} - ${page.title}`;
     const text = photo.description || `Check out this photo from ${page.title}`;
     const res = await shareContent({
@@ -555,6 +555,30 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     );
     const waRsvpUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${defaultRsvpMsg}` : '';
 
+    const isWaUrl = (u?: string): boolean => Boolean(u && /wa\.me\/|whatsapp\.com\//i.test(u));
+    const normalizeHttpUrl = (raw?: string): string => {
+      const s = (raw || '').trim();
+      if (!s || s === 'https://' || s === 'http://' || isWaUrl(s)) return '';
+      return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+    };
+
+    const initialQrObj = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+    const singleEvtCandidate =
+      page.eventsQrItems?.[0] ||
+      initialQrObj?.eventsQrItems?.[0] ||
+      (isMerchantPreview ? StorageService.getEventsQrItems().find((e) => e.id === page.id) : null) ||
+      null;
+    const singleMenuFallback = (page.menuItems?.[0] || initialQrObj?.menuItems?.[0] || null) as any;
+    const heroWebsiteUrl = !isEventsHub
+      ? normalizeHttpUrl(
+          singleEvtCandidate?.websiteUrl ||
+            (!isWaUrl(singleEvtCandidate?.rsvpUrl) ? singleEvtCandidate?.rsvpUrl : '') ||
+            singleMenuFallback?.websiteUrl ||
+            (!isWaUrl(singleMenuFallback?.url) ? singleMenuFallback?.url : '') ||
+            page.socialLinks?.website
+        )
+      : '';
+
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-purple-500 selection:text-white pb-24">
         {/* Merchant preview top bar */}
@@ -644,7 +668,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                   </div>
                 )}
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-                  {cleanForbiddenWords(isEventsHub ? 'our Events' : (page.title || 'our Events'))}
+                  {cleanForbiddenWords(isEventsHub ? 'Our Events' : (page.title || 'Our Events'))}
                 </h1>
                 {page.tagline && !isEventsHub && cleanForbiddenWords(page.tagline) && (
                   <p className="text-xs sm:text-sm text-purple-200/90 font-medium mt-1 leading-snug">
@@ -655,23 +679,35 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             </div>
 
             {/* Quick Actions Bar */}
-            <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-white/10">
+            <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-white/10">
               {waRsvpUrl ? (
                 <a
                   href={waRsvpUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-emerald-600/30"
+                  className="flex-1 min-w-[80px] flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-emerald-600/30"
                 >
                   <MessageCircle className="w-4 h-4 mb-1" />
                   <span className="truncate w-full text-[11px]">RSVP WhatsApp</span>
                 </a>
               ) : null}
 
+              {heroWebsiteUrl ? (
+                <a
+                  href={heroWebsiteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 min-w-[80px] flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition active:scale-98 text-center shadow-sm shadow-purple-600/30"
+                >
+                  <Globe className="w-4 h-4 mb-1" />
+                  <span className="truncate w-full text-[11px]">Website</span>
+                </a>
+              ) : null}
+
               {page.phone ? (
                 <a
                   href={`tel:${page.phone}`}
-                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                  className="flex-1 min-w-[80px] flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
                 >
                   <Phone className="w-4 h-4 mb-1 text-purple-300" />
                   <span className="truncate w-full text-[11px]">Call Host</span>
@@ -683,7 +719,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                   href={page.googleMapsUrl || `https://maps.google.com/?q=${encodeURIComponent(page.address)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
+                  className="flex-1 min-w-[80px] flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition active:scale-98 text-center"
                 >
                   <MapPin className="w-4 h-4 mb-1 text-purple-300" />
                   <span className="truncate w-full text-[11px]">Venue Map</span>
@@ -693,51 +729,38 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
           </div>
         </div>
 
-        {/* Announcement Banner */}
-        {page.announcement && !page.announcement.includes('0 Upcoming Events') && (
-          <div className="bg-purple-50 dark:bg-purple-950/50 border-b border-purple-200 dark:border-purple-900/60 px-4 py-2.5 text-xs text-purple-900 dark:text-purple-200 font-semibold flex items-center gap-2 shadow-2xs">
-            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-            <p className="flex-1">{page.announcement}</p>
-          </div>
-        )}
-
         {/* Main Event Content */}
         {(() => {
-          let effectiveEventsList = (page.menuItems && page.menuItems.length > 0)
-            ? page.menuItems
-            : (page.eventsQrItems && page.eventsQrItems.length > 0)
-              ? page.eventsQrItems.map((e: any) => ({
-                  id: `event-pass-${e.id}`,
-                  name: e.title,
-                  category: 'Our Events',
-                  price: 0,
-                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                  url: e.rsvpUrl || undefined,
-                  ctaText: e.ctaText || 'RSVP & Join',
-                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                  isSpecial: true,
-                  isAvailable: true,
-                  photoUrl: e.photos?.[0] || undefined,
-                }))
-              : [];
+          const mapEventsToMenuItems = (evts: any[]): QRMenuItem[] =>
+            evts.map((e: any) => ({
+              id: `rsvp-${e.id}`,
+              name: e.title,
+              category: 'Our Events',
+              price: 0,
+              description: e.description || '',
+              url: e.websiteUrl || e.rsvpUrl || undefined,
+              websiteUrl: normalizeHttpUrl(e.websiteUrl || (!isWaUrl(e.rsvpUrl) ? e.rsvpUrl : '')) || undefined,
+              guestOfHonor: e.guestOfHonor || undefined,
+              speakers: Array.isArray(e.speakers) && e.speakers.length > 0 ? e.speakers : undefined,
+              ctaText: e.ctaText || 'RSVP & Join',
+              tags: [e.startDate || 'Upcoming', e.location || 'Event'],
+              isSpecial: true,
+              isAvailable: true,
+              photoUrl: e.photos?.[0] || undefined,
+            }));
+
+          let effectiveEventsList: QRMenuItem[] =
+            page.menuItems && page.menuItems.length > 0
+              ? page.menuItems
+              : page.eventsQrItems && page.eventsQrItems.length > 0
+                ? mapEventsToMenuItems(page.eventsQrItems)
+                : [];
 
           if (effectiveEventsList.length === 0) {
             try {
               const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
               if (initial?.eventsQrItems && initial.eventsQrItems.length > 0) {
-                effectiveEventsList = initial.eventsQrItems.map((e: any) => ({
-                  id: `event-pass-${e.id}`,
-                  name: e.title,
-                  category: 'Our Events',
-                  price: 0,
-                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                  url: e.rsvpUrl || undefined,
-                  ctaText: e.ctaText || 'RSVP & Join',
-                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                  isSpecial: true,
-                  isAvailable: true,
-                  photoUrl: e.photos?.[0] || undefined,
-                }));
+                effectiveEventsList = mapEventsToMenuItems(initial.eventsQrItems);
               } else if (initial?.menuItems && initial.menuItems.length > 0 && (initial.pageType === 'events_hub' || String(initial.id).includes('events'))) {
                 effectiveEventsList = initial.menuItems;
               }
@@ -747,22 +770,17 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
             try {
               const stored = StorageService.getEventsQrItems();
               if (stored && stored.length > 0) {
-                effectiveEventsList = stored.map((e: any) => ({
-                  id: `event-pass-${e.id}`,
-                  name: e.title,
-                  category: 'Our Events',
-                  price: 0,
-                  description: `${e.startDate ? e.startDate + ' • ' : ''}${e.location || ''}${e.description ? ' • ' + e.description : ''}`,
-                  url: e.rsvpUrl || undefined,
-                  ctaText: e.ctaText || 'RSVP & Join',
-                  tags: [e.startDate || 'Upcoming', e.location || 'Event'],
-                  isSpecial: true,
-                  isAvailable: true,
-                  photoUrl: e.photos?.[0] || undefined,
-                }));
+                effectiveEventsList = mapEventsToMenuItems(stored);
               }
             } catch {}
           }
+
+          const allKnownEvents =
+            (page.eventsQrItems && page.eventsQrItems.length > 0)
+              ? page.eventsQrItems
+              : (initialQrObj?.eventsQrItems && initialQrObj.eventsQrItems.length > 0)
+                ? initialQrObj.eventsQrItems
+                : (isMerchantPreview ? StorageService.getEventsQrItems() : []);
 
           return (
             <main className="max-w-2xl mx-auto px-4 pt-5 flex-1 w-full space-y-6">
@@ -780,14 +798,333 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               {isEventsHub ? (
                 effectiveEventsList.length > 0 ? (
                   <div className="space-y-6">
-                    {effectiveEventsList.map((evtItem) => {
+                    {effectiveEventsList.map((evtItem, evtIdx) => {
+                      const matchingEvt =
+                        allKnownEvents.find(
+                          (e: any) =>
+                            `rsvp-${e.id}` === evtItem.id ||
+                            `evt-${e.id}` === evtItem.id ||
+                            `event-pass-${e.id}` === evtItem.id ||
+                            `event-${e.id}` === evtItem.id ||
+                            e.id === evtItem.id ||
+                            (e.title && evtItem.name && e.title.trim().toLowerCase() === evtItem.name.trim().toLowerCase())
+                        ) ||
+                        allKnownEvents[evtIdx] ||
+                        null;
+
+                      const evtLocation = matchingEvt?.location || page.address;
+                      const evtStartDate = matchingEvt?.startDate || matchingEvt?.eventDate;
+                      const evtEndDate = matchingEvt?.endDate || evtStartDate;
+                      const evtStartTime = matchingEvt?.startTime;
+                      const evtEndTime = matchingEvt?.endTime;
+                      const evtPhone = matchingEvt?.contactPhone || (matchingEvt as any)?.phone || page.phone || page.whatsapp;
+                      const evtEmail = matchingEvt?.contactEmail || (matchingEvt as any)?.email || page.email;
+                      const evtGuestOfHonor = matchingEvt?.guestOfHonor || evtItem.guestOfHonor;
+                      const evtSpeakers =
+                        matchingEvt?.speakers && matchingEvt.speakers.length > 0
+                          ? matchingEvt.speakers
+                          : Array.isArray(evtItem.speakers) && evtItem.speakers.length > 0
+                            ? evtItem.speakers
+                            : [];
+                      const evtWebsiteUrl = normalizeHttpUrl(
+                        matchingEvt?.websiteUrl ||
+                          evtItem.websiteUrl ||
+                          (!isWaUrl(matchingEvt?.rsvpUrl) ? matchingEvt?.rsvpUrl : '') ||
+                          (!isWaUrl(evtItem.url) ? evtItem.url : '')
+                      );
+                      const evtOnlineRsvpUrl = normalizeHttpUrl(
+                        !isWaUrl(matchingEvt?.rsvpUrl) ? matchingEvt?.rsvpUrl : !isWaUrl(evtItem.url) ? evtItem.url : ''
+                      );
+                      const hasDistinctOnlineRsvp = Boolean(evtOnlineRsvpUrl && evtOnlineRsvpUrl !== evtWebsiteUrl);
+
+                      const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
+                      const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
+                      const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
+
                       const evtRsvpMsg = encodeURIComponent(
                         `👋 Hello,\nI would like to RSVP for *${evtItem.name}*!\n\nPlease confirm ticket availability and booking. Thank you!`
                       );
-                      const evtWaUrl = cleanWaNumber ? `https://wa.me/${cleanWaNumber}?text=${evtRsvpMsg}` : '';
+                      const evtRsvpPhoneDigits = matchingEvt?.rsvpUrl && isWaUrl(matchingEvt.rsvpUrl)
+                        ? (matchingEvt.rsvpUrl.match(/wa\.me\/([0-9]+)/)?.[1] || cleanWaNumber)
+                        : (evtPhone ? String(evtPhone).replace(/[^0-9]/g, '') : cleanWaNumber);
+                      const evtWaUrl = evtRsvpPhoneDigits ? `https://wa.me/${evtRsvpPhoneDigits}?text=${evtRsvpMsg}` : '';
 
                       return (
                         <div key={evtItem.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
+                          {/* Post Header */}
+                          <div className="flex items-center gap-3 px-4 pt-4">
+                            {page.logo ? (
+                              <img src={page.logo} alt="Organizer" className="w-10 h-10 rounded-full object-cover border border-slate-100" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                                {page.title.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <h3 className="text-sm font-black text-slate-900 dark:text-white leading-tight">
+                                {page.title}
+                              </h3>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                                Official Invitation • RSVP Open
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Image / Poster - Full Width */}
+                          {evtItem.photoUrl ? (
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 overflow-hidden border-y border-slate-100 dark:border-slate-800 max-h-[480px]">
+                              <img
+                                src={evtItem.photoUrl}
+                                alt={evtItem.name}
+                                className="w-full h-auto object-cover max-h-[480px]"
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full aspect-video bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-950/40 dark:to-slate-900 border-y border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-purple-600/60 dark:text-purple-400/50 p-6">
+                              <Ticket className="w-16 h-16 stroke-[1.5] mb-2 animate-pulse" />
+                              <span className="text-xs font-black uppercase tracking-wider">Business Event Pass</span>
+                            </div>
+                          )}
+
+                          {/* Details Box */}
+                          <div className="px-4 space-y-3.5">
+                            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-snug">
+                              {evtItem.name}
+                            </h2>
+
+                            {evtItem.description && (
+                              <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                {evtItem.description}
+                              </p>
+                            )}
+
+                            <div className="space-y-3 pt-1">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                                {evtLocation && (
+                                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                    <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                        Location: {evtLocation}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {evtStartDate && (
+                                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                    <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                        Start Date: {evtStartDate}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {evtEndDate && (
+                                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                    <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                        End Date: {evtEndDate}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {(formattedStartTime || formattedEndTime) && (
+                                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                                    <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
+                                      <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                        {formattedStartTime && hasEndTime ? (
+                                          `Time: ${formattedStartTime} - ${formattedEndTime}`
+                                        ) : formattedStartTime ? (
+                                          `Start Time: ${formattedStartTime}`
+                                        ) : (
+                                          `End Time: ${formattedEndTime}`
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {evtGuestOfHonor && (
+                                <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                                  <span className="text-[10px] font-black uppercase tracking-wide text-amber-600 dark:text-amber-400 block mb-0.5">Guest of Honor</span>
+                                  <p className="font-bold">{evtGuestOfHonor}</p>
+                                </div>
+                              )}
+
+                              {evtSpeakers.length > 0 && (
+                                <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200">
+                                  <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600 dark:text-indigo-400 block mb-1">Key Speakers</span>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {evtSpeakers.map((sp: string, idx: number) => (
+                                      <span key={idx} className="px-2.5 py-1 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-xs text-indigo-900 dark:text-indigo-200">
+                                        {sp}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {evtWebsiteUrl && (
+                                <a
+                                  href={evtWebsiteUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center justify-between gap-2.5 p-3.5 rounded-2xl bg-purple-50/80 dark:bg-purple-950/30 border border-purple-200/70 dark:border-purple-900/40 text-xs text-purple-900 dark:text-purple-200 hover:bg-purple-100/80 dark:hover:bg-purple-900/40 transition"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <Globe className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black uppercase tracking-wide text-purple-600 dark:text-purple-400 block">Event Website</span>
+                                      <p className="font-bold text-purple-800 dark:text-purple-200 truncate underline">{evtWebsiteUrl}</p>
+                                    </div>
+                                  </div>
+                                  <ExternalLink className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                </a>
+                              )}
+
+                              {(evtPhone || evtEmail) && (
+                                <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                                  <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {evtPhone && (
+                                      <div className="flex items-center gap-2">
+                                        <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                        <div className="min-w-0">
+                                          <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
+                                          <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
+                                            Phone: {evtPhone}
+                                          </a>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {evtEmail && (
+                                      <div className="flex items-center gap-2">
+                                        <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                                        <div className="min-w-0">
+                                          <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
+                                          <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
+                                            Email: {evtEmail}
+                                          </a>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action buttons */}
+                            <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-1">
+                              {evtWaUrl && (
+                                <a
+                                  href={evtWaUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                  <span>Confirm RSVP on WhatsApp</span>
+                                </a>
+                              )}
+
+                              {evtWebsiteUrl && (
+                                <a
+                                  href={evtWebsiteUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
+                                >
+                                  <Globe className="w-4 h-4" />
+                                  <span>Visit Event Website</span>
+                                </a>
+                              )}
+
+                              {hasDistinctOnlineRsvp && (
+                                <a
+                                  href={evtOnlineRsvpUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                  <span>Online Tickets / RSVP</span>
+                                </a>
+                              )}
+
+                              {(evtLocation || page.address) && (
+                                <a
+                                  href={page.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evtLocation || page.address || '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition active:scale-98 text-center"
+                                >
+                                  <MapPin className="w-4 h-4 text-rose-500" />
+                                  <span>Open Maps</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
+                    <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                      No Events Scheduled Yet
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Upcoming events and official RSVP invitation passes will appear here.
+                    </p>
+                  </div>
+                )
+              ) : (() => {
+                const singleEvt = singleEvtCandidate;
+                const evtLocation = singleEvt?.location || page.address;
+                const evtStartDate = singleEvt?.startDate || singleEvt?.eventDate;
+                const evtEndDate = singleEvt?.endDate || evtStartDate;
+                const evtStartTime = singleEvt?.startTime;
+                const evtEndTime = singleEvt?.endTime;
+                const evtPhone = singleEvt?.contactPhone || (singleEvt as any)?.phone || page.phone || page.whatsapp;
+                const evtEmail = singleEvt?.contactEmail || (singleEvt as any)?.email || page.email;
+                const evtGuestOfHonor = singleEvt?.guestOfHonor || singleMenuFallback?.guestOfHonor;
+                const evtSpeakers =
+                  singleEvt?.speakers && singleEvt.speakers.length > 0
+                    ? singleEvt.speakers
+                    : Array.isArray(singleMenuFallback?.speakers) && singleMenuFallback.speakers.length > 0
+                      ? singleMenuFallback.speakers
+                      : [];
+                const evtWebsiteUrl = normalizeHttpUrl(
+                  singleEvt?.websiteUrl ||
+                    singleMenuFallback?.websiteUrl ||
+                    (!isWaUrl(singleEvt?.rsvpUrl) ? singleEvt?.rsvpUrl : '') ||
+                    (!isWaUrl(singleMenuFallback?.url) ? singleMenuFallback?.url : '') ||
+                    page.socialLinks?.website
+                );
+                const evtOnlineRsvpUrl = normalizeHttpUrl(
+                  !isWaUrl(singleEvt?.rsvpUrl) ? singleEvt?.rsvpUrl : !isWaUrl(singleMenuFallback?.url) ? singleMenuFallback?.url : ''
+                );
+                const hasDistinctOnlineRsvp = Boolean(evtOnlineRsvpUrl && evtOnlineRsvpUrl !== evtWebsiteUrl);
+
+                const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
+                const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
+                const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
+
+                return (
+                  <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
                     {/* Post Header */}
                     <div className="flex items-center gap-3 px-4 pt-4">
                       {page.logo ? (
@@ -807,12 +1144,12 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                       </div>
                     </div>
 
-                    {/* Image / Poster - Full Width */}
-                    {evtItem.photoUrl ? (
+                    {/* Cover Image - Big as a Facebook post */}
+                    {page.coverImage ? (
                       <div className="w-full bg-slate-100 dark:bg-slate-800 overflow-hidden border-y border-slate-100 dark:border-slate-800 max-h-[480px]">
                         <img
-                          src={evtItem.photoUrl}
-                          alt={evtItem.name}
+                          src={page.coverImage}
+                          alt={page.title}
                           className="w-full h-auto object-cover max-h-[480px]"
                           referrerPolicy="no-referrer"
                         />
@@ -827,148 +1164,146 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     {/* Details Box */}
                     <div className="px-4 space-y-3.5">
                       <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-snug">
-                        {evtItem.name}
+                        {page.title}
                       </h2>
 
-                      {evtItem.description && (
+                      {page.description && cleanForbiddenWords(page.description) && (
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                          {evtItem.description}
+                          {cleanForbiddenWords(page.description)}
                         </p>
                       )}
 
-                      {(() => {
-                        const matchingEvt = page.eventsQrItems?.find(
-                          (e: any) => `rsvp-${e.id}` === evtItem.id || e.id === evtItem.id || `event-pass-${e.id}` === evtItem.id
-                        ) || null;
+                      <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                          {evtLocation && (
+                            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                              <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                  Location: {evtLocation}
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
-                        const evtLocation = matchingEvt?.location || page.address;
-                        const evtStartDate = matchingEvt?.startDate || matchingEvt?.eventDate;
-                        const evtEndDate = matchingEvt?.endDate || evtStartDate;
-                        const evtStartTime = matchingEvt?.startTime;
-                        const evtEndTime = matchingEvt?.endTime;
-                        const evtPhone = matchingEvt?.contactPhone || (matchingEvt as any)?.phone || page.phone || page.whatsapp;
-                        const evtEmail = matchingEvt?.contactEmail || (matchingEvt as any)?.email || page.email;
+                          {evtStartDate && (
+                            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                              <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                  Start Date: {evtStartDate}
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
-                        const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
-                        const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
-                        const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
+                          {evtEndDate && (
+                            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                              <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                  End Date: {evtEndDate}
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
-                        return (
-                          <div className="space-y-3 pt-1">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                              {evtLocation && (
-                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                                  <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                          {(formattedStartTime || formattedEndTime) && (
+                            <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                              <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
+                                <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                  {formattedStartTime && hasEndTime ? (
+                                    `Time: ${formattedStartTime} - ${formattedEndTime}`
+                                  ) : formattedStartTime ? (
+                                    `Start Time: ${formattedStartTime}`
+                                  ) : (
+                                    `End Time: ${formattedEndTime}`
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {evtGuestOfHonor && (
+                          <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
+                            <span className="text-[10px] font-black uppercase tracking-wide text-amber-600 dark:text-amber-400 block mb-0.5">Guest of Honor</span>
+                            <p className="font-bold">{evtGuestOfHonor}</p>
+                          </div>
+                        )}
+
+                        {evtSpeakers.length > 0 && (
+                          <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200">
+                            <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600 dark:text-indigo-400 block mb-1">Key Speakers</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {evtSpeakers.map((sp: string, idx: number) => (
+                                <span key={idx} className="px-2.5 py-1 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-xs text-indigo-900 dark:text-indigo-200">
+                                  {sp}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {evtWebsiteUrl && (
+                          <a
+                            href={evtWebsiteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center justify-between gap-2.5 p-3.5 rounded-2xl bg-purple-50/80 dark:bg-purple-950/30 border border-purple-200/70 dark:border-purple-900/40 text-xs text-purple-900 dark:text-purple-200 hover:bg-purple-100/80 dark:hover:bg-purple-900/40 transition"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Globe className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                              <div className="min-w-0">
+                                <span className="text-[10px] font-black uppercase tracking-wide text-purple-600 dark:text-purple-400 block">Event Website</span>
+                                <p className="font-bold text-purple-800 dark:text-purple-200 truncate underline">{evtWebsiteUrl}</p>
+                              </div>
+                            </div>
+                            <ExternalLink className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                          </a>
+                        )}
+
+                        {(evtPhone || evtEmail) && (
+                          <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                            <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {evtPhone && (
+                                <div className="flex items-center gap-2">
+                                  <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                                   <div className="min-w-0">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                      Location: {evtLocation}
-                                    </p>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
+                                    <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
+                                      Phone: {evtPhone}
+                                    </a>
                                   </div>
                                 </div>
                               )}
-
-                              {evtStartDate && (
-                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                              {evtEmail && (
+                                <div className="flex items-center gap-2">
+                                  <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                                   <div className="min-w-0">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                      Start Date: {evtStartDate}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-
-                              {evtEndDate && (
-                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                      End Date: {evtEndDate}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-
-                              {(formattedStartTime || formattedEndTime) && (
-                                <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                                  <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                      {formattedStartTime && hasEndTime ? (
-                                        `Time: ${formattedStartTime} - ${formattedEndTime}`
-                                      ) : formattedStartTime ? (
-                                        `Start Time: ${formattedStartTime}`
-                                      ) : (
-                                        `End Time: ${formattedEndTime}`
-                                      )}
-                                    </p>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
+                                    <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
+                                      Email: {evtEmail}
+                                    </a>
                                   </div>
                                 </div>
                               )}
                             </div>
-
-                            {matchingEvt?.guestOfHonor && (
-                               <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-200">
-                                 <span className="text-[10px] font-black uppercase tracking-wide text-amber-600 dark:text-amber-400 block mb-0.5">Guest of Honor</span>
-                                 <p className="font-bold">{matchingEvt.guestOfHonor}</p>
-                               </div>
-                             )}
-
-                             {matchingEvt?.speakers && matchingEvt.speakers.length > 0 && (
-                               <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-900/40 text-xs text-indigo-900 dark:text-indigo-200">
-                                 <span className="text-[10px] font-black uppercase tracking-wide text-indigo-600 dark:text-indigo-400 block mb-1">Key Speakers</span>
-                                 <div className="flex flex-wrap gap-1.5">
-                                   {matchingEvt.speakers.map((sp: string, idx: number) => (
-                                     <span key={idx} className="px-2.5 py-1 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-xs text-indigo-900 dark:text-indigo-200">
-                                       {sp}
-                                     </span>
-                                   ))}
-                                 </div>
-                               </div>
-                             )}
-
-                             {(evtPhone || evtEmail) && (
-                              <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
-                                <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                  {evtPhone && (
-                                    <div className="flex items-center gap-2">
-                                      <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                                      <div className="min-w-0">
-                                        <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
-                                        <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
-                                          Phone: {evtPhone}
-                                        </a>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {evtEmail && (
-                                    <div className="flex items-center gap-2">
-                                      <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                                      <div className="min-w-0">
-                                        <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
-                                        <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
-                                          Email: {evtEmail}
-                                        </a>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
                           </div>
-                        );
-                      })()}
+                        )}
+                      </div>
 
                       {/* Action buttons */}
-                      <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                        {evtWaUrl && (
+                      <div className="flex flex-col sm:flex-row flex-wrap gap-2 pt-1">
+                        {waRsvpUrl && (
                           <a
-                            href={evtWaUrl}
+                            href={waRsvpUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
@@ -978,9 +1313,33 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                           </a>
                         )}
 
-                        {page.address && (
+                        {evtWebsiteUrl && (
                           <a
-                            href={page.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(page.address)}`}
+                            href={evtWebsiteUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex-1 py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
+                          >
+                            <Globe className="w-4 h-4" />
+                            <span>Visit Event Website</span>
+                          </a>
+                        )}
+
+                        {hasDistinctOnlineRsvp && (
+                          <a
+                            href={evtOnlineRsvpUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            <span>Online Tickets / RSVP</span>
+                          </a>
+                        )}
+
+                        {(evtLocation || page.address) && (
+                          <a
+                            href={page.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(evtLocation || page.address || '')}`}
                             target="_blank"
                             rel="noreferrer"
                             className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition active:scale-98 text-center"
@@ -993,209 +1352,13 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
-              <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
-                No Events Scheduled Yet
-              </h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Upcoming events and official RSVP invitation passes will appear here.
-              </p>
-            </div>
-          )
-        ) : (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
-              {/* Post Header */}
-              <div className="flex items-center gap-3 px-4 pt-4">
-                {page.logo ? (
-                  <img src={page.logo} alt="Organizer" className="w-10 h-10 rounded-full object-cover border border-slate-100" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                    {page.title.slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  <h3 className="text-sm font-black text-slate-900 dark:text-white leading-tight">
-                    {page.title}
-                  </h3>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    Official Invitation • RSVP Open
-                  </p>
-                </div>
+              })()}
+
+              {/* Footer */}
+              <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800">
+                <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
               </div>
-
-              {/* Cover Image - Big as a Facebook post */}
-              {page.coverImage ? (
-                <div className="w-full bg-slate-100 dark:bg-slate-800 overflow-hidden border-y border-slate-100 dark:border-slate-800 max-h-[480px]">
-                  <img
-                    src={page.coverImage}
-                    alt={page.title}
-                    className="w-full h-auto object-cover max-h-[480px] w-full"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              ) : (
-                <div className="w-full aspect-video bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-950/40 dark:to-slate-900 border-y border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center text-purple-600/60 dark:text-purple-400/50 p-6">
-                  <Ticket className="w-16 h-16 stroke-[1.5] mb-2 animate-pulse" />
-                  <span className="text-xs font-black uppercase tracking-wider">Business Event Pass</span>
-                </div>
-              )}
-
-              {/* Details Box */}
-              <div className="px-4 space-y-3.5">
-                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight leading-snug">
-                  {page.title}
-                </h2>
-
-                {page.description && cleanForbiddenWords(page.description) && (
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                    {cleanForbiddenWords(page.description)}
-                  </p>
-                )}
-
-                {(() => {
-                  const singleEvt = page.eventsQrItems?.[0] || null;
-                  const evtLocation = singleEvt?.location || page.address;
-                  const evtStartDate = singleEvt?.startDate || singleEvt?.eventDate;
-                  const evtEndDate = singleEvt?.endDate || evtStartDate;
-                  const evtStartTime = singleEvt?.startTime;
-                  const evtEndTime = singleEvt?.endTime;
-                  const evtPhone = singleEvt?.contactPhone || (singleEvt as any)?.phone || page.phone || page.whatsapp;
-                  const evtEmail = singleEvt?.contactEmail || (singleEvt as any)?.email || page.email;
-
-                  const formattedStartTime = QRHostingService.formatTimeToAMPM(evtStartTime);
-                  const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
-                  const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
-
-                  return (
-                    <div className="space-y-3 pt-1">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                        {evtLocation && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <MapPin className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Location</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                Location: {evtLocation}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {evtStartDate && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Start Date</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                Start Date: {evtStartDate}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {evtEndDate && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">End Date</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                End Date: {evtEndDate}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {(formattedStartTime || formattedEndTime) && (
-                          <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                            <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide block">Time</span>
-                              <p className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                                {formattedStartTime && hasEndTime ? (
-                                  `Time: ${formattedStartTime} - ${formattedEndTime}`
-                                ) : formattedStartTime ? (
-                                  `Start Time: ${formattedStartTime}`
-                                ) : (
-                                  `End Time: ${formattedEndTime}`
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {(evtPhone || evtEmail) && (
-                        <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-100/60 dark:border-purple-900/40 space-y-2 text-xs text-slate-700 dark:text-slate-300">
-                          <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider block">Inquiries & Contact</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {evtPhone && (
-                              <div className="flex items-center gap-2">
-                                <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                                <div className="min-w-0">
-                                  <span className="text-[10px] text-slate-400 block font-semibold">Phone Number</span>
-                                  <a href={`tel:${evtPhone.replace(/[^0-9+]/g, '')}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline">
-                                    Phone: {evtPhone}
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-                            {evtEmail && (
-                              <div className="flex items-center gap-2">
-                                <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                                <div className="min-w-0">
-                                  <span className="text-[10px] text-slate-400 block font-semibold">Email Address</span>
-                                  <a href={`mailto:${evtEmail}`} className="font-bold text-purple-700 dark:text-purple-300 hover:underline truncate block">
-                                    Email: {evtEmail}
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Action buttons */}
-                <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  {waRsvpUrl && (
-                    <a
-                      href={waRsvpUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-98 text-center cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>Confirm RSVP on WhatsApp</span>
-                    </a>
-                  )}
-
-                  {page.address && (
-                    <a
-                      href={page.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(page.address)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition active:scale-98 text-center"
-                    >
-                      <MapPin className="w-4 h-4 text-rose-500" />
-                      <span>Open Maps</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Footer */}
-          <div className="pt-6 pb-4 text-center border-t border-slate-200 dark:border-slate-800">
-            <p className="text-xs text-slate-400 font-medium">Powered by Brivu</p>
-          </div>
-        </main>
+            </main>
           );
         })()}
 

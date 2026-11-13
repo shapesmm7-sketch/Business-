@@ -136,6 +136,26 @@ let syncInFlightPromise: Promise<CloudflareSyncResponse> | null = null;
 let syncCooldownUntil = 0;
 let consecutiveSyncFailures = 0;
 
+interface PendingQrSave {
+  page: any;
+  emailOverride?: string;
+  timer: ReturnType<typeof setTimeout> | null;
+  resolvers: Array<(res: { success: boolean; message: string }) => void>;
+}
+const pendingQrSaves = new Map<string, PendingQrSave>();
+
+function getQrSaveQueueKey(page: any, userEmail: string): string {
+  const rawType = String(page?.pageType || '').toLowerCase();
+  const rawId = String(page?.id || '').toLowerCase();
+  if (rawType.includes('website') || rawId.includes('website')) return `${userEmail}::websites`;
+  if (rawType.includes('social') || rawId.includes('social')) return `${userEmail}::socials`;
+  if (rawType === 'event' || (rawId.startsWith('event-') && !rawId.startsWith('events-hub') && !rawId.startsWith('event-hub'))) {
+    return `${userEmail}::event::${rawId}`;
+  }
+  if (rawType.includes('event') || rawId.includes('event')) return `${userEmail}::events`;
+  return `${userEmail}::business`;
+}
+
 function isWorkerOverloadResponse(status: number, rawText: string): boolean {
   const lower = (rawText || '').toLowerCase();
   return (
@@ -593,6 +613,7 @@ export const CloudflareService = {
     }
 
     if (isImmediate) {
+      await this.flushPendingQrSaves().catch(() => {});
       if (syncDebounceTimer) {
         clearTimeout(syncDebounceTimer);
         syncDebounceTimer = null;
@@ -1231,8 +1252,9 @@ export const CloudflareService = {
    */
   async getHostedQrPage(pageId: string, emailOverride?: string): Promise<any | null> {
     const config = this.getConfig();
-    const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
-      ? window.location.origin
+    const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+      ? currentOrigin
       : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
 
     if (!effectiveWorkerUrl) return null;
@@ -1286,8 +1308,9 @@ export const CloudflareService = {
     if (!cleanEmail) return null;
 
     const config = this.getConfig();
-    const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
-      ? window.location.origin
+    const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+      ? currentOrigin
       : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
 
     try {
@@ -1317,10 +1340,94 @@ export const CloudflareService = {
     }
   },
 
+  async flushPendingQrSaves(): Promise<void> {
+    const keys = Array.from(pendingQrSaves.keys());
+    if (keys.length === 0) return;
+    await Promise.all(
+      keys.map(async (k) => {
+        const entry = pendingQrSaves.get(k);
+        if (!entry) return;
+        if (entry.timer) {
+          clearTimeout(entry.timer);
+          entry.timer = null;
+        }
+        pendingQrSaves.delete(k);
+        const res = await this._executeSaveSingleQrPage(entry.page, entry.emailOverride);
+        entry.resolvers.forEach((r) => r(res));
+      })
+    );
+  },
+
   /**
-   * Saves or updates a hosted QR page directly in Cloudflare D1 and R2, indexed by owner email
+   * Saves or updates a hosted QR page directly in Cloudflare D1 and R2, indexed by owner email.
+   * Debounces rapid keystrokes (unless immediate=true) so later state is never overwritten by slower earlier requests.
    */
-  async saveSingleQrPage(page: any, emailOverride?: string): Promise<{ success: boolean; message: string }> {
+  async saveSingleQrPage(
+    page: any,
+    emailOverride?: string,
+    options?: { immediate?: boolean }
+  ): Promise<{ success: boolean; message: string }> {
+    const config = this.getConfig();
+    if (!this.isConfigured()) {
+      return { success: false, message: 'Cloudflare Worker is not configured' };
+    }
+
+    const authEmail = StorageService.getAuthenticatedEmail();
+    const userEmail = (
+      authEmail && authEmail.includes('@')
+        ? authEmail
+        : (emailOverride || page?.userEmail || page?.email || '')
+    ).toLowerCase().trim();
+
+    if (!userEmail || !userEmail.includes('@')) {
+      return { success: false, message: 'Visitor is not logged in: Single QR page save skipped' };
+    }
+
+    const queueKey = getQrSaveQueueKey(page, userEmail);
+
+    if (options?.immediate) {
+      const existing = pendingQrSaves.get(queueKey);
+      if (existing) {
+        if (existing.timer) clearTimeout(existing.timer);
+        pendingQrSaves.delete(queueKey);
+        const res = await this._executeSaveSingleQrPage(page, userEmail);
+        existing.resolvers.forEach((r) => r(res));
+        return res;
+      }
+      return this._executeSaveSingleQrPage(page, userEmail);
+    }
+
+    return new Promise<{ success: boolean; message: string }>((resolve) => {
+      const existing = pendingQrSaves.get(queueKey);
+      if (existing) {
+        if (existing.timer) clearTimeout(existing.timer);
+        existing.page = page;
+        existing.emailOverride = userEmail;
+        existing.resolvers.push(resolve);
+        existing.timer = setTimeout(async () => {
+          pendingQrSaves.delete(queueKey);
+          const res = await this._executeSaveSingleQrPage(existing.page, existing.emailOverride);
+          existing.resolvers.forEach((r) => r(res));
+        }, 450);
+        return;
+      }
+
+      const entry: PendingQrSave = {
+        page,
+        emailOverride: userEmail,
+        resolvers: [resolve],
+        timer: null,
+      };
+      entry.timer = setTimeout(async () => {
+        pendingQrSaves.delete(queueKey);
+        const res = await this._executeSaveSingleQrPage(entry.page, entry.emailOverride);
+        entry.resolvers.forEach((r) => r(res));
+      }, 450);
+      pendingQrSaves.set(queueKey, entry);
+    });
+  },
+
+  async _executeSaveSingleQrPage(page: any, emailOverride?: string): Promise<{ success: boolean; message: string }> {
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };
@@ -1328,7 +1435,11 @@ export const CloudflareService = {
 
     try {
       const authEmail = StorageService.getAuthenticatedEmail();
-      const userEmail = (emailOverride || authEmail || page?.userEmail || page?.email || '').toLowerCase().trim();
+      const userEmail = (
+        authEmail && authEmail.includes('@')
+          ? authEmail
+          : (emailOverride || page?.userEmail || page?.email || '')
+      ).toLowerCase().trim();
 
       if (!userEmail || !userEmail.includes('@')) {
         return { success: false, message: 'Visitor is not logged in: Single QR page save skipped' };
@@ -1339,8 +1450,9 @@ export const CloudflareService = {
       headers['X-User-Id'] = userEmail;
 
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
-      const effectiveWorkerUrl = (typeof window !== 'undefined' && window.location && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1'))
-        ? window.location.origin
+      const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+      const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+        ? currentOrigin
         : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
       const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr${query}`;
 
