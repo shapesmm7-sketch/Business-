@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/admob_native_ad_view,@drawable/native_ad_bg,@drawable/ad_badge_bg,@drawable/ad_cta_btn_bg,@drawable/ad_icon_bg" />

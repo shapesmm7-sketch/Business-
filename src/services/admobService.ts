@@ -10,37 +10,31 @@ import { NativeAdBridge } from './nativeAdBridge';
 /**
  * Live Google AdMob Ad Unit IDs for Android
  * App ID: ca-app-pub-8582659585800553~8957324812
- * Interstitial ID: ca-app-pub-8582659585800553/1482159477
- * Native Advanced ID: ca-app-pub-8582659585800553/9630358215
+ * Interstitial ID: ca-app-pub-8582659585800553/1676434279
+ * Native Advanced ID: ca-app-pub-8582659585800553/6584166086
  */
 export const ADMOB_LIVE_UNITS = {
   APP_ID: 'ca-app-pub-8582659585800553~8957324812',
-  INTERSTITIAL: 'ca-app-pub-8582659585800553/1482159477',
-  NATIVE_ADVANCED: 'ca-app-pub-8582659585800553/9630358215',
+  INTERSTITIAL: 'ca-app-pub-8582659585800553/1676434279',
+  NATIVE_ADVANCED: 'ca-app-pub-8582659585800553/6584166086',
 } as const;
 
 export const ADMOB_UNITS = ADMOB_LIVE_UNITS;
 
 class AdMobManager {
   private isInitialized = false;
+  private isPluginAdMobInitialized = false;
+  private initPromise: Promise<void> | null = null;
   private lastInterstitialTime = 0;
   private userTapCount = 0;
-
-  constructor() {
-    this.initNativeAdMob();
-  }
 
   async preloadInterstitial() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await this.initNativeAdMob();
       const adId = ADMOB_UNITS.INTERSTITIAL;
-      console.log(`[ADS] Requesting Interstitial Ad. AdUnitId: ${adId}`);
+      console.log(`[ADS] Requesting Interstitial Ad (isDebug=false). AdUnitId: ${adId}`);
       await NativeAdBridge.prepareInterstitial();
-      await AdMob.prepareInterstitial({
-        adId,
-        isTesting: false,
-      });
     } catch (err) {
       console.warn(`[ADS] Interstitial Ad failed to load. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}, Error:`, err);
     }
@@ -49,8 +43,9 @@ class AdMobManager {
   async preloadNativeAdvanced() {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
+      await this.initNativeAdMob();
       const adUnitId = ADMOB_UNITS.NATIVE_ADVANCED;
-      console.log(`[ADS] Requesting Native Ad. AdUnitId: ${adUnitId}`);
+      console.log(`[ADS] Requesting Native Ad (isDebug=false). AdUnitId: ${adUnitId}`);
       await NativeAdBridge.loadNativeAd({
         adUnitId,
       });
@@ -62,7 +57,8 @@ class AdMobManager {
   async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
-      console.log(`[ADS] Requesting Native Ad. AdUnitId: ${unitId}`);
+      await this.initNativeAdMob();
+      console.log(`[ADS] Requesting Native Ad (isDebug=false). AdUnitId: ${unitId}`);
       await NativeAdBridge.loadNativeAd({ adUnitId: unitId });
       await NativeAdBridge.showNativeAd();
     } catch (err) {
@@ -83,33 +79,46 @@ class AdMobManager {
     return this.userTapCount;
   }
 
-  async initNativeAdMob() {
+  async initNativeAdMob(): Promise<void> {
     if (this.isInitialized) return;
-    if (Capacitor.isNativePlatform()) {
-      try {
-        console.log('[ADS] Initializing Google MobileAds SDK');
-        await AdMob.initialize({
-          initializeForTesting: false,
-        });
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = (async () => {
+      if (!Capacitor.isNativePlatform()) {
         this.isInitialized = true;
-
-        try {
-          AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
-            console.log(`[ADS] Interstitial Ad loaded successfully. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}`);
-          });
-          AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
-            this.preloadInterstitial().catch(() => {});
-          });
-          AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
-            console.warn(`[ADS] Interstitial Ad failed to load. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}, Error:`, err);
-          });
-        } catch (_) {}
-
-        await this.preloadInterstitial();
-      } catch (err) {
-        console.warn('[ADS] MobileAds initialization failed:', err);
+        return;
       }
-    }
+      try {
+        console.log('[ADS] Ensuring native Google MobileAds SDK initialized (isDebug=false)');
+        await NativeAdBridge.initializeAds();
+        this.isInitialized = true;
+      } catch (err) {
+        console.warn('[ADS] Native MobileAds init note:', err);
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  private async ensurePluginAdMobFallbackReady(): Promise<void> {
+    if (this.isPluginAdMobInitialized || !Capacitor.isNativePlatform()) return;
+    await AdMob.initialize({
+      initializeForTesting: false,
+    });
+    this.isPluginAdMobInitialized = true;
+    try {
+      AdMob.addListener(InterstitialAdPluginEvents.Loaded, () => {
+        console.log(`[ADS] Fallback Interstitial Ad loaded successfully (isDebug=false). AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}`);
+      });
+      AdMob.addListener(InterstitialAdPluginEvents.Dismissed, () => {
+        this.preloadInterstitial().catch(() => {});
+      });
+      AdMob.addListener(InterstitialAdPluginEvents.FailedToLoad, (err) => {
+        console.warn(`[ADS] Fallback Interstitial Ad failed to load. AdUnitId: ${ADMOB_UNITS.INTERSTITIAL}, Error:`, err);
+      });
+    } catch (_) {}
   }
 
   shouldShowAds(): boolean {
@@ -117,7 +126,7 @@ class AdMobManager {
     return !isSubscribed;
   }
 
-  async showInterstitial(actionSource = 'save', onClosed?: () => void): Promise<boolean> {
+  async showInterstitial(_actionSource = 'save', onClosed?: () => void): Promise<boolean> {
     if (!this.shouldShowAds()) {
       onClosed?.();
       return false;
@@ -132,26 +141,24 @@ class AdMobManager {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        // Try showing native preloaded interstitial ad first
+        await this.initNativeAdMob();
+        // Primary path: native MainActivity preloaded Interstitial (single SDK instance, live unit ID)
         const nativeRes = await NativeAdBridge.showInterstitial();
         if (nativeRes && nativeRes.success) {
           onClosed?.();
           return true;
         }
 
-        // Fallback to Capacitor AdMob plugin
-        await this.initNativeAdMob();
+        // Secondary fallback via @capacitor-community/admob only if native interstitial wasn't ready yet
+        await this.ensurePluginAdMobFallbackReady();
         const options: AdOptions = {
           adId: ADMOB_UNITS.INTERSTITIAL,
           isTesting: false,
         };
-        console.log(`[ADS] Showing Interstitial Ad. AdUnitId: ${options.adId}`);
+        console.log(`[ADS] Showing Fallback Interstitial Ad (isDebug=false). AdUnitId: ${options.adId}`);
         await AdMob.prepareInterstitial(options);
         await AdMob.showInterstitial();
         onClosed?.();
-        setTimeout(() => {
-          this.preloadInterstitial().catch(() => {});
-        }, 1500);
         return true;
       } catch (err) {
         console.warn('[ADS] Interstitial display error:', err);

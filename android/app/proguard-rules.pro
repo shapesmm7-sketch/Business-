@@ -34,6 +34,7 @@
 
 # 5. Google Mobile Ads (AdMob) & UMP
 -keep class com.google.android.gms.ads.** { *; }
+-keep class com.google.android.gms.ads.nativead.** { *; }
 -keep interface com.google.android.gms.ads.** { *; }
 -keep class com.google.ads.** { *; }
 -keep class com.google.android.ump.** { *; }

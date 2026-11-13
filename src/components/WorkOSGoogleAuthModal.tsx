@@ -594,7 +594,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                 </div>
 
                 <p className="text-[11.5px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
-                  Sign in with your Google Account to automatically sync and safeguard your digital receipts, invoices, customers, inventory, and hosted QR code menus in your Cloudflare storage.
+                  Sign in with your Google Account to automatically sync and safeguard your digital receipts, invoices, customers, inventory, and hosted QR code menus in your Cloud storage.
                 </p>
 
                 {/* Highlight: QR Code & Receipt Cloud Protection */}

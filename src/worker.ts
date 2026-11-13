@@ -166,319 +166,375 @@ export async function executeMeasuredQuery(stmt: any, queryName = 'D1_QUERY'): P
   return res;
 }
 
-// Automatically create D1 backups, files, receipts, products, invoices, invoice_items, menus and auth_sessions tables and indexes if D1 is bound
+// Per-isolate schema cache so D1 DDL runs at most ONCE per cold start
+let d1SchemaReady = false;
+let d1SchemaPromise: Promise<void> | null = null;
+
+function decodeBase64ToUint8Array(base64Input: string): Uint8Array {
+  const cleanBase64 = base64Input.includes(',') ? base64Input.split(',')[1] : base64Input;
+  if (!cleanBase64) return new Uint8Array(0);
+  if (typeof (Uint8Array as any).fromBase64 === 'function') {
+    try {
+      return (Uint8Array as any).fromBase64(cleanBase64);
+    } catch (_) {}
+  }
+  const binary = atob(cleanBase64);
+  const len = binary.length;
+  const buffer = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    buffer[i] = binary.charCodeAt(i);
+  }
+  return buffer;
+}
+
+async function executeD1Batch(db: any, statements: any[], chunkSize = 40): Promise<void> {
+  if (!db || !statements || statements.length === 0) return;
+  if (typeof db.batch === 'function') {
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await db.batch(statements.slice(i, i + chunkSize));
+    }
+    return;
+  }
+  for (const stmt of statements) {
+    await stmt.run();
+  }
+}
+
+export function isQrGalleryPhotoFile(keyOrId: string, filename?: string, mimeType?: string): boolean {
+  const k = String(keyOrId || '').toLowerCase();
+  const f = String(filename || k.split('/').pop() || '').toLowerCase();
+  const m = String(mimeType || '').toLowerCase();
+  if (!k) return false;
+  if (m && !m.startsWith('image/')) {
+    if (!/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(f)) return false;
+  }
+  if (f.endsWith('.pdf') || f.endsWith('.json') || f.endsWith('.csv') || f.endsWith('.txt')) return false;
+  const inPhotosFolder = k.includes('/photos/');
+  const isQrNamed =
+    f.includes('qr_photo') ||
+    f.includes('qr_business') ||
+    /^(\d+_)?qr_\d+\.(jpg|jpeg|png|webp)$/i.test(f) ||
+    /^(\d+_)?qr_photo/i.test(f);
+  if (!inPhotosFolder && !isQrNamed) return false;
+  if (
+    f.includes('logo') ||
+    f.includes('signature') ||
+    f.includes('product_') ||
+    f.includes('customer_') ||
+    f.includes('agent_') ||
+    f.includes('staff_') ||
+    f.includes('event_photo') ||
+    f.includes('qr_item') ||
+    f.includes('qr_cover')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function recoverQrPhotosFromFileRecords(filesList: any[], origin: string): {
+  photos: any[];
+  coverImage?: string;
+  logo?: string;
+} {
+  if (!Array.isArray(filesList) || filesList.length === 0) {
+    return { photos: [] };
+  }
+  const photos: any[] = [];
+  const seenUrls = new Set<string>();
+  let coverImage: string | undefined;
+  let logo: string | undefined;
+
+  const sorted = [...filesList].sort((a, b) => {
+    const ta = new Date(a?.uploadedAt || a?.created_at || 0).getTime() || 0;
+    const tb = new Date(b?.uploadedAt || b?.created_at || 0).getTime() || 0;
+    return tb - ta;
+  });
+
+  for (const f of sorted) {
+    const key = String(f?.key || f?.id || '');
+    const fname = String(f?.filename || key.split('/').pop() || '').toLowerCase();
+    const mime = String(f?.mimeType || f?.mime_type || '');
+    const url = f?.url || (key ? `${origin}/api/files/${encodeURIComponent(key)}` : '');
+    if (!url) continue;
+
+    if (!logo && (fname === 'logo.webp' || fname.includes('qr_logo') || (key.includes('/logo.webp')))) {
+      logo = url;
+      continue;
+    }
+    if (!coverImage && fname.includes('qr_cover')) {
+      coverImage = url;
+      continue;
+    }
+    if (isQrGalleryPhotoFile(key, fname, mime) && !seenUrls.has(url)) {
+      seenUrls.add(url);
+      photos.push({
+        id: `photo-r2-${photos.length}-${key.slice(-12).replace(/[^a-zA-Z0-9]/g, '')}`,
+        url,
+        title: 'Business Photo',
+        description: '',
+      });
+      if (photos.length >= 20) break;
+    }
+  }
+
+  return { photos, coverImage, logo };
+}
+
+// Automatically create D1 tables and indexes ONCE per Worker isolate cold start
 export async function ensureD1Tables(db: any): Promise<void> {
   if (!db || typeof db.prepare !== 'function') return;
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS backups (
-        id TEXT PRIMARY KEY,
-        user_email TEXT,
-        backup_data TEXT,
-        updated_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_backups_user_email ON backups(user_email)`).run();
-  } catch (_) {}
+  if (d1SchemaReady) return;
+  if (d1SchemaPromise) return d1SchemaPromise;
 
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS files (
-        id TEXT PRIMARY KEY,
-        user_email TEXT,
-        filename TEXT,
-        mime_type TEXT,
-        size INTEGER,
-        r2_key TEXT,
-        file_type TEXT,
-        data_base64 TEXT,
-        created_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_files_user_email ON files(user_email)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_files_file_type ON files(file_type)`).run();
-  } catch (_) {}
-  try { await db.prepare(`ALTER TABLE files ADD COLUMN user_email TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE files ADD COLUMN r2_key TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE files ADD COLUMN file_type TEXT`).run(); } catch (_) {}
+  d1SchemaPromise = (async () => {
+    try {
+      const ddlStatements = [
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS backups (
+            id TEXT PRIMARY KEY,
+            user_email TEXT,
+            backup_data TEXT,
+            updated_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_backups_user_email ON backups(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS files (
+            id TEXT PRIMARY KEY,
+            user_email TEXT,
+            filename TEXT,
+            mime_type TEXT,
+            size INTEGER,
+            r2_key TEXT,
+            file_type TEXT,
+            data_base64 TEXT,
+            created_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_files_user_email ON files(user_email)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_files_file_type ON files(file_type)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS receipts (
+            id TEXT PRIMARY KEY,
+            user_email TEXT,
+            receipt_number TEXT,
+            total REAL,
+            data_json TEXT,
+            items_json TEXT,
+            customer_json TEXT,
+            created_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_user_email ON receipts(user_email)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_number ON receipts(receipt_number)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            name TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            profile_picture_url TEXT,
+            provider TEXT DEFAULT 'google',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_login TEXT NOT NULL
+          )
+        `),
+        db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS auth_sessions (
+            session_id TEXT PRIMARY KEY,
+            status TEXT,
+            code TEXT,
+            user_json TEXT,
+            created_at INTEGER
+          )
+        `),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS qr_pages (
+            id TEXT PRIMARY KEY,
+            user_email TEXT,
+            page_json TEXT,
+            content_hash TEXT,
+            updated_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_qr_pages_user_email ON qr_pages(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS shopping_lists (
+            id TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            title TEXT NOT NULL,
+            items_json TEXT NOT NULL,
+            total_estimated REAL DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_shopping_lists_user ON shopping_lists(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS staff_directory (
+            id TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT,
+            phone TEXT,
+            email TEXT,
+            hourly_rate REAL,
+            notes TEXT,
+            updated_at TEXT NOT NULL
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_staff_user ON staff_directory(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS client_directory (
+            id TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            notes TEXT,
+            updated_at TEXT NOT NULL
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_client_user ON client_directory(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS products (
+            id TEXT PRIMARY KEY,
+            shop_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            barcode TEXT,
+            category TEXT,
+            selling_price REAL,
+            cost_price REAL,
+            stock_quantity INTEGER,
+            image TEXT,
+            updated_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_updated ON products(shop_id, updated_at)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS invoices (
+            id TEXT PRIMARY KEY,
+            shop_id TEXT NOT NULL,
+            invoice_number TEXT,
+            customer_name TEXT,
+            total REAL,
+            tax REAL,
+            status TEXT,
+            updated_at TEXT,
+            created_at TEXT
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_id ON invoices(shop_id)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_updated ON invoices(shop_id, updated_at)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS invoice_items (
+            id TEXT PRIMARY KEY,
+            invoice_id TEXT NOT NULL,
+            product_id TEXT,
+            quantity INTEGER,
+            unit_price REAL,
+            total REAL
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS menus (
+            id TEXT PRIMARY KEY,
+            hotel_id TEXT NOT NULL,
+            title TEXT,
+            menu_data TEXT,
+            updated_at TEXT
+          )
+        `),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS store_catalogs (
+            slug TEXT PRIMARY KEY,
+            user_email TEXT,
+            business_name TEXT,
+            catalog_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        `),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_slug ON store_catalogs(slug)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_user ON store_catalogs(user_email)`),
+      ];
 
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS receipts (
-        id TEXT PRIMARY KEY,
-        user_email TEXT,
-        receipt_number TEXT,
-        total REAL,
-        data_json TEXT,
-        items_json TEXT,
-        customer_json TEXT,
-        created_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_user_email ON receipts(user_email)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_receipts_number ON receipts(receipt_number)`).run();
-  } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN user_email TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN receipt_number TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN total REAL`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN data_json TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN items_json TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN customer_json TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE receipts ADD COLUMN created_at TEXT`).run(); } catch (_) {}
+      await executeD1Batch(db, ddlStatements, 35);
+      d1SchemaReady = true;
+    } catch (_) {
+      // Fallback safely on next call if batch failed transiently
+      d1SchemaPromise = null;
+    }
+  })();
 
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        name TEXT,
-        first_name TEXT,
-        last_name TEXT,
-        profile_picture_url TEXT,
-        provider TEXT DEFAULT 'google',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_login TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`).run();
-  } catch (_) {}
-
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS auth_sessions (
-        session_id TEXT PRIMARY KEY,
-        status TEXT,
-        code TEXT,
-        user_json TEXT,
-        created_at INTEGER
-      )
-    `).run();
-    // Transient OAuth handshakes only: purge stale sessions (>15 mins) and any misplaced email keys
-    const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
-    await db.prepare(`
-      DELETE FROM auth_sessions 
-      WHERE created_at < ? OR session_id LIKE '%@%'
-    `).bind(fifteenMinsAgo).run();
-  } catch (_) {}
-
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS qr_pages (
-        id TEXT PRIMARY KEY,
-        user_email TEXT,
-        page_json TEXT,
-        content_hash TEXT,
-        updated_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_qr_pages_user_email ON qr_pages(user_email)`).run();
-  } catch (_) {}
-  try { await db.prepare(`ALTER TABLE qr_pages ADD COLUMN user_email TEXT`).run(); } catch (_) {}
-  try { await db.prepare(`ALTER TABLE qr_pages ADD COLUMN content_hash TEXT`).run(); } catch (_) {}
-
-  // Shopping Lists table (scoped by user_email, replacing R2 reports)
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS shopping_lists (
-        id TEXT PRIMARY KEY,
-        user_email TEXT NOT NULL,
-        title TEXT NOT NULL,
-        items_json TEXT NOT NULL,
-        total_estimated REAL DEFAULT 0,
-        status TEXT DEFAULT 'active',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_shopping_lists_user ON shopping_lists(user_email)`).run();
-  } catch (_) {}
-
-  // Staff Directory table (scoped by user_email, strictly in D1 for privacy)
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS staff_directory (
-        id TEXT PRIMARY KEY,
-        user_email TEXT NOT NULL,
-        name TEXT NOT NULL,
-        role TEXT,
-        phone TEXT,
-        email TEXT,
-        hourly_rate REAL,
-        notes TEXT,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_staff_user ON staff_directory(user_email)`).run();
-  } catch (_) {}
-
-  // Client Directory table (scoped by user_email, strictly in D1 for privacy)
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS client_directory (
-        id TEXT PRIMARY KEY,
-        user_email TEXT NOT NULL,
-        name TEXT NOT NULL,
-        phone TEXT,
-        email TEXT,
-        address TEXT,
-        notes TEXT,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_client_user ON client_directory(user_email)`).run();
-  } catch (_) {}
-
-  // Products table & indexes
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        barcode TEXT,
-        category TEXT,
-        selling_price REAL,
-        cost_price REAL,
-        stock_quantity INTEGER,
-        image TEXT,
-        updated_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_products_shop_updated ON products(shop_id, updated_at)`).run();
-  } catch (_) {}
-
-  // Invoices table & indexes
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS invoices (
-        id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
-        invoice_number TEXT,
-        customer_name TEXT,
-        total REAL,
-        tax REAL,
-        status TEXT,
-        updated_at TEXT,
-        created_at TEXT
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_id ON invoices(shop_id)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoices_shop_updated ON invoices(shop_id, updated_at)`).run();
-  } catch (_) {}
-
-  // Invoice Items table & indexes
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS invoice_items (
-        id TEXT PRIMARY KEY,
-        invoice_id TEXT NOT NULL,
-        product_id TEXT,
-        quantity INTEGER,
-        unit_price REAL,
-        total REAL
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id)`).run();
-  } catch (_) {}
-
-  // Menus table & indexes
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS menus (
-        id TEXT PRIMARY KEY,
-        hotel_id TEXT NOT NULL,
-        title TEXT,
-        menu_data TEXT,
-        updated_at TEXT
-      )
-    `).run();
-  } catch (_) {}
-
-  // Store Catalogs table (public live stock catalog by business slug)
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS store_catalogs (
-        slug TEXT PRIMARY KEY,
-        user_email TEXT,
-        business_name TEXT,
-        catalog_json TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_slug ON store_catalogs(slug)`).run();
-    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_user ON store_catalogs(user_email)`).run();
-  } catch (_) {}
+  return d1SchemaPromise;
 }
 
 // 200 MB user cloud storage cap
 export const MAX_USER_STORAGE_BYTES = 200 * 1024 * 1024; // 200 MB (209,715,200 bytes)
 
 /**
- * Calculates total cloud storage bytes consumed by a user across R2 and D1.
+ * Calculates total cloud storage bytes consumed by a user using a fast D1 aggregate first, falling back to R2 listing.
  */
 export async function getUserStorageUsageBytes(userEmail: string, env: Env): Promise<number> {
   const cleanEmail = (userEmail || '').toLowerCase().trim();
   if (!cleanEmail) return 0;
   const bucket = getR2Bucket(env);
   const db = getD1Database(env);
+
+  // 1. Fast path: single D1 SUM aggregate when files table has user rows
+  if (db) {
+    try {
+      await ensureD1Tables(db);
+      const agg: any = await db.prepare(`
+        SELECT COALESCE(SUM(size), 0) as total_bytes, COUNT(*) as cnt
+        FROM files
+        WHERE user_email = ? OR id LIKE ? OR id LIKE ?
+      `).bind(cleanEmail, `users/${encodeURIComponent(cleanEmail)}/%`, `users/${cleanEmail}/%`).first();
+      if (agg && Number(agg.cnt) > 0) {
+        return Number(agg.total_bytes) || 0;
+      }
+    } catch (d1Err) {
+      console.warn('D1 user storage calculate note:', d1Err);
+    }
+  }
+
+  // 2. Fallback: R2 bucket listing if D1 had no rows
   let totalBytes = 0;
   const seenKeys = new Set<string>();
-
-  // 1. Check R2 bucket objects
   if (bucket && typeof bucket.list === 'function') {
     try {
-      const prefixes = [
-        `users/${encodeURIComponent(cleanEmail)}/`,
-        `users/${cleanEmail}/`,
-      ];
-      for (const pfx of prefixes) {
-        let cursor: string | undefined = undefined;
-        let hasMore = true;
-        let iterations = 0;
-        while (hasMore && iterations < 10) {
-          iterations++;
-          const listed: any = await bucket.list({ prefix: pfx, limit: 1000, cursor });
-          if (listed && Array.isArray(listed.objects)) {
-            for (const obj of listed.objects) {
-              if (!seenKeys.has(obj.key)) {
-                seenKeys.add(obj.key);
-                totalBytes += (Number(obj.size) || 0);
-              }
+      const pfx = `users/${encodeURIComponent(cleanEmail)}/`;
+      let cursor: string | undefined = undefined;
+      let hasMore = true;
+      let iterations = 0;
+      while (hasMore && iterations < 5) {
+        iterations++;
+        const listed: any = await bucket.list({ prefix: pfx, limit: 1000, cursor });
+        if (listed && Array.isArray(listed.objects)) {
+          for (const obj of listed.objects) {
+            if (!seenKeys.has(obj.key)) {
+              seenKeys.add(obj.key);
+              totalBytes += (Number(obj.size) || 0);
             }
           }
-          if (listed?.truncated && listed?.cursor) {
-            cursor = listed.cursor;
-          } else {
-            hasMore = false;
-          }
+        }
+        if (listed?.truncated && listed?.cursor) {
+          cursor = listed.cursor;
+        } else {
+          hasMore = false;
         }
       }
     } catch (r2Err) {
       console.warn('R2 user storage calculate note:', r2Err);
-    }
-  }
-
-  // 2. Also check D1 files table
-  if (db) {
-    try {
-      await ensureD1Tables(db);
-      const rows: any = await db.prepare(`
-        SELECT id, size FROM files 
-        WHERE id LIKE ? OR id LIKE ?
-      `).bind(`users/${encodeURIComponent(cleanEmail)}/%`, `users/${cleanEmail}/%`).all();
-      if (rows && Array.isArray(rows.results)) {
-        for (const row of rows.results) {
-          if (!seenKeys.has(row.id)) {
-            seenKeys.add(row.id);
-            totalBytes += (Number(row.size) || 0);
-          }
-        }
-      }
-    } catch (d1Err) {
-      console.warn('D1 user storage calculate note:', d1Err);
     }
   }
 
@@ -557,26 +613,49 @@ export async function saveCanonicalQrPage(
   db: any,
   userEmail: string,
   category: 'business' | 'events' | 'socials' | 'websites',
-  rawPage: any
+  rawPage: any,
+  options?: { preserveExistingPhotosIfEmpty?: boolean }
 ): Promise<void> {
   if (!db || !userEmail || !rawPage) return;
   const cleanEmail = userEmail.toLowerCase().trim();
   const canonicalId = `user_${cleanEmail}_${category}`;
-  const sanitized = sanitizePublicQrPage({
-    ...rawPage,
-    id: canonicalId,
-    userEmail: cleanEmail,
-    email: cleanEmail,
-  });
-  const sanitizedJson = JSON.stringify(sanitized);
-
-  // Compute fast content hash (SHA-256)
-  const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sanitizedJson));
-  const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 
   try {
     await ensureD1Tables(db);
-    const existing: any = await db.prepare('SELECT content_hash FROM qr_pages WHERE id = ?').bind(canonicalId).first();
+    const existing: any = await db.prepare('SELECT content_hash, page_json FROM qr_pages WHERE id = ?').bind(canonicalId).first();
+
+    let pageToSave = {
+      ...rawPage,
+      id: canonicalId,
+      userEmail: cleanEmail,
+      email: cleanEmail,
+    };
+
+    // Never allow a background sync with empty photos to wipe existing D1 photos
+    if (options?.preserveExistingPhotosIfEmpty && existing?.page_json) {
+      try {
+        const existingParsed = JSON.parse(existing.page_json);
+        if (Array.isArray(existingParsed?.photos) && existingParsed.photos.length > 0 && (!Array.isArray(pageToSave.photos) || pageToSave.photos.length === 0)) {
+          pageToSave.photos = existingParsed.photos;
+        }
+        if (!pageToSave.coverImage && existingParsed?.coverImage) {
+          pageToSave.coverImage = existingParsed.coverImage;
+        }
+        if (!pageToSave.logo && existingParsed?.logo) {
+          pageToSave.logo = existingParsed.logo;
+        }
+        if (Array.isArray(existingParsed?.menuItems) && existingParsed.menuItems.length > 0 && (!Array.isArray(pageToSave.menuItems) || pageToSave.menuItems.length === 0)) {
+          pageToSave.menuItems = existingParsed.menuItems;
+        }
+      } catch (_) {}
+    }
+
+    const sanitized = sanitizePublicQrPage(pageToSave);
+    const sanitizedJson = JSON.stringify(sanitized);
+
+    const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sanitizedJson));
+    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+
     if (existing?.content_hash === hashHex) return; // Skip identical write!
 
     const now = new Date().toISOString();
@@ -774,37 +853,74 @@ export async function resolveHostedQrPage(
           });
         }
 
-        // Business Showcase / Menu Page
+        // Business Showcase / Menu Page (prefer qrHostedPages business entry, fall back to backup inventory/photos)
+        const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
+        const hostedBiz = hostedPages.find((p: any) =>
+          p &&
+          p.pageType !== 'websites_hub' &&
+          p.pageType !== 'socials_hub' &&
+          p.pageType !== 'events_hub' &&
+          p.pageType !== 'event' &&
+          !String(p.id || '').startsWith('event-') &&
+          !String(p.id || '').startsWith('events-hub') &&
+          !String(p.id || '').startsWith('websites-hub') &&
+          !String(p.id || '').startsWith('socials-hub')
+        );
         const inventory = Array.isArray(bData.inventoryProducts) ? bData.inventoryProducts : (Array.isArray(bData.inventory) ? bData.inventory : []);
-        const photos = Array.isArray(bData.photos) ? bData.photos : [];
+        let photos = Array.isArray(hostedBiz?.photos) && hostedBiz.photos.length > 0
+          ? hostedBiz.photos
+          : (Array.isArray(bData.photos) ? bData.photos : []);
+
+        // If photos are still empty, try recovering orphaned QR photos from D1 files table
+        let recoveredCover: string | undefined = hostedBiz?.coverImage;
+        let recoveredLogo: string | undefined = hostedBiz?.logo || profile.logo;
+        if (photos.length === 0 && db && userEmail) {
+          try {
+            const fileRows: any = await db.prepare('SELECT id, filename, mime_type, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ?').bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`).all();
+            if (fileRows?.results && fileRows.results.length > 0) {
+              const recovered = recoverQrPhotosFromFileRecords(fileRows.results, 'https://brivu.shapesmm7.workers.dev');
+              if (recovered.photos.length > 0) photos = recovered.photos;
+              if (!recoveredCover && recovered.coverImage) recoveredCover = recovered.coverImage;
+              if (!recoveredLogo && recovered.logo) recoveredLogo = recovered.logo;
+            }
+          } catch (_) {}
+        }
+
+        const menuItemsSource = Array.isArray(hostedBiz?.menuItems) && hostedBiz.menuItems.length > 0
+          ? hostedBiz.menuItems
+          : inventory.map((item: any) => ({
+              id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
+              name: item.name,
+              category: item.category || 'All',
+              price: item.sellingPrice || item.price || 0,
+              description: item.description || '',
+              photoUrl: item.image || item.photoUrl,
+              isAvailable: item.inStock !== false,
+            }));
+
         return sanitizePublicQrPage({
+          ...(hostedBiz || {}),
           id: `user_${userEmail}_business`,
-          title: profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
-          tagline: profile.description || 'Welcome to our official business page',
-          description: profile.description || '',
-          pageType: 'menu',
-          accentColor: profile.themeColor || '#059669',
-          theme: 'emerald',
-          logo: profile.logo,
-          coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
-          phone: profile.phone || '',
-          whatsapp: cleanWa,
-          email: profile.email || userEmail,
-          address: profile.address || '',
-          currency: profile.currency || 'UGX',
-          openingHours: '',
-          allowWhatsAppOrdering: true,
+          title: hostedBiz?.title || profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
+          tagline: hostedBiz?.tagline || profile.description || 'Welcome to our official business page',
+          description: hostedBiz?.description || profile.description || '',
+          pageType: hostedBiz?.pageType || 'menu',
+          accentColor: hostedBiz?.accentColor || profile.themeColor || '#059669',
+          theme: hostedBiz?.theme || 'emerald',
+          logo: recoveredLogo,
+          coverImage: recoveredCover || photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+          phone: hostedBiz?.phone || profile.phone || '',
+          whatsapp: hostedBiz?.whatsapp || cleanWa,
+          email: hostedBiz?.email || profile.email || userEmail,
+          address: hostedBiz?.address || profile.address || '',
+          currency: hostedBiz?.currency || profile.currency || 'UGX',
+          openingHours: hostedBiz?.openingHours || '',
+          allowWhatsAppOrdering: hostedBiz?.allowWhatsAppOrdering ?? true,
           photos,
-          menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
-          menuItems: inventory.map((item: any) => ({
-            id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
-            name: item.name,
-            category: item.category || 'All',
-            price: item.sellingPrice || item.price || 0,
-            description: item.description || '',
-            photoUrl: item.image || item.photoUrl,
-            isAvailable: item.inStock !== false,
-          })),
+          menuCategories: Array.isArray(hostedBiz?.menuCategories) && hostedBiz.menuCategories.length > 0
+            ? hostedBiz.menuCategories
+            : Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
+          menuItems: menuItemsSource,
         });
       }
     } catch (_) {}
@@ -1124,6 +1240,8 @@ export default {
         if (db) {
           try {
             await ensureD1Tables(db);
+            const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
+            await db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR session_id LIKE '%@%'`).bind(fifteenMinsAgo).run().catch(() => {});
             await db.prepare(`
               INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
               VALUES (?, ?, ?, ?, ?)
@@ -2373,17 +2491,7 @@ export default {
 
         // Overwrite file in R2
         if (bucket) {
-          let buffer: Uint8Array;
-          if (typeof data === 'string') {
-            const cleanBase64 = data.includes(',') ? data.split(',')[1] : data;
-            const binary = atob(cleanBase64);
-            buffer = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              buffer[i] = binary.charCodeAt(i);
-            }
-          } else {
-            buffer = new Uint8Array(0);
-          }
+          const buffer = typeof data === 'string' ? decodeBase64ToUint8Array(data) : new Uint8Array(0);
 
           await bucket.put(key, buffer, {
             httpMetadata: { contentType: mimeType },
@@ -2746,11 +2854,7 @@ export default {
           await ensureD1Tables(db);
           const row: any = await db.prepare('SELECT data_base64, mime_type FROM files WHERE id = ?').bind(key).first();
           if (row && row.data_base64) {
-            const binary = atob(row.data_base64);
-            const buffer = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              buffer[i] = binary.charCodeAt(i);
-            }
+            const buffer = decodeBase64ToUint8Array(row.data_base64);
             return new Response(buffer, {
               headers: {
                 ...CORS_HEADERS,
@@ -3047,28 +3151,53 @@ export default {
 
           await ensureD1Tables(db);
 
-          // Persist user record in users table
+          // Fast short-circuit if backup_data is completely identical to last saved backup (avoids N+1 CPU spikes)
+          let existingBackupRow: any = null;
           try {
-            await db.prepare(`
+            existingBackupRow = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
+          } catch (_) {}
+
+          if (existingBackupRow?.backup_data === backupJson) {
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                success: true,
+                unchanged: true,
+                d1Saved: true,
+                r2Saved: false,
+                message: 'Cloud records already up to date',
+                timestamp: now,
+              }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          const batchStatements: any[] = [];
+
+          // 1. User record
+          batchStatements.push(
+            db.prepare(`
               INSERT INTO users (id, email, name, provider, created_at, updated_at, last_login)
               VALUES (?, ?, ?, 'google', ?, ?, ?)
               ON CONFLICT(email) DO UPDATE SET 
                 last_login = excluded.last_login,
                 updated_at = excluded.updated_at
-            `).bind(userEmail, userEmail, userEmail.split('@')[0], now, now, now).run();
-          } catch (_) {}
+            `).bind(userEmail, userEmail, userEmail.split('@')[0], now, now, now)
+          );
 
-          // 1. Persist exactly 1 row per user in D1 backups table
-          await db.prepare(`
-            INSERT INTO backups (id, user_email, backup_data, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET 
-              backup_data = excluded.backup_data,
-              user_email = excluded.user_email,
-              updated_at = excluded.updated_at
-          `).bind(`user_${userEmail}`, userEmail, backupJson, now).run();
+          // 2. Single canonical backup row per user
+          batchStatements.push(
+            db.prepare(`
+              INSERT INTO backups (id, user_email, backup_data, updated_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET 
+                backup_data = excluded.backup_data,
+                user_email = excluded.user_email,
+                updated_at = excluded.updated_at
+            `).bind(`user_${userEmail}`, userEmail, backupJson, now)
+          );
 
-          // 2. Persist compact receipts to D1 receipts table
+          // 3. Batch Receipts
           if (Array.isArray(backupData.receipts)) {
             for (const r of backupData.receipts) {
               if (r && r.id) {
@@ -3090,7 +3219,6 @@ export default {
                   phone: cust.phone || '',
                   email: cust.email || '',
                 });
-
                 const compactData = {
                   id: r.id,
                   receiptNumber: r.receiptNumber || r.id,
@@ -3105,156 +3233,156 @@ export default {
                   notes: r.notes || '',
                   createdAt: r.createdAt || now,
                 };
-
-                await db.prepare(`
-                  INSERT INTO receipts (id, user_email, receipt_number, total, data_json, items_json, customer_json, created_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                  ON CONFLICT(id) DO UPDATE SET 
-                    total = excluded.total,
-                    data_json = excluded.data_json,
-                    items_json = excluded.items_json,
-                    customer_json = excluded.customer_json
-                `).bind(
-                  r.id,
-                  userEmail,
-                  r.receiptNumber || r.id,
-                  Number(r.total || 0),
-                  JSON.stringify(compactData),
-                  itemsJson,
-                  customerJson,
-                  r.createdAt || now
-                ).run();
+                batchStatements.push(
+                  db.prepare(`
+                    INSERT INTO receipts (id, user_email, receipt_number, total, data_json, items_json, customer_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET 
+                      total = excluded.total,
+                      data_json = excluded.data_json,
+                      items_json = excluded.items_json,
+                      customer_json = excluded.customer_json
+                  `).bind(
+                    r.id,
+                    userEmail,
+                    r.receiptNumber || r.id,
+                    Number(r.total || 0),
+                    JSON.stringify(compactData),
+                    itemsJson,
+                    customerJson,
+                    r.createdAt || now
+                  )
+                );
               }
             }
           }
 
-          // 3. Persist products to D1 products table
+          // 4. Batch Products
           const productsList = Array.isArray(backupData.inventoryProducts)
             ? backupData.inventoryProducts
             : (Array.isArray(backupData.products) ? backupData.products : []);
-
           for (const p of productsList) {
             if (p && p.id) {
-              await db.prepare(`
-                INSERT INTO products (id, shop_id, name, barcode, category, selling_price, cost_price, stock_quantity, image, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET 
-                  name = excluded.name,
-                  barcode = excluded.barcode,
-                  category = excluded.category,
-                  selling_price = excluded.selling_price,
-                  cost_price = excluded.cost_price,
-                  stock_quantity = excluded.stock_quantity,
-                  image = excluded.image,
-                  updated_at = excluded.updated_at
-              `).bind(
-                p.id,
-                userEmail,
-                p.name || 'Unnamed Product',
-                p.barcode || null,
-                p.category || 'General',
-                Number(p.sellingPrice || p.price || 0),
-                Number(p.costPrice || 0),
-                Number(p.stockQuantity || p.stock || 0),
-                p.image || null,
-                now
-              ).run();
+              batchStatements.push(
+                db.prepare(`
+                  INSERT INTO products (id, shop_id, name, barcode, category, selling_price, cost_price, stock_quantity, image, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET 
+                    name = excluded.name,
+                    barcode = excluded.barcode,
+                    category = excluded.category,
+                    selling_price = excluded.selling_price,
+                    cost_price = excluded.cost_price,
+                    stock_quantity = excluded.stock_quantity,
+                    image = excluded.image,
+                    updated_at = excluded.updated_at
+                `).bind(
+                  p.id,
+                  userEmail,
+                  p.name || 'Unnamed Product',
+                  p.barcode || null,
+                  p.category || 'General',
+                  Number(p.sellingPrice || p.price || 0),
+                  Number(p.costPrice || 0),
+                  Number(p.stockQuantity || p.stock || 0),
+                  p.image || null,
+                  now
+                )
+              );
             }
           }
 
-          // 4. Persist Shopping Lists to D1
+          // 5. Shopping List
           const shoppingList = Array.isArray(backupData.shoppingList)
             ? backupData.shoppingList
-            : (Array.isArray(backupData.shopping) ? backupData.shopping : []);
-
+            : (Array.isArray(backupData.shopping)
+              ? backupData.shopping
+              : (Array.isArray(backupData.shoppingListItems) ? backupData.shoppingListItems : []));
           if (shoppingList.length > 0) {
-            await db.prepare(`
-              INSERT INTO shopping_lists (id, user_email, title, items_json, total_estimated, status, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-              ON CONFLICT(id) DO UPDATE SET 
-                items_json = excluded.items_json,
-                total_estimated = excluded.total_estimated,
-                updated_at = excluded.updated_at
-            `).bind(
-              `shop_${userEmail}`,
-              userEmail,
-              'My Shopping List',
-              JSON.stringify(shoppingList),
-              0,
-              now,
-              now
-            ).run();
+            batchStatements.push(
+              db.prepare(`
+                INSERT INTO shopping_lists (id, user_email, title, items_json, total_estimated, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                ON CONFLICT(id) DO UPDATE SET 
+                  items_json = excluded.items_json,
+                  total_estimated = excluded.total_estimated,
+                  updated_at = excluded.updated_at
+              `).bind(`shop_${userEmail}`, userEmail, 'My Shopping List', JSON.stringify(shoppingList), 0, now, now)
+            );
           }
 
-          // 5. Persist Staff Directory to D1
+          // 6. Batch Staff Directory
           const staffList = Array.isArray(backupData.staff)
             ? backupData.staff
             : (Array.isArray(backupData.workers) ? backupData.workers : []);
-
           for (const s of staffList) {
             if (s && (s.id || s.name)) {
               const staffId = s.id || `staff_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-              await db.prepare(`
-                INSERT INTO staff_directory (id, user_email, name, role, phone, email, hourly_rate, notes, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET 
-                  name = excluded.name,
-                  role = excluded.role,
-                  phone = excluded.phone,
-                  email = excluded.email,
-                  hourly_rate = excluded.hourly_rate,
-                  notes = excluded.notes,
-                  updated_at = excluded.updated_at
-              `).bind(
-                staffId,
-                userEmail,
-                s.name || 'Staff Member',
-                s.role || null,
-                s.phone || null,
-                s.email || null,
-                Number(s.hourlyRate || s.rate || 0),
-                s.notes || null,
-                now
-              ).run();
+              batchStatements.push(
+                db.prepare(`
+                  INSERT INTO staff_directory (id, user_email, name, role, phone, email, hourly_rate, notes, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET 
+                    name = excluded.name,
+                    role = excluded.role,
+                    phone = excluded.phone,
+                    email = excluded.email,
+                    hourly_rate = excluded.hourly_rate,
+                    notes = excluded.notes,
+                    updated_at = excluded.updated_at
+                `).bind(
+                  staffId,
+                  userEmail,
+                  s.name || 'Staff Member',
+                  s.role || null,
+                  s.phone || null,
+                  s.email || null,
+                  Number(s.hourlyRate || s.rate || 0),
+                  s.notes || null,
+                  now
+                )
+              );
             }
           }
 
-          // 6. Persist Client Directory to D1
+          // 7. Batch Client Directory
           const clientList = Array.isArray(backupData.clients)
             ? backupData.clients
             : (Array.isArray(backupData.customers) ? backupData.customers : []);
-
           for (const c of clientList) {
             if (c && (c.id || c.name)) {
               const clientId = c.id || `client_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-              await db.prepare(`
-                INSERT INTO client_directory (id, user_email, name, phone, email, address, notes, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET 
-                  name = excluded.name,
-                  phone = excluded.phone,
-                  email = excluded.email,
-                  address = excluded.address,
-                  notes = excluded.notes,
-                  updated_at = excluded.updated_at
-              `).bind(
-                clientId,
-                userEmail,
-                c.name || 'Client',
-                c.phone || null,
-                c.email || null,
-                c.address || null,
-                c.notes || null,
-                now
-              ).run();
+              batchStatements.push(
+                db.prepare(`
+                  INSERT INTO client_directory (id, user_email, name, phone, email, address, notes, updated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET 
+                    name = excluded.name,
+                    phone = excluded.phone,
+                    email = excluded.email,
+                    address = excluded.address,
+                    notes = excluded.notes,
+                    updated_at = excluded.updated_at
+                `).bind(
+                  clientId,
+                  userEmail,
+                  c.name || 'Client',
+                  c.phone || null,
+                  c.email || null,
+                  c.address || null,
+                  c.notes || null,
+                  now
+                )
+              );
             }
           }
 
-          // 7. Update exactly 4 canonical QR records in D1 with content-hash checking
+          await executeD1Batch(db, batchStatements, 40);
+
+          // 8. Update canonical QR records safely (reading from qrHostedPages first so photos are NEVER overwritten with [])
           const profile = backupData.profile || {};
           const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
 
-          // A. Websites
           if (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) {
             const webPage = {
               title: 'Our Sites',
@@ -3283,7 +3411,6 @@ export default {
             await saveCanonicalQrPage(db, userEmail, 'websites', webPage);
           }
 
-          // B. Socials
           if (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) {
             const socPage = {
               title: 'Official Social Links',
@@ -3313,7 +3440,6 @@ export default {
             await saveCanonicalQrPage(db, userEmail, 'socials', socPage);
           }
 
-          // C. Events
           if (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) {
             const evtPage = {
               title: 'Our Events',
@@ -3342,38 +3468,62 @@ export default {
             await saveCanonicalQrPage(db, userEmail, 'events', evtPage);
           }
 
-          // D. Business Showcase
+          // D. Business Showcase — read from backupData.qrHostedPages instead of non-existent backupData.photos
+          const incomingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
+          const incomingBizPage = incomingPages.find((p: any) =>
+            p &&
+            p.pageType !== 'websites_hub' &&
+            p.pageType !== 'socials_hub' &&
+            p.pageType !== 'events_hub' &&
+            p.pageType !== 'event' &&
+            !String(p.id || '').startsWith('event-') &&
+            !String(p.id || '').startsWith('events-hub') &&
+            !String(p.id || '').startsWith('websites-hub') &&
+            !String(p.id || '').startsWith('socials-hub')
+          );
           const inv = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : (Array.isArray(backupData.inventory) ? backupData.inventory : []);
-          const photos = Array.isArray(backupData.photos) ? backupData.photos : [];
+          const photos = Array.isArray(incomingBizPage?.photos) && incomingBizPage.photos.length > 0
+            ? incomingBizPage.photos
+            : (Array.isArray(backupData.photos) ? backupData.photos : []);
+
+          const bizMenuItems = Array.isArray(incomingBizPage?.menuItems) && incomingBizPage.menuItems.length > 0
+            ? incomingBizPage.menuItems
+            : inv.map((item: any) => ({
+                id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
+                name: item.name,
+                category: item.category || 'All',
+                price: item.sellingPrice || item.price || 0,
+                description: item.description || '',
+                photoUrl: item.image || item.photoUrl,
+                isAvailable: item.inStock !== false,
+              }));
+
           const bizPage = {
-            title: profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
-            tagline: profile.description || 'Welcome to our official business page',
-            description: profile.description || '',
-            pageType: 'menu',
-            accentColor: profile.themeColor || '#059669',
-            theme: 'emerald',
-            logo: profile.logo,
-            coverImage: photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
-            phone: profile.phone || '',
-            whatsapp: cleanWa,
-            email: profile.email || userEmail,
-            address: profile.address || '',
-            currency: profile.currency || 'UGX',
-            openingHours: '',
-            allowWhatsAppOrdering: true,
+            ...(incomingBizPage || {}),
+            title: incomingBizPage?.title || profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
+            tagline: incomingBizPage?.tagline || profile.description || 'Welcome to our official business page',
+            description: incomingBizPage?.description || profile.description || '',
+            pageType: incomingBizPage?.pageType || 'menu',
+            accentColor: incomingBizPage?.accentColor || profile.themeColor || '#059669',
+            theme: incomingBizPage?.theme || 'emerald',
+            logo: incomingBizPage?.logo || profile.logo,
+            coverImage: incomingBizPage?.coverImage || photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+            phone: incomingBizPage?.phone || profile.phone || '',
+            whatsapp: incomingBizPage?.whatsapp || cleanWa,
+            email: incomingBizPage?.email || profile.email || userEmail,
+            address: incomingBizPage?.address || profile.address || '',
+            currency: incomingBizPage?.currency || profile.currency || 'UGX',
+            openingHours: incomingBizPage?.openingHours || '',
+            allowWhatsAppOrdering: incomingBizPage?.allowWhatsAppOrdering ?? true,
             photos,
-            menuCategories: Array.from(new Set(['All', ...inv.map((i: any) => i.category || 'Items')])),
-            menuItems: inv.map((item: any) => ({
-              id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
-              name: item.name,
-              category: item.category || 'All',
-              price: item.sellingPrice || item.price || 0,
-              description: item.description || '',
-              photoUrl: item.image || item.photoUrl,
-              isAvailable: item.inStock !== false,
-            })),
+            menuCategories: Array.isArray(incomingBizPage?.menuCategories) && incomingBizPage.menuCategories.length > 0
+              ? incomingBizPage.menuCategories
+              : Array.from(new Set(['All', ...inv.map((i: any) => i.category || 'Items')])),
+            menuItems: bizMenuItems,
           };
-          await saveCanonicalQrPage(db, userEmail, 'business', bizPage);
+          await saveCanonicalQrPage(db, userEmail, 'business', bizPage, {
+            preserveExistingPhotosIfEmpty: !incomingBizPage || photos.length === 0,
+          });
         }
 
         return new Response(
@@ -3533,14 +3683,15 @@ export default {
               backupData.inventoryProducts = Array.from(productMap.values());
             }
 
-            // D. Uploaded Files & Photos
+            // D. Uploaded Files & Photos (D1 files + R2 bucket photos fallback)
+            const existingFiles = Array.isArray(backupData.files) ? backupData.files : [];
+            const fileMap = new Map<string, any>();
+            for (const f of existingFiles) {
+              if (f?.key || f?.id) fileMap.set(f.key || f.id, f);
+            }
+
             const fileRows = await db.prepare('SELECT id, filename, mime_type, size, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ?').bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`).all();
             if (fileRows?.results && fileRows.results.length > 0) {
-              const existingFiles = Array.isArray(backupData.files) ? backupData.files : [];
-              const fileMap = new Map();
-              for (const f of existingFiles) {
-                if (f?.key || f?.id) fileMap.set(f.key || f.id, f);
-              }
               for (const row of fileRows.results as any[]) {
                 if (row?.id && !fileMap.has(row.id)) {
                   fileMap.set(row.id, {
@@ -3554,7 +3705,97 @@ export default {
                   });
                 }
               }
-              backupData.files = Array.from(fileMap.values());
+            }
+
+            // Also scan R2 photos prefix so R2-only photos are never missed
+            if (bucket && typeof bucket.list === 'function') {
+              try {
+                const listed = await bucket.list({ prefix: `users/${encodeURIComponent(userEmail)}/photos/`, limit: 200 });
+                if (listed && Array.isArray(listed.objects)) {
+                  for (const obj of listed.objects) {
+                    if (!fileMap.has(obj.key)) {
+                      const rawName = (obj.key.split('/').pop() || obj.key).replace(/^\d+_/, '');
+                      fileMap.set(obj.key, {
+                        key: obj.key,
+                        id: obj.key,
+                        filename: rawName,
+                        mimeType: obj.httpMetadata?.contentType || 'image/jpeg',
+                        size: obj.size || 0,
+                        uploadedAt: obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString(),
+                        url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
+                      });
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            const allUserFiles = Array.from(fileMap.values());
+            if (allUserFiles.length > 0) {
+              backupData.files = allUserFiles;
+            }
+
+            // E. Protect and auto-recover QR gallery photos in qrHostedPages from R2/D1 files if any sync cleared them
+            const recoveredAssets = recoverQrPhotosFromFileRecords(allUserFiles, url.origin);
+            if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
+              // Merge duplicate canonical `user_<email>_business` into real business page without losing photos
+              const bizPages = backupData.qrHostedPages.filter((p: any) =>
+                p &&
+                p.pageType !== 'websites_hub' &&
+                p.pageType !== 'socials_hub' &&
+                p.pageType !== 'events_hub' &&
+                p.pageType !== 'event'
+              );
+              const populatedBiz = bizPages.find((p: any) => Array.isArray(p.photos) && p.photos.length > 0);
+              backupData.qrHostedPages = backupData.qrHostedPages.map((p: any) => {
+                if (
+                  p &&
+                  p.pageType !== 'websites_hub' &&
+                  p.pageType !== 'socials_hub' &&
+                  p.pageType !== 'events_hub' &&
+                  p.pageType !== 'event'
+                ) {
+                  let photos = Array.isArray(p.photos) ? p.photos : [];
+                  if (photos.length === 0 && populatedBiz && populatedBiz.photos.length > 0) {
+                    photos = populatedBiz.photos;
+                  }
+                  if (photos.length === 0 && recoveredAssets.photos.length > 0) {
+                    photos = recoveredAssets.photos;
+                  }
+                  return {
+                    ...p,
+                    photos,
+                    coverImage: p.coverImage || recoveredAssets.coverImage || photos[0]?.url,
+                    logo: p.logo || recoveredAssets.logo,
+                  };
+                }
+                return p;
+              });
+            } else if (recoveredAssets.photos.length > 0) {
+              backupData.qrHostedPages = [
+                {
+                  id: `qr-${Date.now().toString(36)}`,
+                  title: backupData?.profile?.name || 'Brivu Business',
+                  tagline: backupData?.profile?.description || '',
+                  description: '',
+                  pageType: 'menu',
+                  accentColor: '#059669',
+                  theme: 'emerald',
+                  logo: recoveredAssets.logo || backupData?.profile?.logo,
+                  coverImage: recoveredAssets.coverImage || recoveredAssets.photos[0]?.url,
+                  phone: backupData?.profile?.phone || '',
+                  whatsapp: backupData?.profile?.whatsapp || backupData?.profile?.phone || '',
+                  email: backupData?.profile?.email || userEmail,
+                  address: backupData?.profile?.address || '',
+                  currency: backupData?.profile?.currency || 'UGX',
+                  allowWhatsAppOrdering: true,
+                  photos: recoveredAssets.photos,
+                  menuCategories: ['All'],
+                  menuItems: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+              ];
             }
 
           } catch (_) {}
@@ -3879,20 +4120,17 @@ export default {
       const indexResponse = await env.ASSETS.fetch(new Request(indexUrl, request));
       let html = await indexResponse.text();
 
-      // Check if this is a QR customer request or request with email / qr params
+      // Check if this is a QR customer request or request with explicit email / qr params (skip bare /)
       const isQrRoute =
         url.pathname.includes('/qr') ||
+        url.pathname.includes('/menu') ||
         url.searchParams.has('qr') ||
         url.searchParams.has('email') ||
         url.searchParams.has('u') ||
         url.searchParams.has('user') ||
         url.searchParams.has('event') ||
         url.searchParams.has('website') ||
-        url.searchParams.has('social') ||
-        url.pathname.includes('/menu') ||
-        url.pathname === '/' ||
-
-        url.pathname === '';
+        url.searchParams.has('social');
 
       const emailParam = (
         url.searchParams.get('email') ||

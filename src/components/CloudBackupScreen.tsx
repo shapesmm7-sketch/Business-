@@ -246,7 +246,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
         ) : isFullyOperational ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Connected ({healthStatus.d1Bound ? 'D1' : 'R2'})</span>
+            <span>Connected</span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">

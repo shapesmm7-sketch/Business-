@@ -10,14 +10,16 @@ export interface AdMobNativeAdProps {
   className?: string;
 }
 
+let slotSequence = 0;
+
 /**
  * AdMobNativeAd Component
- * 
- * In compliance with user requirements:
+ *
  * 1. ZERO mock HTML ads or sample cards are rendered in DOM / web preview (returns null).
  * 2. On Android native app, requests authentic live Native Advanced ads from Google AdMob SDK
- *    via NativeAdBridge/AdMobService using live AdMob ID ca-app-pub-8582659585800553/9630358215.
- * 3. Positioned inline within page content via measured slot coordinates instead of a fixed bottom overlay.
+ *    via NativeAdBridge/AdMobService using live AdMob ID ca-app-pub-8582659585800553/6584166086.
+ * 3. Positioned inline within page content via measured slot coordinates and unique slotId ownership
+ *    so unmounting slots never hide a newly mounted screen's ad.
  */
 export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   unitId = ADMOB_UNITS.NATIVE_ADVANCED,
@@ -25,6 +27,7 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   className = '',
 }) => {
   const slotRef = useRef<HTMLDivElement>(null);
+  const slotIdRef = useRef<string>(`native-slot-${++slotSequence}`);
 
   const syncSlotPosition = useCallback(() => {
     if (!Capacitor.isNativePlatform() || !slotRef.current) return;
@@ -34,7 +37,7 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     // Check if slot is within visible viewport area
     const isVisibleInViewport =
       rect.bottom > 10 &&
-      rect.top < window.innerHeight &&
+      rect.top < window.innerHeight - 10 &&
       rect.width > 0 &&
       rect.height > 0;
 
@@ -44,13 +47,15 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       width: Math.round(rect.width * dpr),
       height: Math.round(rect.height * dpr),
       visible: isVisibleInViewport,
+      slotId: slotIdRef.current,
     }).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) return;
+    const slotId = slotIdRef.current;
 
-    // Request/preload real AdMob test native ad
+    // Request/preload live AdMob native advanced ad
     AdMobService.requestNativeAd(unitId).catch(() => {});
 
     // Sync position as DOM settles
@@ -59,7 +64,8 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     const t3 = setTimeout(syncSlotPosition, 400);
     const t4 = setTimeout(syncSlotPosition, 800);
 
-    // Sync position on scroll or screen resize
+    // Capture scroll on document as well as window so inner scrollable containers update coordinates
+    document.addEventListener('scroll', syncSlotPosition, { passive: true, capture: true });
     window.addEventListener('scroll', syncSlotPosition, { passive: true });
     window.addEventListener('resize', syncSlotPosition, { passive: true });
 
@@ -82,12 +88,13 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(t4);
+      document.removeEventListener('scroll', syncSlotPosition, { capture: true });
       window.removeEventListener('scroll', syncSlotPosition);
       window.removeEventListener('resize', syncSlotPosition);
       if (io) io.disconnect();
       if (ro) ro.disconnect();
-      // Hide native view overlay when this specific slot unmounts
-      NativeAdBridge.hideNativeAd().catch(() => {});
+      // Only hide native overlay if this unmounting slot is still the active owner
+      NativeAdBridge.hideNativeAd({ slotId }).catch(() => {});
     };
   }, [unitId, syncSlotPosition]);
 

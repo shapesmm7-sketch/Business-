@@ -44,6 +44,7 @@ import {
   Store,
   ArrowUpRight,
   Scan,
+  RefreshCw,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -367,12 +368,42 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     return QRHostingService.getCustomerPhotoUrl(activePage.id, photoQrModalPhoto.id, ownerEmail);
   }, [activePage, photoQrModalPhoto, ownerEmail]);
 
-  // Sync QR pages with Cloudflare on mount
-  useEffect(() => {
-    if (activePage) {
-      CloudflareService.saveSingleQrPage(activePage, ownerEmail).catch(() => {});
+  const [isRecoveringCloudPhotos, setIsRecoveringCloudPhotos] = useState<boolean>(false);
+
+  const handleRecoverCloudPhotos = async (forceMerge = false, silent = false) => {
+    if (!ownerEmail) {
+      if (!silent) showToast('Sign in to restore photos from Cloud');
+      return;
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
+    if (!silent) setIsRecoveringCloudPhotos(true);
+    try {
+      const res = await CloudflareService.recoverQrPhotosFromCloud(ownerEmail, forceMerge);
+      if (res.updated) {
+        const freshPages = StorageService.getHostedQRPages();
+        setPages(freshPages);
+        if (!silent) {
+          showToast(
+            res.recoveredCount > 0
+              ? `Restored ${res.recoveredCount} QR photo${res.recoveredCount === 1 ? '' : 's'} from Cloud!`
+              : 'Synced cloud assets!'
+          );
+        }
+      } else if (!silent) {
+        showToast('All QR photos from Cloud are already shown.');
+      }
+    } catch {
+      if (!silent) showToast('Could not reach Cloud right now. Try again shortly.');
+    } finally {
+      if (!silent) setIsRecoveringCloudPhotos(false);
+    }
+  };
+
+  // Auto-recover QR photos from Cloudflare R2 on mount if business page photos are empty (never pushes empty state on mount)
+  useEffect(() => {
+    if (!ownerEmail) return;
+    if (!activePage || !Array.isArray(activePage.photos) || activePage.photos.length === 0) {
+      handleRecoverCloudPhotos(false, true).catch(() => {});
+    }
   }, [ownerEmail]);
 
   // Refresh Main QR Code when active page or scope changes
@@ -2636,12 +2667,25 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
                 Customers love seeing real photos of your venue, products, and services (Max 20 photos).
               </p>
-              <button
-                onClick={handlePhotoUploadClick}
-                className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
-              >
-                + Upload Business Photos
-              </button>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  onClick={handlePhotoUploadClick}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
+                >
+                  + Upload Business Photos
+                </button>
+                {ownerEmail && (
+                  <button
+                    type="button"
+                    onClick={() => handleRecoverCloudPhotos(true, false)}
+                    disabled={isRecoveringCloudPhotos}
+                    className="px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-xs font-bold shadow-xs active:scale-95 transition flex items-center gap-1.5 disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRecoveringCloudPhotos ? 'animate-spin' : ''}`} />
+                    <span>{isRecoveringCloudPhotos ? 'Restoring...' : 'Restore from Cloud'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2752,7 +2796,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 Business Socials & Links
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Add your social channels (Instagram, TikTok, WhatsApp, Facebook, Website). All added socials appear at the bottom of your hosted Business QR page on Cloudflare.
+                Add your social channels (Instagram, TikTok, WhatsApp, Facebook, Website). All added socials appear at the bottom of your hosted Business QR page on Cloud.
               </p>
             </div>
 

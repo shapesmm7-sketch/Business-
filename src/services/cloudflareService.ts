@@ -130,6 +130,61 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
   };
 }
 
+let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let syncPendingResolvers: Array<(res: CloudflareSyncResponse) => void> = [];
+let syncInFlightPromise: Promise<CloudflareSyncResponse> | null = null;
+let syncCooldownUntil = 0;
+let consecutiveSyncFailures = 0;
+
+function isWorkerOverloadResponse(status: number, rawText: string): boolean {
+  const lower = (rawText || '').toLowerCase();
+  return (
+    status === 429 ||
+    status === 503 ||
+    status === 529 ||
+    lower.includes('cpu time limit') ||
+    lower.includes('exceeded') ||
+    lower.includes('worker threw exception')
+  );
+}
+
+export function isQrGalleryPhotoRecord(record: Pick<CloudflareFileRecord, 'key' | 'filename' | 'mimeType' | 'folder'>): boolean {
+  const k = String(record?.key || '').toLowerCase();
+  const f = String(record?.filename || k.split('/').pop() || '').toLowerCase();
+  const folder = String(record?.folder || '').toLowerCase();
+  const mime = String(record?.mimeType || '').toLowerCase();
+
+  if (!k) return false;
+  if (mime && !mime.startsWith('image/')) {
+    if (!/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(f)) return false;
+  }
+  if (f.endsWith('.pdf') || f.endsWith('.json') || f.endsWith('.csv') || f.endsWith('.txt')) return false;
+
+  const inPhotosFolder = folder === 'photos' || k.includes('/photos/');
+  const isQrNamed =
+    f.includes('qr_photo') ||
+    f.includes('qr_business') ||
+    /^(\d+_)?qr_\d+\.(jpg|jpeg|png|webp)$/i.test(f) ||
+    /^(\d+_)?qr_photo/i.test(f);
+
+  if (!inPhotosFolder && !isQrNamed) return false;
+
+  if (
+    f.includes('logo') ||
+    f.includes('signature') ||
+    f.includes('product_') ||
+    f.includes('customer_') ||
+    f.includes('agent_') ||
+    f.includes('staff_') ||
+    f.includes('event_photo') ||
+    f.includes('qr_item') ||
+    f.includes('qr_cover')
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export const CloudflareService = {
   getConfig(): CloudflareConfig {
     const config = StorageService.getCloudflareConfig();
@@ -482,31 +537,35 @@ export const CloudflareService = {
         key: result.key,
         filename: result.filename || filename,
         size: result.size,
-        message: result.message || `File ${filename} saved to Cloudflare R2`,
+        message: result.message || `File ${filename} saved to Cloud`,
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       const readable = errMsg.includes('abort')
         ? 'Upload timed out (15s)'
         : errMsg === 'Failed to fetch'
-        ? 'Cloudflare Worker unreachable or CORS blocked. Ensure Worker URL is valid.'
+        ? 'Cloud service unreachable or blocked. Ensure connection is active.'
         : errMsg;
-      console.warn('Cloudflare file upload note:', readable);
+      console.warn('Cloud file upload note:', readable);
       return {
         success: false,
-        message: `Cloudflare upload note: ${readable}`,
+        message: `Cloud upload note: ${readable}`,
       };
     }
   },
 
   /**
-   * Syncs all application data (profile, settings, receipts, inventory, staff) to Cloudflare D1
+   * Syncs all application data (profile, settings, receipts, inventory, staff) to Cloudflare D1.
+   * Uses trailing debouncing + single-flight coalescing + overload backoff so rapid saves never exhaust Worker CPU limits.
    */
-  async syncAllToCloudflare(customBackup?: AppBackupData): Promise<CloudflareSyncResponse> {
+  async syncAllToCloudflare(
+    customBackup?: AppBackupData,
+    options?: { immediate?: boolean }
+  ): Promise<CloudflareSyncResponse> {
     if (!this.shouldAutoSyncData()) {
       return {
         success: false,
-        message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)',
+        message: 'Cloud auto-sync is disabled (trial expired or not subscribed)',
       };
     }
 
@@ -518,96 +577,159 @@ export const CloudflareService = {
       };
     }
 
-    const config = this.getConfig();
     if (!this.isConfigured()) {
       return {
         success: false,
-        message: 'Cloudflare Worker is not configured. Set up the worker URL in Settings.',
+        message: 'Cloud service is not configured. Check your settings.',
       };
     }
 
-    try {
-      const rawBackup = customBackup || StorageService.exportBackup();
-      const backupData = sanitizeBackupForD1Sync(rawBackup);
-      const headers = this.getAuthHeaders();
-      const query = `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}`;
-      const targetUrl = `${config.workerUrl}/api/sync/push${query}`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let response: Response;
-      try {
-        response = await fetch(targetUrl, {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json',
-            'X-User-Email': userEmail,
-            'X-User-Id': userEmail,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user: StorageService.getWorkOSUser() }),
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      const rawText = await response.text().catch(() => response.statusText || '');
-      const parsed = parseWorkerResponse(rawText);
-
-      if (!response.ok) {
-        let errorMsg = `Sync failed with HTTP ${response.status}`;
-        if (parsed.ok && parsed.data?.error) {
-          errorMsg = parsed.data.error;
-        } else if (parsed.error) {
-          errorMsg = parsed.error;
-        } else if (rawText) {
-          errorMsg = rawText;
-        }
-        return {
-          success: false,
-          message: errorMsg,
-          error: errorMsg,
-        };
-      }
-
-      // Also cache in local user vault
-      try {
-        localStorage.setItem(`brivu_vault_${userEmail}`, JSON.stringify(rawBackup));
-      } catch (_) {}
-
-      if (!parsed.ok) {
-        return {
-          success: false,
-          message: parsed.error || 'Failed to parse sync response',
-          error: parsed.error,
-        };
-      }
-
-      const result = parsed.data || {};
-      const now = new Date().toISOString();
-
-      this.saveConfig({
-        lastSyncAt: now,
-        lastStatus: 'connected',
-        lastErrorMessage: undefined,
-      });
-
-      return {
-        success: true,
-        message: result.message || 'All records successfully saved to Cloudflare D1',
-        timestamp: result.timestamp || now,
-        receiptsSaved: result.receiptsSaved || backupData.receipts.length,
-      };
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.warn('Cloudflare D1 sync note:', errMsg);
+    const isImmediate = Boolean(options?.immediate || customBackup);
+    if (!isImmediate && Date.now() < syncCooldownUntil) {
       return {
         success: false,
-        message: `Cloudflare D1 sync note: ${errMsg}`,
-        error: errMsg,
+        message: 'Cloud sync paused briefly during rate-limit cooldown',
       };
     }
+
+    if (isImmediate) {
+      if (syncDebounceTimer) {
+        clearTimeout(syncDebounceTimer);
+        syncDebounceTimer = null;
+      }
+      const res = await this._executeSyncAllToCloudflare(customBackup);
+      if (syncPendingResolvers.length > 0) {
+        const resolvers = syncPendingResolvers.splice(0);
+        resolvers.forEach((r) => r(res));
+      }
+      return res;
+    }
+
+    return new Promise<CloudflareSyncResponse>((resolve) => {
+      syncPendingResolvers.push(resolve);
+      if (syncDebounceTimer) {
+        clearTimeout(syncDebounceTimer);
+      }
+      syncDebounceTimer = setTimeout(async () => {
+        syncDebounceTimer = null;
+        const resolvers = syncPendingResolvers.splice(0);
+        const res = await this._executeSyncAllToCloudflare();
+        resolvers.forEach((r) => r(res));
+      }, 2500);
+    });
+  },
+
+  async _executeSyncAllToCloudflare(customBackup?: AppBackupData): Promise<CloudflareSyncResponse> {
+    if (syncInFlightPromise && !customBackup) {
+      return syncInFlightPromise;
+    }
+
+    const run = async (): Promise<CloudflareSyncResponse> => {
+      const userEmail = this.getUserEmail();
+      const config = this.getConfig();
+      if (!userEmail || !this.isConfigured()) {
+        return { success: false, message: 'Cloudflare sync skipped' };
+      }
+
+      try {
+        const rawBackup = customBackup || StorageService.exportBackup();
+        const backupData = sanitizeBackupForD1Sync(rawBackup);
+        const headers = this.getAuthHeaders();
+        const query = `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}`;
+        const targetUrl = `${normalizeUrl(config.workerUrl)}/api/sync/push${query}`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        let response: Response;
+        try {
+          response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+              'X-User-Email': userEmail,
+              'X-User-Id': userEmail,
+            },
+            signal: controller.signal,
+            body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user: StorageService.getWorkOSUser() }),
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        const rawText = await response.text().catch(() => response.statusText || '');
+        const parsed = parseWorkerResponse(rawText);
+
+        if (!response.ok) {
+          if (isWorkerOverloadResponse(response.status, rawText)) {
+            consecutiveSyncFailures += 1;
+            const backoffMs = Math.min(300000, 30000 * Math.pow(2, consecutiveSyncFailures - 1));
+            syncCooldownUntil = Date.now() + backoffMs;
+          }
+          let errorMsg = `Sync failed with HTTP ${response.status}`;
+          if (parsed.ok && parsed.data?.error) {
+            errorMsg = parsed.data.error;
+          } else if (parsed.error) {
+            errorMsg = parsed.error;
+          } else if (rawText) {
+            errorMsg = rawText;
+          }
+          return {
+            success: false,
+            message: errorMsg,
+            error: errorMsg,
+          };
+        }
+
+        consecutiveSyncFailures = 0;
+        syncCooldownUntil = 0;
+
+        try {
+          localStorage.setItem(`brivu_vault_${userEmail}`, JSON.stringify(rawBackup));
+        } catch (_) {}
+
+        if (!parsed.ok) {
+          return {
+            success: false,
+            message: parsed.error || 'Failed to parse sync response',
+            error: parsed.error,
+          };
+        }
+
+        const result = parsed.data || {};
+        const now = new Date().toISOString();
+
+        this.saveConfig({
+          lastSyncAt: now,
+          lastStatus: 'connected',
+          lastErrorMessage: undefined,
+        });
+
+        return {
+          success: true,
+          message: result.message || 'All records successfully saved to Cloud',
+          timestamp: result.timestamp || now,
+          receiptsSaved: result.receiptsSaved || backupData.receipts.length,
+        };
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn('Cloud sync note:', errMsg);
+        return {
+          success: false,
+          message: `Cloud sync note: ${errMsg}`,
+          error: errMsg,
+        };
+      }
+    };
+
+    if (!customBackup) {
+      syncInFlightPromise = run().finally(() => {
+        syncInFlightPromise = null;
+      });
+      return syncInFlightPromise;
+    }
+
+    return run();
   },
 
   /**
@@ -767,18 +889,23 @@ export const CloudflareService = {
       if (!rawBackupData) {
         return {
           success: false,
-          message: 'No backup records found on Cloudflare for this account',
+          message: 'No backup records found on Cloud for this account',
         };
       }
 
       // Non-destructive merge: preserve local records and combine with user's cloud backup
       const importResult = StorageService.importBackup(rawBackupData, false);
       if (importResult.success) {
+        // Recover QR gallery photos from Cloud storage if business QR page photos are missing
+        const pages = StorageService.getHostedQRPages();
+        const needsPhotoRecovery = pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
+        if (needsPhotoRecovery) {
+          await this.recoverQrPhotosFromCloud(email, false).catch(() => {});
+        }
+
         try {
           const combinedBackup = StorageService.exportBackup();
           localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(combinedBackup));
-          // Immediately sync merged state back to Cloudflare so local offline data is uploaded
-          this.syncAllToCloudflare().catch(() => {});
         } catch (_) {}
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),
@@ -788,7 +915,7 @@ export const CloudflareService = {
         const productsCount = rawBackupData.inventoryProducts?.length || 0;
         return {
           success: true,
-          message: `Successfully restored ${receiptsCount} receipts & ${productsCount} inventory products from Cloudflare!`,
+          message: `Successfully restored ${receiptsCount} receipts & ${productsCount} inventory products from Cloud!`,
           count: receiptsCount,
           data: rawBackupData,
         };
@@ -802,7 +929,7 @@ export const CloudflareService = {
       const errMsg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
-        message: `Failed to pull from Cloudflare: ${errMsg}`,
+        message: `Failed to restore from Cloud: ${errMsg}`,
       };
     }
   },
@@ -863,18 +990,22 @@ export const CloudflareService = {
   /**
    * Lists files saved in Cloudflare R2
    */
-  async listFiles(prefix?: string): Promise<CloudflareFileRecord[]> {
+  async listFiles(prefix?: string, emailOverride?: string): Promise<CloudflareFileRecord[]> {
     const config = this.getConfig();
     if (!this.isConfigured()) return [];
 
     try {
       const headers = this.getAuthHeaders();
-      const email = this.getUserEmail();
+      const email = (emailOverride || this.getUserEmail() || '').toLowerCase().trim();
+      if (email) {
+        headers['X-User-Email'] = email;
+        headers['X-User-Id'] = email;
+      }
       const params = new URLSearchParams();
       if (prefix) params.set('prefix', prefix);
       if (email) params.set('email', email);
       const queryParam = params.toString() ? `?${params.toString()}` : '';
-      const targetUrl = `${config.workerUrl}/api/files${queryParam}`;
+      const targetUrl = `${normalizeUrl(config.workerUrl)}/api/files${queryParam}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',
@@ -889,6 +1020,124 @@ export const CloudflareService = {
     } catch (err) {
       console.warn('Failed to list files from Cloudflare:', err);
       return [];
+    }
+  },
+
+  /**
+   * Recovers QR business gallery photos, cover banner, and logo from Cloudflare R2 (/api/files)
+   * if they were cleared from D1 backups / qr_pages during an outage.
+   */
+  async recoverQrPhotosFromCloud(
+    emailOverride?: string,
+    forceMergeMissing = false
+  ): Promise<{ recoveredCount: number; updated: boolean }> {
+    const email = (emailOverride || this.getUserEmail() || '').toLowerCase().trim();
+    if (!email || !this.isConfigured()) {
+      return { recoveredCount: 0, updated: false };
+    }
+
+    try {
+      const allFiles = await this.listFiles(undefined, email);
+      if (!Array.isArray(allFiles) || allFiles.length === 0) {
+        return { recoveredCount: 0, updated: false };
+      }
+
+      const sorted = [...allFiles].sort((a, b) => {
+        const ta = new Date(a?.uploadedAt || 0).getTime() || 0;
+        const tb = new Date(b?.uploadedAt || 0).getTime() || 0;
+        return tb - ta;
+      });
+
+      let recoveredCoverUrl: string | undefined;
+      let recoveredLogoUrl: string | undefined;
+      const r2GalleryPhotos: Array<{ id: string; url: string; title: string; description: string }> = [];
+      const seenUrls = new Set<string>();
+
+      for (const file of sorted) {
+        if (!file?.url) continue;
+        const fname = String(file.filename || file.key || '').toLowerCase();
+        const keyLower = String(file.key || '').toLowerCase();
+
+        if (!recoveredLogoUrl && (fname === 'logo.webp' || fname.includes('qr_logo') || keyLower.endsWith('/logo.webp'))) {
+          recoveredLogoUrl = file.url;
+          continue;
+        }
+        if (!recoveredCoverUrl && fname.includes('qr_cover')) {
+          recoveredCoverUrl = file.url;
+          continue;
+        }
+        if (isQrGalleryPhotoRecord(file) && !seenUrls.has(file.url)) {
+          seenUrls.add(file.url);
+          r2GalleryPhotos.push({
+            id: `photo-r2-${r2GalleryPhotos.length}-${String(file.key || '').slice(-10).replace(/[^a-zA-Z0-9]/g, '')}`,
+            url: file.url,
+            title: 'Business Photo',
+            description: '',
+          });
+          if (r2GalleryPhotos.length >= 20) break;
+        }
+      }
+
+      if (r2GalleryPhotos.length === 0 && !recoveredCoverUrl && !recoveredLogoUrl) {
+        return { recoveredCount: 0, updated: false };
+      }
+
+      const pages = StorageService.getHostedQRPages();
+      if (!Array.isArray(pages) || pages.length === 0) {
+        return { recoveredCount: 0, updated: false };
+      }
+
+      let totalRecovered = 0;
+      let didUpdate = false;
+
+      const updatedPages = pages.map((page, index) => {
+        if (index !== 0) return page;
+        const existingPhotos = Array.isArray(page.photos) ? page.photos.filter((p) => Boolean(p && p.url)) : [];
+        let nextPhotos = existingPhotos;
+
+        if (existingPhotos.length === 0 && r2GalleryPhotos.length > 0) {
+          nextPhotos = r2GalleryPhotos;
+          totalRecovered = r2GalleryPhotos.length;
+          didUpdate = true;
+        } else if (forceMergeMissing && r2GalleryPhotos.length > 0) {
+          const existingUrlSet = new Set(existingPhotos.map((p) => p.url));
+          const missing = r2GalleryPhotos.filter((p) => !existingUrlSet.has(p.url));
+          if (missing.length > 0) {
+            nextPhotos = [...existingPhotos, ...missing].slice(0, 20);
+            totalRecovered = missing.length;
+            didUpdate = true;
+          }
+        }
+
+        const nextCover = page.coverImage || recoveredCoverUrl;
+        const nextLogo = page.logo || recoveredLogoUrl;
+        if ((!page.coverImage && nextCover) || (!page.logo && nextLogo)) {
+          didUpdate = true;
+        }
+
+        return {
+          ...page,
+          photos: nextPhotos,
+          coverImage: nextCover,
+          logo: nextLogo,
+          updatedAt: didUpdate ? new Date().toISOString() : page.updatedAt,
+        };
+      });
+
+      if (didUpdate) {
+        try {
+          StorageService.saveHostedQRPagesLocalOnly(updatedPages);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+          }
+          await this.saveSingleQrPage(updatedPages[0], email).catch(() => {});
+        } catch (_) {}
+      }
+
+      return { recoveredCount: totalRecovered, updated: didUpdate };
+    } catch (err) {
+      console.warn('recoverQrPhotosFromCloud note:', err);
+      return { recoveredCount: 0, updated: false };
     }
   },
 

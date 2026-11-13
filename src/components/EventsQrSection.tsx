@@ -283,7 +283,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         }
       }
       setFormPhotos((prev) => [...prev, ...newPhotoUrls].slice(0, 3));
-      showToast(`${newPhotoUrls.length} photo(s) saved to Cloudflare!`);
+      showToast(`${newPhotoUrls.length} photo(s) saved to Cloud!`);
     } catch (err) {
       console.error(err);
       showToast('Failed to process image.');
@@ -355,7 +355,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         prev.map((i) => (i.id === editingItem.id ? updatedItem : i))
       );
       QRHostingService.syncEventPage(updatedItem, business);
-      showToast('Event QR updated & hosted on Cloudflare!');
+      showToast('Event QR updated & hosted on Cloud!');
     } else {
       const newItem: EventQrItem = {
         id: `event-qr-${Date.now()}`,
@@ -382,7 +382,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       setItems((prev) => [newItem, ...prev]);
       setSelectedItemId(newItem.id);
       QRHostingService.syncEventPage(newItem, business);
-      showToast('New Event QR created & hosted on Cloudflare!');
+      showToast('New Event QR created & hosted on Cloud!');
     }
     setShowModal(false);
   };

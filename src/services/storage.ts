@@ -1138,7 +1138,7 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, backupData.staffIncidents);
       }
 
-      // 14. QR Hosted Pages & Items
+      // 14. QR Hosted Pages & Items (preserve non-empty photos, coverImage, logo, menuItems during merge)
       if (Array.isArray(backupData.qrHostedPages)) {
         if (replaceExisting) {
           writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
@@ -1146,7 +1146,61 @@ export const StorageService = {
           const existing = this.getHostedQRPages();
           const qrMap = new Map<string, any>();
           existing.forEach((p) => { if (p && p.id) qrMap.set(p.id, p); });
-          backupData.qrHostedPages.forEach((p) => { if (p && p.id) qrMap.set(p.id, p); });
+          backupData.qrHostedPages.forEach((incomingPage) => {
+            if (!incomingPage || !incomingPage.id) return;
+            const current = qrMap.get(incomingPage.id);
+            if (current) {
+              const mergedPhotos =
+                Array.isArray(incomingPage.photos) && incomingPage.photos.length > 0
+                  ? incomingPage.photos
+                  : Array.isArray(current.photos)
+                  ? current.photos
+                  : [];
+              const mergedMenuItems =
+                Array.isArray(incomingPage.menuItems) && incomingPage.menuItems.length > 0
+                  ? incomingPage.menuItems
+                  : Array.isArray(current.menuItems)
+                  ? current.menuItems
+                  : [];
+              qrMap.set(incomingPage.id, {
+                ...current,
+                ...incomingPage,
+                photos: mergedPhotos,
+                menuItems: mergedMenuItems,
+                coverImage: incomingPage.coverImage || current.coverImage,
+                logo: incomingPage.logo || current.logo,
+              });
+            } else {
+              // If incoming is canonical `user_<email>_business`, merge its photos/details into primary business page if one exists
+              const isCanonicalBiz = String(incomingPage.id).startsWith('user_') && String(incomingPage.id).endsWith('_business');
+              if (isCanonicalBiz && existing.length > 0) {
+                const primary = qrMap.get(existing[0].id) || existing[0];
+                const mergedPhotos =
+                  Array.isArray(primary.photos) && primary.photos.length > 0
+                    ? primary.photos
+                    : Array.isArray(incomingPage.photos)
+                    ? incomingPage.photos
+                    : [];
+                const mergedMenuItems =
+                  Array.isArray(primary.menuItems) && primary.menuItems.length > 0
+                    ? primary.menuItems
+                    : Array.isArray(incomingPage.menuItems)
+                    ? incomingPage.menuItems
+                    : [];
+                qrMap.set(primary.id, {
+                  ...incomingPage,
+                  ...primary,
+                  id: primary.id,
+                  photos: mergedPhotos,
+                  menuItems: mergedMenuItems,
+                  coverImage: primary.coverImage || incomingPage.coverImage,
+                  logo: primary.logo || incomingPage.logo,
+                });
+              } else {
+                qrMap.set(incomingPage.id, incomingPage);
+              }
+            }
+          });
           writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, Array.from(qrMap.values()));
         }
       }
@@ -2608,6 +2662,20 @@ export const StorageService = {
     } catch {
       return businessPages;
     }
+  },
+
+  saveHostedQRPagesLocalOnly(pages: QRCodeHostedPage[]): boolean {
+    const businessPages = pages.filter(
+      (p) =>
+        !p.id.startsWith('event-') &&
+        !p.id.startsWith('events-hub-') &&
+        !p.id.startsWith('websites-hub-') &&
+        !p.id.startsWith('socials-hub-') &&
+        !p.id.startsWith('test-event-') &&
+        !p.id.startsWith('web-') &&
+        !p.id.startsWith('social-')
+    );
+    return writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, businessPages);
   },
 
   saveHostedQRPages(pages: QRCodeHostedPage[]): boolean {

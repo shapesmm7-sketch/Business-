@@ -618,21 +618,20 @@ export function App() {
     };
   }, []);
 
-  // Initialize Google AdMob SDK on app mount and request native advanced ads immediately on startup
+  // Initialize Google AdMob SDK once on mount and preload live Native Advanced & Interstitial ads
   useEffect(() => {
-    // Immediate startup request for Native Advanced ad
-    AdMobService.preloadNativeAdvanced().catch(() => {});
+    let active = true;
+    AdMobService.initNativeAdMob()
+      .then(() => {
+        if (!active) return;
+        AdMobService.preloadNativeAdvanced().catch(() => {});
+        AdMobService.preloadInterstitial().catch(() => {});
+      })
+      .catch(console.error);
 
-    const timer = setTimeout(() => {
-      AdMobService.initNativeAdMob()
-        .then(() => {
-          AdMobService.preloadNativeAdvanced().catch(() => {});
-          AdMobService.preloadInterstitial().catch(() => {});
-        })
-        .catch(console.error);
-    }, 200);
-
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Setup global interaction tracking on mount
