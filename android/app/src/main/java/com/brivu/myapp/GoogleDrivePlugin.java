@@ -351,6 +351,30 @@ public class GoogleDrivePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void invalidateToken(PluginCall call) {
+        String token = call.getString("token");
+        if (token == null || token.trim().isEmpty()) {
+            JSObject ret = new JSObject();
+            ret.put("cleared", false);
+            call.resolve(ret);
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                GoogleAuthUtil.clearToken(getContext(), token);
+                JSObject ret = new JSObject();
+                ret.put("cleared", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                Log.w(TAG, "Token invalidation note: " + e.getMessage());
+                JSObject ret = new JSObject();
+                ret.put("cleared", false);
+                call.resolve(ret);
+            }
+        });
+    }
+
+    @PluginMethod
     public void disconnectGoogleDrive(PluginCall call) {
         try {
             GoogleSignInClient client = getClient();

@@ -333,24 +333,9 @@ export class QRHostingService {
       ? `https://${rawSite}`
       : (rawSite === 'https://' || rawSite === 'http://' ? '' : rawSite);
 
-    const cssStyle = `
-      #tab-btn-photos, #tab-btn-about { display: none !important; }
-      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child, [placeholder*="Search"] { display: none !important; }
-      #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
-      #tab-btn-menu span { font-size: 0 !important; }
-      #tab-btn-menu span::before { content: "Events"; font-size: 18px !important; font-weight: 800; color: #0f172a; }
-      #tab-btn-menu svg { display: none !important; }
-      .text-emerald-600, .font-bold.text-emerald-600, [class*="text-emerald"], .price, :contains("UGX"), .text-xs.font-semibold.text-emerald-600 { display: none !important; }
-      #tab-content-menu button, #tab-content-menu .bg-emerald-600, button:contains("+ Add to Order"), .bg-emerald-600.text-white { display: none !important; }
-      .fixed.bottom-4, .bg-emerald-600.fixed, [class*="fixed"].bottom- { display: none !important; }
-      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; max-width: 600px !important; margin: 0 auto !important; }
-      #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
-      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 480px !important; }
-      #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-      #tab-content-menu .p-3 { padding: 16px !important; }
-      #tab-content-menu h3 { font-size: 18px !important; font-weight: 800 !important; color: #0f172a !important; line-height: 1.3 !important; }
-      #tab-content-menu p { font-size: 13px !important; margin-top: 8px !important; color: #475569 !important; line-height: 1.5 !important; }
-    `.replace(/\s+/g, ' ');
+    const cleanEventAccent = (event.darkColor && /^#[0-9a-f]{3,8}$/i.test(event.darkColor.trim()))
+      ? event.darkColor.trim()
+      : '#7c3aed';
 
     const photos: QRBusinessPhoto[] = (event.photos || []).map((url, idx) => ({
       id: `${event.id}-photo-${idx}`,
@@ -380,15 +365,13 @@ export class QRHostingService {
       },
     ];
 
-    const injectedAccentColor = (event.darkColor || '#7c3aed') + '; } ' + cssStyle + ' /*';
-
     return {
       id: event.id,
       title: this.cleanText(event.title),
       tagline: this.cleanText(event.ctaText || 'Official Event Invitation & RSVP Pass'),
       description: this.cleanText(event.description || ''),
       pageType: 'event',
-      accentColor: injectedAccentColor,
+      accentColor: cleanEventAccent,
       theme: 'indigo',
       coverImage: event.photos?.[0] || undefined,
       logo: event.photos?.[0] || business.logo || undefined,
@@ -410,7 +393,7 @@ export class QRHostingService {
       qrLightColor: event.lightColor || '#ffffff',
       qrEyeColor: event.eyeColor || event.darkColor || '#6d28d9',
       qrBoxBgColor: event.boxBgColor || '#ffffff',
-      qrBoxBorderColor: (event.boxBorderColor || '#cbd5e1') + '</script><style>' + cssStyle + '</style><script>',
+      qrBoxBorderColor: event.boxBorderColor || '#cbd5e1',
       createdAt: event.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -462,34 +445,13 @@ export class QRHostingService {
       };
     });
 
-    const cssStyle = `
-      #tab-btn-photos, #tab-btn-about { display: none !important; }
-      #item-search-input, .relative:has(#item-search-input), #tab-content-menu > div:first-child, [placeholder*="Search"] { display: none !important; }
-      #tab-btn-menu { border-bottom: none !important; pointer-events: none !important; text-align: left !important; justify-content: flex-start !important; padding-left: 0 !important; }
-      #tab-btn-menu span { font-size: 0 !important; }
-      #tab-btn-menu span::before { content: "Events"; font-size: 18px !important; font-weight: 800; color: #0f172a; }
-      #tab-btn-menu svg { display: none !important; }
-      .text-emerald-600, .font-bold.text-emerald-600, [class*="text-emerald"], .price, :contains("UGX"), .text-xs.font-semibold.text-emerald-600 { display: none !important; }
-      #tab-content-menu button, #tab-content-menu .bg-emerald-600, button:contains("+ Add to Order"), .bg-emerald-600.text-white { display: none !important; }
-      .fixed.bottom-4, .bg-emerald-600.fixed, [class*="fixed"].bottom- { display: none !important; }
-      #tab-content-menu .grid { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; gap: 24px !important; max-width: 600px !important; margin: 0 auto !important; }
-      #tab-content-menu .grid > div { flex-direction: column !important; border-radius: 20px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important; border: 1px solid #e2e8f0 !important; overflow: hidden !important; background-color: #ffffff !important; }
-      #tab-content-menu [class*="aspect-"] { aspect-ratio: 16 / 9 !important; width: 100% !important; height: auto !important; max-height: 480px !important; }
-      #tab-content-menu [class*="aspect-"] img { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-      #tab-content-menu .p-3 { padding: 16px !important; }
-      #tab-content-menu h3 { font-size: 18px !important; font-weight: 800 !important; color: #0f172a !important; line-height: 1.3 !important; }
-      #tab-content-menu p { font-size: 13px !important; margin-top: 8px !important; color: #475569 !important; line-height: 1.5 !important; }
-    `.replace(/\s+/g, ' ');
-
-    const injectedAccentColor = '#7c3aed; } ' + cssStyle + ' /*';
-
     return {
       id: hubId,
       title: 'Our Events',
       tagline: undefined,
       description: this.cleanText(`Official events, ticket invitations, and RSVP directory for ${business.name || 'our venue'}.`),
       pageType: 'events_hub',
-      accentColor: injectedAccentColor,
+      accentColor: '#7c3aed',
       theme: 'indigo',
       coverImage: photos[0]?.url || undefined,
       logo: business.logo || photos[0]?.url || undefined,
@@ -510,7 +472,7 @@ export class QRHostingService {
       qrLightColor: '#ffffff',
       qrEyeColor: '#6d28d9',
       qrBoxBgColor: '#ffffff',
-      qrBoxBorderColor: '#cbd5e1' + '</script><style>' + cssStyle + '</style><script>',
+      qrBoxBorderColor: '#cbd5e1',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

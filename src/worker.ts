@@ -658,10 +658,92 @@ export function sanitizePublicQrPage(rawPage: any): any {
         })
     : undefined;
 
+  const rawEvents = Array.isArray(rawPage.eventsQrItems) ? rawPage.eventsQrItems : [];
   const isEvtType =
     rawPage.pageType === 'event' ||
     rawPage.pageType === 'events_hub' ||
     String(rawPage.id || '').toLowerCase().startsWith('event');
+
+  // Enrich menuItems with full event details (photoUrl, guestOfHonor, speakers, websiteUrl, description)
+  // when legacy D1 qr_pages rows hold older menuItems alongside newer eventsQrItems.
+  const normalizeHttpUrl = (raw?: string): string => {
+    const s = String(raw || '').trim();
+    if (!s || s === 'https://' || s === 'http://' || /wa\.me\/|whatsapp\.com\//i.test(s)) return '';
+    return /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  };
+
+  let enrichedMenuItems = cleanMenuItems;
+  if (isEvtType && rawEvents.length > 0) {
+    if (enrichedMenuItems.length === 0) {
+      enrichedMenuItems = rawEvents.map((e: any) => {
+        const evtSite = normalizeHttpUrl(e?.websiteUrl || e?.rsvpUrl);
+        return {
+          id: `rsvp-${e.id}`,
+          name: String(e?.title || ''),
+          category: 'Our Events',
+          price: 0,
+          size: undefined,
+          description: String(e?.description || '').slice(0, 500),
+          photoUrl: Array.isArray(e?.photos) ? e.photos[0] : undefined,
+          url: evtSite || e?.rsvpUrl || undefined,
+          websiteUrl: evtSite || undefined,
+          guestOfHonor: e?.guestOfHonor ? String(e.guestOfHonor) : undefined,
+          speakers: Array.isArray(e?.speakers) && e.speakers.length > 0 ? e.speakers : undefined,
+          ctaText: e?.ctaText || 'RSVP & Join',
+          itemType: undefined,
+          phone: undefined,
+          phoneAction: undefined,
+          tags: ['RSVP', 'Invitation', 'Entry Pass'],
+          isSpecial: true,
+          isAvailable: true,
+          hasPromo: false,
+          promoPrice: undefined,
+          promoDescription: undefined,
+          promoStartDate: undefined,
+          promoEndDate: undefined,
+        };
+      });
+    } else {
+      enrichedMenuItems = cleanMenuItems.map((item: any, idx: number) => {
+        const matched =
+          rawEvents.find(
+            (e: any) =>
+              e &&
+              (`rsvp-${e.id}` === item.id ||
+                `evt-${e.id}` === item.id ||
+                `event-pass-${e.id}` === item.id ||
+                `event-${e.id}` === item.id ||
+                e.id === item.id ||
+                (e.title && item.name && String(e.title).trim().toLowerCase() === String(item.name).trim().toLowerCase()))
+          ) || (rawEvents.length === cleanMenuItems.length ? rawEvents[idx] : null);
+        if (!matched) return item;
+        const evtSite = normalizeHttpUrl(matched.websiteUrl || item.websiteUrl || matched.rsvpUrl || item.url);
+        return {
+          ...item,
+          photoUrl: item.photoUrl || (Array.isArray(matched.photos) ? matched.photos[0] : undefined),
+          description: matched.description ? String(matched.description).slice(0, 500) : item.description,
+          guestOfHonor: item.guestOfHonor || (matched.guestOfHonor ? String(matched.guestOfHonor) : undefined),
+          speakers:
+            Array.isArray(item.speakers) && item.speakers.length > 0
+              ? item.speakers
+              : Array.isArray(matched.speakers) && matched.speakers.length > 0
+                ? matched.speakers
+                : undefined,
+          websiteUrl: item.websiteUrl || evtSite || undefined,
+          url: item.url || evtSite || matched.rsvpUrl || undefined,
+        };
+      });
+    }
+  }
+
+  const rawAccent = String(rawPage.accentColor || '');
+  const cleanAccent =
+    rawAccent.includes(';') || rawAccent.includes('}') || rawAccent.includes('{')
+      ? (isEvtType ? '#7c3aed' : '#059669')
+      : (rawAccent || '#059669');
+  const rawBorder = rawPage.qrBoxBorderColor ? String(rawPage.qrBoxBorderColor) : '';
+  const cleanBorder = rawBorder.includes('<') ? '#cbd5e1' : (rawBorder || undefined);
+  const firstEventPhoto = rawEvents[0] && Array.isArray(rawEvents[0].photos) ? rawEvents[0].photos[0] : undefined;
 
   return {
     id: String(rawPage.id || 'business'),
@@ -669,10 +751,10 @@ export function sanitizePublicQrPage(rawPage: any): any {
     title: rawPage.title || rawPage.name || 'Brivu Business',
     tagline: rawPage.tagline || '',
     description: rawPage.description || '',
-    accentColor: rawPage.accentColor || '#059669',
+    accentColor: cleanAccent,
     theme: rawPage.theme || 'emerald',
     logo: rawPage.logo || undefined,
-    coverImage: rawPage.coverImage || undefined,
+    coverImage: rawPage.coverImage || (isEvtType ? firstEventPhoto : undefined) || undefined,
     phone: rawPage.phone || '',
     whatsapp: rawPage.whatsapp ? String(rawPage.whatsapp).replace(/[^0-9+]/g, '') : '',
     email: rawPage.email || '',
@@ -690,15 +772,15 @@ export function sanitizePublicQrPage(rawPage: any): any {
     socialLinks: rawPage.socialLinks || undefined,
     photos: cleanPhotos,
     menuCategories: Array.isArray(rawPage.menuCategories) && rawPage.menuCategories.length > 0 ? rawPage.menuCategories : ['All'],
-    menuItems: cleanMenuItems,
+    menuItems: enrichedMenuItems,
     websitesQrItems: Array.isArray(rawPage.websitesQrItems) ? rawPage.websitesQrItems : [],
     socialsQrItems: Array.isArray(rawPage.socialsQrItems) ? rawPage.socialsQrItems : [],
-    eventsQrItems: Array.isArray(rawPage.eventsQrItems) ? rawPage.eventsQrItems : [],
+    eventsQrItems: rawEvents,
     qrDarkColor: rawPage.qrDarkColor || undefined,
     qrLightColor: rawPage.qrLightColor || undefined,
     qrEyeColor: rawPage.qrEyeColor || undefined,
     qrBoxBgColor: rawPage.qrBoxBgColor || undefined,
-    qrBoxBorderColor: rawPage.qrBoxBorderColor || undefined,
+    qrBoxBorderColor: cleanBorder,
     createdAt: rawPage.createdAt || undefined,
     updatedAt: rawPage.updatedAt || new Date().toISOString(),
   };
@@ -1316,6 +1398,343 @@ export async function resolveHostedQrPage(
     }),
     isEmptyFallback: true,
   };
+}
+
+export function sanitizePublicStoreSlug(rawSlug: string): string {
+  const cleaned = String(rawSlug || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'store';
+}
+
+export function sanitizePublicStoreCatalogPayload(
+  payload: any,
+  slugOverride?: string,
+  userEmailOverride?: string
+): any {
+  if (!payload || typeof payload !== 'object') return null;
+  const rawSettings = payload.settings || {};
+  const rawBiz = payload.business || {};
+  const cleanEmail = String(
+    userEmailOverride || rawSettings.email || rawBiz.email || ''
+  )
+    .toLowerCase()
+    .trim();
+  const cleanSlug = sanitizePublicStoreSlug(slugOverride || rawSettings.slug || rawBiz.name || 'store');
+  const rawProducts = Array.isArray(payload.products) ? payload.products : [];
+
+  const sanitizedProducts = rawProducts.map((p: any) => {
+    const qty = Number(p?.quantity ?? p?.stockQuantity ?? 0);
+    const isAvailable = qty > 0;
+    const status = qty === 0 ? 'out-of-stock' : qty < 5 ? 'low-stock' : 'in-stock';
+    return {
+      id: String(p?.id || ''),
+      itemId: String(p?.itemId || ''),
+      name: String(p?.name || 'Unnamed Product'),
+      description: p?.description ? String(p.description) : undefined,
+      image: p?.image ? String(p.image) : undefined,
+      sizes: Array.isArray(p?.sizes) ? p.sizes : undefined,
+      color: p?.color ? String(p.color) : undefined,
+      quantity: qty,
+      unit: p?.unit ? String(p.unit) : undefined,
+      sellingPrice: Number(p?.sellingPrice ?? p?.price ?? 0),
+      categoryId: p?.categoryId ? String(p.categoryId) : undefined,
+      categoryName: p?.categoryName ? String(p.categoryName) : undefined,
+      categoryColor: p?.categoryColor ? String(p.categoryColor) : undefined,
+      isAvailable,
+      status,
+    };
+  });
+
+  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
+  const sanitizedCategories = rawCategories.map((c: any) => ({
+    id: String(c?.id || ''),
+    name: String(c?.name || ''),
+    color: c?.color ? String(c.color) : undefined,
+    count:
+      typeof c?.count === 'number'
+        ? c.count
+        : sanitizedProducts.filter((cp: any) => cp.categoryId === c?.id).length,
+  }));
+
+  return {
+    settings: {
+      enabled: rawSettings.enabled !== false,
+      slug: cleanSlug,
+      businessName: rawSettings.businessName || rawBiz.name || '',
+      tagline: rawSettings.tagline || rawBiz.description || '',
+      phone: rawSettings.phone || rawBiz.phone || '',
+      whatsapp: rawSettings.whatsapp || rawBiz.whatsapp || rawBiz.phone || '',
+      email: cleanEmail,
+      address: rawSettings.address || rawBiz.address || '',
+      currency: rawSettings.currency || rawBiz.currency || 'UGX',
+      showExactQuantity: rawSettings.showExactQuantity !== false,
+      hideOutOfStock: rawSettings.hideOutOfStock === true,
+      allowWhatsAppOrders: rawSettings.allowWhatsAppOrders !== false,
+      updatedAt: rawSettings.updatedAt || payload.lastUpdated || new Date().toISOString(),
+    },
+    business: {
+      name: rawBiz.name || rawSettings.businessName || 'Brivu Store',
+      description: rawBiz.description || rawSettings.tagline || '',
+      logo: rawBiz.logo || undefined,
+      phone: rawBiz.phone || rawSettings.phone || '',
+      whatsapp: rawBiz.whatsapp || rawBiz.phone || rawSettings.whatsapp || '',
+      email: cleanEmail || rawBiz.email || rawSettings.email || '',
+      address: rawBiz.address || rawSettings.address || '',
+      currency: rawBiz.currency || rawSettings.currency || 'UGX',
+    },
+    categories: sanitizedCategories,
+    products: sanitizedProducts,
+    lastUpdated: payload.lastUpdated || new Date().toISOString(),
+  };
+}
+
+export function buildPublicStoreCatalogFromBackup(
+  backupData: any,
+  userEmail: string,
+  overrideSlug?: string,
+  existingSettings?: any
+): any | null {
+  if (!backupData || typeof backupData !== 'object') return null;
+  const profile = backupData.profile || {};
+  const savedSettings = backupData.publicCatalogSettings || existingSettings || {};
+  const rawProducts = Array.isArray(backupData.inventoryProducts)
+    ? backupData.inventoryProducts
+    : Array.isArray(backupData.products)
+    ? backupData.products
+    : [];
+  const rawCategories = Array.isArray(backupData.productCategories) ? backupData.productCategories : [];
+
+  const cleanEmail = String(userEmail || savedSettings.email || profile.email || '')
+    .toLowerCase()
+    .trim();
+  const slugCandidate =
+    overrideSlug ||
+    (savedSettings.slug && savedSettings.slug !== 'store' ? savedSettings.slug : '') ||
+    (profile.name ? sanitizePublicStoreSlug(profile.name) : '') ||
+    savedSettings.slug ||
+    'store';
+  const cleanSlug = sanitizePublicStoreSlug(slugCandidate);
+
+  const settings = {
+    enabled: savedSettings.enabled !== false,
+    slug: cleanSlug,
+    businessName: savedSettings.businessName || profile.name || '',
+    tagline: savedSettings.tagline || profile.description || '',
+    phone: savedSettings.phone || profile.phone || '',
+    whatsapp: savedSettings.whatsapp || profile.whatsapp || profile.phone || '',
+    email: cleanEmail,
+    address: savedSettings.address || profile.address || '',
+    currency: savedSettings.currency || profile.currency || 'UGX',
+    showExactQuantity: savedSettings.showExactQuantity !== false,
+    hideOutOfStock: savedSettings.hideOutOfStock === true,
+    allowWhatsAppOrders: savedSettings.allowWhatsAppOrders !== false,
+    updatedAt: savedSettings.updatedAt || backupData.exportedAt || new Date().toISOString(),
+  };
+
+  const publicProducts = rawProducts.filter((p: any) => p && p.isPublicInCatalog !== false);
+  const visibleProducts = settings.hideOutOfStock
+    ? publicProducts.filter((p: any) => Number(p.quantity ?? p.stockQuantity ?? 0) > 0)
+    : publicProducts;
+
+  const catMap = new Map<string, any>(rawCategories.map((c: any) => [c.id, c]));
+
+  const catalogProducts = visibleProducts.map((p: any) => {
+    const qty = Number(p.quantity ?? p.stockQuantity ?? 0);
+    const cat = p.categoryId ? catMap.get(p.categoryId) : undefined;
+    const isAvailable = qty > 0;
+    const status = qty === 0 ? 'out-of-stock' : qty < 5 ? 'low-stock' : 'in-stock';
+
+    return {
+      id: p.id,
+      itemId: p.itemId || '',
+      name: p.name || 'Unnamed Product',
+      description: p.description || undefined,
+      image: p.image || undefined,
+      sizes: Array.isArray(p.sizes) ? p.sizes : undefined,
+      color: p.color || undefined,
+      quantity: qty,
+      unit: p.unit || undefined,
+      sellingPrice: Number(p.sellingPrice ?? p.price ?? 0),
+      categoryId: p.categoryId || undefined,
+      categoryName: cat?.name || p.category || undefined,
+      categoryColor: cat?.color || undefined,
+      isAvailable,
+      status,
+    };
+  });
+
+  const categories = rawCategories.map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    color: c.color,
+    count: catalogProducts.filter((cp: any) => cp.categoryId === c.id).length,
+  }));
+
+  if (catalogProducts.length === 0 && !profile.name && !backupData.publicCatalogSettings) {
+    return null;
+  }
+
+  return sanitizePublicStoreCatalogPayload(
+    {
+      settings,
+      business: {
+        name: profile.name || settings.businessName || 'Brivu Store',
+        description: profile.description || settings.tagline || '',
+        logo: profile.logo || undefined,
+        phone: profile.phone || settings.phone || '',
+        whatsapp: profile.whatsapp || profile.phone || settings.whatsapp || '',
+        email: cleanEmail,
+        address: profile.address || settings.address || '',
+        currency: profile.currency || settings.currency || 'UGX',
+      },
+      categories,
+      products: catalogProducts,
+      lastUpdated: new Date().toISOString(),
+    },
+    cleanSlug,
+    cleanEmail
+  );
+}
+
+export async function upsertUserStoreCatalog(
+  db: any,
+  userEmail: string,
+  rawSlug: string,
+  payload: any,
+  nowIso?: string
+): Promise<string> {
+  const cleanSlug = sanitizePublicStoreSlug(rawSlug || 'store');
+  const cleanEmail = String(userEmail || '').toLowerCase().trim();
+  const isRealEmail = Boolean(cleanEmail && cleanEmail.includes('@') && !cleanEmail.startsWith('brivu-usr-'));
+  const rowKey = isRealEmail ? `${cleanSlug}::${cleanEmail}` : cleanSlug;
+  const sanitized = sanitizePublicStoreCatalogPayload(payload, cleanSlug, isRealEmail ? cleanEmail : undefined);
+  const catalogJson = JSON.stringify(sanitized);
+  const now = nowIso || new Date().toISOString();
+
+  await ensureD1Tables(db);
+  if (isRealEmail) {
+    try {
+      await db
+        .prepare('DELETE FROM store_catalogs WHERE LOWER(user_email) = ? AND slug != ?')
+        .bind(cleanEmail, rowKey)
+        .run();
+    } catch (_) {}
+  }
+
+  await db
+    .prepare(
+      `
+      INSERT INTO store_catalogs (slug, user_email, business_name, catalog_json, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(slug) DO UPDATE SET
+        user_email = excluded.user_email,
+        business_name = excluded.business_name,
+        catalog_json = excluded.catalog_json,
+        updated_at = excluded.updated_at
+    `
+    )
+    .bind(rowKey, isRealEmail ? cleanEmail : null, sanitized?.business?.name || cleanSlug, catalogJson, now)
+    .run();
+
+  return cleanSlug;
+}
+
+export async function resolvePublicStoreCatalog(
+  env: Env,
+  slug: string,
+  userEmail: string
+): Promise<any | null> {
+  const db = getD1Database(env);
+  if (!db) return null;
+
+  const cleanSlug = sanitizePublicStoreSlug(slug || 'store');
+  let cleanEmail = String(userEmail || '').toLowerCase().trim();
+  if (cleanEmail.startsWith('brivu-usr-') || !cleanEmail.includes('@')) {
+    cleanEmail = '';
+  }
+
+  try {
+    await ensureD1Tables(db);
+
+    let storeRow: any = null;
+    if (cleanEmail) {
+      storeRow = await db
+        .prepare(
+          `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+           WHERE LOWER(user_email) = ?
+           ORDER BY CASE WHEN slug = ? OR slug = ? THEN 0 ELSE 1 END, updated_at DESC
+           LIMIT 1`
+        )
+        .bind(cleanEmail, `${cleanSlug}::${cleanEmail}`, cleanSlug)
+        .first();
+    } else {
+      storeRow = await db
+        .prepare(
+          `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+           WHERE slug = ? OR slug LIKE ?
+           ORDER BY updated_at DESC
+           LIMIT 1`
+        )
+        .bind(cleanSlug, `${cleanSlug}::%`)
+        .first();
+      if (storeRow?.user_email) {
+        const rowEmail = String(storeRow.user_email).toLowerCase().trim();
+        if (rowEmail.includes('@') && !rowEmail.startsWith('brivu-usr-')) {
+          cleanEmail = rowEmail;
+        }
+      }
+    }
+
+    let parsedStore: any = null;
+    if (storeRow?.catalog_json) {
+      try {
+        parsedStore = JSON.parse(storeRow.catalog_json);
+      } catch (_) {}
+    }
+
+    // Check backups table for email to fill missing catalogs or fresher inventory updates
+    if (cleanEmail) {
+      const backupRow: any = await db
+        .prepare(
+          `SELECT backup_data, updated_at FROM backups
+           WHERE id = ? OR LOWER(user_email) = ?
+           ORDER BY updated_at DESC
+           LIMIT 1`
+        )
+        .bind(`user_${cleanEmail}`, cleanEmail)
+        .first();
+
+      if (backupRow?.backup_data) {
+        try {
+          const bData = JSON.parse(backupRow.backup_data);
+          const storeProductsCount = Array.isArray(parsedStore?.products) ? parsedStore.products.length : 0;
+          const storeTs = new Date(storeRow?.updated_at || parsedStore?.lastUpdated || 0).getTime();
+          const backupTs = new Date(backupRow?.updated_at || bData?.exportedAt || 0).getTime();
+
+          if (!parsedStore || storeProductsCount === 0 || backupTs > storeTs) {
+            const fromBackup = buildPublicStoreCatalogFromBackup(
+              bData,
+              cleanEmail,
+              cleanSlug !== 'store' ? cleanSlug : undefined,
+              parsedStore?.settings
+            );
+            if (fromBackup && (fromBackup.products.length > 0 || !parsedStore)) {
+              return fromBackup;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (parsedStore) {
+      return sanitizePublicStoreCatalogPayload(parsedStore, cleanSlug, cleanEmail || undefined);
+    }
+  } catch (_) {}
+
+  return null;
 }
 
 export default {
@@ -3215,33 +3634,71 @@ export default {
       }
 
       // Get/Serve file
-      if (bucket && key) {
+      const rawKey = url.pathname.replace('/api/files/', '');
+      const candidateKeys = Array.from(
+        new Set(
+          [
+            key,
+            rawKey,
+            (() => {
+              try {
+                return decodeURIComponent(key);
+              } catch {
+                return key;
+              }
+            })(),
+            key.replace(/%40/gi, '@'),
+            key.replace(/@/g, '%40'),
+          ].filter(Boolean)
+        )
+      );
+
+      if (bucket && candidateKeys.length > 0) {
+        for (const k of candidateKeys) {
+          try {
+            const object = await bucket.get(k);
+            if (object) {
+              const headers = new Headers(CORS_HEADERS);
+              object.writeHttpMetadata(headers);
+              headers.set('etag', object.httpEtag);
+              return new Response(object.body, { headers });
+            }
+          } catch {}
+        }
+      }
+
+      if (db && candidateKeys.length > 0) {
         try {
-          const object = await bucket.get(key);
-          if (object) {
-            const headers = new Headers(CORS_HEADERS);
-            object.writeHttpMetadata(headers);
-            headers.set('etag', object.httpEtag);
-            return new Response(object.body, { headers });
+          await ensureD1Tables(db);
+          for (const k of candidateKeys) {
+            const row: any = await db
+              .prepare('SELECT data_base64, mime_type FROM files WHERE id = ? OR r2_key = ?')
+              .bind(k, k)
+              .first();
+            if (row && row.data_base64) {
+              const buffer = decodeBase64ToUint8Array(row.data_base64);
+              return new Response(buffer, {
+                headers: {
+                  ...CORS_HEADERS,
+                  'Content-Type': row.mime_type || 'application/octet-stream',
+                },
+              });
+            }
           }
         } catch {}
       }
 
-      if (db && key) {
-        try {
-          await ensureD1Tables(db);
-          const row: any = await db.prepare('SELECT data_base64, mime_type FROM files WHERE id = ?').bind(key).first();
-          if (row && row.data_base64) {
-            const buffer = decodeBase64ToUint8Array(row.data_base64);
-            return new Response(buffer, {
-              headers: {
-                ...CORS_HEADERS,
-                'Content-Type': row.mime_type || 'application/octet-stream',
-              },
-            });
-          }
-        } catch {}
-      }
+      return new Response(
+        JSON.stringify({ ok: false, error: 'File not found' }),
+        {
+          status: 404,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+          },
+        }
+      );
     }
 
     // 5. QR Page Save endpoint (/api/qr)
@@ -3433,42 +3890,35 @@ export default {
       try {
         const body: any = await request.json().catch(() => ({}));
         const rawSlug = String(body?.slug || body?.settings?.slug || '').trim().toLowerCase();
-        const slug = rawSlug.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        if (!slug) {
-          return new Response(
-            JSON.stringify({ ok: false, error: 'A valid business slug is required' }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
+        const slug = sanitizePublicStoreSlug(rawSlug || 'store');
 
         const payload = body?.payload || body;
         const userEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
+          url.searchParams.get('email') ||
+          url.searchParams.get('user_id') ||
+          body?.userEmail ||
+          body?.email ||
           payload?.settings?.email ||
           payload?.business?.email ||
           ''
         ).toLowerCase().trim();
 
         const db = getD1Database(env);
-        const catalogJson = JSON.stringify(payload);
         const now = new Date().toISOString();
 
         if (db) {
-          await ensureD1Tables(db);
-          await db.prepare(`
-            INSERT INTO store_catalogs (slug, user_email, business_name, catalog_json, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(slug) DO UPDATE SET
-              user_email = excluded.user_email,
-              business_name = excluded.business_name,
-              catalog_json = excluded.catalog_json,
-              updated_at = excluded.updated_at
-          `).bind(slug, userEmail, payload?.business?.name || slug, catalogJson, now).run();
+          await upsertUserStoreCatalog(db, userEmail, slug, payload, now);
         }
 
+        const publicUrl =
+          userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-')
+            ? `/store/${slug}?email=${encodeURIComponent(userEmail)}`
+            : `/store/${slug}`;
+
         return new Response(
-          JSON.stringify({ ok: true, success: true, slug, url: `/store/${slug}` }),
+          JSON.stringify({ ok: true, success: true, slug, userEmail, url: publicUrl }),
           { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
         );
       } catch (err: any) {
@@ -3480,26 +3930,47 @@ export default {
     }
 
     // 6.6. Store Catalog Fetch endpoint (/api/store/:slug) - PUBLIC NO AUTH REQUIRED
-    if (url.pathname.startsWith('/api/store/')) {
-      const slug = decodeURIComponent(url.pathname.replace('/api/store/', '')).trim().toLowerCase();
-      const db = getD1Database(env);
-      if (db && slug) {
-        try {
-          await ensureD1Tables(db);
-          const row: any = await db.prepare('SELECT catalog_json FROM store_catalogs WHERE slug = ?').bind(slug).first();
-          if (row?.catalog_json) {
-            const data = JSON.parse(row.catalog_json);
-            return new Response(
-              JSON.stringify({ ok: true, success: true, data }),
-              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-            );
+    if (url.pathname === '/api/store' || url.pathname.startsWith('/api/store/')) {
+      const rawSlug =
+        url.pathname === '/api/store'
+          ? 'store'
+          : decodeURIComponent(url.pathname.replace('/api/store/', '')).trim().toLowerCase();
+      const slug = sanitizePublicStoreSlug(rawSlug || 'store');
+      const userEmail = (
+        url.searchParams.get('email') ||
+        url.searchParams.get('u') ||
+        url.searchParams.get('user') ||
+        url.searchParams.get('user_id') ||
+        request.headers.get('X-User-Email') ||
+        request.headers.get('X-User-Id') ||
+        ''
+      ).toLowerCase().trim();
+
+      const data = await resolvePublicStoreCatalog(env, slug, userEmail);
+      if (data) {
+        return new Response(
+          JSON.stringify({ ok: true, success: true, data }),
+          {
+            status: 200,
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+            },
           }
-        } catch (_) {}
+        );
       }
 
       return new Response(
         JSON.stringify({ ok: false, error: `Store "${slug}" not found` }),
-        { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        {
+          status: 404,
+          headers: {
+            ...CORS_HEADERS,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+          },
+        }
       );
     }
 
@@ -3556,15 +4027,20 @@ export default {
 
           await ensureD1Tables(db);
 
-          // Fast short-circuit if backup_data is completely identical AND qr_pages already populated
+          // Fast short-circuit if backup_data is completely identical AND qr_pages & store_catalogs already populated
           let existingBackupRow: any = null;
           let existingQrRow: any = null;
+          let existingStoreRow: any = null;
+          const hasInventoryProducts = Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0;
           try {
             existingBackupRow = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
             existingQrRow = await db.prepare('SELECT id FROM qr_pages WHERE user_email = ? LIMIT 1').bind(userEmail).first();
+            if (hasInventoryProducts) {
+              existingStoreRow = await db.prepare('SELECT slug FROM store_catalogs WHERE LOWER(user_email) = ? LIMIT 1').bind(userEmail).first();
+            }
           } catch (_) {}
 
-          if (existingBackupRow?.backup_data === backupJson && existingQrRow?.id) {
+          if (existingBackupRow?.backup_data === backupJson && existingQrRow?.id && (!hasInventoryProducts || existingStoreRow?.slug)) {
             return new Response(
               JSON.stringify({
                 ok: true,
@@ -3687,11 +4163,11 @@ export default {
                   p.id,
                   userEmail,
                   p.name || 'Unnamed Product',
-                  p.barcode || null,
+                  p.itemId || p.barcode || null,
                   p.category || 'General',
                   Number(p.sellingPrice || p.price || 0),
                   Number(p.costPrice || 0),
-                  Number(p.stockQuantity || p.stock || 0),
+                  Number(p.quantity ?? p.stockQuantity ?? p.stock ?? 0),
                   p.image || null,
                   now
                 )
@@ -3974,6 +4450,16 @@ export default {
               preserveExistingIfEmpty: true,
             });
           }
+
+          // E. Auto-update user's Live Stock Catalog row whenever inventory or catalog settings sync
+          if (inv.length > 0 || backupData.publicCatalogSettings) {
+            try {
+              const autoCatalog = buildPublicStoreCatalogFromBackup(backupData, userEmail);
+              if (autoCatalog) {
+                await upsertUserStoreCatalog(db, userEmail, autoCatalog.settings.slug, autoCatalog, now);
+              }
+            } catch (_) {}
+          }
         }
 
         return new Response(
@@ -4116,18 +4602,26 @@ export default {
                 if (p?.id) productMap.set(p.id, p);
               }
               for (const row of productRows.results as any[]) {
-                if (row?.id && !productMap.has(row.id)) {
-                  productMap.set(row.id, {
-                    id: row.id,
-                    itemId: row.barcode || row.id,
-                    name: row.name,
-                    category: row.category || 'General',
-                    sellingPrice: Number(row.selling_price || 0),
-                    costPrice: Number(row.cost_price || 0),
-                    quantity: Number(row.stock_quantity || 0),
-                    image: row.image || undefined,
-                    unit: 'Pcs'
-                  });
+                if (row?.id) {
+                  const existingProd = productMap.get(row.id);
+                  if (!existingProd) {
+                    productMap.set(row.id, {
+                      id: row.id,
+                      itemId: row.barcode || row.id,
+                      name: row.name,
+                      category: row.category || 'General',
+                      sellingPrice: Number(row.selling_price || 0),
+                      costPrice: Number(row.cost_price || 0),
+                      quantity: Number(row.stock_quantity || 0),
+                      image: row.image || undefined,
+                      unit: 'Pcs'
+                    });
+                  } else if (!existingProd.image && row.image) {
+                    productMap.set(row.id, {
+                      ...existingProd,
+                      image: row.image,
+                    });
+                  }
                 }
               }
               backupData.inventoryProducts = Array.from(productMap.values());
@@ -4554,28 +5048,29 @@ export default {
 
     // Detect QR & Store HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
     const isStaticAssetExt = /\.[a-z0-9]{1,8}$/i.test(url.pathname) && !url.pathname.endsWith('.html');
-    const isQrRoute =
-      url.pathname === '/qr' ||
-      url.pathname.startsWith('/qr/') ||
-      url.pathname === '/menu' ||
-      url.pathname.startsWith('/menu/') ||
-      url.searchParams.has('qr') ||
-      url.searchParams.has('email') ||
-      url.searchParams.has('u') ||
-      url.searchParams.has('user') ||
-      url.searchParams.has('event') ||
-      url.searchParams.has('eventId') ||
-      url.searchParams.has('events') ||
-      url.searchParams.has('website') ||
-      url.searchParams.has('websiteId') ||
-      url.searchParams.has('websites') ||
-      url.searchParams.has('social') ||
-      url.searchParams.has('socialId') ||
-      url.searchParams.has('socials');
     const isStoreRoute =
       url.pathname === '/store' ||
       url.pathname.startsWith('/store/') ||
       url.searchParams.has('store');
+    const isQrRoute =
+      !isStoreRoute &&
+      (url.pathname === '/qr' ||
+        url.pathname.startsWith('/qr/') ||
+        url.pathname === '/menu' ||
+        url.pathname.startsWith('/menu/') ||
+        url.searchParams.has('qr') ||
+        url.searchParams.has('email') ||
+        url.searchParams.has('u') ||
+        url.searchParams.has('user') ||
+        url.searchParams.has('event') ||
+        url.searchParams.has('eventId') ||
+        url.searchParams.has('events') ||
+        url.searchParams.has('website') ||
+        url.searchParams.has('websiteId') ||
+        url.searchParams.has('websites') ||
+        url.searchParams.has('social') ||
+        url.searchParams.has('socialId') ||
+        url.searchParams.has('socials'));
     const shouldInjectSsrHtml =
       request.method === 'GET' && !isStaticAssetExt && (isQrRoute || isStoreRoute);
 
@@ -4669,31 +5164,30 @@ export default {
         } catch (_) {}
       }
 
-      // Check if this is a Store request (/store/:slug or ?store=slug)
+      // Check if this is a Store request (/store, /store/:slug, or ?store=slug)
       let storeSlugParam = '';
       if (url.pathname.includes('/store/')) {
         storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
       } else if (url.searchParams.has('store')) {
         storeSlugParam = (url.searchParams.get('store') || '').trim().toLowerCase();
+      } else if (url.pathname === '/store' || url.pathname.endsWith('/store')) {
+        storeSlugParam = 'store';
       }
 
-      if (storeSlugParam) {
+      if (isStoreRoute) {
+        const resolvedSlug = sanitizePublicStoreSlug(storeSlugParam || 'store');
         try {
-          const db = getD1Database(env);
-          if (db) {
-            await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT catalog_json FROM store_catalogs WHERE slug = ?').bind(storeSlugParam).first();
-            if (row?.catalog_json) {
-              const parsed = JSON.parse(row.catalog_json);
-              const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(parsed)};window.__STORE_SLUG__=${safeScriptJson(storeSlugParam)};</script>`;
-              if (html.includes('</head>')) {
-                html = html.replace('</head>', `${scriptTag}</head>`);
-              } else {
-                html = `${scriptTag}${html}`;
-              }
-              const storeTitle = parsed?.business?.name || parsed?.settings?.businessName || 'Live Catalog';
-              html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
+          const preloadedStore = await resolvePublicStoreCatalog(env, resolvedSlug, emailParam);
+          if (preloadedStore) {
+            const resolvedEmail = emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '';
+            const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
+            if (html.includes('</head>')) {
+              html = html.replace('</head>', `${scriptTag}</head>`);
+            } else {
+              html = `${scriptTag}${html}`;
             }
+            const storeTitle = preloadedStore?.business?.name || preloadedStore?.settings?.businessName || 'Live Stock Catalog';
+            html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
           }
         } catch (_) {}
       }
@@ -4701,7 +5195,7 @@ export default {
       const newHeaders = new Headers(indexResponse.headers);
       Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
       newHeaders.set('Content-Type', 'text/html; charset=utf-8');
-      if (isQrRoute || storeSlugParam) {
+      if (isQrRoute || isStoreRoute) {
         newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       }
       return new Response(html, {

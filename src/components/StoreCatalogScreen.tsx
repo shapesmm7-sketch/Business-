@@ -27,26 +27,163 @@ import {
 } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
+import { Browser } from '@capacitor/browser';
 
 interface StoreCatalogScreenProps {
   slug?: string | null;
+  isMerchantPreview?: boolean;
   onNavigateHome?: () => void;
+}
+
+function getStoreEmailFromLocation(): string {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  const raw =
+    params.get('email') ||
+    params.get('u') ||
+    params.get('user') ||
+    params.get('user_id') ||
+    (window as any).__OWNER_EMAIL__ ||
+    '';
+  const clean = String(raw || '').toLowerCase().trim();
+  return clean && clean.includes('@') && !clean.startsWith('brivu-usr-') ? clean : '';
+}
+
+function isStoreUrlContext(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  const pathname = window.location.pathname || '';
+  const hash = window.location.hash || '';
+  return Boolean(
+    pathname.includes('/store/') ||
+    pathname === '/store' ||
+    pathname.endsWith('/store') ||
+    params.has('store') ||
+    hash.includes('/store/') ||
+    hash.startsWith('#/store')
+  );
+}
+
+function buildPublicCatalogFromBackupData(
+  bData: any,
+  targetSlug: string,
+  ownerEmail: string
+): PublicCatalogPayload | null {
+  if (!bData || typeof bData !== 'object') return null;
+  const rawProducts = Array.isArray(bData.inventoryProducts)
+    ? bData.inventoryProducts
+    : Array.isArray(bData.products)
+    ? bData.products
+    : [];
+  const profile = bData.profile || {};
+  const savedSettings = bData.publicCatalogSettings || {};
+  const categories = Array.isArray(bData.productCategories) ? bData.productCategories : [];
+
+  const settings: PublicCatalogSettings = {
+    enabled: savedSettings.enabled !== false,
+    slug: targetSlug || savedSettings.slug || 'store',
+    businessName: savedSettings.businessName || profile.name || '',
+    tagline: savedSettings.tagline || profile.description || '',
+    phone: savedSettings.phone || profile.phone || '',
+    whatsapp: savedSettings.whatsapp || profile.whatsapp || profile.phone || '',
+    email: ownerEmail || savedSettings.email || profile.email || '',
+    address: savedSettings.address || profile.address || '',
+    currency: savedSettings.currency || profile.currency || 'UGX',
+    showExactQuantity: savedSettings.showExactQuantity !== false,
+    hideOutOfStock: savedSettings.hideOutOfStock === true,
+    allowWhatsAppOrders: savedSettings.allowWhatsAppOrders !== false,
+    updatedAt: savedSettings.updatedAt || bData.exportedAt || new Date().toISOString(),
+  };
+
+  const publicProducts = rawProducts.filter((p: any) => p && p.isPublicInCatalog !== false);
+  const visibleProducts = settings.hideOutOfStock
+    ? publicProducts.filter((p: any) => Number(p.quantity ?? p.stockQuantity ?? 0) > 0)
+    : publicProducts;
+
+  const categoryMap = new Map<string, any>(categories.map((c: any) => [c.id, c]));
+
+  const catalogProducts: PublicCatalogProduct[] = visibleProducts.map((p: any) => {
+    const qty = Number(p.quantity ?? p.stockQuantity ?? 0);
+    const cat = p.categoryId ? categoryMap.get(p.categoryId) : undefined;
+    const isAvailable = qty > 0;
+    const status: 'in-stock' | 'low-stock' | 'out-of-stock' =
+      qty === 0 ? 'out-of-stock' : qty < 5 ? 'low-stock' : 'in-stock';
+
+    return {
+      id: p.id,
+      itemId: p.itemId || '',
+      name: p.name || 'Unnamed Product',
+      description: p.description,
+      image: p.image,
+      sizes: Array.isArray(p.sizes) ? p.sizes : undefined,
+      color: p.color,
+      quantity: qty,
+      unit: p.unit,
+      sellingPrice: Number(p.sellingPrice ?? p.price ?? 0),
+      categoryId: p.categoryId,
+      categoryName: cat?.name || p.category,
+      categoryColor: cat?.color,
+      isAvailable,
+      status,
+    };
+  });
+
+  const categoryCounts = categories.map((cat: any) => ({
+    id: cat.id,
+    name: cat.name,
+    color: cat.color,
+    count: catalogProducts.filter((cp) => cp.categoryId === cat.id).length,
+  }));
+
+  if (catalogProducts.length === 0 && !profile.name) {
+    return null;
+  }
+
+  return {
+    settings,
+    business: {
+      name: profile.name || settings.businessName || 'Brivu Store',
+      description: profile.description || settings.tagline || '',
+      logo: profile.logo,
+      phone: profile.phone || settings.phone || '',
+      whatsapp: profile.whatsapp || profile.phone || settings.whatsapp || '',
+      email: ownerEmail || profile.email || settings.email || '',
+      address: profile.address || settings.address || '',
+      currency: profile.currency || settings.currency || 'UGX',
+    },
+    categories: categoryCounts,
+    products: catalogProducts,
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+function isSsrCatalogValidForRequest(ssr: any, emailFromUrl: string): ssr is PublicCatalogPayload {
+  if (!ssr || typeof ssr !== 'object') return false;
+  const ssrEmail = String(ssr.settings?.email || ssr.business?.email || '').toLowerCase().trim();
+  if (emailFromUrl && ssrEmail && ssrEmail !== emailFromUrl) return false;
+  const hasProducts = Array.isArray(ssr.products) && ssr.products.length > 0;
+  const hasRealBiz = Boolean(ssr.business?.name && ssr.business.name !== 'Brivu Store');
+  return hasProducts || hasRealBiz;
 }
 
 export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
   slug,
+  isMerchantPreview = false,
   onNavigateHome,
 }) => {
+  const emailFromUrl = useMemo(() => getStoreEmailFromLocation(), []);
+  const externalStoreContext = useMemo(() => isStoreUrlContext(), []);
+
   const [catalog, setCatalog] = useState<PublicCatalogPayload | null>(() => {
-    // 1. Check server-preloaded catalog if present
-    if (typeof window !== 'undefined' && (window as any).__INITIAL_STORE_CATALOG__) {
-      return (window as any).__INITIAL_STORE_CATALOG__;
+    if (typeof window !== 'undefined') {
+      const ssr = (window as any).__INITIAL_STORE_CATALOG__;
+      if (isSsrCatalogValidForRequest(ssr, getStoreEmailFromLocation())) {
+        return ssr;
+      }
     }
-    // 2. Check if this is the local business owner viewing their own store preview
-    const localSettings = StorageService.getPublicCatalogSettings();
-    const targetSlug = slug || localSettings.slug;
-    if (!slug || slug === localSettings.slug) {
-      return StorageService.getPublicCatalogPayload(targetSlug);
+    if (isMerchantPreview && !isStoreUrlContext()) {
+      const localSettings = StorageService.getPublicCatalogSettings();
+      return StorageService.getPublicCatalogPayload(slug || localSettings.slug);
     }
     return null;
   });
@@ -62,53 +199,103 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
 
   useEffect(() => {
     const localSettings = StorageService.getPublicCatalogSettings();
-    const targetSlug = (slug || localSettings.slug || '').trim().toLowerCase();
+    const targetSlug = (slug || localSettings.slug || 'store').trim().toLowerCase() || 'store';
+    const urlEmail = getStoreEmailFromLocation();
 
-    // If local matches or testing, populate immediately from StorageService
-    if (!slug || slug === localSettings.slug) {
-      const localPayload = StorageService.getPublicCatalogPayload(targetSlug);
-      setCatalog(localPayload);
+    // Pure in-app owner preview (not opened from external /store/... URL)
+    if (isMerchantPreview && !externalStoreContext && !urlEmail) {
+      setCatalog(StorageService.getPublicCatalogPayload(targetSlug));
       setIsLoading(false);
       return;
     }
 
-    // Otherwise, fetch from public API endpoint
     let isMounted = true;
-    setIsLoading(true);
+    const initialSsr =
+      typeof window !== 'undefined' &&
+      isSsrCatalogValidForRequest((window as any).__INITIAL_STORE_CATALOG__, urlEmail)
+        ? ((window as any).__INITIAL_STORE_CATALOG__ as PublicCatalogPayload)
+        : null;
+
+    if (!initialSsr) {
+      setIsLoading(true);
+    }
     setError(null);
 
-    CloudflareService.fetchPublicStoreCatalog(targetSlug)
-      .then((res) => {
+    const resolveRemoteCatalog = async () => {
+      try {
+        const res = await CloudflareService.fetchPublicStoreCatalog(targetSlug, urlEmail || undefined);
         if (!isMounted) return;
-        if (res.success && res.data) {
-          setCatalog(res.data);
-        } else {
-          // Fallback to local payload if previewing
+        if (res.success && res.data && (Array.isArray(res.data.products) || res.data.business)) {
+          const fetchedProducts = Array.isArray(res.data.products) ? res.data.products : [];
+          if (fetchedProducts.length > 0 || !urlEmail) {
+            setCatalog(res.data);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        // Backup recovery by user email ID (matching how QR links recover from cloud backup)
+        if (urlEmail) {
+          const bData = await CloudflareService.fetchUserBackupData(urlEmail);
+          if (!isMounted) return;
+          const backupCatalog = buildPublicCatalogFromBackupData(bData, targetSlug, urlEmail);
+          if (backupCatalog) {
+            setCatalog(backupCatalog);
+            setIsLoading(false);
+            return;
+          }
+          if (res.success && res.data) {
+            setCatalog(res.data);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        if (initialSsr) {
+          setCatalog(initialSsr);
+          setIsLoading(false);
+          return;
+        }
+
+        // Owner device fallback only when URL has no conflicting email
+        const signedInEmail = StorageService.resolveStoreOwnerEmail();
+        if (!urlEmail || (signedInEmail && signedInEmail === urlEmail)) {
           const localPayload = StorageService.getPublicCatalogPayload(targetSlug);
+          if (localPayload && (localPayload.products.length > 0 || localPayload.business.name !== 'Brivu Store')) {
+            setCatalog(localPayload);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        setError(`Store "${targetSlug}" is currently not available.`);
+      } catch (err: any) {
+        if (!isMounted) return;
+        if (initialSsr) {
+          setCatalog(initialSsr);
+        } else {
+          const signedInEmail = StorageService.resolveStoreOwnerEmail();
+          const localPayload =
+            !urlEmail || (signedInEmail && signedInEmail === urlEmail)
+              ? StorageService.getPublicCatalogPayload(targetSlug)
+              : null;
           if (localPayload && localPayload.products.length > 0) {
             setCatalog(localPayload);
           } else {
-            setError(`Store "${targetSlug}" is currently not available.`);
+            setError(err?.message || 'Unable to load store catalog');
           }
         }
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        const localPayload = StorageService.getPublicCatalogPayload(targetSlug);
-        if (localPayload) {
-          setCatalog(localPayload);
-        } else {
-          setError(err?.message || 'Unable to load store catalog');
-        }
-      })
-      .finally(() => {
+      } finally {
         if (isMounted) setIsLoading(false);
-      });
+      }
+    };
+
+    resolveRemoteCatalog();
 
     return () => {
       isMounted = false;
     };
-  }, [slug]);
+  }, [slug, emailFromUrl, isMerchantPreview, externalStoreContext]);
 
   const business = catalog?.business || {
     name: 'Brivu Store',
@@ -153,6 +340,25 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
     return `${cur} ${amount.toLocaleString()}`;
   };
 
+  const openExternalLink = async (targetUrl: string) => {
+    try {
+      const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
+      if (isNative) {
+        await Browser.open({ url: targetUrl });
+        return;
+      }
+    } catch (_) {}
+    if (typeof document !== 'undefined') {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   const handleWhatsAppInquiry = (product?: PublicCatalogProduct) => {
     const phone = business.whatsapp || business.phone;
     if (!phone) return;
@@ -170,7 +376,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
     }
 
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank');
+    openExternalLink(waUrl);
   };
 
   const handleShareCatalog = async () => {
@@ -223,7 +429,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
           {error || 'The requested catalog link is either inactive or does not exist.'}
         </p>
-        {onNavigateHome && (
+        {isMerchantPreview && onNavigateHome && (
           <button
             type="button"
             onClick={onNavigateHome}
@@ -304,7 +510,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {onNavigateHome && (
+            {isMerchantPreview && onNavigateHome && (
               <button
                 type="button"
                 onClick={onNavigateHome}

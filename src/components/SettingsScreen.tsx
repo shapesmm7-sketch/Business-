@@ -66,7 +66,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   // Export JSON backup file
   const handleExportBackup = async () => {
     try {
-      const backup = StorageService.exportBackup();
+      const backup = await StorageService.exportBackupWithEmbeddedPhotos();
       const jsonStr = JSON.stringify(backup, null, 2);
       const dateStr = new Date().toISOString().slice(0, 10);
       const filename = `Brivu_Backup_${dateStr}.json`;
@@ -102,6 +102,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         const result = StorageService.importBackup(parsed);
 
         if (result.success) {
+          StorageService.recoverRestoredProductPhotos(parsed).catch(() => {});
+          window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+          window.dispatchEvent(new Event('storage_updated'));
           showToast(result.message);
           onDataRestored();
         } else {

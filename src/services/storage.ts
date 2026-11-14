@@ -248,10 +248,43 @@ function writeToStorage<T>(key: string, value: T): boolean {
       // 6. Targeted recovery: INVENTORY_PRODUCTS
       if (key === STORAGE_KEYS.INVENTORY_PRODUCTS && Array.isArray(value)) {
         try {
-          localStorage.setItem(key, JSON.stringify(value));
+          const strippedTransient = (value as any[]).map((p) => {
+            if (!p || typeof p !== 'object') return p;
+            const { imageBackupData, ...rest } = p;
+            return rest;
+          });
+          localStorage.setItem(key, JSON.stringify(strippedTransient));
           return true;
-        } catch (err) {
-          console.warn('Could not persist inventory products to localStorage:', err);
+        } catch {
+          try {
+            // Trim only oversized data URIs (> 250KB) first while preserving normal thumbnails
+            const trimmedLarge = (value as any[]).map((p) => {
+              if (!p || typeof p !== 'object') return p;
+              const { imageBackupData, ...rest } = p;
+              if (typeof rest.image === 'string' && rest.image.startsWith('data:') && rest.image.length > 250000) {
+                return { ...rest, image: undefined };
+              }
+              return rest;
+            });
+            localStorage.setItem(key, JSON.stringify(trimmedLarge));
+            return true;
+          } catch {
+            try {
+              // Last resort: keep all product text records by stripping remaining inline data URIs
+              const noInlineImages = (value as any[]).map((p) => {
+                if (!p || typeof p !== 'object') return p;
+                const { imageBackupData, ...rest } = p;
+                if (typeof rest.image === 'string' && rest.image.startsWith('data:')) {
+                  return { ...rest, image: undefined };
+                }
+                return rest;
+              });
+              localStorage.setItem(key, JSON.stringify(noInlineImages));
+              return true;
+            } catch (lastErr) {
+              console.warn('Could not persist inventory products to localStorage:', lastErr);
+            }
+          }
         }
       }
 
@@ -906,6 +939,7 @@ export const StorageService = {
       websitesQrItems: this.getWebsitesQrItems(),
       socialsQrItems: this.getSocialsQrItems(),
       eventsQrItems: this.getEventsQrItems(),
+      publicCatalogSettings: this.getPublicCatalogSettings(),
     };
   },
 
@@ -913,14 +947,19 @@ export const StorageService = {
     if (!backupData || typeof backupData !== 'object') {
       return { success: false, message: 'Invalid backup file format' };
     }
+    const incomingProducts = Array.isArray(backupData.inventoryProducts)
+      ? backupData.inventoryProducts
+      : (Array.isArray((backupData as any).products) ? (backupData as any).products : null);
+
     const hasAnyContent =
       (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) ||
-      (Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0) ||
+      (Array.isArray(incomingProducts) && incomingProducts.length > 0) ||
       (Array.isArray(backupData.inventorySales) && backupData.inventorySales.length > 0) ||
       (Array.isArray(backupData.inventoryExpenses) && backupData.inventoryExpenses.length > 0) ||
       (Array.isArray(backupData.inventoryDebts) && backupData.inventoryDebts.length > 0) ||
       (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) ||
       (Array.isArray(backupData.customers) && backupData.customers.length > 0) ||
+      (Array.isArray(backupData.agents) && backupData.agents.length > 0) ||
       (Array.isArray(backupData.workers) && backupData.workers.length > 0) ||
       (Array.isArray(backupData.shoppingListItems) && backupData.shoppingListItems.length > 0) ||
       (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) ||
@@ -934,17 +973,30 @@ export const StorageService = {
 
     try {
       if (backupData.profile) {
+        const {
+          logoBackupData,
+          signatureBackupData,
+          ...rawIncomingProfile
+        } = backupData.profile as any;
+        const incomingLogo = rawIncomingProfile.logo || logoBackupData;
+        const incomingSig = rawIncomingProfile.signature || signatureBackupData;
         if (replaceExisting) {
-          this.saveProfile(backupData.profile);
+          this.saveProfile({
+            ...rawIncomingProfile,
+            logo: incomingLogo,
+            signature: incomingSig,
+          });
         } else {
           const currentProfile = this.getProfile();
           this.saveProfile({
-            ...backupData.profile,
+            ...rawIncomingProfile,
             ...currentProfile,
-            name: currentProfile.name || backupData.profile.name || '',
-            phone: currentProfile.phone || backupData.profile.phone || '',
-            email: currentProfile.email || backupData.profile.email || '',
-            currency: currentProfile.currency || backupData.profile.currency || 'UGX',
+            name: currentProfile.name || rawIncomingProfile.name || '',
+            phone: currentProfile.phone || rawIncomingProfile.phone || '',
+            email: currentProfile.email || rawIncomingProfile.email || '',
+            currency: currentProfile.currency || rawIncomingProfile.currency || 'UGX',
+            logo: currentProfile.logo || incomingLogo,
+            signature: currentProfile.signature || incomingSig,
           });
         }
       }
@@ -1012,15 +1064,53 @@ export const StorageService = {
         }, 100);
       }
 
-      // 4. Inventory Products
-      if (Array.isArray(backupData.inventoryProducts)) {
+      // 4. Inventory Products (normalize image/photo aliases & never overwrite existing photos with empty values)
+      if (Array.isArray(incomingProducts)) {
+        const normalizeProduct = (raw: any, existing?: any): InventoryProduct => {
+          const {
+            imageBackupData,
+            photoUrl,
+            imageUrl,
+            photo,
+            ...rest
+          } = raw || {};
+          const resolvedImage =
+            rest.image ||
+            photoUrl ||
+            imageUrl ||
+            photo ||
+            imageBackupData ||
+            existing?.image ||
+            undefined;
+          return {
+            ...existing,
+            ...rest,
+            id: String(rest.id),
+            itemId: String(rest.itemId ?? rest.barcode ?? existing?.itemId ?? ''),
+            name: String(rest.name || existing?.name || 'Unnamed Product'),
+            quantity: Number(rest.quantity ?? rest.stockQuantity ?? rest.stock ?? existing?.quantity ?? 0),
+            costPrice: Number(rest.costPrice ?? existing?.costPrice ?? 0),
+            sellingPrice: Number(rest.sellingPrice ?? rest.price ?? existing?.sellingPrice ?? 0),
+            unit: rest.unit || existing?.unit || 'Pcs',
+            image: resolvedImage,
+          };
+        };
+
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, backupData.inventoryProducts);
+          const normalized = incomingProducts
+            .filter((p: any) => p && p.id)
+            .map((p: any) => normalizeProduct(p));
+          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, normalized);
         } else {
           const existing = this.getInventoryProducts();
           const productMap = new Map<string, any>();
           existing.forEach((p) => { if (p && p.id) productMap.set(p.id, p); });
-          backupData.inventoryProducts.forEach((p) => { if (p && p.id) productMap.set(p.id, p); });
+          incomingProducts.forEach((p: any) => {
+            if (p && p.id) {
+              const prev = productMap.get(p.id);
+              productMap.set(p.id, normalizeProduct(p, prev));
+            }
+          });
           writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, Array.from(productMap.values()));
         }
       }
@@ -1087,39 +1177,78 @@ export const StorageService = {
 
       // 10. Customers / Clients
       if (Array.isArray(backupData.customers)) {
+        const normalizeCustomer = (raw: any, existing?: any) => {
+          const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          return {
+            ...existing,
+            ...rest,
+            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+          };
+        };
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.CUSTOMERS, backupData.customers);
+          writeToStorage(
+            STORAGE_KEYS.CUSTOMERS,
+            backupData.customers.filter((c: any) => c && c.id).map((c: any) => normalizeCustomer(c))
+          );
         } else {
           const existing = this.getCustomers();
           const customerMap = new Map<string, any>();
           existing.forEach((c) => { if (c && c.id) customerMap.set(c.id, c); });
-          backupData.customers.forEach((c) => { if (c && c.id) customerMap.set(c.id, c); });
+          backupData.customers.forEach((c: any) => {
+            if (c && c.id) customerMap.set(c.id, normalizeCustomer(c, customerMap.get(c.id)));
+          });
           writeToStorage(STORAGE_KEYS.CUSTOMERS, Array.from(customerMap.values()));
         }
       }
 
       // 11. Agents
       if (Array.isArray(backupData.agents)) {
+        const normalizeAgent = (raw: any, existing?: any) => {
+          const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          return {
+            ...existing,
+            ...rest,
+            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+          };
+        };
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.AGENTS, backupData.agents);
+          writeToStorage(
+            STORAGE_KEYS.AGENTS,
+            backupData.agents.filter((a: any) => a && a.id).map((a: any) => normalizeAgent(a))
+          );
         } else {
           const existing = this.getAgents();
           const agentMap = new Map<string, any>();
           existing.forEach((a) => { if (a && a.id) agentMap.set(a.id, a); });
-          backupData.agents.forEach((a) => { if (a && a.id) agentMap.set(a.id, a); });
+          backupData.agents.forEach((a: any) => {
+            if (a && a.id) agentMap.set(a.id, normalizeAgent(a, agentMap.get(a.id)));
+          });
           writeToStorage(STORAGE_KEYS.AGENTS, Array.from(agentMap.values()));
         }
       }
 
       // 12. Workers / Staff
       if (Array.isArray(backupData.workers)) {
+        const normalizeWorker = (raw: any, existing?: any) => {
+          const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          return {
+            ...existing,
+            ...rest,
+            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+          };
+        };
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.WORKERS, backupData.workers);
+          writeToStorage(
+            STORAGE_KEYS.WORKERS,
+            backupData.workers.filter((w: any) => w && w.id).map((w: any) => normalizeWorker(w))
+          );
         } else {
           const existing = this.getWorkers();
           const workerMap = new Map<string, any>();
           existing.forEach((w) => { if (w && w.id) workerMap.set(w.id, w); });
-          backupData.workers.forEach((w) => { if (w && w.id) workerMap.set(w.id, w); });
+          backupData.workers.forEach((w: any) => {
+            if (w && w.id) workerMap.set(w.id, normalizeWorker(w, workerMap.get(w.id)));
+          });
           writeToStorage(STORAGE_KEYS.WORKERS, Array.from(workerMap.values()));
         }
       }
@@ -1237,6 +1366,13 @@ export const StorageService = {
           writeToStorage(STORAGE_KEYS.EVENTS_QR, Array.from(evtMap.values()));
         }
       }
+      if (backupData.publicCatalogSettings && typeof backupData.publicCatalogSettings === 'object') {
+        const currentCatalogSettings = readFromStorage<Partial<PublicCatalogSettings>>(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, {});
+        writeToStorage(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, {
+          ...currentCatalogSettings,
+          ...backupData.publicCatalogSettings,
+        });
+      }
       const recCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
       return {
         success: true,
@@ -1314,11 +1450,13 @@ export const StorageService = {
               latestProds[pIdx].image = res.url;
               writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, latestProds);
               CloudflareService.syncAllToCloudflare().catch(() => {});
+              this.publishPublicCatalog().catch(() => {});
             }
           }
         }).catch(() => {});
       } else {
         CloudflareService.syncAllToCloudflare().catch(() => {});
+        this.publishPublicCatalog().catch(() => {});
       }
     }
 
@@ -1327,18 +1465,10 @@ export const StorageService = {
 
   deleteInventoryProduct(id: string): void {
     const products = this.getInventoryProducts();
-    const productToDelete = products.find((p) => p.id === id);
-    if (productToDelete?.image) {
-      CloudflareService.deleteFile(productToDelete.image).catch(() => {});
-    }
-    const userEmail = this.getAuthenticatedEmail();
-    if (userEmail) {
-      CloudflareService.deleteFile(`users/${userEmail}/product/${id}.webp`).catch(() => {});
-      CloudflareService.deleteFile(`users/${encodeURIComponent(userEmail)}/product/${id}.webp`).catch(() => {});
-    }
     const remaining = products.filter((p) => p.id !== id);
     writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, remaining);
     CloudflareService.syncAllToCloudflare().catch(() => {});
+    this.publishPublicCatalog().catch(() => {});
   },
 
   getNextInventoryItemId(): string {
@@ -1361,6 +1491,7 @@ export const StorageService = {
       product.updatedAt = new Date().toISOString();
       writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
       CloudflareService.syncAllToCloudflare().catch(() => {});
+      this.publishPublicCatalog().catch(() => {});
 
       const threshold = 5;
       if (product.quantity <= threshold) {
@@ -1381,6 +1512,7 @@ export const StorageService = {
       product.updatedAt = new Date().toISOString();
       writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
       CloudflareService.syncAllToCloudflare().catch(() => {});
+      this.publishPublicCatalog().catch(() => {});
 
       const threshold = 5;
       if (product.quantity <= threshold) {
@@ -1403,6 +1535,23 @@ export const StorageService = {
   },
 
   // --- PUBLIC LIVE STOCK CATALOG ---
+  resolveStoreOwnerEmail(emailOverride?: string): string {
+    const candidates = [
+      this.getWorkOSUser()?.email,
+      this.getAuthenticatedEmail(),
+      emailOverride,
+      this.getProfile()?.email,
+      this.getBrivuUserId(),
+    ];
+    for (const c of candidates) {
+      const clean = String(c || '').toLowerCase().trim();
+      if (clean && clean.includes('@') && !clean.startsWith('brivu-usr-') && !clean.includes('default_user')) {
+        return clean;
+      }
+    }
+    return '';
+  },
+
   generateStoreSlug(businessName: string): string {
     if (!businessName || !businessName.trim()) return 'store';
     return businessName
@@ -1414,16 +1563,24 @@ export const StorageService = {
 
   getPublicCatalogSettings(): PublicCatalogSettings {
     const profile = this.getProfile();
+    const ownerEmail = this.resolveStoreOwnerEmail();
     const defaultSlug = this.generateStoreSlug(profile.name || 'store');
     const saved = readFromStorage<Partial<PublicCatalogSettings>>(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, {});
+    const savedSlug = (saved.slug || '').trim();
+    const resolvedSlug =
+      savedSlug && savedSlug !== 'store'
+        ? savedSlug
+        : defaultSlug !== 'store'
+        ? defaultSlug
+        : savedSlug || defaultSlug;
     return {
       enabled: saved.enabled !== false, // default true
-      slug: (saved.slug && saved.slug.trim()) || defaultSlug,
+      slug: resolvedSlug,
       businessName: saved.businessName || profile.name || '',
       tagline: saved.tagline || profile.description || '',
       phone: saved.phone || profile.phone || '',
       whatsapp: saved.whatsapp || profile.whatsapp || profile.phone || '',
-      email: saved.email || profile.email || '',
+      email: ownerEmail || saved.email || profile.email || '',
       address: saved.address || profile.address || '',
       currency: saved.currency || profile.currency || 'UGX',
       showExactQuantity: saved.showExactQuantity !== false, // default true
@@ -1431,6 +1588,19 @@ export const StorageService = {
       allowWhatsAppOrders: saved.allowWhatsAppOrders !== false, // default true
       updatedAt: saved.updatedAt || new Date().toISOString(),
     };
+  },
+
+  getPublicCatalogUrl(overrideSlug?: string, emailOverride?: string): string {
+    let workerUrl = (this.getCloudflareConfig().workerUrl || '').trim();
+    if (!workerUrl || workerUrl.includes('localhost') || workerUrl.includes('127.0.0.1')) {
+      workerUrl = 'https://brivu.shapesmm7.workers.dev';
+    }
+    const base = workerUrl.replace(/\/+$/, '');
+    const settings = this.getPublicCatalogSettings();
+    const cleanSlug = encodeURIComponent((overrideSlug || settings.slug || 'store').trim() || 'store');
+    const ownerEmail = this.resolveStoreOwnerEmail(emailOverride || settings.email);
+    const emailQuery = ownerEmail ? `?email=${encodeURIComponent(ownerEmail)}` : '';
+    return `${base}/store/${cleanSlug}${emailQuery}`;
   },
 
   savePublicCatalogSettings(settings: Partial<PublicCatalogSettings>): PublicCatalogSettings {
@@ -1443,6 +1613,7 @@ export const StorageService = {
     };
     writeToStorage(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, updated);
     this.publishPublicCatalog().catch(() => {});
+    CloudflareService.syncAllToCloudflare().catch(() => {});
     return updated;
   },
 
@@ -1473,6 +1644,7 @@ export const StorageService = {
   getPublicCatalogPayload(overrideSlug?: string): PublicCatalogPayload {
     const settings = this.getPublicCatalogSettings();
     const profile = this.getProfile();
+    const ownerEmail = this.resolveStoreOwnerEmail(settings.email);
     const categories = this.getProductCategories();
     const rawProducts = this.getInventoryProducts();
 
@@ -1529,6 +1701,7 @@ export const StorageService = {
     return {
       settings: {
         ...settings,
+        email: ownerEmail || settings.email || profile.email || '',
         slug: overrideSlug || settings.slug,
       },
       business: {
@@ -1537,7 +1710,7 @@ export const StorageService = {
         logo: profile.logo,
         phone: profile.phone || settings.phone || '',
         whatsapp: profile.whatsapp || profile.phone || settings.whatsapp || '',
-        email: profile.email || settings.email || '',
+        email: ownerEmail || profile.email || settings.email || '',
         address: profile.address || settings.address || '',
         currency: profile.currency || settings.currency || 'UGX',
       },
@@ -1549,12 +1722,12 @@ export const StorageService = {
 
   async publishPublicCatalog(): Promise<{ success: boolean; url: string; error?: string }> {
     const settings = this.getPublicCatalogSettings();
+    const ownerEmail = this.resolveStoreOwnerEmail(settings.email);
     const payload = this.getPublicCatalogPayload();
-    const workerUrl = this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev';
-    const storeUrl = `${workerUrl.replace(/\/+$/, '')}/store/${settings.slug}`;
+    const storeUrl = this.getPublicCatalogUrl(settings.slug, ownerEmail);
 
     try {
-      const res = await CloudflareService.publishStoreCatalog(settings.slug, payload);
+      const res = await CloudflareService.publishStoreCatalog(settings.slug, payload, ownerEmail);
       return {
         success: res.success,
         url: storeUrl,
@@ -2013,10 +2186,6 @@ export const StorageService = {
 
   deleteCustomer(id: string): boolean {
     const customers = this.getCustomers();
-    const cust = customers.find((c) => c.id === id);
-    if (cust?.profilePic) {
-      CloudflareService.deleteFile(cust.profilePic).catch(() => {});
-    }
     const filtered = customers.filter((c) => c.id !== id);
     const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
     if (success) {
@@ -2112,10 +2281,6 @@ export const StorageService = {
 
   deleteAgent(id: string): boolean {
     const agents = this.getAgents();
-    const agent = agents.find((a) => a.id === id);
-    if (agent?.profilePic) {
-      CloudflareService.deleteFile(agent.profilePic).catch(() => {});
-    }
     const filtered = agents.filter((a) => a.id !== id);
     const success = writeToStorage(STORAGE_KEYS.AGENTS, filtered);
     if (success) {
@@ -2253,10 +2418,6 @@ export const StorageService = {
 
   deleteWorker(id: string): boolean {
     const workers = this.getWorkers();
-    const worker = workers.find((w) => w.id === id);
-    if (worker?.profilePic) {
-      CloudflareService.deleteFile(worker.profilePic).catch(() => {});
-    }
     const filtered = workers.filter((w) => w.id !== id);
     const success = writeToStorage(STORAGE_KEYS.WORKERS, filtered);
     if (success) {
@@ -3381,5 +3542,339 @@ export const StorageService = {
 
   clearWorkOSUser(): void {
     this.switchUserSession(null);
+  },
+
+  /**
+   * Exports full app backup with remote R2/HTTP product, client, agent, staff, and profile photos
+   * embedded as compact WebP data URLs (`imageBackupData`, `profilePicBackupData`, etc.) so backups
+   * remain 100% self-contained even if products or R2 files are deleted before restoring.
+   */
+  async exportBackupWithEmbeddedPhotos(): Promise<AppBackupData & { brivuUserId?: string }> {
+    const backup = this.exportBackup();
+    const workerBase = (this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev').replace(/\/+$/, '');
+    const resolveImageUrl = (raw?: string): string => {
+      if (!raw) return '';
+      const trimmed = raw.trim();
+      if (trimmed.startsWith('/api/files/')) return `${workerBase}${trimmed}`;
+      return trimmed;
+    };
+
+    const { compressImageToWebP } = await import('../utils/imageCompressor');
+
+    const embedPhotoDataUri = async (rawSrc?: string, maxDim = 360, quality = 0.72): Promise<string | undefined> => {
+      if (!rawSrc) return undefined;
+      const src = resolveImageUrl(rawSrc);
+      if (src.startsWith('data:image/')) {
+        if (src.length <= 140000) return src;
+        try {
+          const compressed = await compressImageToWebP(src, {
+            maxWidth: maxDim,
+            maxHeight: maxDim,
+            quality,
+            mimeType: 'image/webp',
+          });
+          return compressed.dataUri;
+        } catch {
+          return src;
+        }
+      }
+      if (!src.startsWith('http://') && !src.startsWith('https://')) {
+        return undefined;
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+      try {
+        const res = await fetch(src, { signal: controller.signal });
+        if (!res.ok) return undefined;
+        const cType = (res.headers.get('content-type') || '').toLowerCase();
+        const blob = await res.blob();
+        const blobType = (blob.type || cType || '').toLowerCase();
+        if (!blob || blob.size === 0) return undefined;
+        if (blobType.includes('text/html') || blobType.includes('application/json')) return undefined;
+        if (!blobType.startsWith('image/') && !cType.startsWith('image/')) return undefined;
+
+        try {
+          const compressed = await compressImageToWebP(blob, {
+            maxWidth: maxDim,
+            maxHeight: maxDim,
+            quality,
+            mimeType: 'image/webp',
+          });
+          return compressed.dataUri;
+        } catch {
+          return await new Promise<string | undefined>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(typeof reader.result === 'string' && reader.result.startsWith('data:image/') ? reader.result : undefined);
+            reader.onerror = () => resolve(undefined);
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch {
+        return undefined;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const mapConcurrent = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
+      const results: R[] = new Array(items.length);
+      let nextIdx = 0;
+      const runWorker = async () => {
+        while (nextIdx < items.length) {
+          const idx = nextIdx++;
+          results[idx] = await fn(items[idx]);
+        }
+      };
+      const workers = Array.from({ length: Math.min(limit, Math.max(1, items.length)) }, () => runWorker());
+      await Promise.all(workers);
+      return results;
+    };
+
+    if (Array.isArray(backup.inventoryProducts) && backup.inventoryProducts.length > 0) {
+      backup.inventoryProducts = await mapConcurrent(backup.inventoryProducts, 4, async (prod: any) => {
+        const existingEmbedded = typeof prod?.imageBackupData === 'string' && prod.imageBackupData.startsWith('data:image/')
+          ? prod.imageBackupData
+          : undefined;
+        const embedded = existingEmbedded || (await embedPhotoDataUri(prod?.image, 360, 0.72));
+        return embedded ? { ...prod, imageBackupData: embedded } : prod;
+      });
+    }
+
+    if (Array.isArray(backup.customers) && backup.customers.length > 0) {
+      backup.customers = await mapConcurrent(backup.customers, 4, async (cust: any) => {
+        const embedded = await embedPhotoDataUri(cust?.profilePic, 300, 0.72);
+        return embedded ? { ...cust, profilePicBackupData: embedded } : cust;
+      });
+    }
+
+    if (Array.isArray(backup.agents) && backup.agents.length > 0) {
+      backup.agents = await mapConcurrent(backup.agents, 4, async (agent: any) => {
+        const embedded = await embedPhotoDataUri(agent?.profilePic, 300, 0.72);
+        return embedded ? { ...agent, profilePicBackupData: embedded } : agent;
+      });
+    }
+
+    if (Array.isArray(backup.workers) && backup.workers.length > 0) {
+      backup.workers = await mapConcurrent(backup.workers, 4, async (worker: any) => {
+        const embedded = await embedPhotoDataUri(worker?.profilePic, 300, 0.72);
+        return embedded ? { ...worker, profilePicBackupData: embedded } : worker;
+      });
+    }
+
+    if (backup.profile) {
+      const logoEmbedded = await embedPhotoDataUri(backup.profile.logo, 400, 0.78);
+      const sigEmbedded = await embedPhotoDataUri(backup.profile.signature, 500, 0.78);
+      (backup.profile as any) = {
+        ...backup.profile,
+        ...(logoEmbedded ? { logoBackupData: logoEmbedded } : {}),
+        ...(sigEmbedded ? { signatureBackupData: sigEmbedded } : {}),
+      };
+    }
+
+    return backup;
+  },
+
+  /**
+   * Verifies restored product, customer, agent, staff, and profile photos.
+   * If a restored remote image URL returns 404 or non-image content (e.g., deleted from R2),
+   * immediately restores its embedded `*BackupData` data URL locally and re-uploads to R2.
+   * Also re-uploads any restored `data:image/` photos to R2 in the background.
+   */
+  async recoverRestoredProductPhotos(backupData?: any): Promise<void> {
+    if (typeof window === 'undefined') return;
+    const workerBase = (this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev').replace(/\/+$/, '');
+    const normalizeImgUrl = (raw?: string): string => {
+      if (!raw) return '';
+      const trimmed = raw.trim();
+      if (trimmed.startsWith('/api/files/')) return `${workerBase}${trimmed}`;
+      return trimmed;
+    };
+
+    const verifyRemoteImage = async (rawUrl?: string): Promise<boolean> => {
+      const target = normalizeImgUrl(rawUrl);
+      if (!target || (!target.startsWith('http://') && !target.startsWith('https://'))) {
+        return false;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(target, { cache: 'no-store', signal: controller.signal });
+        if (!res.ok) return false;
+        const cType = (res.headers.get('content-type') || '').toLowerCase();
+        if (cType.includes('text/html') || cType.includes('application/json')) return false;
+        return cType.startsWith('image/');
+      } catch {
+        // Offline or transient network error: do not mark as permanently dead unless HTTP responded non-image
+        return true;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const emitRefresh = () => {
+      window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+      window.dispatchEvent(new Event('storage_updated'));
+      window.dispatchEvent(new Event('storage'));
+    };
+
+    const uploadDataUriToR2 = async (dataUri: string, filenamePrefix: string, folder = 'photos'): Promise<string | null> => {
+      if (!dataUri.startsWith('data:image/')) return null;
+      if (!CloudflareService.isConfigured() || !CloudflareService.getUserEmail()) return null;
+      try {
+        const mimeMatch = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);/);
+        const mimeType = mimeMatch?.[1] || 'image/webp';
+        const ext = (mimeType.split('/')[1] || 'webp').replace('jpeg', 'jpg');
+        const upRes = await CloudflareService.uploadFile({
+          data: dataUri,
+          filename: `${filenamePrefix}_${Date.now()}.${ext}`,
+          mimeType,
+          folder,
+        });
+        return upRes.success && upRes.url ? upRes.url : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const rawIncomingProducts = Array.isArray(backupData?.inventoryProducts)
+      ? backupData.inventoryProducts
+      : (Array.isArray(backupData?.products) ? backupData.products : []);
+    const prodBackupMap = new Map<string, string>();
+    for (const rp of rawIncomingProducts) {
+      if (!rp?.id) continue;
+      const fallback = rp.imageBackupData || (typeof rp.image === 'string' && rp.image.startsWith('data:image/') ? rp.image : '');
+      if (fallback && fallback.startsWith('data:image/')) {
+        prodBackupMap.set(String(rp.id), fallback);
+      }
+    }
+
+    let inventoryChanged = false;
+    const products = this.getInventoryProducts();
+    for (let i = 0; i < products.length; i++) {
+      const prod = products[i];
+      const backupImg = prodBackupMap.get(prod.id);
+      if (!prod.image && backupImg) {
+        products[i] = { ...prod, image: backupImg };
+        inventoryChanged = true;
+      } else if (prod.image && !prod.image.startsWith('data:image/')) {
+        const ok = await verifyRemoteImage(prod.image);
+        if (!ok && backupImg) {
+          products[i] = { ...prod, image: backupImg };
+          inventoryChanged = true;
+        }
+      }
+    }
+
+    if (inventoryChanged) {
+      writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, products);
+      emitRefresh();
+    }
+
+    // Re-upload any data:image product photos to R2 so URLs work on web/live catalog too
+    let reuploadedAnyProduct = false;
+    for (const prod of products) {
+      if (prod.image && prod.image.startsWith('data:image/')) {
+        const uploadedUrl = await uploadDataUriToR2(prod.image, `product_${prod.id}`, 'photos');
+        if (uploadedUrl) {
+          const latest = this.getInventoryProducts();
+          const idx = latest.findIndex((p) => p.id === prod.id);
+          if (idx >= 0 && latest[idx].image?.startsWith('data:image/')) {
+            latest[idx] = { ...latest[idx], image: uploadedUrl };
+            writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, latest);
+            reuploadedAnyProduct = true;
+          }
+        }
+      }
+    }
+    if (reuploadedAnyProduct || inventoryChanged) {
+      emitRefresh();
+      this.publishPublicCatalog().catch(() => {});
+    }
+
+    const recoverPersonPhotos = async (
+      list: any[],
+      rawIncoming: any[],
+      storageKey: string,
+      prefix: string
+    ) => {
+      const bMap = new Map<string, string>();
+      for (const item of rawIncoming) {
+        if (!item?.id) continue;
+        const fb = item.profilePicBackupData || (typeof item.profilePic === 'string' && item.profilePic.startsWith('data:image/') ? item.profilePic : '');
+        if (fb && fb.startsWith('data:image/')) bMap.set(String(item.id), fb);
+      }
+      let changed = false;
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        const fb = bMap.get(item.id);
+        if (!item.profilePic && fb) {
+          list[i] = { ...item, profilePic: fb };
+          changed = true;
+        } else if (item.profilePic && !item.profilePic.startsWith('data:image/')) {
+          const ok = await verifyRemoteImage(item.profilePic);
+          if (!ok && fb) {
+            list[i] = { ...item, profilePic: fb };
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        writeToStorage(storageKey, list);
+        emitRefresh();
+      }
+      for (const item of list) {
+        if (item.profilePic && item.profilePic.startsWith('data:image/')) {
+          const url = await uploadDataUriToR2(item.profilePic, `${prefix}_${item.id}`, 'photos');
+          if (url) {
+            const latest = readFromStorage<any[]>(storageKey, []);
+            const idx = latest.findIndex((x) => x.id === item.id);
+            if (idx >= 0 && latest[idx].profilePic?.startsWith('data:image/')) {
+              latest[idx] = { ...latest[idx], profilePic: url };
+              writeToStorage(storageKey, latest);
+              emitRefresh();
+            }
+          }
+        }
+      }
+    };
+
+    await recoverPersonPhotos(
+      this.getCustomers(),
+      Array.isArray(backupData?.customers) ? backupData.customers : [],
+      STORAGE_KEYS.CUSTOMERS,
+      'customer'
+    );
+    await recoverPersonPhotos(
+      this.getAgents(),
+      Array.isArray(backupData?.agents) ? backupData.agents : [],
+      STORAGE_KEYS.AGENTS,
+      'agent'
+    );
+    await recoverPersonPhotos(
+      this.getWorkers(),
+      Array.isArray(backupData?.workers) ? backupData.workers : [],
+      STORAGE_KEYS.WORKERS,
+      'staff'
+    );
+
+    if (backupData?.profile) {
+      const prof = this.getProfile();
+      let profChanged = false;
+      const logoFb = backupData.profile.logoBackupData;
+      const sigFb = backupData.profile.signatureBackupData;
+      if (logoFb && (!prof.logo || (!prof.logo.startsWith('data:image/') && !(await verifyRemoteImage(prof.logo))))) {
+        prof.logo = logoFb;
+        profChanged = true;
+      }
+      if (sigFb && (!prof.signature || (!prof.signature.startsWith('data:image/') && !(await verifyRemoteImage(prof.signature))))) {
+        prof.signature = sigFb;
+        profChanged = true;
+      }
+      if (profChanged) {
+        this.saveProfile(prof);
+        emitRefresh();
+      }
+    }
   },
 };

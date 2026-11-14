@@ -1402,8 +1402,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       />
 
       {/* Uploading Overlay */}
-      {isUploadingToCloudflare && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+      {isUploadingToCloudflare && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center gap-3 max-w-xs text-center">
             <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin" />
             <div className="space-y-1">
@@ -1411,7 +1411,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <p className="text-[11px] text-slate-500 dark:text-slate-400">Saving...</p>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast Notification (Centered prominently so user sees it without scrolling) */}
@@ -2910,9 +2911,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       )}
 
       {/* MODAL: ADD / EDIT BUSINESS SOCIAL LINK (ONLY SOCIAL NAME & LINK) */}
-      {showSocialModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-white animate-fadeIn">
+      {showSocialModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[88dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-slate-900 dark:text-white my-auto">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
@@ -2981,13 +2982,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: ADD / EDIT ITEM */}
-      {showAddItemModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0">
+      {showAddItemModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[88dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0 my-auto">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
@@ -3333,13 +3335,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: ADD / MANAGE CATEGORY */}
-      {showCategoryModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0 animate-in fade-in zoom-in-95 duration-150">
+      {showCategoryModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[88dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0 my-auto">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
@@ -3441,13 +3444,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: ADD / EDIT BUSINESS PHOTO (TITLE, CATEGORY, BADGE, DETAILS) */}
-      {showPhotoModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 bg-slate-900/65 backdrop-blur-xs overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0">
+      {showPhotoModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full max-h-[88dvh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden min-h-0 my-auto">
             {/* Header */}
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900 z-10">
               <div className="flex items-center gap-2">
@@ -3608,13 +3612,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 3: QUICK PAGE-SPECIFIC QR CODE GENERATOR MODAL */}
-      {showQuickQrModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
+      {showQuickQrModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[88dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0 my-auto">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5">
@@ -3820,13 +3825,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 4: SPECIFIC ITEM QR CODE MODAL */}
-      {itemQrModalItem && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
+      {itemQrModalItem && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[88dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0 my-auto">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -4023,13 +4029,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 5: SPECIFIC PHOTO QR CODE MODAL */}
-      {photoQrModalPhoto && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-24 sm:pb-8 animate-in fade-in duration-150 overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[calc(100dvh-6.5rem)] sm:max-h-[85dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0">
+      {photoQrModalPhoto && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md max-h-[88dvh] border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden min-h-0 my-auto">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs z-10">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -4208,13 +4215,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Delete QR Page Confirmation Modal */}
-      {pageToDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pb-20 sm:pb-6">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      {pageToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl my-auto">
             <div className="p-5 text-center">
               <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-3.5 shadow-sm">
                 <Trash2 className="w-6 h-6" />
@@ -4259,7 +4267,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
         </>
       )}

@@ -1,6 +1,48 @@
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Receipt, ThermalPrinterDevice, BusinessProfile } from '../types';
 
-// Cached active GATT connection device in runtime memory
+export interface AndroidBluetoothPrinter {
+  name: string;
+  address: string;
+  bonded: boolean;
+  isLikelyPrinter?: boolean;
+}
+
+interface BluetoothPrinterPluginInterface {
+  isAvailable(): Promise<{
+    supported: boolean;
+    enabled: boolean;
+    hasPermissions: boolean;
+  }>;
+  scanPrinters(): Promise<{
+    success: boolean;
+    devices?: AndroidBluetoothPrinter[];
+    message?: string;
+    permissionDenied?: boolean;
+    bluetoothDisabled?: boolean;
+    unsupported?: boolean;
+  }>;
+  connectPrinter(options: { address: string }): Promise<{
+    success: boolean;
+    name?: string;
+    address?: string;
+    transport?: string;
+    message?: string;
+    permissionDenied?: boolean;
+    bluetoothDisabled?: boolean;
+  }>;
+  printBytes(options: { address: string; base64Data: string }): Promise<{
+    success: boolean;
+    message?: string;
+    permissionDenied?: boolean;
+    bluetoothDisabled?: boolean;
+  }>;
+  disconnectPrinter(): Promise<{ success: boolean }>;
+}
+
+const BluetoothPrinterNative = registerPlugin<BluetoothPrinterPluginInterface>('BluetoothPrinter');
+
+// Cached active GATT connection device in runtime memory (for Web Bluetooth)
 let cachedBluetoothDevice: any = null;
 
 // Common Bluetooth GATT Service UUIDs used by ESC/POS Thermal Printers
@@ -13,33 +55,174 @@ const THERMAL_PRINTER_SERVICES = [
   '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
 ];
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export class BluetoothPrinterService {
   /**
-   * Check if Web Bluetooth API or Native Bluetooth thermal printing is supported
+   * Check whether we are running inside the native Capacitor Android app
    */
-  static isSupported(): boolean {
-    const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
-    return isNative || (typeof navigator !== 'undefined' && 'bluetooth' in navigator);
+  static isAndroidNative(): boolean {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+    } catch {
+      return Boolean((window as any).Capacitor?.isNativePlatform?.());
+    }
   }
 
   /**
-   * Trigger Bluetooth printer discovery or pair Android Bluetooth thermal printer
+   * Check if Native Android Bluetooth or Web Bluetooth API is supported
    */
-  static async searchForPrinter(paperWidth: '58mm' | '80mm' = '58mm'): Promise<{
+  static isSupported(): boolean {
+    return this.isAndroidNative() || (typeof navigator !== 'undefined' && 'bluetooth' in navigator);
+  }
+
+  /**
+   * Native Android: Scan paired & nearby Bluetooth Classic SPP / BLE thermal printers
+   */
+  static async scanAndroidPrinters(): Promise<{
+    success: boolean;
+    devices: AndroidBluetoothPrinter[];
+    message: string;
+  }> {
+    try {
+      const res = await BluetoothPrinterNative.scanPrinters();
+      if (res && res.success) {
+        const devices = Array.isArray(res.devices) ? res.devices : [];
+        return {
+          success: true,
+          devices,
+          message:
+            res.message ||
+            (devices.length > 0
+              ? `Found ${devices.length} Bluetooth device(s). Select your thermal printer.`
+              : 'No Bluetooth printers found. Turn on your physical printer or pair it in Android Bluetooth Settings.'),
+        };
+      }
+      return {
+        success: false,
+        devices: [],
+        message:
+          res?.message ||
+          'Could not access phone Bluetooth. Please turn on Bluetooth and allow Nearby Devices permission.',
+      };
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (msg.toLowerCase().includes('not implemented') || msg.toLowerCase().includes('unimplemented')) {
+        return {
+          success: false,
+          devices: [],
+          message:
+            'Please install the latest Brivu Android app update so live Bluetooth thermal printer discovery is enabled on this phone.',
+        };
+      }
+      return {
+        success: false,
+        devices: [],
+        message: msg || 'Bluetooth scan failed. Please verify Bluetooth is enabled on your phone.',
+      };
+    }
+  }
+
+  /**
+   * Native Android: Connect and verify a selected Bluetooth thermal printer by MAC address
+   */
+  static async connectAndroidPrinter(
+    device: AndroidBluetoothPrinter,
+    paperWidth: '58mm' | '80mm' = '58mm'
+  ): Promise<{
     success: boolean;
     printer?: ThermalPrinterDevice;
     message: string;
   }> {
-    const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
+    try {
+      const res = await BluetoothPrinterNative.connectPrinter({ address: device.address });
+      if (res && res.success) {
+        const printerConfig: ThermalPrinterDevice = {
+          id: res.address || device.address,
+          name: res.name || device.name || `Bluetooth Printer (${device.address.slice(-5)})`,
+          paperWidth,
+          autoPrintOnSave: true,
+          connectedAt: new Date().toISOString(),
+        };
+        return {
+          success: true,
+          printer: printerConfig,
+          message: res.message || `Connected & saved printer "${printerConfig.name}" successfully!`,
+        };
+      }
+      return {
+        success: false,
+        message:
+          res?.message ||
+          `Could not connect to "${device.name}". Ensure your physical thermal printer is turned on and paired.`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message:
+          err?.message ||
+          `Connection failed for "${device.name}". Make sure the printer is powered on and within Bluetooth range.`,
+      };
+    }
+  }
 
-    // 1. Try Web Bluetooth API discovery if available in current browser session
+  /**
+   * Trigger Bluetooth printer discovery (Android native SPP/BLE or browser Web Bluetooth)
+   */
+  static async searchForPrinter(paperWidth: '58mm' | '80mm' = '58mm'): Promise<{
+    success: boolean;
+    printer?: ThermalPrinterDevice;
+    devices?: AndroidBluetoothPrinter[];
+    message: string;
+  }> {
+    // 1. Native Android Capacitor path
+    if (this.isAndroidNative()) {
+      const scanRes = await this.scanAndroidPrinters();
+      if (!scanRes.success) {
+        return {
+          success: false,
+          message: scanRes.message,
+        };
+      }
+
+      if (scanRes.devices.length === 0) {
+        return {
+          success: false,
+          devices: [],
+          message:
+            'No Bluetooth printer detected. Please power on your ESC/POS printer, turn on Bluetooth, and pair it in Android Settings -> Bluetooth.',
+        };
+      }
+
+      // Return discovered/paired devices so the UI lets the user pick, or connect directly if one obvious bonded printer
+      const likelyBonded = scanRes.devices.filter((d) => d.bonded && d.isLikelyPrinter);
+      if (likelyBonded.length === 1 && scanRes.devices.length === 1) {
+        return await this.connectAndroidPrinter(likelyBonded[0], paperWidth);
+      }
+
+      return {
+        success: true,
+        devices: scanRes.devices,
+        message: scanRes.message,
+      };
+    }
+
+    // 2. Web Bluetooth API discovery if running in supported browser (Chrome/Edge desktop or Android Chrome)
     if (typeof navigator !== 'undefined' && 'bluetooth' in navigator) {
       try {
-        const available = await (navigator.bluetooth as any).getAvailability().catch(() => false);
+        const available = await (navigator.bluetooth as any).getAvailability().catch(() => true);
         if (!available) {
           return {
             success: false,
-            message: 'Bluetooth is turned off or not available on this device. Please turn on your phone Bluetooth in Settings and try again.',
+            message: 'Bluetooth is turned off or not available on this device. Please turn on Bluetooth in Settings and try again.',
           };
         }
 
@@ -50,10 +233,9 @@ export class BluetoothPrinterService {
         });
 
         if (device) {
-          // Actively verify connection capability to make sure it's a real, responding thermal printer
           try {
             const server = await device.gatt.connect();
-            await server.disconnect(); // Disconnect to release connection slot
+            await server.disconnect();
 
             cachedBluetoothDevice = device;
 
@@ -89,35 +271,62 @@ export class BluetoothPrinterService {
         }
         return {
           success: false,
-          message: `Could not detect printer: Please ensure Bluetooth is enabled, the physical printer is turned on and ready to pair.`,
+          message: 'Could not detect printer: Please ensure Bluetooth is enabled and the physical printer is turned on.',
         };
       }
     }
 
-    // 2. Android Native WebView / Unsupported Browser truth report
+    // 3. Browser without Web Bluetooth support (desktop Safari/Firefox, iOS WebView)
     return {
       success: false,
-      message: 'No Bluetooth printer detected. Bluetooth scanning is not supported in this WebView/browser. Please ensure your physical ESC/POS printer is powered on, Bluetooth is enabled, and try opening the app in Google Chrome to connect.',
+      message: 'Direct Web Bluetooth is not supported in this browser. Open in Google Chrome or use the Brivu Android app for live Bluetooth printing.',
     };
   }
 
   /**
-   * Print a receipt via Bluetooth GATT or fallback system thermal printer spooler
+   * Print a receipt via Native Android Bluetooth (SPP/BLE), Web Bluetooth GATT, or system spooler
    */
   static async printReceipt(
     printer: ThermalPrinterDevice,
     receipt: Receipt
   ): Promise<{ success: boolean; message: string }> {
-    // If user explicitly configured system-default, print via system spooler
     if (printer.id === 'system-default') {
       return this.triggerThermalSystemPrint(receipt, printer);
     }
 
-    // Otherwise, it's a real Bluetooth printer. We must try to connect to it and print.
-    if (this.isSupported()) {
+    // Native Android thermal printer (Classic RFCOMM SPP or BLE GATT via BluetoothPrinterPlugin)
+    if (this.isAndroidNative()) {
+      try {
+        const escPosBytes = this.buildEscPosBytes(receipt, printer.paperWidth || '58mm');
+        const base64Data = uint8ToBase64(escPosBytes);
+        const res = await BluetoothPrinterNative.printBytes({
+          address: printer.id,
+          base64Data,
+        });
+        return {
+          success: Boolean(res?.success),
+          message:
+            res?.message ||
+            (res?.success
+              ? `Printed successfully to ${printer.name}!`
+              : `Could not print to "${printer.name}". Please ensure the printer is turned on and paired.`),
+        };
+      } catch (err: any) {
+        console.warn('Native Android Bluetooth print error:', err);
+        return {
+          success: false,
+          message:
+            err?.message ||
+            `Connection failed to printer "${printer.name}". Please verify your physical printer is powered on.`,
+        };
+      }
+    }
+
+    // Web Bluetooth GATT path for supported browsers
+    if (typeof navigator !== 'undefined' && 'bluetooth' in navigator) {
       try {
         let device = cachedBluetoothDevice;
-        const navBluetooth = typeof navigator !== 'undefined' ? (navigator as any).bluetooth : null;
+        const navBluetooth = (navigator as any).bluetooth;
         if (!device && navBluetooth && typeof navBluetooth.getDevices === 'function') {
           const devices = await navBluetooth.getDevices().catch(() => []);
           device = (devices || []).find((d: any) => d.id === printer.id);
@@ -129,7 +338,7 @@ export class BluetoothPrinterService {
         } else {
           return {
             success: false,
-            message: `Could not print: No active Bluetooth connection to printer "${printer.name}". Please ensure your physical printer is powered on, has Bluetooth enabled, and is close to your phone.`,
+            message: `Could not print: No active Bluetooth connection to printer "${printer.name}". Please search and reconnect your printer in Settings.`,
           };
         }
       } catch (err: any) {
@@ -143,7 +352,7 @@ export class BluetoothPrinterService {
 
     return {
       success: false,
-      message: `Bluetooth printing is not supported on this browser or platform. Please use the "System Default" printer fallback.`,
+      message: 'Direct Bluetooth printing is not supported in this browser. Use Google Chrome or the Brivu Android app.',
     };
   }
 
@@ -399,6 +608,7 @@ export class BluetoothPrinterService {
     };
 
     const cols = paperWidth === '80mm' ? 48 : 32;
+    const currency = receipt.businessSnapshot?.currency || 'UGX';
 
     // ESC @ (Initialize)
     pushBytes(0x1b, 0x40);
@@ -416,10 +626,10 @@ export class BluetoothPrinterService {
 
     // Normal text size
     pushBytes(0x1d, 0x21, 0x00);
-    if (receipt.businessSnapshot.phone) {
+    if (receipt.businessSnapshot?.phone) {
       pushString(`Tel: ${receipt.businessSnapshot.phone}\n`);
     }
-    if (receipt.businessSnapshot.address) {
+    if (receipt.businessSnapshot?.address) {
       pushString(`${receipt.businessSnapshot.address}\n`);
     }
 
@@ -429,9 +639,13 @@ export class BluetoothPrinterService {
     pushBytes(0x1b, 0x61, 0x00);
     pushString(`${receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT'}: ${receipt.receiptNumber}\n`);
     const dateStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleDateString() : '';
-    pushString(`Date: ${dateStr}\n`);
+    const timeStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    pushString(`Date: ${dateStr}${timeStr ? ' ' + timeStr : ''}\n`);
     if (receipt.customerName) {
       pushString(`Customer: ${receipt.customerName}\n`);
+    }
+    if (receipt.customerPhone) {
+      pushString(`Phone: ${receipt.customerPhone}\n`);
     }
 
     pushString('-'.repeat(cols) + '\n');
@@ -439,7 +653,7 @@ export class BluetoothPrinterService {
     // Items List
     receipt.items.forEach((item) => {
       const qtyName = `${item.quantity}x ${item.name}`;
-      const priceStr = `${receipt.businessSnapshot.currency || 'UGX'} ${item.subtotal.toLocaleString()}`;
+      const priceStr = `${currency} ${item.subtotal.toLocaleString()}`;
 
       if (qtyName.length + priceStr.length + 1 <= cols) {
         const spaces = cols - (qtyName.length + priceStr.length);
@@ -455,14 +669,24 @@ export class BluetoothPrinterService {
 
     // Right align totals
     pushBytes(0x1b, 0x61, 0x02);
+    if (receipt.discountAmount && receipt.discountAmount > 0) {
+      pushString(`Discount: -${currency} ${receipt.discountAmount.toLocaleString()}\n`);
+    }
     pushBytes(0x1b, 0x45, 0x01); // Bold ON
-    const totalStr = `TOTAL: ${receipt.businessSnapshot.currency || 'UGX'} ${receipt.total.toLocaleString()}`;
+    const totalStr = `TOTAL: ${currency} ${receipt.total.toLocaleString()}`;
     pushString(totalStr + '\n');
     pushBytes(0x1b, 0x45, 0x00); // Bold OFF
+    if (receipt.balance && receipt.balance > 0) {
+      pushString(`Paid: ${currency} ${(receipt.amountPaid || 0).toLocaleString()}\n`);
+      pushString(`Balance: ${currency} ${receipt.balance.toLocaleString()}\n`);
+    }
 
     // Center align footer
     pushBytes(0x1b, 0x61, 0x01);
     pushString(`Payment: ${receipt.paymentMethod} (${receipt.paymentStatus.toUpperCase()})\n`);
+    if (receipt.notes) {
+      pushString(`${receipt.notes}\n`);
+    }
     pushString('\nThank you for your business!\n');
     pushString('Powered by Brivu\n');
 

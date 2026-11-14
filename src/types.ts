@@ -484,6 +484,7 @@ export interface AppBackupData {
   websitesQrItems?: WebsiteAppQrItem[];
   socialsQrItems?: SocialQrItem[];
   eventsQrItems?: EventQrItem[];
+  publicCatalogSettings?: PublicCatalogSettings;
 }
 
 export type SocialPlatform =

@@ -579,6 +579,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         )
       : '';
 
+    const singleCoverUrl = page.coverImage || singleEvtCandidate?.photos?.[0] || singleMenuFallback?.photoUrl || '';
+    const singleLogoUrl = page.logo || singleEvtCandidate?.photos?.[0] || singleMenuFallback?.photoUrl || '';
+
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-purple-500 selection:text-white pb-24">
         {/* Merchant preview top bar */}
@@ -602,10 +605,10 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
         {/* Hero Header */}
         <div className="relative w-full overflow-hidden bg-slate-900 text-white">
-          {page.coverImage ? (
+          {singleCoverUrl ? (
             <div className="absolute inset-0 z-0">
               <img
-                src={page.coverImage}
+                src={singleCoverUrl}
                 alt={page.title}
                 className="w-full h-full object-cover opacity-35 filter blur-[1px] scale-105"
                 referrerPolicy="no-referrer"
@@ -648,9 +651,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
             {/* Event Logo & Main Title */}
             <div className="flex items-start gap-3.5 sm:gap-4">
-              {page.logo ? (
+              {singleLogoUrl ? (
                 <img
-                  src={page.logo}
+                  src={singleLogoUrl}
                   alt={page.title}
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-400/30 shadow-xl bg-slate-800 shrink-0"
                 />
@@ -849,6 +852,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         : (evtPhone ? String(evtPhone).replace(/[^0-9]/g, '') : cleanWaNumber);
                       const evtWaUrl = evtRsvpPhoneDigits ? `https://wa.me/${evtRsvpPhoneDigits}?text=${evtRsvpMsg}` : '';
 
+                      const evtPhotoUrl = evtItem.photoUrl || matchingEvt?.photos?.[0] || '';
+                      const evtDescription = matchingEvt?.description || evtItem.description || '';
+
                       return (
                         <div key={evtItem.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
                           {/* Post Header */}
@@ -871,10 +877,10 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                           </div>
 
                           {/* Image / Poster - Full Width */}
-                          {evtItem.photoUrl ? (
+                          {evtPhotoUrl ? (
                             <div className="w-full bg-slate-100 dark:bg-slate-800 overflow-hidden border-y border-slate-100 dark:border-slate-800 max-h-[480px]">
                               <img
-                                src={evtItem.photoUrl}
+                                src={evtPhotoUrl}
                                 alt={evtItem.name}
                                 className="w-full h-auto object-cover max-h-[480px]"
                                 referrerPolicy="no-referrer"
@@ -893,9 +899,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                               {evtItem.name}
                             </h2>
 
-                            {evtItem.description && (
+                            {evtDescription && (
                               <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                                {evtItem.description}
+                                {evtDescription}
                               </p>
                             )}
 
@@ -1123,12 +1129,14 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                 const formattedEndTime = QRHostingService.formatTimeToAMPM(evtEndTime);
                 const hasEndTime = formattedEndTime && formattedEndTime !== formattedStartTime;
 
+                const singleDescription = singleEvt?.description || (page.description && cleanForbiddenWords(page.description)) || '';
+
                 return (
                   <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-md overflow-hidden flex flex-col w-full space-y-4 pb-5">
                     {/* Post Header */}
                     <div className="flex items-center gap-3 px-4 pt-4">
-                      {page.logo ? (
-                        <img src={page.logo} alt="Organizer" className="w-10 h-10 rounded-full object-cover border border-slate-100" />
+                      {singleLogoUrl ? (
+                        <img src={singleLogoUrl} alt="Organizer" className="w-10 h-10 rounded-full object-cover border border-slate-100" />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-sm">
                           {page.title.slice(0, 1).toUpperCase()}
@@ -1145,10 +1153,10 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                     </div>
 
                     {/* Cover Image - Big as a Facebook post */}
-                    {page.coverImage ? (
+                    {singleCoverUrl ? (
                       <div className="w-full bg-slate-100 dark:bg-slate-800 overflow-hidden border-y border-slate-100 dark:border-slate-800 max-h-[480px]">
                         <img
-                          src={page.coverImage}
+                          src={singleCoverUrl}
                           alt={page.title}
                           className="w-full h-auto object-cover max-h-[480px]"
                           referrerPolicy="no-referrer"
@@ -1167,9 +1175,9 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
                         {page.title}
                       </h2>
 
-                      {page.description && cleanForbiddenWords(page.description) && (
+                      {singleDescription && (
                         <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-                          {cleanForbiddenWords(page.description)}
+                          {singleDescription}
                         </p>
                       )}
 

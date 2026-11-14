@@ -602,9 +602,6 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="text-sm font-extrabold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                         Google Drive Sync
                       </span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-200 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 uppercase">
-                        Text
-                      </span>
                     </div>
                     <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
                       Backup & restore receipts, invoices, inventory JSON

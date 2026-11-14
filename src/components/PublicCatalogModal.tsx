@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { PublicCatalogSettings, InventoryProduct, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
+import { shareContent } from '../services/fileSaver';
+import { Browser } from '@capacitor/browser';
 
 interface PublicCatalogModalProps {
   isOpen: boolean;
@@ -51,6 +53,7 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
       const s = StorageService.getPublicCatalogSettings();
       setSettings(s);
       setSlugInput(s.slug);
+      StorageService.publishPublicCatalog().catch(() => {});
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
@@ -60,14 +63,10 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
 
   if (!isOpen || typeof document === 'undefined') return null;
 
-  const workerBase =
-    (typeof window !== 'undefined' && window.location.origin.includes('workers.dev')
-      ? window.location.origin
-      : 'https://brivu.shapesmm7.workers.dev');
-
+  const ownerEmail = StorageService.resolveStoreOwnerEmail(settings.email);
   const currentSlug = (settings.slug || StorageService.generateStoreSlug(business.name || 'store')).trim();
-  const catalogUrl = `${workerBase.replace(/\/+$/, '')}/store/${currentSlug}`;
-  const relativeStorePath = `/store/${currentSlug}`;
+  const catalogUrl = StorageService.getPublicCatalogUrl(currentSlug, ownerEmail);
+  const relativeStorePath = `/store/${currentSlug}${ownerEmail ? `?email=${encodeURIComponent(ownerEmail)}` : ''}`;
 
   const publicProductsCount = products.filter((p) => p.isPublicInCatalog !== false).length;
   const inStockPublicCount = products.filter(
@@ -122,18 +121,44 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
     }
   };
 
-  const handleOpenStore = () => {
-    // Open in new tab or navigate
-    if (typeof window !== 'undefined') {
-      window.open(catalogUrl, '_blank', 'noopener,noreferrer');
+  const openExternalUrl = async (targetUrl: string) => {
+    try {
+      const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
+      if (isNative) {
+        await Browser.open({ url: targetUrl });
+        return;
+      }
+    } catch (_) {}
+    if (typeof document !== 'undefined') {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
-  const handleShareWhatsApp = () => {
-    const text = encodeURIComponent(
-      `Hello! Check out our current products and live stock catalog here: ${catalogUrl}`
-    );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const handleOpenStore = async () => {
+    await StorageService.publishPublicCatalog().catch(() => {});
+    await openExternalUrl(catalogUrl);
+  };
+
+  const handleShareWhatsApp = async () => {
+    const text = `Hello! Check out our current products and live stock catalog here: ${catalogUrl}`;
+    try {
+      const res = await shareContent({
+        title: `${business.name || 'Brivu'} Live Stock Catalog`,
+        text,
+        url: catalogUrl,
+      });
+      if (res.shared && res.method === 'clipboard') {
+        showNotice('Catalog message copied for sharing!');
+      }
+    } catch {
+      await openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
+    }
   };
 
   const showNotice = (msg: string) => {

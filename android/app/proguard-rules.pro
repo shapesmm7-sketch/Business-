@@ -55,6 +55,9 @@
 -keep public class com.brivu.myapp.GoogleDrivePlugin {
     public *;
 }
+-keep public class com.brivu.myapp.BluetoothPrinterPlugin {
+    public *;
+}
 
 # 6. AndroidX & WebKit
 -keep public class * extends android.app.Activity

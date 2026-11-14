@@ -49,6 +49,9 @@ interface GoogleDrivePluginInterface {
   getAccessToken(): Promise<{
     accessToken: string;
   }>;
+  invalidateToken?(options: { token: string }): Promise<{
+    cleared: boolean;
+  }>;
   disconnectGoogleDrive(): Promise<{
     success: boolean;
     connected: boolean;
@@ -112,6 +115,32 @@ function formatSyncTimestamp(date: Date): string {
   const hours = pad(date.getHours());
   const minutes = pad(date.getMinutes());
   return `${month}/${day}/${year} ${hours}:${minutes}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function mergeItemsPreservingPhotos<T extends Record<string, any>>(existing: T[], incoming: T[], photoField: string, backupPhotoField: string): T[] {
+  const map = new Map<string, T>();
+  for (const item of existing || []) {
+    if (item && item.id) map.set(item.id, item);
+  }
+  for (const item of incoming || []) {
+    if (!item || !item.id) continue;
+    const prev = map.get(item.id);
+    if (prev) {
+      map.set(item.id, {
+        ...prev,
+        ...item,
+        [photoField]: item[photoField] || prev[photoField],
+        [backupPhotoField]: item[backupPhotoField] || prev[backupPhotoField],
+      });
+    } else {
+      map.set(item.id, item);
+    }
+  }
+  return Array.from(map.values());
 }
 
 export const GoogleDriveService = {
@@ -354,6 +383,83 @@ export const GoogleDriveService = {
   },
 
   /**
+   * Invalidates a rejected (401) access token and retrieves a fresh one.
+   */
+  async refreshAccessToken(staleToken?: string): Promise<string> {
+    const account = this.getStoredAccount();
+    if (!account || !account.connected) {
+      throw new Error('Google Drive is not connected. Please connect your Google account first.');
+    }
+
+    if (this.isNativeAndroid()) {
+      try {
+        if (staleToken && GoogleDriveNative.invalidateToken) {
+          await GoogleDriveNative.invalidateToken({ token: staleToken }).catch(() => {});
+        }
+        const res = await GoogleDriveNative.getAccessToken();
+        if (res?.accessToken) {
+          account.accessToken = res.accessToken;
+          account.tokenExpiresAt = Date.now() + 3600 * 1000;
+          localStorage.setItem(STORAGE_ACCOUNT_KEY, JSON.stringify(account));
+          return res.accessToken;
+        }
+      } catch (e) {
+        console.warn('Android token refresh note:', e);
+      }
+    }
+
+    const freshAccount = await this.connectGoogleDrive();
+    return freshAccount.accessToken;
+  },
+
+  /**
+   * Executes a Google Drive fetch with automatic 401 token refresh and exponential backoff
+   * on transient 429/5xx or network failures.
+   */
+  async driveFetch(
+    url: string,
+    init: RequestInit = {},
+    tokenOverride?: string,
+    maxRetries = 2
+  ): Promise<Response> {
+    let token = tokenOverride || (await this.getValidAccessToken());
+    let refreshedOn401 = false;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const headers = new Headers(init.headers || {});
+        headers.set('Authorization', `Bearer ${token}`);
+
+        const res = await fetch(url, {
+          ...init,
+          cache: 'no-store',
+          headers,
+        });
+
+        if (res.status === 401 && !refreshedOn401) {
+          refreshedOn401 = true;
+          token = await this.refreshAccessToken(token);
+          continue;
+        }
+
+        if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
+          await sleep(450 * Math.pow(2, attempt));
+          continue;
+        }
+
+        return res;
+      } catch (err) {
+        if (attempt >= maxRetries) {
+          throw err;
+        }
+        await sleep(450 * Math.pow(2, attempt));
+      }
+    }
+
+    throw new Error('Google Drive request failed after retries.');
+  },
+
+  /**
    * Disconnects Google Drive account and revokes access token
    */
   async disconnectGoogleDrive(): Promise<void> {
@@ -385,43 +491,56 @@ export const GoogleDriveService = {
   },
 
   /**
-   * Locates or creates the official "Brivu Backups" folder in the user's own Google Drive
+   * Finds ALL non-trashed "Brivu Backups" folders without creating duplicates.
    */
-  async getOrCreateBrivuFolder(accessToken: string): Promise<string> {
+  async findBrivuFolderIds(accessToken?: string): Promise<string[]> {
     const folderName = 'Brivu Backups';
-
-    // 1. Search for existing folder named "Brivu Backups"
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
       `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
-    )}&fields=files(id,name)`;
+    )}&spaces=drive&pageSize=100&orderBy=createdTime asc&fields=files(id,name,createdTime)`;
 
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (searchRes.ok) {
-      const data = await searchRes.json();
-      if (data.files && data.files.length > 0) {
-        return data.files[0].id;
-      }
+    const searchRes = await this.driveFetch(searchUrl, {}, accessToken);
+    if (!searchRes.ok) {
+      const errText = await searchRes.text().catch(() => searchRes.statusText);
+      const err: any = new Error(`Google Drive folder lookup failed (${searchRes.status}): ${errText}`);
+      err.status = searchRes.status;
+      throw err;
     }
 
-    // 2. Folder does not exist, create it directly in the user's Google Drive
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+    const data = await searchRes.json();
+    const files = Array.isArray(data?.files) ? data.files : [];
+    return files.map((f: any) => f.id).filter(Boolean);
+  },
+
+  /**
+   * Locates or creates the official "Brivu Backups" folder in the user's own Google Drive.
+   * Never creates a duplicate folder if folder search encountered an error.
+   */
+  async getOrCreateBrivuFolder(accessToken?: string): Promise<string> {
+    const folderName = 'Brivu Backups';
+    const existingIds = await this.findBrivuFolderIds(accessToken);
+    if (existingIds.length > 0) {
+      return existingIds[0];
+    }
+
+    const createRes = await this.driveFetch(
+      'https://www.googleapis.com/drive/v3/files',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          description: 'Brivu Business Manager Backup Directory',
+        }),
       },
-      body: JSON.stringify({
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        description: 'Brivu Business Manager Backup Directory',
-      }),
-    });
+      accessToken
+    );
 
     if (!createRes.ok) {
-      const errText = await createRes.text();
+      const errText = await createRes.text().catch(() => createRes.statusText);
       throw new Error(`Failed to create "${folderName}" folder in Google Drive: ${errText}`);
     }
 
@@ -430,7 +549,7 @@ export const GoogleDriveService = {
   },
 
   /**
-   * Uploads complete Brivu business data (receipts, invoices, inventory, clients, staff, and photos)
+   * Uploads complete Brivu business data (receipts, invoices, inventory, clients, staff, and embedded photos)
    * directly to the "Brivu Backups" folder in the authenticated user's Google Drive.
    */
   async syncNow(customFilename?: string): Promise<{
@@ -449,21 +568,19 @@ export const GoogleDriveService = {
     }
 
     const account = this.getStoredAccount();
-    const payload = StorageService.exportBackup();
+    const payload = await StorageService.exportBackupWithEmbeddedPhotos();
     const photoStats = this.getPhotoStats();
     (payload as any).photoStats = photoStats;
 
-    const payloadStr = JSON.stringify(payload, null, 2);
+    const payloadStr = JSON.stringify(payload);
     const now = new Date();
     const dateSlug = now.toISOString().split('T')[0];
     const fileName = customFilename || `brivu_backup_${dateSlug}_${now.getTime()}.json`;
     const formattedSyncTime = formatSyncTimestamp(now);
 
     try {
-      // 1. Get or create the "Brivu Backups" folder in the user's Google Drive
       const folderId = await this.getOrCreateBrivuFolder(accessToken);
 
-      // 2. Upload the backup file directly to that user's Google Drive folder
       const metadata = {
         name: fileName,
         mimeType: 'application/json',
@@ -484,26 +601,25 @@ export const GoogleDriveService = {
         payloadStr +
         closeDelimiter;
 
-      const uploadRes = await fetch(
+      const uploadRes = await this.driveFetch(
         'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,createdTime,modifiedTime',
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${accessToken}`,
             'Content-Type': `multipart/related; boundary="${boundary}"`,
           },
           body: multipartRequestBody,
-        }
+        },
+        accessToken
       );
 
       if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
+        const errText = await uploadRes.text().catch(() => uploadRes.statusText);
         throw new Error(`Google Drive upload failed: ${errText}`);
       }
 
       const uploadData = await uploadRes.json();
 
-      // Update last sync timestamp in storage
       localStorage.setItem(STORAGE_LAST_SYNC_KEY, formattedSyncTime);
       if (account) {
         account.lastSyncTime = formattedSyncTime;
@@ -527,38 +643,92 @@ export const GoogleDriveService = {
   },
 
   /**
-   * Lists all backup files inside the "Brivu Backups" folder from the user's Google Drive
+   * Lists all backup files across all "Brivu Backups" folders (plus any Brivu JSON backup files
+   * visible to the app) with automatic token refresh, retries, pagination, and real error reporting.
    */
-  async listBackups(): Promise<DriveBackupFile[]> {
+  async listBackupsWithStatus(): Promise<{
+    files: DriveBackupFile[];
+    error?: string;
+    needsReconnect?: boolean;
+  }> {
     let accessToken: string;
     try {
       accessToken = await this.getValidAccessToken();
-    } catch {
-      return [];
+    } catch (authErr: any) {
+      return {
+        files: [],
+        error: authErr?.message || 'Google Drive session expired. Please reconnect your Google account.',
+        needsReconnect: true,
+      };
     }
 
     try {
-      // Find "Brivu Backups" folder
-      const folderId = await this.getOrCreateBrivuFolder(accessToken);
-      const query = `'${folderId}' in parents and trashed = false`;
-      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-        query
-      )}&fields=files(id,name,createdTime,modifiedTime,size,mimeType)&orderBy=modifiedTime desc`;
+      const folderIds = await this.findBrivuFolderIds(accessToken);
 
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (!res.ok) {
-        return [];
+      const queryParts: string[] = [];
+      if (folderIds.length > 0) {
+        const parentsClause = folderIds.map((id) => `'${id}' in parents`).join(' or ');
+        queryParts.push(`((${parentsClause}) and mimeType != 'application/vnd.google-apps.folder' and trashed = false)`);
       }
+      queryParts.push(
+        `((name contains 'brivu_backup' or name contains 'Brivu_Backup') and mimeType != 'application/vnd.google-apps.folder' and trashed = false)`
+      );
 
-      const data = await res.json();
-      return data.files || [];
-    } catch (e) {
+      const combinedQuery = queryParts.join(' or ');
+      const fileMap = new Map<string, DriveBackupFile>();
+      let pageToken: string | undefined = undefined;
+      let pageCount = 0;
+
+      do {
+        const pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+        const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+          combinedQuery
+        )}&spaces=drive&pageSize=100&fields=nextPageToken,files(id,name,createdTime,modifiedTime,size,mimeType)&orderBy=modifiedTime desc${pageParam}`;
+
+        const res = await this.driveFetch(url, {}, accessToken);
+        if (!res.ok) {
+          const errText = await res.text().catch(() => res.statusText);
+          return {
+            files: Array.from(fileMap.values()),
+            error: `Could not load Google Drive backups (${res.status}). Tap Retry to try again. ${errText ? '' : ''}`.trim(),
+            needsReconnect: res.status === 401 || res.status === 403,
+          };
+        }
+
+        const data = await res.json();
+        const files: DriveBackupFile[] = Array.isArray(data?.files) ? data.files : [];
+        for (const f of files) {
+          if (f && f.id && f.mimeType !== 'application/vnd.google-apps.folder') {
+            fileMap.set(f.id, f);
+          }
+        }
+        pageToken = data?.nextPageToken || undefined;
+        pageCount += 1;
+      } while (pageToken && pageCount < 5);
+
+      const sortedFiles = Array.from(fileMap.values()).sort(
+        (a, b) => new Date(b.modifiedTime || b.createdTime || 0).getTime() - new Date(a.modifiedTime || a.createdTime || 0).getTime()
+      );
+
+      return { files: sortedFiles };
+    } catch (e: any) {
       console.warn('Failed listing backups from Google Drive:', e);
-      return [];
+      const msg = String(e?.message || '');
+      const needsReconnect = e?.status === 401 || e?.status === 403 || msg.includes('401') || msg.toLowerCase().includes('not connected');
+      return {
+        files: [],
+        error: msg || 'Network error loading Google Drive backups. Please check your connection and tap Retry.',
+        needsReconnect,
+      };
     }
+  },
+
+  /**
+   * Lists all backup files inside the "Brivu Backups" folder from the user's Google Drive
+   */
+  async listBackups(): Promise<DriveBackupFile[]> {
+    const res = await this.listBackupsWithStatus();
+    return res.files;
   },
 
   /**
@@ -568,22 +738,12 @@ export const GoogleDriveService = {
     fileId: string,
     mergeStrategy: 'merge' | 'replace' = 'merge'
   ): Promise<{ success: boolean; itemCount?: any; error?: string }> {
-    let accessToken: string;
     try {
-      accessToken = await this.getValidAccessToken();
-    } catch (authErr: any) {
-      return { success: false, error: authErr?.message || 'Please connect your Google Drive account first.' };
-    }
-
-    try {
-      // Direct download from Google Drive API
       const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-      const res = await fetch(downloadUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const res = await this.driveFetch(downloadUrl);
 
       if (!res.ok) {
-        const errText = await res.text();
+        const errText = await res.text().catch(() => res.statusText);
         throw new Error(`Failed to download backup from Google Drive: ${errText}`);
       }
 
@@ -606,20 +766,18 @@ export const GoogleDriveService = {
   async restoreAllBackups(
     onProgress?: (current: number, total: number, fileName: string) => void
   ): Promise<{ success: boolean; restoredCount?: number; totalItems?: any; error?: string }> {
-    const backups = await this.listBackups();
+    const listRes = await this.listBackupsWithStatus();
+    if (listRes.error && listRes.files.length === 0) {
+      return { success: false, error: listRes.error };
+    }
+    const backups = listRes.files;
     if (backups.length === 0) {
       return { success: false, error: 'No backup files found in "Brivu Backups" folder.' };
     }
 
-    // Sort backups by modifiedTime/createdTime ascending (oldest first, newest last)
     const sorted = [...backups].sort(
       (a, b) => new Date(a.modifiedTime || a.createdTime).getTime() - new Date(b.modifiedTime || b.createdTime).getTime()
     );
-
-    const accessToken = await this.getValidAccessToken();
-    if (!accessToken) {
-      return { success: false, error: 'Not authenticated with Google Drive. Please connect first.' };
-    }
 
     let consolidatedBackup: any = null;
     let processedFiles = 0;
@@ -632,9 +790,7 @@ export const GoogleDriveService = {
 
       try {
         const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-        const res = await fetch(downloadUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const res = await this.driveFetch(downloadUrl);
 
         if (res.ok) {
           const data = await res.json();
@@ -642,10 +798,18 @@ export const GoogleDriveService = {
             if (!consolidatedBackup) {
               consolidatedBackup = { ...data };
             } else {
-              if (data.profile) consolidatedBackup.profile = { ...consolidatedBackup.profile, ...data.profile };
+              if (data.profile) {
+                consolidatedBackup.profile = {
+                  ...consolidatedBackup.profile,
+                  ...data.profile,
+                  logo: data.profile.logo || consolidatedBackup.profile?.logo,
+                  logoBackupData: data.profile.logoBackupData || consolidatedBackup.profile?.logoBackupData,
+                  signature: data.profile.signature || consolidatedBackup.profile?.signature,
+                  signatureBackupData: data.profile.signatureBackupData || consolidatedBackup.profile?.signatureBackupData,
+                };
+              }
               if (data.settings) consolidatedBackup.settings = { ...consolidatedBackup.settings, ...data.settings };
 
-              // Receipts & Invoices: merge by id
               if (Array.isArray(data.receipts)) {
                 const map = new Map<string, any>();
                 (consolidatedBackup.receipts || []).forEach((r: any) => { if (r?.id) map.set(r.id, r); });
@@ -653,39 +817,46 @@ export const GoogleDriveService = {
                 consolidatedBackup.receipts = Array.from(map.values());
               }
 
-              // Inventory Products: merge by id
+              // Inventory Products: merge by id while NEVER losing an existing image or imageBackupData
               if (Array.isArray(data.inventoryProducts)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.inventoryProducts || []).forEach((p: any) => { if (p?.id) map.set(p.id, p); });
-                data.inventoryProducts.forEach((p: any) => { if (p?.id) map.set(p.id, p); });
-                consolidatedBackup.inventoryProducts = Array.from(map.values());
+                consolidatedBackup.inventoryProducts = mergeItemsPreservingPhotos(
+                  consolidatedBackup.inventoryProducts || [],
+                  data.inventoryProducts,
+                  'image',
+                  'imageBackupData'
+                );
               }
 
-              // Customers / Clients: merge by id
+              // Customers / Clients: merge by id while preserving profilePic
               if (Array.isArray(data.customers)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.customers || []).forEach((c: any) => { if (c?.id) map.set(c.id, c); });
-                data.customers.forEach((c: any) => { if (c?.id) map.set(c.id, c); });
-                consolidatedBackup.customers = Array.from(map.values());
+                consolidatedBackup.customers = mergeItemsPreservingPhotos(
+                  consolidatedBackup.customers || [],
+                  data.customers,
+                  'profilePic',
+                  'profilePicBackupData'
+                );
               }
 
-              // Agents: merge by id
+              // Agents: merge by id while preserving profilePic
               if (Array.isArray(data.agents)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.agents || []).forEach((a: any) => { if (a?.id) map.set(a.id, a); });
-                data.agents.forEach((a: any) => { if (a?.id) map.set(a.id, a); });
-                consolidatedBackup.agents = Array.from(map.values());
+                consolidatedBackup.agents = mergeItemsPreservingPhotos(
+                  consolidatedBackup.agents || [],
+                  data.agents,
+                  'profilePic',
+                  'profilePicBackupData'
+                );
               }
 
-              // Workers / Staff: merge by id
+              // Workers / Staff: merge by id while preserving profilePic
               if (Array.isArray(data.workers)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.workers || []).forEach((w: any) => { if (w?.id) map.set(w.id, w); });
-                data.workers.forEach((w: any) => { if (w?.id) map.set(w.id, w); });
-                consolidatedBackup.workers = Array.from(map.values());
+                consolidatedBackup.workers = mergeItemsPreservingPhotos(
+                  consolidatedBackup.workers || [],
+                  data.workers,
+                  'profilePic',
+                  'profilePicBackupData'
+                );
               }
 
-              // Inventory Sales: merge by id
               if (Array.isArray(data.inventorySales)) {
                 const map = new Map<string, any>();
                 (consolidatedBackup.inventorySales || []).forEach((s: any) => { if (s?.id) map.set(s.id, s); });
@@ -693,7 +864,6 @@ export const GoogleDriveService = {
                 consolidatedBackup.inventorySales = Array.from(map.values());
               }
 
-              // Inventory Expenses: merge by id
               if (Array.isArray(data.inventoryExpenses)) {
                 const map = new Map<string, any>();
                 (consolidatedBackup.inventoryExpenses || []).forEach((e: any) => { if (e?.id) map.set(e.id, e); });
@@ -701,7 +871,6 @@ export const GoogleDriveService = {
                 consolidatedBackup.inventoryExpenses = Array.from(map.values());
               }
 
-              // Inventory Debts: merge by id
               if (Array.isArray(data.inventoryDebts)) {
                 const map = new Map<string, any>();
                 (consolidatedBackup.inventoryDebts || []).forEach((d: any) => { if (d?.id) map.set(d.id, d); });
@@ -709,11 +878,32 @@ export const GoogleDriveService = {
                 consolidatedBackup.inventoryDebts = Array.from(map.values());
               }
 
-              // QR Hosted Pages: merge by id
+              if (Array.isArray(data.productCategories)) {
+                const map = new Map<string, any>();
+                (consolidatedBackup.productCategories || []).forEach((c: any) => { if (c?.id) map.set(c.id, c); });
+                data.productCategories.forEach((c: any) => { if (c?.id) map.set(c.id, c); });
+                consolidatedBackup.productCategories = Array.from(map.values());
+              }
+
               if (Array.isArray(data.qrHostedPages)) {
                 const map = new Map<string, any>();
                 (consolidatedBackup.qrHostedPages || []).forEach((q: any) => { if (q?.id) map.set(q.id, q); });
-                data.qrHostedPages.forEach((q: any) => { if (q?.id) map.set(q.id, q); });
+                data.qrHostedPages.forEach((q: any) => {
+                  if (!q?.id) return;
+                  const prev = map.get(q.id);
+                  if (prev) {
+                    map.set(q.id, {
+                      ...prev,
+                      ...q,
+                      coverImage: q.coverImage || prev.coverImage,
+                      logo: q.logo || prev.logo,
+                      photos: Array.isArray(q.photos) && q.photos.length > 0 ? q.photos : (prev.photos || []),
+                      menuItems: Array.isArray(q.menuItems) && q.menuItems.length > 0 ? q.menuItems : (prev.menuItems || []),
+                    });
+                  } else {
+                    map.set(q.id, q);
+                  }
+                });
                 consolidatedBackup.qrHostedPages = Array.from(map.values());
               }
             }
@@ -729,7 +919,6 @@ export const GoogleDriveService = {
       return { success: false, error: 'Failed to restore backup files from Google Drive.' };
     }
 
-    // Apply the consolidated data in REPLACE MODE so all records show up immediately
     const finalResult = this.applyRestoredData(consolidatedBackup, 'replace');
     if (!finalResult.success) {
       return { success: false, error: finalResult.error };
@@ -773,11 +962,11 @@ export const GoogleDriveService = {
         return { success: false, error: importResult.message };
       }
 
-      // Count restored photos
-      const restoredProducts = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : [];
-      const restoredCustomers = Array.isArray(backupData.customers) ? backupData.customers : [];
-      const restoredAgents = Array.isArray(backupData.agents) ? backupData.agents : [];
-      const restoredWorkers = Array.isArray(backupData.workers) ? backupData.workers : [];
+      // Count restored photos (after importBackup normalized image fields)
+      const restoredProducts = StorageService.getInventoryProducts();
+      const restoredCustomers = StorageService.getCustomers();
+      const restoredAgents = StorageService.getAgents();
+      const restoredWorkers = StorageService.getWorkers();
 
       const restoredPhotoCount =
         restoredProducts.filter((p: any) => p.image).length +
@@ -785,8 +974,12 @@ export const GoogleDriveService = {
         restoredAgents.filter((a: any) => a.profilePic).length +
         restoredWorkers.filter((w: any) => w.profilePic).length;
 
-      // Sync to cloudflare background if available
-      CloudflareService.syncAllToCloudflare().catch(() => {});
+      // Verify remote photo URLs & recover/re-upload any embedded or missing photos asynchronously
+      StorageService.recoverRestoredProductPhotos(backupData)
+        .then(() => CloudflareService.syncAllToCloudflare().catch(() => {}))
+        .catch(() => {
+          CloudflareService.syncAllToCloudflare().catch(() => {});
+        });
 
       // Dispatch global restoration events so all active React screens re-render with restored items
       if (typeof window !== 'undefined') {
@@ -798,10 +991,10 @@ export const GoogleDriveService = {
         success: true,
         itemCount: {
           receipts: Array.isArray(backupData.receipts) ? backupData.receipts.length : 0,
-          products: restoredProducts.length,
-          customers: restoredCustomers.length,
-          agents: restoredAgents.length,
-          staff: restoredWorkers.length,
+          products: Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts.length : restoredProducts.length,
+          customers: Array.isArray(backupData.customers) ? backupData.customers.length : restoredCustomers.length,
+          agents: Array.isArray(backupData.agents) ? backupData.agents.length : restoredAgents.length,
+          staff: Array.isArray(backupData.workers) ? backupData.workers.length : restoredWorkers.length,
           photos: restoredPhotoCount,
         },
       };

@@ -47,6 +47,7 @@ import {
 
 export function getQrPageIdFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
+  if (isStoreCatalogPathFromUrl()) return null;
 
   // 1. Check query parameters
   const params = new URLSearchParams(window.location.search);
@@ -120,6 +121,9 @@ export function getStoreSlugFromUrl(): string | null {
       if (slug) return decodeURIComponent(slug);
     }
   }
+  if (pathname === '/store' || pathname.endsWith('/store')) {
+    return 'store';
+  }
   const hash = window.location.hash || '';
   if (hash.includes('/store/')) {
     const after = hash.split('/store/')[1];
@@ -128,11 +132,15 @@ export function getStoreSlugFromUrl(): string | null {
       if (slug) return decodeURIComponent(slug);
     }
   }
+  if (hash.startsWith('#/store')) {
+    return 'store';
+  }
   return null;
 }
 
 export function isCustomerPathFromUrl(): boolean {
   if (typeof window === 'undefined') return false;
+  if (isStoreCatalogPathFromUrl()) return false;
   const params = new URLSearchParams(window.location.search);
   if (
     params.get('qr') ||
@@ -435,6 +443,10 @@ export function App() {
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=events...)
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if (isStoreCatalogPathFromUrl()) {
+        setActiveScreen('public-catalog');
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const qrPageId = getQrPageIdFromUrl();
       const photoIdParam = params.get('photo') || params.get('photoId');
@@ -729,6 +741,7 @@ export function App() {
 
   // Initialize Google AdMob SDK once on mount and preload live Native Advanced & Interstitial ads
   useEffect(() => {
+    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) return;
     let active = true;
     AdMobService.initNativeAdMob()
       .then(() => {
@@ -745,6 +758,7 @@ export function App() {
 
   // Setup global interaction tracking on mount
   useEffect(() => {
+    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) return;
     // Track user clicks / taps to trigger an ad popup every 25 interactions
     const handleGlobalInteraction = () => {
       AdMobService.recordInteraction();
@@ -924,8 +938,8 @@ export function App() {
       const currentCfg = StorageService.getAppLockConfig();
       setLockConfig(currentCfg);
 
-      // Check if the customer QR public view is active
-      const isPublic = isCustomerPathFromUrl();
+      // Check if the customer QR public view or live public store catalog is active
+      const isPublic = isCustomerPathFromUrl() || isStoreCatalogPathFromUrl();
 
       if (isPublic) return;
 
@@ -1316,7 +1330,7 @@ export function App() {
     return <GoogleAuthPopupPage />;
   }
 
-  const isPublicCustomerView = isCustomerPathFromUrl();
+  const isPublicCustomerView = isCustomerPathFromUrl() || isStoreCatalogPathFromUrl();
 
   // If App PIN is active and app is locked, lock the WHOLE APP completely
   if (!isPublicCustomerView && isAppLocked && lockConfig && lockConfig.isEnabled) {
@@ -1697,7 +1711,8 @@ export function App() {
         {activeScreen === 'public-catalog' && (
           <StoreCatalogScreen
             slug={getStoreSlugFromUrl()}
-            onNavigateHome={() => handleNavigate('home')}
+            isMerchantPreview={!isStoreCatalogPathFromUrl()}
+            onNavigateHome={!isStoreCatalogPathFromUrl() ? () => handleNavigate('home') : undefined}
           />
         )}
 
@@ -1780,7 +1795,7 @@ export function App() {
 
 
       {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
-      <AdMobModalOverlay />
+      {activeScreen !== 'public-catalog' && activeScreen !== 'qr-customer-view' && <AdMobModalOverlay />}
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
       {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'public-catalog', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (

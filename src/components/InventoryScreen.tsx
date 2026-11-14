@@ -768,6 +768,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [isPublicCatalogModalOpen, setIsPublicCatalogModalOpen] = useState<boolean>(false);
   const [showInlineCategoryInput, setShowInlineCategoryInput] = useState<boolean>(false);
   const [quickCategoryName, setQuickCategoryName] = useState<string>('');
+  const [brokenImageKeys, setBrokenImageKeys] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const autoGenerateItemId = () => {
@@ -6631,10 +6632,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-xs border border-sky-100 dark:border-slate-800 flex flex-col hover:border-sky-300 transition group">
                             {/* Card Image Header with Overlaid Badges */}
                             <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                              {prod.image ? (
+                              {prod.image && !brokenImageKeys[`${prod.id}::${prod.image}`] ? (
                                 <img
                                   src={prod.image}
                                   alt={prod.name}
+                                  onError={() => setBrokenImageKeys((prev) => ({ ...prev, [`${prod.id}::${prod.image}`]: true }))}
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                 />
                               ) : (
@@ -6821,10 +6823,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                           {/* Top Row: Thumbnail + Item info + Stock Badge */}
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              {prod.image ? (
+                              {prod.image && !brokenImageKeys[`${prod.id}::${prod.image}`] ? (
                                 <img
                                   src={prod.image}
                                   alt={prod.name}
+                                  onError={() => setBrokenImageKeys((prev) => ({ ...prev, [`${prod.id}::${prod.image}`]: true }))}
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                                 />
                               ) : (

@@ -42,6 +42,8 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFetchingBackups, setIsFetchingBackups] = useState(false);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
+  const [backupsError, setBackupsError] = useState<string | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   
   // Backups List Modal state
   const [showBackupsModal, setShowBackupsModal] = useState(false);
@@ -76,11 +78,18 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
 
   const loadBackups = async () => {
     setIsFetchingBackups(true);
+    setBackupsError(null);
+    setNeedsReconnect(false);
     try {
-      const files = await GoogleDriveService.listBackups();
-      setBackups(files);
-    } catch (e) {
+      const res = await GoogleDriveService.listBackupsWithStatus();
+      setBackups(res.files);
+      if (res.error) {
+        setBackupsError(res.error);
+        setNeedsReconnect(Boolean(res.needsReconnect));
+      }
+    } catch (e: any) {
       console.warn('Failed loading backups list:', e);
+      setBackupsError(e?.message || 'Could not load Google Drive backups. Please tap Retry.');
     } finally {
       setIsFetchingBackups(false);
     }
@@ -91,16 +100,16 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    */
   const handleConnect = async (openModalAfter = false) => {
     setIsConnecting(true);
+    setBackupsError(null);
+    setNeedsReconnect(false);
     try {
       const connectedAccount = await GoogleDriveService.connectGoogleDrive();
       setAccount(connectedAccount);
       showToast('success', `Connected to Google Drive as ${connectedAccount.email}`);
-      const files = await GoogleDriveService.listBackups();
-      setBackups(files);
-
       if (openModalAfter) {
         setShowBackupsModal(true);
       }
+      await loadBackups();
     } catch (err: any) {
       console.error('Google authorization error:', err);
       showToast('error', err?.message || 'Google account authorization was cancelled or failed.');
@@ -114,12 +123,13 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    */
   const handleSwitchAccount = async () => {
     setIsConnecting(true);
+    setBackupsError(null);
+    setNeedsReconnect(false);
     try {
       const connectedAccount = await GoogleDriveService.switchGoogleAccount();
       setAccount(connectedAccount);
       showToast('success', `Switched Google Drive account to ${connectedAccount.email}`);
-      const files = await GoogleDriveService.listBackups();
-      setBackups(files);
+      await loadBackups();
     } catch (err: any) {
       console.error('Google switch account error:', err);
       showToast('error', err?.message || 'Failed to switch Google account.');
@@ -133,6 +143,8 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       await GoogleDriveService.disconnectGoogleDrive();
       setAccount(null);
       setBackups([]);
+      setBackupsError(null);
+      setNeedsReconnect(false);
       setShowBackupsModal(false);
       showToast('success', 'Disconnected from Google Drive');
     } catch (err: any) {
@@ -590,6 +602,37 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                   <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                   <span>Loading backup files from "Brivu Backups" folder...</span>
                 </div>
+              ) : backups.length === 0 && backupsError ? (
+                <div className="text-center py-8 text-xs text-slate-400 space-y-3">
+                  <AlertCircle className="w-10 h-10 mx-auto text-amber-500" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-200 text-sm">
+                    Could not load Google Drive backups
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+                    {backupsError}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={loadBackups}
+                      disabled={isFetchingBackups}
+                      className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isFetchingBackups ? 'animate-spin' : ''}`} />
+                      <span>Retry Loading Backups</span>
+                    </button>
+                    {needsReconnect && (
+                      <button
+                        type="button"
+                        onClick={() => handleConnect(true)}
+                        disabled={isConnecting}
+                        className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm"
+                      >
+                        Reconnect Google Account
+                      </button>
+                    )}
+                  </div>
+                </div>
               ) : backups.length === 0 ? (
                 <div className="text-center py-8 text-xs text-slate-400 space-y-3">
                   <Folder className="w-10 h-10 mx-auto opacity-30 text-slate-400" />
@@ -599,13 +642,24 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                   <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
                     No backup files were found in the "Brivu Backups" folder of your Google Drive account ({account?.email}).
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleSyncNow}
-                    className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm"
-                  >
-                    Create First Backup Now
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={loadBackups}
+                      disabled={isFetchingBackups}
+                      className="px-4 py-2.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isFetchingBackups ? 'animate-spin' : ''}`} />
+                      <span>Check Again</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncNow}
+                      className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm"
+                    >
+                      Create First Backup Now
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>

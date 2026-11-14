@@ -83,8 +83,15 @@ async function blobToBase64(blob: Blob): Promise<string> {
 
 function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
   if (!data || typeof data !== 'object') return data;
+  const cleanProfile = data.profile
+    ? (() => {
+        const { logoBackupData, signatureBackupData, ...rest } = data.profile as any;
+        return rest;
+      })()
+    : data.profile;
   return {
     ...data,
+    profile: cleanProfile,
     receipts: (data.receipts || []).map((r) => ({
       ...r,
       businessSnapshot: r.businessSnapshot
@@ -95,22 +102,34 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
           }
         : r.businessSnapshot,
     })),
-    inventoryProducts: (data.inventoryProducts || []).map((p) => ({
-      ...p,
-      image: p.image,
-    })),
-    customers: (data.customers || []).map((c) => ({
-      ...c,
-      profilePic: c.profilePic,
-    })),
-    agents: (data.agents || []).map((a) => ({
-      ...a,
-      profilePic: a.profilePic,
-    })),
-    workers: (data.workers || []).map((w) => ({
-      ...w,
-      profilePic: w.profilePic,
-    })),
+    inventoryProducts: (data.inventoryProducts || []).map((p: any) => {
+      const { imageBackupData, ...rest } = p || {};
+      return {
+        ...rest,
+        image: rest.image,
+      };
+    }),
+    customers: (data.customers || []).map((c: any) => {
+      const { profilePicBackupData, ...rest } = c || {};
+      return {
+        ...rest,
+        profilePic: rest.profilePic,
+      };
+    }),
+    agents: (data.agents || []).map((a: any) => {
+      const { profilePicBackupData, ...rest } = a || {};
+      return {
+        ...rest,
+        profilePic: rest.profilePic,
+      };
+    }),
+    workers: (data.workers || []).map((w: any) => {
+      const { profilePicBackupData, ...rest } = w || {};
+      return {
+        ...rest,
+        profilePic: rest.profilePic,
+      };
+    }),
     qrHostedPages: (data.qrHostedPages || []).map((page) => ({
       ...page,
       coverImage: page.coverImage,
@@ -917,6 +936,7 @@ export const CloudflareService = {
       // Non-destructive merge: preserve local records and combine with user's cloud backup
       const importResult = StorageService.importBackup(rawBackupData, false);
       if (importResult.success) {
+        StorageService.recoverRestoredProductPhotos(rawBackupData).catch(() => {});
         // Recover QR gallery photos from Cloud storage if business QR page photos are missing
         const pages = StorageService.getHostedQRPages();
         const needsPhotoRecovery = pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
@@ -1836,11 +1856,28 @@ export const CloudflareService = {
   /**
    * Publish or update the public stock catalog to Cloudflare
    */
-  async publishStoreCatalog(slug: string, payload: any): Promise<{ success: boolean; error?: string }> {
+  async publishStoreCatalog(
+    slug: string,
+    payload: any,
+    emailOverride?: string
+  ): Promise<{ success: boolean; error?: string }> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
     try {
       const headers = this.getAuthHeaders();
+      const resolvedEmail = (
+        emailOverride ||
+        this.getUserEmail() ||
+        payload?.settings?.email ||
+        payload?.business?.email ||
+        ''
+      )
+        .toLowerCase()
+        .trim();
+      if (resolvedEmail && resolvedEmail.includes('@') && !resolvedEmail.startsWith('brivu-usr-')) {
+        headers['X-User-Email'] = resolvedEmail;
+        headers['X-User-Id'] = resolvedEmail;
+      }
       headers['Content-Type'] = 'application/json';
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
@@ -1849,14 +1886,14 @@ export const CloudflareService = {
           method: 'POST',
           headers,
           signal: controller.signal,
-          body: JSON.stringify({ slug, payload }),
+          body: JSON.stringify({ slug, userEmail: resolvedEmail, payload }),
         });
         const text = await res.text();
         const parsed = parseWorkerResponse(text);
-        if (res.ok && (parsed.ok || (parsed as any).success)) {
+        if (res.ok && (parsed.data?.ok || parsed.data?.success)) {
           return { success: true };
         }
-        return { success: false, error: parsed.error || 'Failed to publish store catalog' };
+        return { success: false, error: parsed.data?.error || parsed.error || 'Failed to publish store catalog' };
       } finally {
         clearTimeout(timeout);
       }
@@ -1867,25 +1904,42 @@ export const CloudflareService = {
   },
 
   /**
-   * Public unauthenticated fetch of store catalog by slug
+   * Public unauthenticated fetch of store catalog by slug and optional owner email
    */
-  async fetchPublicStoreCatalog(slug: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  async fetchPublicStoreCatalog(
+    slug: string,
+    email?: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
+    const cleanSlug = (slug || 'store').trim().toLowerCase() || 'store';
+    const cleanEmail = (email || '').trim().toLowerCase();
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const res = await fetch(`${cleanUrl}/api/store/${encodeURIComponent(slug)}`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
+        const queryParts: string[] = [];
+        if (cleanEmail && cleanEmail.includes('@')) {
+          queryParts.push(`email=${encodeURIComponent(cleanEmail)}`);
+        }
+        queryParts.push(`_t=${Date.now()}`);
+        const res = await fetch(
+          `${cleanUrl}/api/store/${encodeURIComponent(cleanSlug)}?${queryParts.join('&')}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+            signal: controller.signal,
+          }
+        );
         if (res.ok) {
           const text = await res.text();
           const parsed = parseWorkerResponse(text);
-          return { success: true, data: parsed.data || parsed };
+          const payload = parsed.data?.data ?? parsed.data;
+          if (payload && (Array.isArray(payload.products) || payload.settings || payload.business)) {
+            return { success: true, data: payload };
+          }
         }
-        return { success: false, error: `Store "${slug}" not found` };
+        return { success: false, error: `Store "${cleanSlug}" not found` };
       } finally {
         clearTimeout(timeout);
       }
