@@ -1317,6 +1317,16 @@ export const StorageService = {
       const mergeBizQrPage = (base: any, incoming: any): any => {
         const isGenericTitle = (t?: string) =>
           !t || !t.trim() || t.trim() === 'Brivu Business' || t.trim() === 'My Business' || t.trim().endsWith("'s Business");
+        const stripStockMenu = (arr: any) =>
+          Array.isArray(arr)
+            ? arr.filter((i: any) => i && !String(i.id || '').startsWith('prod-'))
+            : [];
+        const baseCleanMenu = stripStockMenu(base?.menuItems);
+        const incomingCleanMenu = stripStockMenu(incoming?.menuItems);
+        const hadStockStripped =
+          (Array.isArray(base?.menuItems) && baseCleanMenu.length !== base.menuItems.length) ||
+          (Array.isArray(incoming?.menuItems) && incomingCleanMenu.length !== incoming.menuItems.length);
+        const finalMenu = incomingCleanMenu.length > 0 ? incomingCleanMenu : baseCleanMenu;
         const pickNonEmptyArr = (preferred: any, fallback: any) =>
           Array.isArray(preferred) && preferred.length > 0
             ? preferred
@@ -1325,7 +1335,12 @@ export const StorageService = {
             : [];
         const catsSet = new Set<string>(['All']);
         for (const c of [...(Array.isArray(base?.menuCategories) ? base.menuCategories : []), ...(Array.isArray(incoming?.menuCategories) ? incoming.menuCategories : [])]) {
-          if (typeof c === 'string' && c.trim() && c.trim() !== 'All') catsSet.add(c.trim());
+          if (typeof c === 'string' && c.trim() && c.trim() !== 'All') {
+            if (hadStockStripped && c.trim() === 'Items' && !finalMenu.some((m: any) => m.category === 'Items')) {
+              continue;
+            }
+            catsSet.add(c.trim());
+          }
         }
         const mergedSocialLinks = {
           instagram: incoming?.socialLinks?.instagram || base?.socialLinks?.instagram || '',
@@ -1359,7 +1374,7 @@ export const StorageService = {
           socialLinks: mergedSocialLinks,
           customSocialLinks: pickNonEmptyArr(incoming?.customSocialLinks, base?.customSocialLinks),
           photos: pickNonEmptyArr(incoming?.photos, base?.photos),
-          menuItems: pickNonEmptyArr(incoming?.menuItems, base?.menuItems),
+          menuItems: finalMenu,
           menuCategories: Array.from(catsSet),
           qrDarkColor: incoming?.qrDarkColor || base?.qrDarkColor || '#000000',
           qrEyeColor: incoming?.qrEyeColor || base?.qrEyeColor || '#000000',
@@ -2880,12 +2895,29 @@ export const StorageService = {
         return [initial];
       }
 
-      if (businessPages.length !== parsed.length) {
+      // Clean out any legacy auto-copied stock inventory products (`prod-...`) from Business QR Digital Items
+      let cleanedAnyStockItems = false;
+      const cleanedBusinessPages = businessPages.map((p) => {
+        if (!Array.isArray(p.menuItems)) return p;
+        const filteredMenu = p.menuItems.filter((item) => !String(item?.id || '').startsWith('prod-'));
+        if (filteredMenu.length === p.menuItems.length) return p;
+        cleanedAnyStockItems = true;
+        const cleanedCats = Array.isArray(p.menuCategories)
+          ? p.menuCategories.filter((c) => !(c === 'Items' && !filteredMenu.some((m) => m.category === 'Items')))
+          : ['All'];
+        return {
+          ...p,
+          menuItems: filteredMenu,
+          menuCategories: cleanedCats.length > 0 ? cleanedCats : ['All'],
+        };
+      });
+
+      if (businessPages.length !== parsed.length || cleanedAnyStockItems) {
         try {
-          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, businessPages);
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, cleanedBusinessPages);
         } catch {}
       }
-      return businessPages;
+      return cleanedBusinessPages;
     } catch {
       const initial = createDefault();
       return [initial];

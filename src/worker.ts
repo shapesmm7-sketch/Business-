@@ -596,9 +596,11 @@ export async function getUserStorageUsageBytes(userEmail: string, env: Env): Pro
 export function sanitizePublicQrPage(rawPage: any): any {
   if (!rawPage || typeof rawPage !== 'object') return null;
 
-  // Clean menu items - strip cost prices, internal margins, suppliers
+  // Clean menu items - strip cost prices, internal margins, suppliers, AND never include stock inventory (`prod-...`) items
   const rawItems = Array.isArray(rawPage.menuItems) ? rawPage.menuItems : [];
-  const cleanMenuItems = rawItems.map((item: any) => ({
+  const filteredRawItems = rawItems.filter((item: any) => item && !String(item?.id || '').startsWith('prod-'));
+  const hadStockItemsStripped = filteredRawItems.length !== rawItems.length;
+  const cleanMenuItems = filteredRawItems.map((item: any) => ({
     id: item?.id ? String(item.id) : `item_${Math.random().toString(36).slice(2, 8)}`,
     name: String(item?.name || ''),
     category: String(item?.category || 'All'),
@@ -771,7 +773,13 @@ export function sanitizePublicQrPage(rawPage: any): any {
     customSocialLinks: cleanCustomSocials,
     socialLinks: rawPage.socialLinks || undefined,
     photos: cleanPhotos,
-    menuCategories: Array.isArray(rawPage.menuCategories) && rawPage.menuCategories.length > 0 ? rawPage.menuCategories : ['All'],
+    menuCategories: (() => {
+      const baseCats = Array.isArray(rawPage.menuCategories) && rawPage.menuCategories.length > 0 ? rawPage.menuCategories : ['All'];
+      const cleaned = hadStockItemsStripped
+        ? baseCats.filter((c: any) => !(c === 'Items' && !enrichedMenuItems.some((m: any) => m.category === 'Items')))
+        : baseCats;
+      return cleaned.length > 0 ? cleaned : ['All'];
+    })(),
     menuItems: enrichedMenuItems,
     websitesQrItems: Array.isArray(rawPage.websitesQrItems) ? rawPage.websitesQrItems : [],
     socialsQrItems: Array.isArray(rawPage.socialsQrItems) ? rawPage.socialsQrItems : [],
@@ -912,8 +920,11 @@ export async function saveCanonicalQrPage(
         if (!pageToSave.logo && existingParsed?.logo) {
           pageToSave.logo = existingParsed.logo;
         }
-        if (Array.isArray(existingParsed?.menuItems) && existingParsed.menuItems.length > 0 && (!Array.isArray(pageToSave.menuItems) || pageToSave.menuItems.length === 0)) {
-          pageToSave.menuItems = existingParsed.menuItems;
+        const existingNonStockMenu = Array.isArray(existingParsed?.menuItems)
+          ? existingParsed.menuItems.filter((i: any) => i && !String(i.id || '').startsWith('prod-'))
+          : [];
+        if (existingNonStockMenu.length > 0 && (!Array.isArray(pageToSave.menuItems) || pageToSave.menuItems.length === 0)) {
+          pageToSave.menuItems = existingNonStockMenu;
         }
         if (Array.isArray(existingParsed?.customSocialLinks) && existingParsed.customSocialLinks.length > 0 && (!Array.isArray(pageToSave.customSocialLinks) || pageToSave.customSocialLinks.length === 0)) {
           pageToSave.customSocialLinks = existingParsed.customSocialLinks;
@@ -1427,7 +1438,6 @@ export async function resolveHostedQrPage(
           bizCandidates.find((p: any) => matchesBizPageId(p) && hasRealQrPageContent(p)) ||
           bizCandidates.find((p: any) => hasRealQrPageContent(p)) ||
           bizCandidates[0];
-        const inventory = Array.isArray(bData.inventoryProducts) ? bData.inventoryProducts : (Array.isArray(bData.inventory) ? bData.inventory : []);
         let photos = Array.isArray(hostedBiz?.photos) && hostedBiz.photos.length > 0
           ? hostedBiz.photos
           : (Array.isArray(bData.photos) ? bData.photos : []);
@@ -1466,17 +1476,10 @@ export async function resolveHostedQrPage(
           } catch (_) {}
         }
 
-        const menuItemsSource = Array.isArray(hostedBiz?.menuItems) && hostedBiz.menuItems.length > 0
-          ? hostedBiz.menuItems
-          : inventory.map((item: any) => ({
-              id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
-              name: item.name,
-              category: item.category || 'All',
-              price: item.sellingPrice || item.price || 0,
-              description: item.description || '',
-              photoUrl: item.image || item.photoUrl,
-              isAvailable: item.inStock !== false,
-            }));
+        // Strict Separation: Business QR Digital Items MUST NEVER auto-import inventory/stock products
+        const menuItemsSource = Array.isArray(hostedBiz?.menuItems)
+          ? hostedBiz.menuItems.filter((item: any) => item && !String(item.id || '').startsWith('prod-'))
+          : [];
 
         return sanitizePublicQrPage({
           ...(hostedBiz || {}),
@@ -1500,7 +1503,7 @@ export async function resolveHostedQrPage(
           photos,
           menuCategories: Array.isArray(hostedBiz?.menuCategories) && hostedBiz.menuCategories.length > 0
             ? hostedBiz.menuCategories
-            : Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
+            : ['All'],
           menuItems: menuItemsSource,
         });
       }
@@ -1969,6 +1972,779 @@ export async function resolvePublicStoreCatalog(
   } catch (_) {}
 
   return null;
+}
+
+function escapeCatalogHtmlText(str: any): string {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeCatalogScriptJson(val: any): string {
+  return JSON.stringify(val ?? null)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+export function renderStandaloneCatalogHtml(
+  catalog: any | null,
+  opts: { catalogId?: string; slug?: string; email?: string; origin?: string }
+): string {
+  const bizName = String(catalog?.business?.name || catalog?.settings?.businessName || 'Live Stock Catalog').trim() || 'Live Stock Catalog';
+  const bizDesc = String(catalog?.business?.description || catalog?.settings?.tagline || 'Browse real-time available stock, prices, sizes, and inquire directly.').trim();
+  const logoUrl = String(catalog?.business?.logo || '').trim();
+  const safeLogoMeta = logoUrl.startsWith('https://') || logoUrl.startsWith('http://') ? logoUrl : '';
+  const resolvedSlug = sanitizePublicStoreSlug(opts.slug || catalog?.settings?.slug || 'store');
+  const resolvedCatalogId = String(opts.catalogId || catalog?.settings?.catalogId || '').trim();
+  const resolvedEmail = String(opts.email || catalog?.settings?.email || catalog?.business?.email || '').toLowerCase().trim();
+  const canonicalUrl = `${opts.origin || ''}${resolvedCatalogId ? `/catalog/${encodeURIComponent(resolvedCatalogId)}` : `/store/${encodeURIComponent(resolvedSlug)}`}`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>${escapeCatalogHtmlText(bizName)} | Live Stock Catalog | Brivu</title>
+  <meta name="description" content="${escapeCatalogHtmlText(bizDesc)}" />
+  <meta property="og:title" content="${escapeCatalogHtmlText(bizName)} — Live Stock Catalog" />
+  <meta property="og:description" content="${escapeCatalogHtmlText(bizDesc)}" />
+  <meta property="og:type" content="website" />
+  ${canonicalUrl ? `<meta property="og:url" content="${escapeCatalogHtmlText(canonicalUrl)}" />` : ''}
+  ${safeLogoMeta ? `<meta property="og:image" content="${escapeCatalogHtmlText(safeLogoMeta)}" />` : ''}
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --surface-alt: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-soft: #94a3b8;
+      --sky: #0284c7;
+      --sky-hover: #0369a1;
+      --sky-tint: #f0f9ff;
+      --emerald: #059669;
+      --emerald-hover: #047857;
+      --emerald-tint: #ecfdf5;
+      --amber: #d97706;
+      --amber-tint: #fef3c7;
+      --rose: #e11d48;
+      --rose-tint: #ffe4e6;
+      --purple: #7e22ce;
+      --purple-tint: #faf5ff;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #020617;
+        --surface: #0f172a;
+        --surface-alt: #1e293b;
+        --border: #1e293b;
+        --text: #f8fafc;
+        --text-muted: #94a3b8;
+        --text-soft: #64748b;
+        --sky: #38bdf8;
+        --sky-hover: #0ea5e9;
+        --sky-tint: rgba(14, 165, 233, 0.14);
+        --emerald: #10b981;
+        --emerald-hover: #059669;
+        --emerald-tint: rgba(16, 185, 129, 0.14);
+        --amber: #f59e0b;
+        --amber-tint: rgba(245, 158, 11, 0.14);
+        --rose: #fb7185;
+        --rose-tint: rgba(244, 63, 94, 0.16);
+        --purple: #d8b4fe;
+        --purple-tint: rgba(126, 34, 206, 0.22);
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+        --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.55);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+    button, input, a { font-family: inherit; }
+    .page-shell { min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 48px; }
+    .container { width: 100%; max-width: 768px; margin: 0 auto; }
+
+    /* Top Header */
+    .topbar { position: sticky; top: 0; z-index: 40; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); backdrop-filter: blur(10px); }
+    .topbar-inner { padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-logo { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
+    .brand-initials { width: 38px; height: 38px; border-radius: 12px; background: #0284c7; color: #fff; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .brand-title { margin: 0; font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
+    .live-pill { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; color: var(--emerald); margin-top: 2px; }
+    .live-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--emerald); animation: pulse 1.8s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+    .icon-btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); border-radius: 12px; padding: 8px 10px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; cursor: pointer; transition: transform 0.12s, background 0.15s; flex-shrink: 0; }
+    .icon-btn:active { transform: scale(0.96); }
+
+    /* Hero */
+    .hero { background: var(--surface); border-bottom: 1px solid var(--border); }
+    .hero-inner { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .hero-desc { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .actions-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .btn-wa { border: none; background: #059669; color: #fff; border-radius: 12px; padding: 9px 14px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm); }
+    .btn-wa:hover { background: #047857; }
+    .btn-call { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); border-radius: 12px; padding: 8px 13px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+    .addr-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); padding: 4px 6px; }
+
+    /* Main Catalog */
+    .main { padding: 16px 12px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+    @media (min-width: 640px) { .main { padding: 18px 16px; } }
+    .search-wrap { position: relative; }
+    .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-soft); pointer-events: none; }
+    .search-input { width: 100%; padding: 11px 36px 11px 38px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; outline: none; box-shadow: var(--shadow-sm); }
+    .search-input:focus { border-color: #0284c7; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16); }
+    .search-clear { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: var(--text-soft); cursor: pointer; padding: 4px; display: inline-flex; }
+
+    /* Categories */
+    .cat-header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; margin-bottom: 6px; }
+    .cat-title { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .cat-count { font-size: 11px; color: var(--text-soft); }
+    .cat-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+    .cat-strip::-webkit-scrollbar { display: none; }
+    .cat-pill { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; padding: 8px 13px; font-size: 12px; font-weight: 800; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: transform 0.12s; }
+    .cat-pill.active { background: #0284c7; border-color: transparent; color: #fff; box-shadow: var(--shadow-sm); }
+    .cat-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+    .cat-badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--surface-alt); color: var(--text-muted); }
+    .cat-pill.active .cat-badge { background: rgba(255, 255, 255, 0.22); color: #fff; }
+
+    /* Grid */
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; transition: transform 0.15s, box-shadow 0.2s; }
+    .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .card-media { position: relative; aspect-ratio: 1 / 1; width: 100%; background: var(--surface-alt); overflow: hidden; }
+    .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card-placeholder { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-soft); padding: 12px; background: linear-gradient(135deg, var(--surface-alt), var(--sky-tint)); }
+    .stock-badge { position: absolute; top: 8px; right: 8px; border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 800; color: #fff; display: inline-flex; align-items: center; gap: 4px; box-shadow: var(--shadow-sm); }
+    .stock-in { background: #059669; }
+    .stock-low { background: #d97706; }
+    .stock-out { background: #e11d48; }
+    .stock-dot { width: 5px; height: 5px; border-radius: 999px; background: #fff; }
+    .cat-overlay { position: absolute; bottom: 8px; left: 8px; max-width: 82%; border-radius: 6px; padding: 2px 6px; font-size: 9.5px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-body { padding: 11px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; flex: 1; }
+    .card-title { margin: 0; font-size: 13px; font-weight: 800; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .tags-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .tag-size { font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--surface-alt); color: var(--text-muted); }
+    .tag-color { font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--purple-tint); color: var(--purple); }
+    .card-footer { padding-top: 8px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .price-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); display: block; }
+    .price-val { font-size: 13px; font-weight: 900; color: var(--sky); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .wa-mini { border: none; border-radius: 10px; padding: 7px; background: var(--emerald-tint); color: var(--emerald); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .wa-mini:hover { background: #059669; color: #fff; }
+
+    /* Empty / Loading / Error / Paused */
+    .state-box { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px 18px; }
+    .state-card { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 20px; text-align: center; }
+    .state-icon { width: 64px; height: 64px; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+    .state-title { margin: 0; font-size: 17px; font-weight: 800; }
+    .state-sub { margin: 6px auto 0; max-width: 340px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
+    .spinner { width: 28px; height: 28px; border: 3px solid var(--sky-tint); border-top-color: var(--sky); border-radius: 999px; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Modal */
+    .modal-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(2, 6, 23, 0.76); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 14px; }
+    .modal-panel { position: relative; width: 100%; max-width: 440px; max-height: 90vh; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-md); }
+    .modal-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 34px; height: 34px; border: none; border-radius: 999px; background: rgba(15, 23, 42, 0.68); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .modal-img-wrap { width: 100%; aspect-ratio: 1 / 1; max-height: 320px; background: var(--surface-alt); overflow: hidden; flex-shrink: 0; }
+    .modal-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .modal-body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+    .modal-price { font-size: 20px; font-weight: 900; color: var(--sky); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 4px; }
+    .modal-section-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); margin-bottom: 5px; display: block; }
+    .chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .size-chip { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); font-size: 12px; font-weight: 800; }
+
+    .footer { text-align: center; padding: 26px 16px 10px; font-size: 11px; color: var(--text-soft); }
+    .footer strong { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="catalog-root" class="page-shell"></div>
+
+  <script>
+    window.__INITIAL_STORE_CATALOG__ = ${safeCatalogScriptJson(catalog)};
+    window.__STORE_CATALOG_ID__ = ${safeCatalogScriptJson(resolvedCatalogId)};
+    window.__STORE_SLUG__ = ${safeCatalogScriptJson(resolvedSlug)};
+    window.__OWNER_EMAIL__ = ${safeCatalogScriptJson(resolvedEmail)};
+
+    (function () {
+      var root = document.getElementById('catalog-root');
+      var catalog = window.__INITIAL_STORE_CATALOG__;
+      var catalogId = window.__STORE_CATALOG_ID__ || '';
+      var slug = window.__STORE_SLUG__ || 'store';
+      var ownerEmail = window.__OWNER_EMAIL__ || '';
+      var selectedCategoryId = 'all';
+      var searchQuery = '';
+      var selectedProduct = null;
+      var copiedTimeout = null;
+      var copied = false;
+
+      function safeImg(src) {
+        if (!src || typeof src !== 'string') return '';
+        var s = src.trim();
+        if (s.indexOf('https://') === 0 || s.indexOf('http://') === 0 || s.indexOf('data:image/') === 0) return s;
+        return '';
+      }
+      function safeHex(c, fallback) {
+        if (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) return c.trim();
+        return fallback || '#0284c7';
+      }
+      function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+      }
+      function svgEl(pathD, size, strokeWidth) {
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', String(size || 16));
+        svg.setAttribute('height', String(size || 16));
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', String(strokeWidth || 2));
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        var paths = Array.isArray(pathD) ? pathD : [pathD];
+        for (var i = 0; i < paths.length; i++) {
+          var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          p.setAttribute('d', paths[i]);
+          svg.appendChild(p);
+        }
+        return svg;
+      }
+      var ICONS = {
+        bag: ['M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z', 'M3 6h18', 'M16 10a4 4 0 0 1-8 0'],
+        wa: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
+        phone: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z',
+        pin: ['M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z', 'M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0'],
+        search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z', 'm21 21-4.3-4.3'],
+        share: ['M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8', 'M16 6l-4-4-4 4', 'M12 2v13'],
+        check: 'M20 6 9 17l-5-5',
+        close: ['M18 6 6 18', 'm6 6 12 12'],
+        clock: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 6v6l4 2']
+      };
+      function formatPrice(amount, currency) {
+        var n = Number(amount || 0);
+        return (currency || 'UGX') + ' ' + n.toLocaleString();
+      }
+      function openWa(biz, currency, prod) {
+        var phone = (biz && (biz.whatsapp || biz.phone)) || '';
+        var clean = String(phone).replace(/[^0-9]/g, '');
+        if (!clean) return;
+        var msg = 'Hello *' + (biz.name || 'Store') + '*!';
+        if (prod) {
+          msg += ' I am interested in ordering *' + prod.name + '* (' + formatPrice(prod.sellingPrice, currency) + ').';
+          if (Array.isArray(prod.sizes) && prod.sizes.length) {
+            msg += ' Available sizes: ' + prod.sizes.join(', ') + '.';
+          }
+          msg += ' Is this item currently in stock?';
+        } else {
+          msg += ' I am browsing your live stock catalog and would like to make an inquiry.';
+        }
+        window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer');
+      }
+
+      function renderLoading() {
+        root.textContent = '';
+        var box = el('div', 'state-box');
+        var icon = el('div', 'state-icon');
+        icon.style.background = 'var(--sky-tint)';
+        icon.appendChild(el('div', 'spinner'));
+        box.appendChild(icon);
+        box.appendChild(el('h3', 'state-title', 'Loading Live Catalog...'));
+        box.appendChild(el('p', 'state-sub', 'Fetching real-time stock and pricing.'));
+        root.appendChild(box);
+      }
+
+      function renderNotFound(msg) {
+        root.textContent = '';
+        var box = el('div', 'state-box');
+        var icon = el('div', 'state-icon');
+        icon.style.background = 'var(--rose-tint)';
+        icon.style.color = 'var(--rose)';
+        icon.appendChild(svgEl(ICONS.bag, 28, 2));
+        box.appendChild(icon);
+        box.appendChild(el('h3', 'state-title', 'Store Catalog Not Found'));
+        box.appendChild(el('p', 'state-sub', msg || 'This live stock catalog link is inactive or does not exist.'));
+        root.appendChild(box);
+      }
+
+      function renderModal(biz, settings, currency) {
+        var existing = document.getElementById('catalog-modal');
+        if (existing) existing.remove();
+        if (!selectedProduct) return;
+
+        var p = selectedProduct;
+        var backdrop = el('div', 'modal-backdrop');
+        backdrop.id = 'catalog-modal';
+        backdrop.onclick = function () { selectedProduct = null; renderModal(biz, settings, currency); };
+
+        var panel = el('div', 'modal-panel');
+        panel.onclick = function (e) { e.stopPropagation(); };
+
+        var closeBtn = el('button', 'modal-close');
+        closeBtn.type = 'button';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.appendChild(svgEl(ICONS.close, 16, 2.5));
+        closeBtn.onclick = function () { selectedProduct = null; renderModal(biz, settings, currency); };
+        panel.appendChild(closeBtn);
+
+        var imgWrap = el('div', 'modal-img-wrap');
+        var pImg = safeImg(p.image);
+        if (pImg) {
+          var img = document.createElement('img');
+          img.src = pImg;
+          img.alt = p.name || '';
+          imgWrap.appendChild(img);
+        } else {
+          var ph = el('div', 'card-placeholder');
+          ph.appendChild(svgEl(ICONS.bag, 44, 1.8));
+          if (p.itemId) ph.appendChild(el('span', 'tag-size', '#' + p.itemId));
+          imgWrap.appendChild(ph);
+        }
+        panel.appendChild(imgWrap);
+
+        var body = el('div', 'modal-body');
+        var badges = el('div', 'chip-wrap');
+        if (p.categoryName) {
+          var catBadge = el('span', 'size-chip', p.categoryName);
+          catBadge.style.background = safeHex(p.categoryColor, '#475569');
+          catBadge.style.color = '#fff';
+          catBadge.style.borderColor = 'transparent';
+          badges.appendChild(catBadge);
+        }
+        var qty = Number(p.quantity || 0);
+        var stkTxt = qty <= 0 ? 'Out of Stock' : (settings.showExactQuantity !== false ? qty + ' units available' : 'In Stock');
+        var stkChip = el('span', 'size-chip', stkTxt);
+        stkChip.style.background = qty <= 0 ? 'var(--rose-tint)' : qty < 5 ? 'var(--amber-tint)' : 'var(--emerald-tint)';
+        stkChip.style.color = qty <= 0 ? 'var(--rose)' : qty < 5 ? 'var(--amber)' : 'var(--emerald)';
+        stkChip.style.borderColor = 'transparent';
+        badges.appendChild(stkChip);
+        body.appendChild(badges);
+
+        var headInfo = el('div');
+        headInfo.appendChild(el('h2', 'state-title', p.name || 'Product'));
+        headInfo.appendChild(el('div', 'modal-price', formatPrice(p.sellingPrice, currency)));
+        body.appendChild(headInfo);
+
+        if (Array.isArray(p.sizes) && p.sizes.length) {
+          var szSec = el('div');
+          szSec.appendChild(el('span', 'modal-section-label', 'Available Sizes'));
+          var szWrap = el('div', 'chip-wrap');
+          p.sizes.forEach(function (s) { szWrap.appendChild(el('span', 'size-chip', s)); });
+          szSec.appendChild(szWrap);
+          body.appendChild(szSec);
+        }
+        if (p.color) {
+          var clrSec = el('div');
+          clrSec.appendChild(el('span', 'modal-section-label', 'Color'));
+          clrSec.appendChild(el('span', 'tag-color', p.color));
+          body.appendChild(clrSec);
+        }
+        if (p.description) {
+          var dSec = el('div');
+          dSec.appendChild(el('span', 'modal-section-label', 'Description'));
+          dSec.appendChild(el('p', 'hero-desc', p.description));
+          body.appendChild(dSec);
+        }
+
+        var ctas = el('div', 'actions-row');
+        ctas.style.flexDirection = 'column';
+        ctas.style.alignItems = 'stretch';
+        if (biz.whatsapp || biz.phone) {
+          var waBtn = el('button', 'btn-wa');
+          waBtn.type = 'button';
+          waBtn.style.justifyContent = 'center';
+          waBtn.style.padding = '12px 16px';
+          waBtn.appendChild(svgEl(ICONS.wa, 16, 2));
+          waBtn.appendChild(el('span', '', 'Inquire / Order via WhatsApp'));
+          waBtn.onclick = function () { openWa(biz, currency, p); };
+          ctas.appendChild(waBtn);
+        }
+        if (biz.phone) {
+          var telA = el('a', 'btn-call');
+          telA.href = 'tel:' + biz.phone;
+          telA.style.justifyContent = 'center';
+          telA.appendChild(svgEl(ICONS.phone, 15, 2));
+          telA.appendChild(el('span', '', 'Call Store: ' + biz.phone));
+          ctas.appendChild(telA);
+        }
+        body.appendChild(ctas);
+        panel.appendChild(body);
+        backdrop.appendChild(panel);
+        document.body.appendChild(backdrop);
+      }
+
+      function renderCatalog() {
+        if (!catalog) { renderLoading(); return; }
+        var biz = catalog.business || { name: 'Brivu Store', currency: 'UGX' };
+        var settings = catalog.settings || { enabled: true, showExactQuantity: true, hideOutOfStock: false, allowWhatsAppOrders: true };
+        var currency = biz.currency || settings.currency || 'UGX';
+
+        if (biz.name) {
+          document.title = biz.name + ' | Live Stock Catalog | Brivu';
+        }
+
+        if (settings.enabled === false) {
+          root.textContent = '';
+          var box = el('div', 'state-box');
+          var icon = el('div', 'state-icon');
+          icon.style.background = 'var(--amber-tint)';
+          icon.style.color = 'var(--amber)';
+          icon.appendChild(svgEl(ICONS.clock, 28, 2));
+          box.appendChild(icon);
+          box.appendChild(el('h3', 'state-title', (biz.name || 'Store') + ' is Currently Closed'));
+          box.appendChild(el('p', 'state-sub', 'The live stock catalog is temporarily paused. Please contact the business directly.'));
+          var acts = el('div', 'actions-row');
+          acts.style.marginTop = '16px';
+          acts.style.justifyContent = 'center';
+          if (biz.phone) {
+            var cA = el('a', 'btn-call');
+            cA.href = 'tel:' + biz.phone;
+            cA.appendChild(svgEl(ICONS.phone, 14, 2));
+            cA.appendChild(el('span', '', 'Call Business'));
+            acts.appendChild(cA);
+          }
+          if (biz.whatsapp || biz.phone) {
+            var wB = el('button', 'btn-wa');
+            wB.type = 'button';
+            wB.appendChild(svgEl(ICONS.wa, 14, 2));
+            wB.appendChild(el('span', '', 'Message on WhatsApp'));
+            wB.onclick = function () { openWa(biz, currency); };
+            acts.appendChild(wB);
+          }
+          box.appendChild(acts);
+          root.appendChild(box);
+          return;
+        }
+
+        var rawProducts = Array.isArray(catalog.products) ? catalog.products : [];
+        var categories = Array.isArray(catalog.categories) ? catalog.categories : [];
+
+        root.textContent = '';
+
+        // Top Bar
+        var header = el('header', 'topbar');
+        var headerInner = el('div', 'container topbar-inner');
+        var brand = el('div', 'brand');
+        var logoSrc = safeImg(biz.logo);
+        if (logoSrc) {
+          var logoImg = document.createElement('img');
+          logoImg.className = 'brand-logo';
+          logoImg.src = logoSrc;
+          logoImg.alt = biz.name || '';
+          brand.appendChild(logoImg);
+        } else {
+          brand.appendChild(el('div', 'brand-initials', String(biz.name || 'BS').substring(0, 2).toUpperCase()));
+        }
+        var brandText = el('div');
+        brandText.style.minWidth = '0';
+        brandText.appendChild(el('h1', 'brand-title', biz.name || 'Brivu Store'));
+        var livePill = el('div', 'live-pill');
+        livePill.appendChild(el('span', 'live-dot'));
+        livePill.appendChild(el('span', '', 'Live Stock Catalog'));
+        brandText.appendChild(livePill);
+        brand.appendChild(brandText);
+        headerInner.appendChild(brand);
+
+        var shareBtn = el('button', 'icon-btn');
+        shareBtn.type = 'button';
+        shareBtn.appendChild(svgEl(copied ? ICONS.check : ICONS.share, 15, 2));
+        shareBtn.appendChild(el('span', '', copied ? 'Copied' : 'Share'));
+        shareBtn.onclick = function () {
+          var url = window.location.href;
+          if (navigator.share) {
+            navigator.share({ title: (biz.name || 'Store') + ' | Live Catalog', url: url }).catch(function () {});
+          } else if (navigator.clipboard) {
+            navigator.clipboard.writeText(url).then(function () {
+              copied = true;
+              renderCatalog();
+              clearTimeout(copiedTimeout);
+              copiedTimeout = setTimeout(function () { copied = false; renderCatalog(); }, 2000);
+            }).catch(function () {});
+          }
+        };
+        headerInner.appendChild(shareBtn);
+        header.appendChild(headerInner);
+        root.appendChild(header);
+
+        // Hero Banner
+        if (biz.description || biz.whatsapp || biz.phone || biz.address) {
+          var hero = el('section', 'hero');
+          var heroInner = el('div', 'container hero-inner');
+          if (biz.description) {
+            heroInner.appendChild(el('p', 'hero-desc', biz.description));
+          }
+          var row = el('div', 'actions-row');
+          if (biz.whatsapp || biz.phone) {
+            var waCta = el('button', 'btn-wa');
+            waCta.type = 'button';
+            waCta.appendChild(svgEl(ICONS.wa, 15, 2));
+            waCta.appendChild(el('span', '', 'Chat on WhatsApp'));
+            waCta.onclick = function () { openWa(biz, currency); };
+            row.appendChild(waCta);
+          }
+          if (biz.phone) {
+            var callCta = el('a', 'btn-call');
+            callCta.href = 'tel:' + biz.phone;
+            callCta.appendChild(svgEl(ICONS.phone, 14, 2));
+            callCta.appendChild(el('span', '', biz.phone));
+            row.appendChild(callCta);
+          }
+          if (biz.address) {
+            var addr = el('span', 'addr-tag');
+            addr.appendChild(svgEl(ICONS.pin, 13, 2));
+            addr.appendChild(el('span', '', biz.address));
+            row.appendChild(addr);
+          }
+          if (row.childNodes.length) heroInner.appendChild(row);
+          hero.appendChild(heroInner);
+          root.appendChild(hero);
+        }
+
+        // Main Content
+        var main = el('main', 'container main');
+
+        // Search Bar
+        var searchWrap = el('div', 'search-wrap');
+        var sIcon = el('span', 'search-icon');
+        sIcon.appendChild(svgEl(ICONS.search, 16, 2));
+        searchWrap.appendChild(sIcon);
+        var searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'search-input';
+        searchInput.placeholder = 'Search products by name, size, or color...';
+        searchInput.value = searchQuery;
+        searchInput.oninput = function (e) {
+          searchQuery = e.target.value || '';
+          renderProductsSection(productsHost, rawProducts, settings, biz, currency);
+          clearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
+        };
+        searchWrap.appendChild(searchInput);
+        var clearBtn = el('button', 'search-clear');
+        clearBtn.type = 'button';
+        clearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
+        clearBtn.appendChild(svgEl(ICONS.close, 15, 2));
+        clearBtn.onclick = function () {
+          searchQuery = '';
+          searchInput.value = '';
+          clearBtn.style.display = 'none';
+          renderProductsSection(productsHost, rawProducts, settings, biz, currency);
+        };
+        searchWrap.appendChild(clearBtn);
+        main.appendChild(searchWrap);
+
+        // Categories
+        if (categories.length > 0) {
+          var catSec = el('div');
+          var catHdr = el('div', 'cat-header');
+          catHdr.appendChild(el('span', 'cat-title', 'Categories'));
+          catHdr.appendChild(el('span', 'cat-count', rawProducts.length + ' items available'));
+          catSec.appendChild(catHdr);
+
+          var strip = el('div', 'cat-strip');
+          var allPill = el('button', 'cat-pill' + (selectedCategoryId === 'all' ? ' active' : ''));
+          allPill.type = 'button';
+          allPill.appendChild(el('span', '', 'All Products'));
+          allPill.appendChild(el('span', 'cat-badge', String(rawProducts.length)));
+          allPill.onclick = function () { selectedCategoryId = 'all'; renderCatalog(); };
+          strip.appendChild(allPill);
+
+          categories.forEach(function (cat) {
+            var isAct = selectedCategoryId === cat.id;
+            var pill = el('button', 'cat-pill' + (isAct ? ' active' : ''));
+            pill.type = 'button';
+            var clr = safeHex(cat.color, '#0284c7');
+            if (isAct) pill.style.background = clr;
+            var dot = el('span', 'cat-dot');
+            dot.style.background = isAct ? '#ffffff' : clr;
+            pill.appendChild(dot);
+            pill.appendChild(el('span', '', cat.name || 'Category'));
+            pill.appendChild(el('span', 'cat-badge', String(cat.count || 0)));
+            pill.onclick = function () { selectedCategoryId = cat.id; renderCatalog(); };
+            strip.appendChild(pill);
+          });
+
+          catSec.appendChild(strip);
+          main.appendChild(catSec);
+        }
+
+        var productsHost = el('div');
+        renderProductsSection(productsHost, rawProducts, settings, biz, currency);
+        main.appendChild(productsHost);
+        root.appendChild(main);
+
+        var footer = el('footer', 'footer');
+        var fp1 = el('p', '', 'Powered by ');
+        fp1.appendChild(el('strong', '', 'Brivu'));
+        fp1.appendChild(document.createTextNode(' • Live Stock Catalog'));
+        footer.appendChild(fp1);
+        root.appendChild(footer);
+
+        renderModal(biz, settings, currency);
+      }
+
+      function renderProductsSection(host, rawProducts, settings, biz, currency) {
+        host.textContent = '';
+        var q = searchQuery.toLowerCase().trim();
+        var filtered = rawProducts.filter(function (p) {
+          if (selectedCategoryId !== 'all' && p.categoryId !== selectedCategoryId) return false;
+          if (settings.hideOutOfStock && Number(p.quantity || 0) <= 0) return false;
+          if (!q) return true;
+          return (
+            String(p.name || '').toLowerCase().indexOf(q) !== -1 ||
+            String(p.categoryName || '').toLowerCase().indexOf(q) !== -1 ||
+            String(p.color || '').toLowerCase().indexOf(q) !== -1 ||
+            (Array.isArray(p.sizes) && p.sizes.some(function (s) { return String(s).toLowerCase().indexOf(q) !== -1; }))
+          );
+        });
+
+        if (filtered.length === 0) {
+          var empty = el('div', 'state-card');
+          var icon = el('div', 'state-icon');
+          icon.style.background = 'var(--surface-alt)';
+          icon.style.color = 'var(--text-soft)';
+          icon.appendChild(svgEl(ICONS.bag, 24, 2));
+          empty.appendChild(icon);
+          empty.appendChild(el('h3', 'state-title', 'No products found'));
+          empty.appendChild(el('p', 'state-sub', q ? 'No items match "' + searchQuery + '".' : 'Check back soon for new stock arrivals!'));
+          host.appendChild(empty);
+          return;
+        }
+
+        var grid = el('div', 'grid');
+        filtered.forEach(function (prod) {
+          var card = el('div', 'card');
+          card.onclick = function () { selectedProduct = prod; renderModal(biz, settings, currency); };
+
+          var media = el('div', 'card-media');
+          var pImg = safeImg(prod.image);
+          if (pImg) {
+            var img = document.createElement('img');
+            img.src = pImg;
+            img.alt = prod.name || '';
+            img.loading = 'lazy';
+            media.appendChild(img);
+          } else {
+            var ph = el('div', 'card-placeholder');
+            ph.appendChild(svgEl(ICONS.bag, 30, 1.8));
+            if (prod.itemId) ph.appendChild(el('span', 'tag-size', '#' + prod.itemId));
+            media.appendChild(ph);
+          }
+
+          var qty = Number(prod.quantity || 0);
+          var isOut = qty <= 0;
+          var isLow = qty > 0 && qty < 5;
+          var sBadge = el('span', 'stock-badge ' + (isOut ? 'stock-out' : isLow ? 'stock-low' : 'stock-in'));
+          sBadge.appendChild(el('span', 'stock-dot'));
+          var sLabel = isOut
+            ? 'Out of Stock'
+            : isLow
+            ? (settings.showExactQuantity !== false ? 'Only ' + qty + ' left' : 'Low Stock')
+            : (settings.showExactQuantity !== false ? qty + ' in stock' : 'In Stock');
+          sBadge.appendChild(el('span', '', sLabel));
+          media.appendChild(sBadge);
+
+          if (prod.categoryName) {
+            var cBadge = el('span', 'cat-overlay', prod.categoryName);
+            cBadge.style.background = safeHex(prod.categoryColor, '#475569');
+            media.appendChild(cBadge);
+          }
+          card.appendChild(media);
+
+          var body = el('div', 'card-body');
+          var top = el('div');
+          top.appendChild(el('h3', 'card-title', prod.name || 'Product'));
+          if ((Array.isArray(prod.sizes) && prod.sizes.length) || prod.color) {
+            var tags = el('div', 'tags-row');
+            if (Array.isArray(prod.sizes) && prod.sizes.length) {
+              tags.appendChild(el('span', 'tag-size', 'Sizes: ' + prod.sizes.join(', ')));
+            }
+            if (prod.color) {
+              tags.appendChild(el('span', 'tag-color', prod.color));
+            }
+            top.appendChild(tags);
+          }
+          body.appendChild(top);
+
+          var foot = el('div', 'card-footer');
+          var priceBox = el('div');
+          priceBox.appendChild(el('span', 'price-label', 'Price'));
+          priceBox.appendChild(el('span', 'price-val', formatPrice(prod.sellingPrice, currency)));
+          foot.appendChild(priceBox);
+
+          if (settings.allowWhatsAppOrders !== false && (biz.whatsapp || biz.phone)) {
+            var waMini = el('button', 'wa-mini');
+            waMini.type = 'button';
+            waMini.title = 'Order via WhatsApp';
+            waMini.appendChild(svgEl(ICONS.wa, 16, 2));
+            waMini.onclick = function (e) {
+              e.stopPropagation();
+              openWa(biz, currency, prod);
+            };
+            foot.appendChild(waMini);
+          }
+          body.appendChild(foot);
+          card.appendChild(body);
+          grid.appendChild(card);
+        });
+        host.appendChild(grid);
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && selectedProduct) {
+          selectedProduct = null;
+          var biz = (catalog && catalog.business) || {};
+          var settings = (catalog && catalog.settings) || {};
+          renderModal(biz, settings, biz.currency || settings.currency || 'UGX');
+        }
+      });
+
+      function fetchLiveCatalog(silent) {
+        var qs = [];
+        if (slug) qs.push('slug=' + encodeURIComponent(slug));
+        if (ownerEmail) qs.push('email=' + encodeURIComponent(ownerEmail));
+        var endpoint = catalogId
+          ? '/api/catalog/' + encodeURIComponent(catalogId) + (qs.length ? '?' + qs.join('&') : '')
+          : '/api/store/' + encodeURIComponent(slug || 'store') + (ownerEmail ? '?email=' + encodeURIComponent(ownerEmail) : '');
+
+        fetch(endpoint, { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (json) {
+            if (json && json.data && (Array.isArray(json.data.products) || json.data.business)) {
+              catalog = json.data;
+              renderCatalog();
+            } else if (!silent && !catalog) {
+              renderNotFound('This store catalog could not be found.');
+            }
+          })
+          .catch(function () {
+            if (!silent && !catalog) {
+              renderNotFound('Unable to connect to the live catalog server.');
+            }
+          });
+      }
+
+      if (catalog && (Array.isArray(catalog.products) || catalog.business)) {
+        renderCatalog();
+        fetchLiveCatalog(true);
+      } else {
+        renderLoading();
+        fetchLiveCatalog(false);
+      }
+    })();
+  </script>
+</body>
+</html>`;
 }
 
 export default {
@@ -4023,7 +4799,11 @@ export default {
             logo: pageToSanitize.logo || existingParsedPage.logo,
             photos: Array.isArray(pageToSanitize.photos) && pageToSanitize.photos.length > 0 ? pageToSanitize.photos : (existingParsedPage.photos || []),
             menuCategories: Array.isArray(pageToSanitize.menuCategories) && pageToSanitize.menuCategories.length > 1 ? pageToSanitize.menuCategories : (existingParsedPage.menuCategories || ['All']),
-            menuItems: Array.isArray(pageToSanitize.menuItems) && pageToSanitize.menuItems.length > 0 ? pageToSanitize.menuItems : (existingParsedPage.menuItems || []),
+            menuItems: Array.isArray(pageToSanitize.menuItems) && pageToSanitize.menuItems.length > 0
+              ? pageToSanitize.menuItems
+              : (Array.isArray(existingParsedPage.menuItems)
+                  ? existingParsedPage.menuItems.filter((i: any) => i && !String(i.id || '').startsWith('prod-'))
+                  : []),
             customSocialLinks: Array.isArray(pageToSanitize.customSocialLinks) && pageToSanitize.customSocialLinks.length > 0 ? pageToSanitize.customSocialLinks : existingParsedPage.customSocialLinks,
             socialLinks: { ...(existingParsedPage.socialLinks || {}), ...(pageToSanitize.socialLinks || {}) },
             websitesQrItems: Array.isArray(pageToSanitize.websitesQrItems) && pageToSanitize.websitesQrItems.length > 0 ? pageToSanitize.websitesQrItems : (existingParsedPage.websitesQrItems || []),
@@ -4717,22 +5497,14 @@ export default {
             !String(p.id || '').startsWith('socials-hub')
           );
           const incomingBizPage = bizCandidates.find(hasRealQrPageContent) || bizCandidates[0];
-          const inv = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : (Array.isArray(backupData.inventory) ? backupData.inventory : []);
           const photos = Array.isArray(incomingBizPage?.photos) && incomingBizPage.photos.length > 0
             ? incomingBizPage.photos
             : (Array.isArray(backupData.photos) ? backupData.photos : []);
 
-          const bizMenuItems = Array.isArray(incomingBizPage?.menuItems) && incomingBizPage.menuItems.length > 0
-            ? incomingBizPage.menuItems
-            : inv.map((item: any) => ({
-                id: item.id || `item-${Math.random().toString(36).slice(2, 8)}`,
-                name: item.name,
-                category: item.category || 'All',
-                price: item.sellingPrice || item.price || 0,
-                description: item.description || '',
-                photoUrl: item.image || item.photoUrl,
-                isAvailable: item.inStock !== false,
-              }));
+          // Strict Separation: Business QR Digital Items MUST NEVER copy stock/inventory products
+          const bizMenuItems = Array.isArray(incomingBizPage?.menuItems)
+            ? incomingBizPage.menuItems.filter((item: any) => item && !String(item.id || '').startsWith('prod-'))
+            : [];
 
           const bizPage = {
             ...(incomingBizPage || {}),
@@ -4754,7 +5526,7 @@ export default {
             photos,
             menuCategories: Array.isArray(incomingBizPage?.menuCategories) && incomingBizPage.menuCategories.length > 0
               ? incomingBizPage.menuCategories
-              : Array.from(new Set(['All', ...inv.map((i: any) => i.category || 'Items')])),
+              : ['All'],
             menuItems: bizMenuItems,
           };
           if (hasRealQrPageContent(bizPage)) {
@@ -4765,6 +5537,7 @@ export default {
           }
 
           // E. Auto-update user's Live Stock Catalog row whenever inventory or catalog settings sync
+          const inv = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : (Array.isArray(backupData.inventory) ? backupData.inventory : []);
           if (inv.length > 0 || backupData.publicCatalogSettings) {
             try {
               const autoCatalog = buildPublicStoreCatalogFromBackup(backupData, userEmail);
@@ -5502,10 +6275,62 @@ export default {
         url.searchParams.has('social') ||
         url.searchParams.has('socialId') ||
         url.searchParams.has('socials'));
+    const shouldServeStandaloneStore =
+      request.method === 'GET' && !isStaticAssetExt && isStoreRoute;
     const shouldInjectSsrHtml =
-      request.method === 'GET' && !isStaticAssetExt && (isQrRoute || isStoreRoute);
+      request.method === 'GET' && !isStaticAssetExt && isQrRoute;
 
-    // 5. Try serving exact static asset from ASSETS binding (skip for HTML QR/Store routes so Step 6 preloads user data)
+    // 4b. Dedicated Standalone Live Stock Catalog HTML Page (completely separate from Business QR / SPA bundle)
+    if (shouldServeStandaloneStore) {
+      const emailParam = (
+        url.searchParams.get('email') ||
+        url.searchParams.get('u') ||
+        url.searchParams.get('user') ||
+        url.searchParams.get('user_id') ||
+        request.headers.get('X-User-Email') ||
+        request.headers.get('X-User-Id') ||
+        ''
+      ).toLowerCase().trim();
+
+      let storeCatalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
+      if (!storeCatalogIdParam && url.pathname.includes('/catalog/')) {
+        storeCatalogIdParam = decodeURIComponent(url.pathname.split('/catalog/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
+      }
+      let storeSlugParam = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
+      if (!storeSlugParam && url.pathname.includes('/store/')) {
+        storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
+      } else if (!storeSlugParam && (url.pathname === '/store' || url.pathname.endsWith('/store'))) {
+        storeSlugParam = 'store';
+      }
+
+      const preloadedStore = await Promise.race([
+        resolvePublicStoreCatalog(
+          env,
+          sanitizePublicStoreSlug(storeSlugParam || 'store'),
+          emailParam,
+          storeCatalogIdParam || undefined
+        ).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+      ]);
+
+      const standaloneHtml = renderStandaloneCatalogHtml(preloadedStore, {
+        catalogId: storeCatalogIdParam || preloadedStore?.settings?.catalogId || undefined,
+        slug: storeSlugParam || preloadedStore?.settings?.slug || 'store',
+        email: emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '',
+        origin: url.origin,
+      });
+
+      return new Response(standaloneHtml, {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      });
+    }
+
+    // 5. Try serving exact static asset from ASSETS binding (skip for HTML QR routes so Step 6 preloads user data)
     if (!shouldInjectSsrHtml) {
       try {
         const response = await env.ASSETS.fetch(request);
@@ -5523,7 +6348,7 @@ export default {
       }
     }
 
-    // 6. SPA Fallback: Serve /index.html for client-side React routes with pre-injected QR / Store data
+    // 6. SPA Fallback: Serve /index.html for client-side React routes with pre-injected QR data
     try {
       const indexUrl = new URL('/index.html', url.origin);
       const cleanIndexReq = new Request(indexUrl.toString(), { method: 'GET' });
@@ -5579,38 +6404,15 @@ export default {
         }
       }
 
-      // Check if this is a Live Stock Catalog request (/catalog/:catalogId, /store/:slug, ?catalogId=, ?store=)
-      let storeCatalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
-      if (!storeCatalogIdParam && url.pathname.includes('/catalog/')) {
-        storeCatalogIdParam = decodeURIComponent(url.pathname.split('/catalog/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
-      }
-      let storeSlugParam = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
-      if (!storeSlugParam && url.pathname.includes('/store/')) {
-        storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
-      } else if (!storeSlugParam && (url.pathname === '/store' || url.pathname.endsWith('/store'))) {
-        storeSlugParam = 'store';
-      }
-
       const withSsrTimeout = <T>(p: Promise<T>, ms = 2500): Promise<T | null> =>
         Promise.race([
           p.catch(() => null),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
         ]);
 
-      const [indexResponse, preloadedPage, preloadedStore] = await Promise.all([
+      const [indexResponse, preloadedPage] = await Promise.all([
         env.ASSETS.fetch(cleanIndexReq),
         isQrRoute ? withSsrTimeout(resolveHostedQrPage(env, pageIdParam, emailParam), 2500) : Promise.resolve(null),
-        isStoreRoute
-          ? withSsrTimeout(
-              resolvePublicStoreCatalog(
-                env,
-                sanitizePublicStoreSlug(storeSlugParam || 'store'),
-                emailParam,
-                storeCatalogIdParam || undefined
-              ),
-              2500
-            )
-          : Promise.resolve(null),
       ]);
 
       let html = await indexResponse.text();
@@ -5628,24 +6430,10 @@ export default {
         }
       }
 
-      if (isStoreRoute && preloadedStore) {
-        const resolvedSlug = sanitizePublicStoreSlug(storeSlugParam || preloadedStore?.settings?.slug || 'store');
-        const resolvedCatalogId = String(storeCatalogIdParam || preloadedStore?.settings?.catalogId || '').trim();
-        const resolvedEmail = emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '';
-        const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_CATALOG_ID__=${safeScriptJson(resolvedCatalogId)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
-        if (html.includes('</head>')) {
-          html = html.replace('</head>', `${scriptTag}</head>`);
-        } else {
-          html = `${scriptTag}${html}`;
-        }
-        const storeTitle = preloadedStore?.business?.name || preloadedStore?.settings?.businessName || 'Live Stock Catalog';
-        html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Live Catalog | Brivu</title>`);
-      }
-
       const newHeaders = new Headers(indexResponse.headers);
       Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
       newHeaders.set('Content-Type', 'text/html; charset=utf-8');
-      if (isQrRoute || isStoreRoute) {
+      if (isQrRoute) {
         newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       }
       return new Response(html, {

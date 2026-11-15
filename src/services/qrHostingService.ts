@@ -210,11 +210,13 @@ export class QRHostingService {
 
     const populated = bizPages.find(hasBizContent);
     const profile = bData?.profile || {};
-    const inventory = Array.isArray(bData?.inventoryProducts)
-      ? bData.inventoryProducts
-      : (Array.isArray(bData?.inventory) ? bData.inventory : []);
     const fallbackPhotos = Array.isArray(bData?.photos) ? bData.photos : [];
     const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
+
+    const stripStockItems = (items: any[]): any[] =>
+      Array.isArray(items)
+        ? items.filter((item: any) => item && !String(item.id || '').startsWith('prod-'))
+        : [];
 
     if (populated) {
       const photos = Array.isArray(populated.photos) && populated.photos.length > 0
@@ -222,29 +224,28 @@ export class QRHostingService {
         : fallbackPhotos.map((p: any, idx: number) =>
             typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
           );
-      const menuItems = Array.isArray(populated.menuItems) && populated.menuItems.length > 0
-        ? populated.menuItems
-        : inventory.map((item: any) => ({
-            id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: item.name,
-            category: item.category || 'All',
-            price: item.sellingPrice || item.price || 0,
-            description: item.description || '',
-            photoUrl: item.image || item.photoUrl,
-            isAvailable: item.inStock !== false,
-          }));
+      const rawMenu = Array.isArray(populated.menuItems) ? populated.menuItems : [];
+      const menuItems = stripStockItems(rawMenu);
+      const hadStockItems = rawMenu.length !== menuItems.length;
+      const menuCategories = Array.isArray(populated.menuCategories) && populated.menuCategories.length > 0
+        ? populated.menuCategories.filter((c: string) => !(hadStockItems && c === 'Items' && !menuItems.some((m: any) => m.category === 'Items')))
+        : ['All'];
       return {
         ...populated,
         photos,
         menuItems,
+        menuCategories: menuCategories.length > 0 ? menuCategories : ['All'],
         coverImage: populated.coverImage || photos[0]?.url,
         logo: populated.logo || profile.logo,
       };
     }
 
     const firstBusinessPage = bizPages[0];
-    if (inventory.length === 0 && fallbackPhotos.length === 0 && firstBusinessPage) {
-      return firstBusinessPage;
+    if (fallbackPhotos.length === 0 && firstBusinessPage) {
+      return {
+        ...firstBusinessPage,
+        menuItems: stripStockItems(firstBusinessPage.menuItems),
+      };
     }
 
     const email = profile.email || bData?.userEmail || bData?.email || '';
@@ -270,16 +271,8 @@ export class QRHostingService {
       photos: fallbackPhotos.map((p: any, idx: number) =>
         typeof p === 'string' ? { id: `photo-${idx}`, url: p, title: 'Photo' } : p
       ),
-      menuCategories: Array.from(new Set(['All', ...inventory.map((i: any) => i.category || 'Items')])),
-      menuItems: inventory.map((item: any) => ({
-        id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: item.name,
-        category: item.category || 'All',
-        price: item.sellingPrice || item.price || 0,
-        description: item.description || '',
-        photoUrl: item.image || item.photoUrl,
-        isAvailable: item.inStock !== false,
-      })),
+      menuCategories: ['All'],
+      menuItems: [],
       qrDarkColor: '#000000',
       qrLightColor: '#ffffff',
       qrEyeColor: '#000000',
