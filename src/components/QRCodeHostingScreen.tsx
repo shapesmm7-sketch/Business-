@@ -327,8 +327,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const handleRefresh = () => {
       const freshPages = StorageService.getHostedQRPages();
       setPages(freshPages);
-      if (freshPages.length > 0 && (!activePageId || !freshPages.some((p) => p.id === activePageId))) {
-        setActivePageId(freshPages[0].id);
+      if (freshPages.length > 0) {
+        const matched = freshPages.find((p) => p.id === activePageId);
+        const firstPopulated = freshPages.find(
+          (p) =>
+            (p.menuItems && p.menuItems.length > 0) ||
+            (p.photos && p.photos.length > 0) ||
+            (p.customSocialLinks && p.customSocialLinks.length > 0) ||
+            Boolean(p.description || p.openingHours || p.wifiName)
+        );
+        if (!matched || (firstPopulated && matched.id !== firstPopulated.id && !matched.menuItems?.length && !matched.photos?.length && !matched.description)) {
+          setActivePageId((firstPopulated || freshPages[0]).id);
+        }
       }
     };
     window.addEventListener('brivu_data_refreshed', handleRefresh);
@@ -406,12 +416,44 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  // Auto-recover QR photos from Cloudflare R2 on mount if business page photos are empty (never pushes empty state on mount)
+  // Auto-restore QR text/menus/socials/items + photos from Cloudflare on mount if local QR page appears unpopulated
   useEffect(() => {
     if (!ownerEmail) return;
-    if (!activePage || !Array.isArray(activePage.photos) || activePage.photos.length === 0) {
-      handleRecoverCloudPhotos(false, true).catch(() => {});
-    }
+    let cancelled = false;
+    const isPageEmpty =
+      !activePage ||
+      ((!activePage.menuItems || activePage.menuItems.length === 0) &&
+        (!activePage.photos || activePage.photos.length === 0) &&
+        (!activePage.customSocialLinks || activePage.customSocialLinks.length === 0) &&
+        !activePage.description &&
+        !activePage.openingHours &&
+        !activePage.wifiName);
+
+    const restoreMissingQrData = async () => {
+      if (isPageEmpty) {
+        const pullRes = await CloudflareService.pullFromCloudflare(ownerEmail).catch(() => null);
+        if (!cancelled && pullRes?.success) {
+          const freshPages = StorageService.getHostedQRPages();
+          setPages(freshPages);
+          if (freshPages.length > 0) {
+            setActivePageId(freshPages[0].id);
+          }
+          window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+        }
+      }
+      if (!cancelled) {
+        const latestPages = StorageService.getHostedQRPages();
+        const latestActive = latestPages.find((p) => p.id === activePageId) || latestPages[0];
+        if (!latestActive || !Array.isArray(latestActive.photos) || latestActive.photos.length === 0) {
+          handleRecoverCloudPhotos(false, true).catch(() => {});
+        }
+      }
+    };
+
+    restoreMissingQrData().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [ownerEmail]);
 
   // Refresh Main QR Code when active page or scope changes

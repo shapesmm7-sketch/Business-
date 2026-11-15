@@ -154,6 +154,7 @@ let syncPendingResolvers: Array<(res: CloudflareSyncResponse) => void> = [];
 let syncInFlightPromise: Promise<CloudflareSyncResponse> | null = null;
 let syncCooldownUntil = 0;
 let consecutiveSyncFailures = 0;
+const pullInFlightMap = new Map<string, Promise<{ success: boolean; message: string; count?: number; data?: AppBackupData }>>();
 
 interface PendingQrSave {
   page: any;
@@ -869,28 +870,35 @@ export const CloudflareService = {
       };
     }
 
-    try {
-      const email = (emailOverride || this.getUserEmail() || '').toLowerCase().trim();
-      if (!email) {
-        return {
-          success: false,
-          message: 'User email is required to pull cloud backup',
-        };
-      }
+    const email = (emailOverride || this.getUserEmail() || '').toLowerCase().trim();
+    if (!email) {
+      return {
+        success: false,
+        message: 'User email is required to pull cloud backup',
+      };
+    }
 
+    const existingPull = pullInFlightMap.get(email);
+    if (existingPull) {
+      return existingPull;
+    }
+
+    const runPull = (async () => {
+    try {
       const headers = this.getAuthHeaders();
       headers['X-User-Email'] = email;
       headers['X-User-Id'] = email;
-      const query = `?email=${encodeURIComponent(email)}&user_id=${encodeURIComponent(email)}`;
-      const targetUrl = `${config.workerUrl}/api/sync/pull${query}`;
+      const query = `?email=${encodeURIComponent(email)}&user_id=${encodeURIComponent(email)}&_t=${Date.now()}`;
+      const targetUrl = `${normalizeUrl(config.workerUrl)}/api/sync/pull${query}`;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       let response: Response;
       try {
         response = await fetch(targetUrl, {
           method: 'GET',
           headers,
+          cache: 'no-store',
           signal: controller.signal,
         });
       } finally {
@@ -972,6 +980,14 @@ export const CloudflareService = {
         success: false,
         message: `Failed to restore from Cloud: ${errMsg}`,
       };
+    }
+    })();
+
+    pullInFlightMap.set(email, runPull);
+    try {
+      return await runPull;
+    } finally {
+      pullInFlightMap.delete(email);
     }
   },
 
@@ -1171,7 +1187,8 @@ export const CloudflareService = {
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
           }
-          await this.saveSingleQrPage(updatedPages[0], email).catch(() => {});
+          // Preserve any existing text/menu/social fields in D1 qr_pages so photo recovery never clobbers business info
+          await this.saveSingleQrPage({ ...updatedPages[0], preserveExistingIfEmpty: true }, email).catch(() => {});
         } catch (_) {}
       }
 
@@ -1268,9 +1285,10 @@ export const CloudflareService = {
   },
 
   /**
-   * Fetches a specific hosted QR page directly from Cloudflare, scoped by pageId and optional owner email
+   * Fetches a specific hosted QR page directly from Cloudflare, scoped by pageId and optional owner email.
+   * Uses a fast AbortController timeout and simple GET headers to prevent CORS preflight stalls or multi-minute hangs.
    */
-  async getHostedQrPage(pageId: string, emailOverride?: string): Promise<any | null> {
+  async getHostedQrPage(pageId: string, emailOverride?: string, timeoutMs = 4000): Promise<any | null> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
     const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
@@ -1279,8 +1297,10 @@ export const CloudflareService = {
 
     if (!effectiveWorkerUrl) return null;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      const headers = this.getAuthHeaders();
       const user = StorageService.getWorkOSUser();
       const profile = StorageService.getProfile();
       const brivuId = StorageService.getBrivuUserId();
@@ -1292,19 +1312,14 @@ export const CloudflareService = {
         ''
       ).toLowerCase().trim();
 
-      if (userEmail) {
-        headers['X-User-Email'] = userEmail;
-        headers['X-User-Id'] = userEmail;
-      }
-
       const separator = userEmail ? '&' : '?';
       const emailParam = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
       const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr/${encodeURIComponent(pageId)}${emailParam}${separator}_t=${Date.now()}`;
 
       const res = await fetch(targetUrl, {
         method: 'GET',
-        headers,
         cache: 'no-store',
+        signal: controller.signal,
       });
 
       if (!res.ok) return null;
@@ -1317,13 +1332,15 @@ export const CloudflareService = {
     } catch (err) {
       console.warn('Failed to fetch hosted QR page from Cloudflare:', err);
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 
   /**
    * Fetches user's complete cloud backup directly from Cloudflare without importing into local state
    */
-  async fetchUserBackupData(email: string): Promise<AppBackupData | null> {
+  async fetchUserBackupData(email: string, timeoutMs = 4500): Promise<AppBackupData | null> {
     const cleanEmail = (email || '').toLowerCase().trim();
     if (!cleanEmail) return null;
 
@@ -1332,6 +1349,9 @@ export const CloudflareService = {
     const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
       ? currentOrigin
       : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const headers = this.getAuthHeaders();
@@ -1344,6 +1364,7 @@ export const CloudflareService = {
         method: 'GET',
         headers,
         cache: 'no-store',
+        signal: controller.signal,
       });
 
       if (!res.ok) return null;
@@ -1357,6 +1378,8 @@ export const CloudflareService = {
       return backupData || null;
     } catch {
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 
@@ -1487,6 +1510,7 @@ export const CloudflareService = {
         websitesQrItems: page.websitesQrItems || [],
         socialsQrItems: page.socialsQrItems || [],
         eventsQrItems: page.eventsQrItems || [],
+        ...(page?.preserveExistingIfEmpty ? { preserveExistingIfEmpty: true } : {}),
       };
 
       const response = await fetch(targetUrl, {

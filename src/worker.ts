@@ -959,21 +959,43 @@ export async function saveCanonicalQrPage(
         content_hash = excluded.content_hash,
         updated_at = excluded.updated_at
     `).bind(canonicalId, cleanEmail, sanitizedJson, hashHex, now).run();
+    invalidateCachePattern(`qrCache:`);
   } catch (err) {
     console.warn('saveCanonicalQrPage note:', err);
   }
 }
 
-// Resolver for QR Hosted Pages - D1 Single Source of Truth
+async function runWithMissingTableRetry<T>(db: any, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err: any) {
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('no such table') || msg.includes('no such column')) {
+      await ensureD1Tables(db);
+      return await fn();
+    }
+    throw err;
+  }
+}
+
+// Resolver for QR Hosted Pages - D1 Single Source of Truth (Fast Path)
 export async function resolveHostedQrPage(
   env: Env,
   rawPageId: string,
-  rawUserEmail?: string
+  rawUserEmail?: string,
+  options?: { skipCache?: boolean }
 ): Promise<any | null> {
   const pageId = (rawPageId || '').trim();
   const normId = pageId.toLowerCase().trim();
   let userEmail = (rawUserEmail || '').toLowerCase().trim();
   const db = getD1Database(env);
+  const bucket = getR2Bucket(env);
+
+  const cacheKey = `qrCache:${userEmail || 'anon'}:${normId}`;
+  if (!options?.skipCache) {
+    const cached = getCachedQuery(cacheKey);
+    if (cached) return cached;
+  }
 
   // Identify category
   const isWebsites = normId.includes('website') || normId.includes('web-hub') || normId === 'websites_hub' || normId === 'websites';
@@ -988,23 +1010,44 @@ export async function resolveHostedQrPage(
     ? 'events'
     : 'business';
 
-  // If userEmail not passed in query/headers, look up in D1
+  // If userEmail not passed in query/headers, do fast indexed lookup in D1 first (avoiding full-table scans)
   if (!userEmail && db && pageId && pageId !== 'default' && pageId !== 'latest') {
     try {
-      await ensureD1Tables(db);
-      // Check qr_pages by ID
-      const row: any = await db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? OR id LIKE ? LIMIT 1').bind(pageId, `%_${pageId}`).first();
-      if (row?.user_email) {
-        userEmail = row.user_email.toLowerCase().trim();
-      } else if (row?.page_json) {
+      const row: any = await runWithMissingTableRetry(db, () =>
+        db.prepare('SELECT user_email, page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(pageId).first()
+      );
+      if (row?.page_json) {
         try {
-          const parsed = JSON.parse(row.page_json);
-          userEmail = (parsed?.userEmail || parsed?.email || '').toLowerCase().trim();
-        } catch (_) {}
+          const parsedDirect = JSON.parse(row.page_json);
+          if (parsedDirect && !isSingleEvent && hasRealQrPageContent(parsedDirect)) {
+            const result = sanitizePublicQrPage(parsedDirect);
+            setCachedQuery(cacheKey, result, 10);
+            return result;
+          }
+          userEmail = (row.user_email || parsedDirect?.userEmail || parsedDirect?.email || '').toLowerCase().trim();
+        } catch (_) {
+          if (row?.user_email) userEmail = row.user_email.toLowerCase().trim();
+        }
+      } else if (row?.user_email) {
+        userEmail = row.user_email.toLowerCase().trim();
       }
-      // If still not found, check backups table
+      // Bounded suffix match on indexed id / recent backups only if exact PK didn't yield email
       if (!userEmail) {
-        const bRow: any = await db.prepare("SELECT user_email FROM backups WHERE backup_data LIKE ? ORDER BY updated_at DESC LIMIT 1").bind(`%"${pageId}"%`).first();
+        const suffixRow: any = await db
+          .prepare('SELECT user_email FROM qr_pages WHERE id LIKE ? LIMIT 1')
+          .bind(`%_${pageId}`)
+          .first()
+          .catch(() => null);
+        if (suffixRow?.user_email) {
+          userEmail = suffixRow.user_email.toLowerCase().trim();
+        }
+      }
+      if (!userEmail) {
+        const bRow: any = await db
+          .prepare('SELECT user_email FROM (SELECT user_email, backup_data FROM backups ORDER BY updated_at DESC LIMIT 20) WHERE backup_data LIKE ? LIMIT 1')
+          .bind(`%"${pageId}"%`)
+          .first()
+          .catch(() => null);
         if (bRow?.user_email) {
           userEmail = bRow.user_email.toLowerCase().trim();
         }
@@ -1012,19 +1055,19 @@ export async function resolveHostedQrPage(
     } catch (_) {}
   }
 
-  // 1. Primary lookup in D1 qr_pages table
+  // 1. Primary lookup in D1 qr_pages table (single batched roundtrip per case)
   if (db && userEmail) {
     try {
-      await ensureD1Tables(db);
-
-      // 1a. Standalone single-event lookup (prefer freshest event item between standalone row and canonical events hub)
+      // 1a. Standalone single-event lookup (single IN query for both standalone & canonical hub)
       if (isSingleEvent) {
         const singleKey = `user_${userEmail}_event_${pageId}`;
         const hubKey = `user_${userEmail}_events`;
-        const [singleRow, hubRow]: [any, any] = await Promise.all([
-          db.prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? LIMIT 1').bind(singleKey, pageId).first(),
-          db.prepare('SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(hubKey).first(),
-        ]);
+        const rowsRes: any = await runWithMissingTableRetry(db, () =>
+          db.prepare('SELECT id, page_json FROM qr_pages WHERE id IN (?, ?, ?)').bind(singleKey, pageId, hubKey).all()
+        );
+        const rowsList: any[] = rowsRes?.results || [];
+        const singleRow = rowsList.find((r) => r.id === singleKey || r.id === pageId);
+        const hubRow = rowsList.find((r) => r.id === hubKey);
 
         let parsedSingle: any = null;
         if (singleRow?.page_json) {
@@ -1056,18 +1099,25 @@ export async function resolveHostedQrPage(
               (matchedHubEvt.websiteUrl && !singleEvt.websiteUrl)
             );
             if (hubTs >= singleTs || hubHasExtraFields) {
-              return buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
+              const result = buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
+              setCachedQuery(cacheKey, result, 10);
+              return result;
             }
           }
-          return sanitizePublicQrPage(parsedSingle);
+          const result = sanitizePublicQrPage(parsedSingle);
+          setCachedQuery(cacheKey, result, 10);
+          return result;
         }
 
         if (matchedHubEvt) {
-          return buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
+          const result = buildSingleEventPublicPage(matchedHubEvt, userEmail, parsedHub);
+          setCachedQuery(cacheKey, result, 10);
+          return result;
         }
       }
 
-      // 1a-bis. Specific non-hub business page lookup if multiple business QR pages exist
+      // 1b. Business (including optional specific biz key) OR hub lookup in ONE single D1 query
+      const canonicalId = `user_${userEmail}_${category}`;
       const isSpecificBusinessId =
         category === 'business' &&
         pageId &&
@@ -1076,76 +1126,132 @@ export async function resolveHostedQrPage(
         normId !== 'business' &&
         normId !== 'business-latest' &&
         !normId.startsWith('business-hub-');
+
       if (isSpecificBusinessId) {
         const strippedBizId = pageId.replace(/^business-/, '');
-        const bizSpecificRow: any = await db
-          .prepare('SELECT page_json FROM qr_pages WHERE id = ? OR id = ? OR id = ? LIMIT 1')
-          .bind(
-            `user_${userEmail}_biz_${pageId}`,
-            `user_${userEmail}_biz_${strippedBizId}`,
-            pageId
-          )
-          .first();
-        if (bizSpecificRow?.page_json) {
+        const specKey1 = `user_${userEmail}_biz_${pageId}`;
+        const specKey2 = `user_${userEmail}_biz_${strippedBizId}`;
+        const rowsRes: any = await runWithMissingTableRetry(db, () =>
+          db.prepare('SELECT id, page_json FROM qr_pages WHERE id IN (?, ?, ?, ?)').bind(specKey1, specKey2, pageId, canonicalId).all()
+        );
+        const rowsList: any[] = rowsRes?.results || [];
+        for (const candidateId of [specKey1, specKey2, pageId, canonicalId]) {
+          const matchRow = rowsList.find((r) => r.id === candidateId);
+          if (matchRow?.page_json) {
+            try {
+              const parsed = JSON.parse(matchRow.page_json);
+              if (parsed && hasRealQrPageContent(parsed)) {
+                const result = sanitizePublicQrPage(parsed);
+                setCachedQuery(cacheKey, result, 10);
+                return result;
+              }
+            } catch (_) {}
+          }
+        }
+      } else if (!isSingleEvent) {
+        const row: any = await runWithMissingTableRetry(db, () =>
+          db.prepare('SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(canonicalId).first()
+        );
+        if (row?.page_json) {
           try {
-            const parsedSpecific = JSON.parse(bizSpecificRow.page_json);
-            if (parsedSpecific && hasRealQrPageContent(parsedSpecific)) {
-              return sanitizePublicQrPage(parsedSpecific);
+            const parsed = JSON.parse(row.page_json);
+            if (parsed && hasRealQrPageContent(parsed)) {
+              const result = sanitizePublicQrPage(parsed);
+              setCachedQuery(cacheKey, result, 10);
+              return result;
             }
           } catch (_) {}
         }
       }
 
-      // 1b. Canonical category lookup (business / events / socials / websites)
-      const canonicalId = `user_${userEmail}_${category}`;
-      const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ?').bind(canonicalId).first();
-      if (row?.page_json) {
-        try {
-          const parsed = JSON.parse(row.page_json);
-          if (parsed && hasRealQrPageContent(parsed)) {
-            if (isSingleEvent && Array.isArray(parsed.eventsQrItems) && parsed.eventsQrItems.length > 0) {
+      // 1c. Indexed email scan in qr_pages (capped to 10 rows) before hitting multi-MB backups
+      const emailRowsRes: any = await db
+        .prepare('SELECT id, page_json FROM qr_pages WHERE user_email = ? LIMIT 10')
+        .bind(userEmail)
+        .all()
+        .catch(() => null);
+      if (emailRowsRes?.results && emailRowsRes.results.length > 0) {
+        for (const r of emailRowsRes.results as any[]) {
+          if (!r?.page_json) continue;
+          try {
+            const parsed = JSON.parse(r.page_json);
+            if (!parsed || !hasRealQrPageContent(parsed)) continue;
+            const pType = String(parsed.pageType || '').toLowerCase();
+            if (isSingleEvent && Array.isArray(parsed.eventsQrItems)) {
               const matchedEvt = matchEventItemById(parsed.eventsQrItems, pageId);
               if (matchedEvt) {
-                return buildSingleEventPublicPage(matchedEvt, userEmail, parsed);
+                const result = buildSingleEventPublicPage(matchedEvt, userEmail, parsed);
+                setCachedQuery(cacheKey, result, 10);
+                return result;
               }
+            } else if (
+              (category === 'websites' && (pType === 'websites_hub' || r.id.includes('websites'))) ||
+              (category === 'socials' && (pType === 'socials_hub' || r.id.includes('socials'))) ||
+              (category === 'events' && !isSingleEvent && (pType === 'events_hub' || r.id.includes('events'))) ||
+              (category === 'business' && !pType.includes('website') && !pType.includes('social') && !pType.includes('event'))
+            ) {
+              const result = sanitizePublicQrPage(parsed);
+              setCachedQuery(cacheKey, result, 10);
+              return result;
             }
-            if (!isSingleEvent) {
-              return sanitizePublicQrPage(parsed);
-            }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
       }
     } catch (_) {}
   }
 
-  // 2. Direct fallback lookup in D1 by exact pageId
-  if (db && pageId) {
+  // 2. Direct fallback lookup in D1 by exact pageId (only if not already checked when userEmail was empty)
+  if (db && pageId && userEmail) {
     try {
-      await ensureD1Tables(db);
-      const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ?').bind(pageId).first();
+      const row: any = await db.prepare('SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(pageId).first();
       if (row?.page_json) {
         try {
           const parsed = JSON.parse(row.page_json);
           if (parsed && hasRealQrPageContent(parsed)) {
-            return sanitizePublicQrPage(parsed);
+            const result = sanitizePublicQrPage(parsed);
+            setCachedQuery(cacheKey, result, 10);
+            return result;
           }
         } catch (_) {}
       }
     } catch (_) {}
   }
 
-  // 3. Fallback: Reconstruct from user's D1 backup data if qr_pages row missing or empty
-  if (db && userEmail) {
+  // 3. Fallback: Reconstruct from user's D1 backup (or R2 latest_backup.json) if qr_pages row missing or empty
+  if (userEmail && (db || bucket)) {
     try {
-      await ensureD1Tables(db);
-      const bRow: any = await db.prepare(`
-        SELECT backup_data FROM backups
-        WHERE id = ? OR LOWER(user_email) = ?
-        ORDER BY updated_at DESC LIMIT 1
-      `).bind(`user_${userEmail}`, userEmail).first();
+      let bData: any = null;
+      if (db) {
+        let bRow: any = await db
+          .prepare('SELECT backup_data FROM backups WHERE id = ? OR user_email = ? LIMIT 1')
+          .bind(`user_${userEmail}`, userEmail)
+          .first()
+          .catch(() => null);
+        if (!bRow?.backup_data) {
+          bRow = await db
+            .prepare('SELECT backup_data FROM backups WHERE LOWER(user_email) = ? ORDER BY updated_at DESC LIMIT 1')
+            .bind(userEmail)
+            .first()
+            .catch(() => null);
+        }
+        if (bRow?.backup_data) {
+          bData = JSON.parse(bRow.backup_data);
+        }
+      }
+      if (!bData && bucket) {
+        try {
+          const userKey = encodeURIComponent(userEmail);
+          let backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+          if (!backupObj) {
+            backupObj = await bucket.get(`users/${userKey}/backup.json`);
+          }
+          if (backupObj) {
+            bData = JSON.parse(await backupObj.text());
+          }
+        } catch (_) {}
+      }
 
-      if (bRow?.backup_data) {
-        const bData = JSON.parse(bRow.backup_data);
+      if (bData) {
         const profile = bData?.profile || {};
         const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
         const cleanWa = (profile.whatsapp || profile.phone || '').replace(/[^0-9]/g, '');
@@ -1326,17 +1432,36 @@ export async function resolveHostedQrPage(
           ? hostedBiz.photos
           : (Array.isArray(bData.photos) ? bData.photos : []);
 
-        // If photos are still empty, try recovering orphaned QR photos from D1 files table
+        // If photos are still empty, try recovering orphaned QR photos from D1 files table (bounded) or R2
         let recoveredCover: string | undefined = hostedBiz?.coverImage;
         let recoveredLogo: string | undefined = hostedBiz?.logo || profile.logo;
-        if (photos.length === 0 && db && userEmail) {
+        if (photos.length === 0 && userEmail) {
           try {
-            const fileRows: any = await db.prepare('SELECT id, filename, mime_type, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ?').bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`).all();
-            if (fileRows?.results && fileRows.results.length > 0) {
-              const recovered = recoverQrPhotosFromFileRecords(fileRows.results, 'https://brivu.shapesmm7.workers.dev');
-              if (recovered.photos.length > 0) photos = recovered.photos;
-              if (!recoveredCover && recovered.coverImage) recoveredCover = recovered.coverImage;
-              if (!recoveredLogo && recovered.logo) recoveredLogo = recovered.logo;
+            if (db) {
+              const fileRows: any = await db
+                .prepare('SELECT id, filename, mime_type, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ? ORDER BY created_at DESC LIMIT 50')
+                .bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`)
+                .all();
+              if (fileRows?.results && fileRows.results.length > 0) {
+                const recovered = recoverQrPhotosFromFileRecords(fileRows.results, 'https://brivu.shapesmm7.workers.dev');
+                if (recovered.photos.length > 0) photos = recovered.photos;
+                if (!recoveredCover && recovered.coverImage) recoveredCover = recovered.coverImage;
+                if (!recoveredLogo && recovered.logo) recoveredLogo = recovered.logo;
+              }
+            }
+            if (photos.length === 0 && bucket && typeof bucket.list === 'function') {
+              const listed = await bucket.list({ prefix: `users/${encodeURIComponent(userEmail)}/photos/`, limit: 20 });
+              if (listed?.objects && listed.objects.length > 0) {
+                const r2Records = listed.objects.map((obj: any) => ({
+                  key: obj.key,
+                  id: obj.key,
+                  filename: (obj.key.split('/').pop() || obj.key).replace(/^\d+_/, ''),
+                  mime_type: obj.httpMetadata?.contentType || 'image/jpeg',
+                  created_at: obj.uploaded ? new Date(obj.uploaded).toISOString() : '',
+                }));
+                const recovered = recoverQrPhotosFromFileRecords(r2Records, 'https://brivu.shapesmm7.workers.dev');
+                if (recovered.photos.length > 0) photos = recovered.photos;
+              }
             }
           } catch (_) {}
         }
@@ -3743,9 +3868,15 @@ export default {
           : `user_${userEmail}_${category}`;
 
         let existing: any = null;
+        let existingParsedPage: any = null;
         if (db) {
           await ensureD1Tables(db);
-          existing = await db.prepare('SELECT content_hash FROM qr_pages WHERE id = ?').bind(canonicalId).first();
+          existing = await db.prepare('SELECT content_hash, page_json FROM qr_pages WHERE id = ?').bind(canonicalId).first();
+          if (existing?.page_json) {
+            try {
+              existingParsedPage = JSON.parse(existing.page_json);
+            } catch (_) {}
+          }
         }
 
         // Only skip empty template saves when creating a brand-new row; allow explicit updates to existing rows (e.g. deletions)
@@ -3757,12 +3888,42 @@ export default {
           );
         }
 
-        const sanitized = sanitizePublicQrPage({
+        // Guard against sparse/photo-recovery payloads overwriting rich business QR text/menu/social fields in D1
+        let pageToSanitize = {
           ...page,
           id: isSingleEvent ? (page?.id || canonicalId) : canonicalId,
           userEmail,
           email: page?.email || userEmail,
-        });
+        };
+        if (page?.preserveExistingIfEmpty && existingParsedPage && typeof existingParsedPage === 'object') {
+          const hasMeaningfulTitle = (t?: string) => Boolean(t && t.trim() && t.trim() !== 'Brivu Business' && t.trim() !== 'My Business' && !t.trim().endsWith("'s Business"));
+          pageToSanitize = {
+            ...existingParsedPage,
+            ...pageToSanitize,
+            title: hasMeaningfulTitle(pageToSanitize.title) ? pageToSanitize.title : (existingParsedPage.title || pageToSanitize.title),
+            tagline: pageToSanitize.tagline || existingParsedPage.tagline || '',
+            description: pageToSanitize.description || existingParsedPage.description || '',
+            phone: pageToSanitize.phone || existingParsedPage.phone || '',
+            whatsapp: pageToSanitize.whatsapp || existingParsedPage.whatsapp || '',
+            address: pageToSanitize.address || existingParsedPage.address || '',
+            openingHours: pageToSanitize.openingHours || existingParsedPage.openingHours || '',
+            wifiName: pageToSanitize.wifiName || existingParsedPage.wifiName,
+            wifiPassword: pageToSanitize.wifiPassword || existingParsedPage.wifiPassword,
+            announcement: pageToSanitize.announcement || existingParsedPage.announcement || '',
+            coverImage: pageToSanitize.coverImage || existingParsedPage.coverImage,
+            logo: pageToSanitize.logo || existingParsedPage.logo,
+            photos: Array.isArray(pageToSanitize.photos) && pageToSanitize.photos.length > 0 ? pageToSanitize.photos : (existingParsedPage.photos || []),
+            menuCategories: Array.isArray(pageToSanitize.menuCategories) && pageToSanitize.menuCategories.length > 1 ? pageToSanitize.menuCategories : (existingParsedPage.menuCategories || ['All']),
+            menuItems: Array.isArray(pageToSanitize.menuItems) && pageToSanitize.menuItems.length > 0 ? pageToSanitize.menuItems : (existingParsedPage.menuItems || []),
+            customSocialLinks: Array.isArray(pageToSanitize.customSocialLinks) && pageToSanitize.customSocialLinks.length > 0 ? pageToSanitize.customSocialLinks : existingParsedPage.customSocialLinks,
+            socialLinks: { ...(existingParsedPage.socialLinks || {}), ...(pageToSanitize.socialLinks || {}) },
+            websitesQrItems: Array.isArray(pageToSanitize.websitesQrItems) && pageToSanitize.websitesQrItems.length > 0 ? pageToSanitize.websitesQrItems : (existingParsedPage.websitesQrItems || []),
+            socialsQrItems: Array.isArray(pageToSanitize.socialsQrItems) && pageToSanitize.socialsQrItems.length > 0 ? pageToSanitize.socialsQrItems : (existingParsedPage.socialsQrItems || []),
+            eventsQrItems: Array.isArray(pageToSanitize.eventsQrItems) && pageToSanitize.eventsQrItems.length > 0 ? pageToSanitize.eventsQrItems : (existingParsedPage.eventsQrItems || []),
+          };
+        }
+
+        const sanitized = sanitizePublicQrPage(pageToSanitize);
         const sanitizedJson = JSON.stringify(sanitized);
 
         // Compute fast content hash (SHA-256) to eliminate redundant writes
@@ -3820,6 +3981,7 @@ export default {
               `).bind(specificBizKey, userEmail, sanitizedJson, hashHex, now).run();
             }
           }
+          invalidateCachePattern(`qrCache:`);
         }
 
         return new Response(
@@ -3858,7 +4020,9 @@ export default {
         ''
       ).toLowerCase().trim();
 
-      const page = await resolveHostedQrPage(env, pageId, userEmail);
+      const page = await resolveHostedQrPage(env, pageId, userEmail, {
+        skipCache: url.searchParams.has('_t') || url.searchParams.has('verify'),
+      });
 
       if (page) {
         return new Response(
@@ -4535,7 +4699,7 @@ export default {
         if (!backupData && db) {
           try {
             await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ? OR user_email = ?').bind(`user_${userEmail}`, userEmail).first();
+            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ? OR LOWER(user_email) = ? ORDER BY updated_at DESC LIMIT 1').bind(`user_${userEmail}`, userEmail).first();
             if (row && row.backup_data) {
               backupData = JSON.parse(row.backup_data);
             }
@@ -4548,8 +4712,59 @@ export default {
             await ensureD1Tables(db);
             if (!backupData) backupData = {};
 
+            const mergeQrPagesPreservingRich = (a: any, b: any): any => {
+              if (!a) return b;
+              if (!b) return a;
+              const isGenericTitle = (t?: string) => !t || !t.trim() || t.trim() === 'Brivu Business' || t.trim() === 'My Business' || t.trim().endsWith("'s Business");
+              const pickNonEmptyArr = (primary: any, fallback: any) =>
+                Array.isArray(primary) && primary.length > 0 ? primary : (Array.isArray(fallback) ? fallback : []);
+              const pickCats = (c1: any, c2: any) => {
+                const set = new Set<string>(['All']);
+                for (const c of [...(Array.isArray(c1) ? c1 : []), ...(Array.isArray(c2) ? c2 : [])]) {
+                  if (typeof c === 'string' && c.trim() && c.trim() !== 'All') set.add(c.trim());
+                }
+                return Array.from(set);
+              };
+              const mergedSocialLinks = {
+                instagram: b.socialLinks?.instagram || a.socialLinks?.instagram || '',
+                facebook: b.socialLinks?.facebook || a.socialLinks?.facebook || '',
+                website: b.socialLinks?.website || a.socialLinks?.website || '',
+              };
+              const tsA = new Date(a.updatedAt || 0).getTime() || 0;
+              const tsB = new Date(b.updatedAt || 0).getTime() || 0;
+              const newer = tsB >= tsA ? b : a;
+              const older = tsB >= tsA ? a : b;
+              return {
+                ...older,
+                ...newer,
+                title: !isGenericTitle(newer.title) ? newer.title : (!isGenericTitle(older.title) ? older.title : (newer.title || older.title)),
+                tagline: newer.tagline || older.tagline || '',
+                description: newer.description || older.description || '',
+                phone: newer.phone || older.phone || '',
+                whatsapp: newer.whatsapp || older.whatsapp || '',
+                email: newer.email || older.email || '',
+                userEmail: newer.userEmail || older.userEmail || userEmail,
+                address: newer.address || older.address || '',
+                googleMapsUrl: newer.googleMapsUrl || older.googleMapsUrl,
+                wifiName: newer.wifiName || older.wifiName,
+                wifiPassword: newer.wifiPassword || older.wifiPassword,
+                openingHours: newer.openingHours || older.openingHours || '',
+                announcement: newer.announcement || older.announcement || '',
+                coverImage: newer.coverImage || older.coverImage,
+                logo: newer.logo || older.logo,
+                socialLinks: mergedSocialLinks,
+                customSocialLinks: pickNonEmptyArr(newer.customSocialLinks, older.customSocialLinks),
+                photos: pickNonEmptyArr(newer.photos, older.photos),
+                menuCategories: pickCats(older.menuCategories, newer.menuCategories),
+                menuItems: pickNonEmptyArr(newer.menuItems, older.menuItems),
+                websitesQrItems: pickNonEmptyArr(newer.websitesQrItems, older.websitesQrItems),
+                socialsQrItems: pickNonEmptyArr(newer.socialsQrItems, older.socialsQrItems),
+                eventsQrItems: pickNonEmptyArr(newer.eventsQrItems, older.eventsQrItems),
+              };
+            };
+
             // A. QR Pages
-            const qrRows = await db.prepare('SELECT page_json FROM qr_pages WHERE user_email = ?').bind(userEmail).all();
+            const qrRows = await db.prepare('SELECT id, page_json, updated_at FROM qr_pages WHERE LOWER(user_email) = ? OR id LIKE ?').bind(userEmail, `user_${userEmail}_%`).all();
             const hostedPages: any[] = [];
             if (qrRows?.results) {
               for (const r of qrRows.results as any[]) {
@@ -4557,23 +4772,77 @@ export default {
                   try {
                     const parsedPage = JSON.parse(r.page_json);
                     if (parsedPage && parsedPage.id && parsedPage.id !== 'default' && parsedPage.id !== 'latest') {
+                      if (!parsedPage.updatedAt && r.updated_at) parsedPage.updatedAt = r.updated_at;
                       hostedPages.push(parsedPage);
                     }
                   } catch (_) {}
                 }
               }
             }
-            if (hostedPages.length > 0) {
-              const existingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
-              const pageMap = new Map();
-              for (const p of [...existingPages, ...hostedPages]) {
-                if (p?.id) pageMap.set(p.id, p);
+            const existingPages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
+            const pageMap = new Map<string, any>();
+            for (const p of [...existingPages, ...hostedPages]) {
+              if (p?.id) {
+                const prev = pageMap.get(p.id);
+                pageMap.set(p.id, prev ? mergeQrPagesPreservingRich(prev, p) : p);
               }
-              backupData.qrHostedPages = Array.from(pageMap.values());
+            }
+            const combinedQrPages = Array.from(pageMap.values());
+            if (combinedQrPages.length > 0) {
+              backupData.qrHostedPages = combinedQrPages;
+            }
+
+            // A2. Ensure top-level websitesQrItems, socialsQrItems, eventsQrItems are reconstructed from qr_pages hubs if backupData lacks them
+            const webHubs = combinedQrPages.filter((p: any) => p && (p.pageType === 'websites_hub' || String(p.id || '').includes('websites')));
+            const mergedWebMap = new Map<string, any>();
+            for (const w of (Array.isArray(backupData.websitesQrItems) ? backupData.websitesQrItems : [])) {
+              if (w?.id) mergedWebMap.set(w.id, w);
+            }
+            for (const hub of webHubs) {
+              if (Array.isArray(hub.websitesQrItems)) {
+                for (const w of hub.websitesQrItems) {
+                  if (w?.id && !mergedWebMap.has(w.id)) mergedWebMap.set(w.id, w);
+                }
+              }
+            }
+            if (mergedWebMap.size > 0) {
+              backupData.websitesQrItems = Array.from(mergedWebMap.values());
+            }
+
+            const socHubs = combinedQrPages.filter((p: any) => p && (p.pageType === 'socials_hub' || String(p.id || '').includes('socials')));
+            const mergedSocMap = new Map<string, any>();
+            for (const s of (Array.isArray(backupData.socialsQrItems) ? backupData.socialsQrItems : [])) {
+              if (s?.id) mergedSocMap.set(s.id, s);
+            }
+            for (const hub of socHubs) {
+              if (Array.isArray(hub.socialsQrItems)) {
+                for (const s of hub.socialsQrItems) {
+                  if (s?.id && !mergedSocMap.has(s.id)) mergedSocMap.set(s.id, s);
+                }
+              }
+            }
+            if (mergedSocMap.size > 0) {
+              backupData.socialsQrItems = Array.from(mergedSocMap.values());
+            }
+
+            const evtPages = combinedQrPages.filter((p: any) => p && (p.pageType === 'events_hub' || p.pageType === 'event' || String(p.id || '').includes('event')));
+            const mergedEvtMap = new Map<string, any>();
+            for (const e of (Array.isArray(backupData.eventsQrItems) ? backupData.eventsQrItems : [])) {
+              if (e?.id) mergedEvtMap.set(e.id, e);
+            }
+            for (const ep of evtPages) {
+              if (Array.isArray(ep.eventsQrItems)) {
+                for (const e of ep.eventsQrItems) {
+                  if (e?.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+                }
+              }
+            }
+            if (mergedEvtMap.size > 0) {
+              backupData.eventsQrItems = Array.from(mergedEvtMap.values());
             }
 
             // B. Receipts & Invoices
-            const receiptRows = await db.prepare('SELECT data_json FROM receipts WHERE user_email = ?').bind(userEmail).all();
+            const receiptRows = await db.prepare('SELECT data_json FROM receipts WHERE LOWER(user_email) = ?').bind(userEmail).all();
             if (receiptRows?.results && receiptRows.results.length > 0) {
               const existingReceipts = Array.isArray(backupData.receipts) ? backupData.receipts : [];
               const receiptMap = new Map();
@@ -4594,7 +4863,7 @@ export default {
             }
 
             // C. Inventory Products
-            const productRows = await db.prepare('SELECT id, name, barcode, category, selling_price, cost_price, stock_quantity, image FROM products WHERE shop_id = ?').bind(userEmail).all();
+            const productRows = await db.prepare('SELECT id, name, barcode, category, selling_price, cost_price, stock_quantity, image FROM products WHERE LOWER(shop_id) = ?').bind(userEmail).all();
             if (productRows?.results && productRows.results.length > 0) {
               const existingProducts = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : [];
               const productMap = new Map();
@@ -5095,8 +5364,7 @@ export default {
     // 6. SPA Fallback: Serve /index.html for client-side React routes with pre-injected QR / Store data
     try {
       const indexUrl = new URL('/index.html', url.origin);
-      const indexResponse = await env.ASSETS.fetch(new Request(indexUrl, request));
-      let html = await indexResponse.text();
+      const cleanIndexReq = new Request(indexUrl.toString(), { method: 'GET' });
 
       const safeScriptJson = (val: any): string =>
         JSON.stringify(val)
@@ -5146,24 +5414,6 @@ export default {
         else if (isQrRoute) pageIdParam = 'latest';
       }
 
-      if (isQrRoute) {
-        try {
-          const preloadedPage = await resolveHostedQrPage(env, pageIdParam, emailParam);
-          if (preloadedPage && !preloadedPage.isEmptyFallback && hasRealQrPageContent(preloadedPage)) {
-            const resolvedEmail = emailParam || preloadedPage.userEmail || preloadedPage.email || '';
-            const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${safeScriptJson(preloadedPage)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
-            if (html.includes('</head>')) {
-              html = html.replace('</head>', `${scriptTag}</head>`);
-            } else {
-              html = `${scriptTag}${html}`;
-            }
-            if (preloadedPage.title) {
-              html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(preloadedPage.title)} | Brivu</title>`);
-            }
-          }
-        } catch (_) {}
-      }
-
       // Check if this is a Store request (/store, /store/:slug, or ?store=slug)
       let storeSlugParam = '';
       if (url.pathname.includes('/store/')) {
@@ -5174,22 +5424,44 @@ export default {
         storeSlugParam = 'store';
       }
 
-      if (isStoreRoute) {
+      const withSsrTimeout = <T>(p: Promise<T>, ms = 2500): Promise<T | null> =>
+        Promise.race([
+          p.catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+        ]);
+
+      const [indexResponse, preloadedPage, preloadedStore] = await Promise.all([
+        env.ASSETS.fetch(cleanIndexReq),
+        isQrRoute ? withSsrTimeout(resolveHostedQrPage(env, pageIdParam, emailParam), 2500) : Promise.resolve(null),
+        isStoreRoute ? withSsrTimeout(resolvePublicStoreCatalog(env, sanitizePublicStoreSlug(storeSlugParam || 'store'), emailParam), 2500) : Promise.resolve(null),
+      ]);
+
+      let html = await indexResponse.text();
+
+      if (isQrRoute && preloadedPage && !preloadedPage.isEmptyFallback && hasRealQrPageContent(preloadedPage)) {
+        const resolvedEmail = emailParam || preloadedPage.userEmail || preloadedPage.email || '';
+        const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${safeScriptJson(preloadedPage)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
+        if (html.includes('</head>')) {
+          html = html.replace('</head>', `${scriptTag}</head>`);
+        } else {
+          html = `${scriptTag}${html}`;
+        }
+        if (preloadedPage.title) {
+          html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(preloadedPage.title)} | Brivu</title>`);
+        }
+      }
+
+      if (isStoreRoute && preloadedStore) {
         const resolvedSlug = sanitizePublicStoreSlug(storeSlugParam || 'store');
-        try {
-          const preloadedStore = await resolvePublicStoreCatalog(env, resolvedSlug, emailParam);
-          if (preloadedStore) {
-            const resolvedEmail = emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '';
-            const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
-            if (html.includes('</head>')) {
-              html = html.replace('</head>', `${scriptTag}</head>`);
-            } else {
-              html = `${scriptTag}${html}`;
-            }
-            const storeTitle = preloadedStore?.business?.name || preloadedStore?.settings?.businessName || 'Live Stock Catalog';
-            html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
-          }
-        } catch (_) {}
+        const resolvedEmail = emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '';
+        const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
+        if (html.includes('</head>')) {
+          html = html.replace('</head>', `${scriptTag}</head>`);
+        } else {
+          html = `${scriptTag}${html}`;
+        }
+        const storeTitle = preloadedStore?.business?.name || preloadedStore?.settings?.businessName || 'Live Stock Catalog';
+        html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
       }
 
       const newHeaders = new Headers(indexResponse.headers);

@@ -532,100 +532,12 @@ export function App() {
         };
 
         if (fetchId || emailFromUrl) {
-          if (!hasValidInitialSsr) {
-            setIsCustomerDataResolving(true);
-          }
+          let cancelled = false;
+          let resolved = false;
           setIsCustomerViewMode(true);
           setActiveScreen('qr-customer-view');
 
-          CloudflareService.getHostedQrPage(fetchId, emailFromUrl).then(async (remotePage) => {
-            if (remotePage && !remotePage.isEmptyFallback && hasMeaningfulQrData(remotePage)) {
-              setActiveCustomerPage(remotePage);
-              setIsCustomerDataResolving(false);
-              return;
-            }
-
-            // Fallback recovery: fetch the user's complete cloud backup from Cloudflare and populate the requested hub/page
-            if (emailFromUrl) {
-              try {
-                const bData = await CloudflareService.fetchUserBackupData(emailFromUrl);
-                if (bData) {
-                  const profile = bData.profile || { name: 'Business', currency: 'UGX', phone: '', address: '' };
-                  const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
-                  if (isWebsites) {
-                    let websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
-                    if (websites.length === 0) {
-                      const hub = hostedPages.find((p: any) => Array.isArray(p?.websitesQrItems) && p.websitesQrItems.length > 0);
-                      if (hub) websites = hub.websitesQrItems;
-                    }
-                    if (websites.length > 0) {
-                      setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
-                      setIsCustomerDataResolving(false);
-                      return;
-                    }
-                  } else if (isSocials) {
-                    let socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
-                    if (socials.length === 0) {
-                      const hub = hostedPages.find((p: any) => Array.isArray(p?.socialsQrItems) && p.socialsQrItems.length > 0);
-                      if (hub) socials = hub.socialsQrItems;
-                    }
-                    if (socials.length > 0) {
-                      setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
-                      setIsCustomerDataResolving(false);
-                      return;
-                    }
-                  } else if (isEvents) {
-                    const evtHub = hostedPages.find((p: any) => Array.isArray(p?.eventsQrItems) && p.eventsQrItems.length > 0);
-                    const singleEvtItems = hostedPages
-                      .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
-                      .flatMap((p: any) => p.eventsQrItems);
-                    const mergedEvtMap = new Map<string, any>();
-                    for (const e of [
-                      ...(Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : []),
-                      ...(Array.isArray(evtHub?.eventsQrItems) ? evtHub.eventsQrItems : []),
-                      ...singleEvtItems,
-                    ]) {
-                      if (e && e.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
-                    }
-                    const events = Array.from(mergedEvtMap.values());
-                    if (events.length > 0) {
-                      if (normFetchId.includes('event') && !normFetchId.includes('events-hub') && normFetchId !== 'events') {
-                        const rawTarget = fetchId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
-                        const singleEvt = events.find((e: any) => {
-                          const eId = String(e.id || '').toLowerCase();
-                          const eRaw = eId.replace(/^event-/, '').replace(/^qr-/, '');
-                          return eId === fetchId.toLowerCase() || eRaw === rawTarget || `event-${eId}` === fetchId.toLowerCase();
-                        });
-                        if (singleEvt) {
-                          setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
-                          setIsCustomerDataResolving(false);
-                          return;
-                        }
-                      }
-                      setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
-                      setIsCustomerDataResolving(false);
-                      return;
-                    }
-                  } else if (isBiz) {
-                    const bizPage = QRHostingService.convertBackupToHostedPage(bData);
-                    if (bizPage && hasMeaningfulQrData(bizPage)) {
-                      setActiveCustomerPage({ ...bizPage, id: fetchId });
-                      setIsCustomerDataResolving(false);
-                      return;
-                    }
-                  }
-                }
-              } catch (_) {}
-            }
-
-            // If SSR injected meaningful data, preserve it instead of clobbering with empty shell
-            if (hasValidInitialSsr) {
-              setActiveCustomerPage(initialSsrPage);
-              setIsCustomerDataResolving(false);
-              return;
-            }
-
-            // Same-device owner fallback only when viewing own email or without conflicting email param
+          const tryLocalOwnerFallback = (): boolean => {
             const signedInEmail = resolveSignedInEmail();
             if (!emailFromUrl || (signedInEmail && signedInEmail === emailFromUrl)) {
               const profile = StorageService.getProfile();
@@ -633,15 +545,13 @@ export function App() {
                 const websites = StorageService.getWebsitesQrItems();
                 if (websites.length > 0) {
                   setActiveCustomerPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
-                  setIsCustomerDataResolving(false);
-                  return;
+                  return true;
                 }
               } else if (isSocials) {
                 const socials = StorageService.getSocialsQrItems();
                 if (socials.length > 0) {
                   setActiveCustomerPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
-                  setIsCustomerDataResolving(false);
-                  return;
+                  return true;
                 }
               } else if (isEvents) {
                 const events = StorageService.getEventsQrItems();
@@ -655,35 +565,159 @@ export function App() {
                     });
                     if (singleEvt) {
                       setActiveCustomerPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
-                      setIsCustomerDataResolving(false);
-                      return;
+                      return true;
                     }
                   }
                   setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
-                  setIsCustomerDataResolving(false);
-                  return;
+                  return true;
                 }
               } else if (isBiz) {
                 const localCandidate = found || StorageService.getHostedQRPage(fetchId) || StorageService.getHostedQRPages()[0];
                 if (localCandidate && hasMeaningfulQrData(localCandidate)) {
                   setActiveCustomerPage(localCandidate);
-                  setIsCustomerDataResolving(false);
-                  return;
+                  return true;
                 }
               }
             }
+            return false;
+          };
 
-            // If not found with data anywhere, preserve minimal remotePage if present, else render clean fallback
-            setActiveCustomerPage(remotePage || buildFallbackCleanPage());
+          const finishWithPage = (page: QRCodeHostedPage) => {
+            if (cancelled) return;
+            resolved = true;
+            setActiveCustomerPage(page);
             setIsCustomerDataResolving(false);
-          }).catch(() => {
+          };
+
+          // Fast watchdog: guarantees Loading... finishes quickly even on slow/stalled mobile networks
+          // When SSR already injected verified server data, cap blocking wait at 1.2s; otherwise cap at 4.0s
+          const maxWaitMs = hasValidInitialSsr ? 1200 : 4000;
+          const watchdogTimer = setTimeout(() => {
+            if (cancelled || resolved) return;
             if (hasValidInitialSsr) {
-              setActiveCustomerPage(initialSsrPage);
+              finishWithPage(initialSsrPage);
+            } else if (!tryLocalOwnerFallback()) {
+              finishWithPage(buildFallbackCleanPage());
             } else {
-              setActiveCustomerPage(buildFallbackCleanPage());
+              resolved = true;
+              setIsCustomerDataResolving(false);
             }
-            setIsCustomerDataResolving(false);
-          });
+          }, maxWaitMs);
+
+          CloudflareService.getHostedQrPage(fetchId, emailFromUrl, 3500)
+            .then(async (remotePage) => {
+              if (cancelled) return;
+              clearTimeout(watchdogTimer);
+
+              if (remotePage && !remotePage.isEmptyFallback && hasMeaningfulQrData(remotePage)) {
+                setActiveCustomerPage(remotePage);
+                setIsCustomerDataResolving(false);
+                resolved = true;
+                return;
+              }
+
+              // If /api/qr itself failed (network error / null), try one bounded backup lookup as last resort
+              if (!remotePage && emailFromUrl && !hasValidInitialSsr) {
+                try {
+                  const bData = await CloudflareService.fetchUserBackupData(emailFromUrl, 3000);
+                  if (cancelled) return;
+                  if (bData) {
+                    const profile = bData.profile || { name: 'Business', currency: 'UGX', phone: '', address: '' };
+                    const hostedPages = Array.isArray(bData.qrHostedPages) ? bData.qrHostedPages : [];
+                    if (isWebsites) {
+                      let websites = Array.isArray(bData.websitesQrItems) ? bData.websitesQrItems : [];
+                      if (websites.length === 0) {
+                        const hub = hostedPages.find((p: any) => Array.isArray(p?.websitesQrItems) && p.websitesQrItems.length > 0);
+                        if (hub) websites = hub.websitesQrItems;
+                      }
+                      if (websites.length > 0) {
+                        finishWithPage(QRHostingService.convertWebsitesHubToHostedPage(websites, profile));
+                        return;
+                      }
+                    } else if (isSocials) {
+                      let socials = Array.isArray(bData.socialsQrItems) ? bData.socialsQrItems : [];
+                      if (socials.length === 0) {
+                        const hub = hostedPages.find((p: any) => Array.isArray(p?.socialsQrItems) && p.socialsQrItems.length > 0);
+                        if (hub) socials = hub.socialsQrItems;
+                      }
+                      if (socials.length > 0) {
+                        finishWithPage(QRHostingService.convertSocialsHubToHostedPage(socials, profile));
+                        return;
+                      }
+                    } else if (isEvents) {
+                      const evtHub = hostedPages.find((p: any) => Array.isArray(p?.eventsQrItems) && p.eventsQrItems.length > 0);
+                      const singleEvtItems = hostedPages
+                        .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
+                        .flatMap((p: any) => p.eventsQrItems);
+                      const mergedEvtMap = new Map<string, any>();
+                      for (const e of [
+                        ...(Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : []),
+                        ...(Array.isArray(evtHub?.eventsQrItems) ? evtHub.eventsQrItems : []),
+                        ...singleEvtItems,
+                      ]) {
+                        if (e && e.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+                      }
+                      const events = Array.from(mergedEvtMap.values());
+                      if (events.length > 0) {
+                        if (normFetchId.includes('event') && !normFetchId.includes('events-hub') && normFetchId !== 'events') {
+                          const rawTarget = fetchId.toLowerCase().replace(/^event-/, '').replace(/^qr-/, '');
+                          const singleEvt = events.find((e: any) => {
+                            const eId = String(e.id || '').toLowerCase();
+                            const eRaw = eId.replace(/^event-/, '').replace(/^qr-/, '');
+                            return eId === fetchId.toLowerCase() || eRaw === rawTarget || `event-${eId}` === fetchId.toLowerCase();
+                          });
+                          if (singleEvt) {
+                            finishWithPage(QRHostingService.convertEventToHostedPage(singleEvt, profile));
+                            return;
+                          }
+                        }
+                        finishWithPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
+                        return;
+                      }
+                    } else if (isBiz) {
+                      const bizPage = QRHostingService.convertBackupToHostedPage(bData);
+                      if (bizPage && hasMeaningfulQrData(bizPage)) {
+                        finishWithPage({ ...bizPage, id: fetchId });
+                        return;
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              // If SSR injected meaningful data, preserve it instead of clobbering with empty shell
+              if (hasValidInitialSsr) {
+                finishWithPage(initialSsrPage);
+                return;
+              }
+
+              // Same-device owner fallback only when viewing own email or without conflicting email param
+              if (tryLocalOwnerFallback()) {
+                resolved = true;
+                setIsCustomerDataResolving(false);
+                return;
+              }
+
+              // If not found with data anywhere, preserve minimal remotePage if present, else render clean fallback
+              finishWithPage(remotePage || buildFallbackCleanPage());
+            })
+            .catch(() => {
+              if (cancelled) return;
+              clearTimeout(watchdogTimer);
+              if (hasValidInitialSsr) {
+                finishWithPage(initialSsrPage);
+              } else if (!tryLocalOwnerFallback()) {
+                finishWithPage(buildFallbackCleanPage());
+              } else {
+                resolved = true;
+                setIsCustomerDataResolving(false);
+              }
+            });
+
+          return () => {
+            cancelled = true;
+            clearTimeout(watchdogTimer);
+          };
         } else {
           const nowIso = new Date().toISOString();
           const fallbackCleanPage: QRCodeHostedPage = {

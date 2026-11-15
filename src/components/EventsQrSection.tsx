@@ -123,6 +123,8 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const activeBoxBgColor = isAllSelected ? allQrColors.boxBgColor : (activeItem?.boxBgColor || '#ffffff');
   const activeBoxBorderColor = isAllSelected ? allQrColors.boxBorderColor : (activeItem?.boxBorderColor || '#cbd5e1');
 
+  const shouldPersistRef = React.useRef(false);
+
   const handleUpdateItemColors = (
     itemId: string,
     updates: {
@@ -143,6 +145,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       });
       return;
     }
+    shouldPersistRef.current = true;
     setItems((prev) =>
       prev.map((it) =>
         it.id === itemId
@@ -159,15 +162,43 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     );
   };
 
-  // Persistence & Cloudflare Sync (skip redundant mount writes; StorageService.saveEventsQrItems handles hub/item sync)
-  const isFirstRenderRef = React.useRef(true);
+  // Refresh events list when cloud pull or login completes (and hydrate from cloud if empty)
   useEffect(() => {
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
-      return;
+    const syncFromStorage = () => {
+      const fresh = StorageService.getEventsQrItems();
+      setItems(fresh);
+      setSelectedItemId((prev) => {
+        if (prev === 'all') return 'all';
+        if (prev && fresh.some((ev) => ev.id === prev)) return prev;
+        return fresh.length > 0 ? fresh[0].id : '';
+      });
+    };
+    window.addEventListener('brivu_data_refreshed', syncFromStorage);
+    window.addEventListener('workos_user_updated', syncFromStorage);
+    window.addEventListener('storage', syncFromStorage);
+
+    const authEmail = StorageService.getAuthenticatedEmail();
+    if (authEmail && StorageService.getEventsQrItems().length === 0) {
+      CloudflareService.pullFromCloudflare(authEmail)
+        .then((res) => {
+          if (res?.success) syncFromStorage();
+        })
+        .catch(() => {});
     }
+
+    return () => {
+      window.removeEventListener('brivu_data_refreshed', syncFromStorage);
+      window.removeEventListener('workos_user_updated', syncFromStorage);
+      window.removeEventListener('storage', syncFromStorage);
+    };
+  }, []);
+
+  // Persistence & Cloudflare Sync ONLY on user mutations (never on mount or business prop change)
+  useEffect(() => {
+    if (!shouldPersistRef.current) return;
+    shouldPersistRef.current = false;
     StorageService.saveEventsQrItems(items);
-  }, [items, business]);
+  }, [items]);
 
   // Generate QR
   useEffect(() => {
@@ -355,6 +386,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         photos: formPhotos,
       };
       const nextItems = items.map((i) => (i.id === editingItem.id ? updatedItem : i));
+      shouldPersistRef.current = true;
       setItems(nextItems);
       QRHostingService.syncEventPage(updatedItem, business, nextItems);
       showToast('Event QR updated & hosted on Cloud!');
@@ -383,6 +415,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         createdAt: new Date().toISOString(),
       };
       const nextItems = [newItem, ...items];
+      shouldPersistRef.current = true;
       setItems(nextItems);
       setSelectedItemId(newItem.id);
       QRHostingService.syncEventPage(newItem, business, nextItems);
@@ -400,6 +433,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       }
     }
     const remaining = items.filter((i) => i.id !== id);
+    shouldPersistRef.current = true;
     setItems(remaining);
     QRHostingService.removeEventPage(id, business);
     if (selectedItemId === id) {

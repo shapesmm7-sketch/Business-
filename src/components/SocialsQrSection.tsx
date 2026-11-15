@@ -403,6 +403,8 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const activeBoxBgColor = isAllSelected ? allQrColors.boxBgColor : (activeItem?.boxBgColor || '#ffffff');
   const activeBoxBorderColor = isAllSelected ? allQrColors.boxBorderColor : (activeItem?.boxBorderColor || '#cbd5e1');
 
+  const shouldPersistRef = React.useRef(false);
+
   const handleUpdateItemColors = (
     itemId: string,
     updates: {
@@ -423,6 +425,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
       });
       return;
     }
+    shouldPersistRef.current = true;
     setItems((prev) =>
       prev.map((it) =>
         it.id === itemId
@@ -439,15 +442,43 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     );
   };
 
-  // Save to storage & Cloudflare (skip redundant mount writes)
-  const isFirstRenderRef = React.useRef(true);
+  // Refresh socials list when cloud pull or login completes (and hydrate from cloud if empty)
   useEffect(() => {
-    if (isFirstRenderRef.current) {
-      isFirstRenderRef.current = false;
-      return;
+    const syncFromStorage = () => {
+      const fresh = StorageService.getSocialsQrItems();
+      setItems(fresh);
+      setSelectedItemId((prev) => {
+        if (prev === 'all') return 'all';
+        if (prev && fresh.some((s) => s.id === prev)) return prev;
+        return fresh.length > 0 ? fresh[0].id : '';
+      });
+    };
+    window.addEventListener('brivu_data_refreshed', syncFromStorage);
+    window.addEventListener('workos_user_updated', syncFromStorage);
+    window.addEventListener('storage', syncFromStorage);
+
+    const authEmail = StorageService.getAuthenticatedEmail();
+    if (authEmail && StorageService.getSocialsQrItems().length === 0) {
+      CloudflareService.pullFromCloudflare(authEmail)
+        .then((res) => {
+          if (res?.success) syncFromStorage();
+        })
+        .catch(() => {});
     }
+
+    return () => {
+      window.removeEventListener('brivu_data_refreshed', syncFromStorage);
+      window.removeEventListener('workos_user_updated', syncFromStorage);
+      window.removeEventListener('storage', syncFromStorage);
+    };
+  }, []);
+
+  // Save to storage & Cloudflare ONLY on user mutations (never on mount or business prop change)
+  useEffect(() => {
+    if (!shouldPersistRef.current) return;
+    shouldPersistRef.current = false;
     StorageService.saveSocialsQrItems(items);
-  }, [items, business]);
+  }, [items]);
 
   // Generate QR for active item or ALL hub
   useEffect(() => {
@@ -513,6 +544,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     const displayPlatformName = formPlatform === 'custom' ? (formCustomName.trim() || 'Custom') : cfg.name;
 
     if (editingItem) {
+      shouldPersistRef.current = true;
       setItems((prev) =>
         prev.map((i) =>
           i.id === editingItem.id
@@ -548,6 +580,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         eyeColor: formEyeColor,
         createdAt: new Date().toISOString(),
       };
+      shouldPersistRef.current = true;
       setItems((prev) => [newItem, ...prev]);
       setSelectedItemId(newItem.id);
       showToast(`New ${displayPlatformName} QR created!`);
@@ -558,6 +591,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const remaining = items.filter((i) => i.id !== id);
+    shouldPersistRef.current = true;
     setItems(remaining);
     if (selectedItemId === id) {
       if (remaining[0]) {

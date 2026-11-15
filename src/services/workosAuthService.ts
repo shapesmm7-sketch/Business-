@@ -31,6 +31,7 @@ export async function generatePKCE(): Promise<{ codeVerifier: string; codeChalle
 // Lock & cache to prevent duplicate OAuth code exchange calls
 let inFlightExchangePromise: Promise<WorkOSUser | null> | null = null;
 const exchangedCodes = new Set<string>();
+const saveSyncInFlight = new Map<string, Promise<CloudflareSyncResponse>>();
 
 export const WorkOSAuthService = {
   /**
@@ -98,69 +99,101 @@ export const WorkOSAuthService = {
    */
   async saveAndSyncUser(user: WorkOSUser): Promise<CloudflareSyncResponse> {
     const cleanEmail = (user.email || '').toLowerCase().trim();
+    const existingSync = cleanEmail ? saveSyncInFlight.get(cleanEmail) : undefined;
+    if (existingSync) {
+      return existingSync;
+    }
 
-    // 1. Switch session cleanly to incoming user email, ensuring no data from previous accounts leaks
-    StorageService.switchUserSession(cleanEmail);
+    const executeSaveAndSync = async (): Promise<CloudflareSyncResponse> => {
+      // 1. Switch session cleanly to incoming user email, ensuring no data from previous accounts leaks
+      StorageService.switchUserSession(cleanEmail);
 
-    const updatedUser: WorkOSUser = {
-      ...user,
-      id: cleanEmail || user.id,
-      email: cleanEmail,
-      provider: 'google',
-      updatedAt: new Date().toISOString(),
-      syncedToCloudflare: true,
+      const updatedUser: WorkOSUser = {
+        ...user,
+        id: cleanEmail || user.id,
+        email: cleanEmail,
+        provider: 'google',
+        updatedAt: new Date().toISOString(),
+        syncedToCloudflare: true,
+      };
+
+      // 2. Save in local storage immediately with email as User ID
+      StorageService.saveWorkOSUser(updatedUser);
+
+      // 3. If business email is empty, prefill with user email
+      const profile = StorageService.getProfile();
+      if (!profile.email && cleanEmail) {
+        StorageService.saveProfile({
+          ...profile,
+          email: cleanEmail,
+        });
+      }
+
+      // 4. Pull user's receipts, invoices, products, QR pages, and photos from Cloudflare (D1 & R2)
+      let pullSucceeded = false;
+      if (cleanEmail) {
+        try {
+          const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
+          pullSucceeded = Boolean(pullRes?.success);
+        } catch (pullErr) {
+          console.warn('Login cloud pull note:', pullErr);
+        }
+      }
+
+      // 5. Broadcast user update and data refresh so all restored files & records display immediately
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
+        window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+        window.dispatchEvent(new Event('storage'));
+      }
+
+      // 6. Run background sync (user profile & push unsynced local content)
+      const runBackgroundSync = async () => {
+        await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
+
+        const receipts = StorageService.getReceipts();
+        const products = StorageService.getInventoryProducts();
+        const qrPages = StorageService.getHostedQRPages();
+        const webItems = StorageService.getWebsitesQrItems();
+        const socItems = StorageService.getSocialsQrItems();
+        const evtItems = StorageService.getEventsQrItems();
+        const hasQrContent =
+          qrPages.some(
+            (p) =>
+              (p.menuItems && p.menuItems.length > 0) ||
+              (p.photos && p.photos.length > 0) ||
+              (p.customSocialLinks && p.customSocialLinks.length > 0) ||
+              Boolean(p.description || p.openingHours || p.wifiName)
+          ) ||
+          webItems.length > 0 ||
+          socItems.length > 0 ||
+          evtItems.length > 0;
+
+        if (pullSucceeded && (receipts.length > 0 || products.length > 0 || hasQrContent)) {
+          await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+        }
+      };
+
+      runBackgroundSync().catch((err) => console.warn('Background sync note:', err));
+
+      return {
+        success: true,
+        message: 'Logged in successfully',
+      };
     };
 
-    // 2. Save in local storage immediately with email as User ID
-    StorageService.saveWorkOSUser(updatedUser);
-
-    // 3. If business email is empty, prefill with user email
-    const profile = StorageService.getProfile();
-    if (!profile.email && cleanEmail) {
-      StorageService.saveProfile({
-        ...profile,
-        email: cleanEmail,
+    const promise = executeSaveAndSync();
+    if (cleanEmail) {
+      saveSyncInFlight.set(cleanEmail, promise);
+      promise.finally(() => {
+        saveSyncInFlight.delete(cleanEmail);
       });
     }
-
-    // 4. Pull user's receipts, invoices, products, and photos from Cloudflare (D1 & R2)
-    if (cleanEmail) {
-      try {
-        await CloudflareService.pullFromCloudflare(cleanEmail);
-      } catch (pullErr) {
-        console.warn('Login cloud pull note:', pullErr);
-      }
-    }
-
-    // 5. Broadcast user update and data refresh so all restored files & records display immediately
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: updatedUser }));
-      window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
-      window.dispatchEvent(new Event('storage'));
-    }
-
-    // 6. Run background sync (user profile & push unsynced local content)
-    const runBackgroundSync = async () => {
-      await CloudflareService.syncUserProfile(updatedUser, StorageService.getProfile()).catch(() => {});
-
-      const receipts = StorageService.getReceipts();
-      const products = StorageService.getInventoryProducts();
-      const qrPages = StorageService.getHostedQRPages();
-      if (receipts.length > 0 || products.length > 0 || qrPages.some((p) => (p.menuItems && p.menuItems.length > 0) || (p.photos && p.photos.length > 0))) {
-        await CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Cloudflare initial push note:', err));
-      }
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
-      }
-    };
-
-    runBackgroundSync().catch((err) => console.warn('Background sync note:', err));
-
-    return {
-      success: true,
-      message: 'Logged in successfully',
-    };
+    return promise;
   },
 
   /**

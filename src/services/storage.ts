@@ -1267,102 +1267,214 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, backupData.staffIncidents);
       }
 
-      // 14. QR Hosted Pages & Items (preserve non-empty photos, coverImage, logo, menuItems during merge)
+      // 14. QR Hosted Pages & Items (preserve all Business QR info, menus, socials, photos, websites, socials, events)
+      const isNonBusinessQrPage = (p: any): boolean => {
+        if (!p || typeof p !== 'object') return true;
+        const pid = String(p.id || '').toLowerCase();
+        const ptype = String(p.pageType || '').toLowerCase();
+        return (
+          ptype === 'websites_hub' ||
+          ptype === 'socials_hub' ||
+          ptype === 'events_hub' ||
+          ptype === 'event' ||
+          pid.startsWith('event-') ||
+          pid.startsWith('events-hub-') ||
+          pid.startsWith('websites-hub-') ||
+          pid.startsWith('socials-hub-') ||
+          pid.startsWith('test-event-') ||
+          pid.startsWith('web-') ||
+          pid.startsWith('social-')
+        );
+      };
+
+      const isBlankDefaultBizPage = (p: any): boolean => {
+        if (!p || typeof p !== 'object') return true;
+        const hasMenu = Array.isArray(p.menuItems) && p.menuItems.length > 0;
+        const hasPhotos = Array.isArray(p.photos) && p.photos.length > 0;
+        const hasCustomSocials = Array.isArray(p.customSocialLinks) && p.customSocialLinks.length > 0;
+        const hasSocialLinks = Boolean(
+          p.socialLinks &&
+            typeof p.socialLinks === 'object' &&
+            Object.values(p.socialLinks).some((v: any) => typeof v === 'string' && v.trim() !== '')
+        );
+        const hasExtraCats =
+          Array.isArray(p.menuCategories) &&
+          p.menuCategories.some((c: any) => typeof c === 'string' && c.trim() !== '' && c.trim() !== 'All');
+        const hasTextDetails = Boolean(
+          (p.description && String(p.description).trim() !== '') ||
+          (p.tagline && String(p.tagline).trim() !== '') ||
+          (p.wifiName && String(p.wifiName).trim() !== '') ||
+          (p.wifiPassword && String(p.wifiPassword).trim() !== '') ||
+          (p.openingHours && String(p.openingHours).trim() !== '') ||
+          (p.announcement && String(p.announcement).trim() !== '') ||
+          (p.googleMapsUrl && String(p.googleMapsUrl).trim() !== '') ||
+          p.coverImage ||
+          p.logo
+        );
+        return !hasMenu && !hasPhotos && !hasCustomSocials && !hasSocialLinks && !hasExtraCats && !hasTextDetails;
+      };
+
+      const mergeBizQrPage = (base: any, incoming: any): any => {
+        const isGenericTitle = (t?: string) =>
+          !t || !t.trim() || t.trim() === 'Brivu Business' || t.trim() === 'My Business' || t.trim().endsWith("'s Business");
+        const pickNonEmptyArr = (preferred: any, fallback: any) =>
+          Array.isArray(preferred) && preferred.length > 0
+            ? preferred
+            : Array.isArray(fallback)
+            ? fallback
+            : [];
+        const catsSet = new Set<string>(['All']);
+        for (const c of [...(Array.isArray(base?.menuCategories) ? base.menuCategories : []), ...(Array.isArray(incoming?.menuCategories) ? incoming.menuCategories : [])]) {
+          if (typeof c === 'string' && c.trim() && c.trim() !== 'All') catsSet.add(c.trim());
+        }
+        const mergedSocialLinks = {
+          instagram: incoming?.socialLinks?.instagram || base?.socialLinks?.instagram || '',
+          facebook: incoming?.socialLinks?.facebook || base?.socialLinks?.facebook || '',
+          website: incoming?.socialLinks?.website || base?.socialLinks?.website || '',
+        };
+        return {
+          ...base,
+          ...incoming,
+          id: base?.id && !String(base.id).startsWith('user_') ? base.id : incoming?.id || base?.id,
+          title: !isGenericTitle(incoming?.title)
+            ? incoming.title
+            : !isGenericTitle(base?.title)
+            ? base.title
+            : incoming?.title || base?.title || '',
+          tagline: incoming?.tagline || base?.tagline || '',
+          description: incoming?.description || base?.description || '',
+          phone: incoming?.phone || base?.phone || '',
+          whatsapp: incoming?.whatsapp || base?.whatsapp || '',
+          email: incoming?.email || base?.email || '',
+          userEmail: incoming?.userEmail || base?.userEmail || '',
+          address: incoming?.address || base?.address || '',
+          googleMapsUrl: incoming?.googleMapsUrl || base?.googleMapsUrl || '',
+          wifiName: incoming?.wifiName || base?.wifiName || '',
+          wifiPassword: incoming?.wifiPassword || base?.wifiPassword || '',
+          openingHours: incoming?.openingHours || base?.openingHours || '',
+          announcement: incoming?.announcement || base?.announcement || '',
+          currency: incoming?.currency || base?.currency || 'UGX',
+          coverImage: incoming?.coverImage || base?.coverImage,
+          logo: incoming?.logo || base?.logo,
+          socialLinks: mergedSocialLinks,
+          customSocialLinks: pickNonEmptyArr(incoming?.customSocialLinks, base?.customSocialLinks),
+          photos: pickNonEmptyArr(incoming?.photos, base?.photos),
+          menuItems: pickNonEmptyArr(incoming?.menuItems, base?.menuItems),
+          menuCategories: Array.from(catsSet),
+          qrDarkColor: incoming?.qrDarkColor || base?.qrDarkColor || '#000000',
+          qrEyeColor: incoming?.qrEyeColor || base?.qrEyeColor || '#000000',
+          qrLightColor: incoming?.qrLightColor || base?.qrLightColor || '#ffffff',
+          qrBoxBgColor: incoming?.qrBoxBgColor || base?.qrBoxBgColor || '#ffffff',
+          qrBoxBorderColor: incoming?.qrBoxBorderColor || base?.qrBoxBorderColor || '#e2e8f0',
+        };
+      };
+
+      const extractedWebFromPages: WebsiteAppQrItem[] = [];
+      const extractedSocFromPages: SocialQrItem[] = [];
+      const extractedEvtFromPages: EventQrItem[] = [];
       if (Array.isArray(backupData.qrHostedPages)) {
+        for (const p of backupData.qrHostedPages as any[]) {
+          if (!p || typeof p !== 'object') continue;
+          if (Array.isArray(p.websitesQrItems)) {
+            extractedWebFromPages.push(...p.websitesQrItems);
+          }
+          if (Array.isArray(p.socialsQrItems)) {
+            extractedSocFromPages.push(...p.socialsQrItems);
+          }
+          if (Array.isArray(p.eventsQrItems)) {
+            extractedEvtFromPages.push(...p.eventsQrItems);
+          }
+        }
+      }
+
+      if (Array.isArray(backupData.qrHostedPages)) {
+        const incomingBizPages = backupData.qrHostedPages.filter((p: any) => !isNonBusinessQrPage(p));
         if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, backupData.qrHostedPages);
-        } else {
+          if (incomingBizPages.length > 0) {
+            writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, incomingBizPages);
+          }
+        } else if (incomingBizPages.length > 0) {
           const existing = this.getHostedQRPages();
+          // Drop blank auto-created default page if cloud backup has real business pages
+          const existingReal = existing.filter((p) => !isBlankDefaultBizPage(p));
+          const hasIncomingReal = incomingBizPages.some((p) => !isBlankDefaultBizPage(p));
+          const seedList = !hasIncomingReal || existingReal.length > 0 ? (existingReal.length > 0 ? existingReal : existing) : [];
+
           const qrMap = new Map<string, any>();
-          existing.forEach((p) => { if (p && p.id) qrMap.set(p.id, p); });
-          backupData.qrHostedPages.forEach((incomingPage) => {
+          seedList.forEach((p) => {
+            if (p && p.id) qrMap.set(p.id, p);
+          });
+
+          incomingBizPages.forEach((incomingPage: any) => {
             if (!incomingPage || !incomingPage.id) return;
             const current = qrMap.get(incomingPage.id);
             if (current) {
-              const mergedPhotos =
-                Array.isArray(incomingPage.photos) && incomingPage.photos.length > 0
-                  ? incomingPage.photos
-                  : Array.isArray(current.photos)
-                  ? current.photos
-                  : [];
-              const mergedMenuItems =
-                Array.isArray(incomingPage.menuItems) && incomingPage.menuItems.length > 0
-                  ? incomingPage.menuItems
-                  : Array.isArray(current.menuItems)
-                  ? current.menuItems
-                  : [];
-              qrMap.set(incomingPage.id, {
-                ...current,
-                ...incomingPage,
-                photos: mergedPhotos,
-                menuItems: mergedMenuItems,
-                coverImage: incomingPage.coverImage || current.coverImage,
-                logo: incomingPage.logo || current.logo,
-              });
+              qrMap.set(incomingPage.id, mergeBizQrPage(current, incomingPage));
             } else {
-              // If incoming is canonical `user_<email>_business`, merge its photos/details into primary business page if one exists
-              const isCanonicalBiz = String(incomingPage.id).startsWith('user_') && String(incomingPage.id).endsWith('_business');
-              if (isCanonicalBiz && existing.length > 0) {
-                const primary = qrMap.get(existing[0].id) || existing[0];
-                const mergedPhotos =
-                  Array.isArray(primary.photos) && primary.photos.length > 0
-                    ? primary.photos
-                    : Array.isArray(incomingPage.photos)
-                    ? incomingPage.photos
-                    : [];
-                const mergedMenuItems =
-                  Array.isArray(primary.menuItems) && primary.menuItems.length > 0
-                    ? primary.menuItems
-                    : Array.isArray(incomingPage.menuItems)
-                    ? incomingPage.menuItems
-                    : [];
-                qrMap.set(primary.id, {
-                  ...incomingPage,
-                  ...primary,
-                  id: primary.id,
-                  photos: mergedPhotos,
-                  menuItems: mergedMenuItems,
-                  coverImage: primary.coverImage || incomingPage.coverImage,
-                  logo: primary.logo || incomingPage.logo,
-                });
+              const isCanonicalBiz =
+                String(incomingPage.id).startsWith('user_') && String(incomingPage.id).endsWith('_business');
+              const existingKeys = Array.from(qrMap.keys());
+              if (isCanonicalBiz && existingKeys.length > 0) {
+                const primaryKey = existingKeys[0];
+                const primary = qrMap.get(primaryKey);
+                qrMap.set(primaryKey, mergeBizQrPage(primary, incomingPage));
               } else {
                 qrMap.set(incomingPage.id, incomingPage);
               }
             }
           });
-          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, Array.from(qrMap.values()));
+
+          const finalBizPages = Array.from(qrMap.values());
+          if (finalBizPages.length > 0) {
+            writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, finalBizPages);
+          }
         }
       }
-      if (Array.isArray(backupData.websitesQrItems)) {
-        if (replaceExisting) {
+
+      const incomingWebItems = [
+        ...(Array.isArray(backupData.websitesQrItems) ? backupData.websitesQrItems : []),
+        ...extractedWebFromPages,
+      ];
+      if (Array.isArray(backupData.websitesQrItems) || extractedWebFromPages.length > 0) {
+        if (replaceExisting && Array.isArray(backupData.websitesQrItems)) {
           writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
-        } else {
+        } else if (incomingWebItems.length > 0) {
           const existing = this.getWebsitesQrItems();
           const webMap = new Map<string, any>();
           existing.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
-          backupData.websitesQrItems.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
+          incomingWebItems.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
           writeToStorage(STORAGE_KEYS.WEBSITES_QR, Array.from(webMap.values()));
         }
       }
-      if (Array.isArray(backupData.socialsQrItems)) {
-        if (replaceExisting) {
+
+      const incomingSocItems = [
+        ...(Array.isArray(backupData.socialsQrItems) ? backupData.socialsQrItems : []),
+        ...extractedSocFromPages,
+      ];
+      if (Array.isArray(backupData.socialsQrItems) || extractedSocFromPages.length > 0) {
+        if (replaceExisting && Array.isArray(backupData.socialsQrItems)) {
           writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
-        } else {
+        } else if (incomingSocItems.length > 0) {
           const existing = this.getSocialsQrItems();
           const socialMap = new Map<string, any>();
           existing.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
-          backupData.socialsQrItems.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
+          incomingSocItems.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
           writeToStorage(STORAGE_KEYS.SOCIALS_QR, Array.from(socialMap.values()));
         }
       }
-      if (Array.isArray(backupData.eventsQrItems)) {
-        if (replaceExisting) {
+
+      const incomingEvtItems = [
+        ...(Array.isArray(backupData.eventsQrItems) ? backupData.eventsQrItems : []),
+        ...extractedEvtFromPages,
+      ];
+      if (Array.isArray(backupData.eventsQrItems) || extractedEvtFromPages.length > 0) {
+        if (replaceExisting && Array.isArray(backupData.eventsQrItems)) {
           writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
-        } else {
+        } else if (incomingEvtItems.length > 0) {
           const existing = this.getEventsQrItems();
           const evtMap = new Map<string, any>();
           existing.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
-          backupData.eventsQrItems.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
+          incomingEvtItems.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
           writeToStorage(STORAGE_KEYS.EVENTS_QR, Array.from(evtMap.values()));
         }
       }
