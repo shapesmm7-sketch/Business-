@@ -213,6 +213,22 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setToastMessage('Sale updated successfully');
   };
 
+  // Logged-in account state (for showing header Cloud Sync button)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
+    Boolean(StorageService.getWorkOSUser()?.email)
+  );
+  useEffect(() => {
+    const syncAuth = (e: any) => {
+      if (e && 'detail' in e) {
+        setIsLoggedIn(Boolean(e.detail?.email));
+      } else {
+        setIsLoggedIn(Boolean(StorageService.getWorkOSUser()?.email));
+      }
+    };
+    window.addEventListener('workos_user_updated', syncAuth);
+    return () => window.removeEventListener('workos_user_updated', syncAuth);
+  }, []);
+
   // Toast / notification feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -5043,17 +5059,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                refreshData();
-                showToast('All inventory sections synced with Cloud Storage!');
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
-            >
-              <Cloud className="w-3.5 h-3.5 text-sky-100" />
-              <span>{t('cloud_sync', business?.language)}</span>
-            </button>
+            {isLoggedIn && (
+              <button
+                type="button"
+                onClick={() => {
+                  refreshData();
+                  showToast('All inventory sections synced with Cloud Storage!');
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
+              >
+                <Cloud className="w-3.5 h-3.5 text-sky-100" />
+                <span>{t('cloud_sync', business?.language)}</span>
+              </button>
+            )}
             <button
               onClick={onNavigateHome}
               className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1 rounded-lg font-medium transition"

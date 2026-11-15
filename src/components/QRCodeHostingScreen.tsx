@@ -189,6 +189,20 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [isUploadingToCloudflare, setIsUploadingToCloudflare] = useState<boolean>(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>('Uploading...');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
+    Boolean(StorageService.getWorkOSUser()?.email)
+  );
+  useEffect(() => {
+    const syncAuth = (e: any) => {
+      if (e && 'detail' in e) {
+        setIsLoggedIn(Boolean(e.detail?.email));
+      } else {
+        setIsLoggedIn(Boolean(StorageService.getWorkOSUser()?.email));
+      }
+    };
+    window.addEventListener('workos_user_updated', syncAuth);
+    return () => window.removeEventListener('workos_user_updated', syncAuth);
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1453,32 +1467,34 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
           {qrCategory === 'business' && (
             <>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!ownerEmail) {
-                    showToast('Sign in or add your business email to sync QR data to Cloud.');
-                    return;
-                  }
-                  const freshPages = StorageService.getHostedQRPages();
-                  setPages(freshPages);
-                  const latestPage = freshPages.find((p) => p.id === activePage?.id) || activePage;
-                  const pageRes = latestPage
-                    ? await CloudflareService.saveSingleQrPage(latestPage, ownerEmail, { immediate: true })
-                    : { success: true, message: '' };
-                  const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true });
-                  if (pageRes.success || syncRes.success) {
-                    showToast('Data synced & saved!');
-                  } else {
-                    showToast(pageRes.message || syncRes.message || 'Cloud sync failed. Please check your connection.');
-                  }
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
-                title="Save and sync all QR code files, stand PDFs, photos, and items"
-              >
-                <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>{t('cloud_sync', business?.language)}</span>
-              </button>
+              {isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!ownerEmail) {
+                      showToast('Sign in or add your business email to sync QR data to Cloud.');
+                      return;
+                    }
+                    const freshPages = StorageService.getHostedQRPages();
+                    setPages(freshPages);
+                    const latestPage = freshPages.find((p) => p.id === activePage?.id) || activePage;
+                    const pageRes = latestPage
+                      ? await CloudflareService.saveSingleQrPage(latestPage, ownerEmail, { immediate: true })
+                      : { success: true, message: '' };
+                    const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true });
+                    if (pageRes.success || syncRes.success) {
+                      showToast('Data synced & saved!');
+                    } else {
+                      showToast(pageRes.message || syncRes.message || 'Cloud sync failed. Please check your connection.');
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
+                  title="Save and sync all QR code files, stand PDFs, photos, and items"
+                >
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>{t('cloud_sync', business?.language)}</span>
+                </button>
+              )}
 
               {isSaved && (
                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">

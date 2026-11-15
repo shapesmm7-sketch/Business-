@@ -101,7 +101,7 @@ public class BluetoothPrinterPlugin extends Plugin {
         return BluetoothAdapter.getDefaultAdapter();
     }
 
-    private boolean hasRequiredPermissions() {
+    private boolean hasBluetoothPermissions() {
         Context ctx = getContext();
         if (ctx == null) return false;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -111,7 +111,7 @@ public class BluetoothPrinterPlugin extends Plugin {
         return ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void requestRequiredPermissions(PluginCall call) {
+    private void requestBluetoothPermissions(PluginCall call) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             requestPermissionForAliases(new String[] { "bluetoothConnect", "bluetoothScan" }, call, "permissionsCallback");
         } else {
@@ -122,7 +122,7 @@ public class BluetoothPrinterPlugin extends Plugin {
     @PermissionCallback
     private void permissionsCallback(PluginCall call) {
         if (call == null) return;
-        if (!hasRequiredPermissions()) {
+        if (!hasBluetoothPermissions()) {
             JSObject res = new JSObject();
             res.put("success", false);
             res.put("permissionDenied", true);
@@ -213,15 +213,15 @@ public class BluetoothPrinterPlugin extends Plugin {
         JSObject res = new JSObject();
         res.put("supported", adapter != null);
         res.put("enabled", adapter != null && adapter.isEnabled());
-        res.put("hasPermissions", hasRequiredPermissions());
+        res.put("hasPermissions", hasBluetoothPermissions());
         call.resolve(res);
     }
 
     @PluginMethod
     @SuppressLint("MissingPermission")
     public void scanPrinters(PluginCall call) {
-        if (!hasRequiredPermissions()) {
-            requestRequiredPermissions(call);
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions(call);
             return;
         }
         if (!ensureBluetoothEnabledOrPrompt(call)) {
@@ -380,8 +380,8 @@ public class BluetoothPrinterPlugin extends Plugin {
     @PluginMethod
     @SuppressLint("MissingPermission")
     public void connectPrinter(PluginCall call) {
-        if (!hasRequiredPermissions()) {
-            requestRequiredPermissions(call);
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions(call);
             return;
         }
         if (!ensureBluetoothEnabledOrPrompt(call)) {
@@ -476,8 +476,8 @@ public class BluetoothPrinterPlugin extends Plugin {
     @PluginMethod
     @SuppressLint("MissingPermission")
     public void printBytes(PluginCall call) {
-        if (!hasRequiredPermissions()) {
-            requestRequiredPermissions(call);
+        if (!hasBluetoothPermissions()) {
+            requestBluetoothPermissions(call);
             return;
         }
         if (!ensureBluetoothEnabledOrPrompt(call)) {
