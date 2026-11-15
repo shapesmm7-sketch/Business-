@@ -211,6 +211,7 @@ export interface InventoryProduct {
 }
 
 export interface PublicCatalogSettings {
+  catalogId?: string; // Unique Live Stock Catalog ID (distinct from QR page IDs)
   enabled: boolean;
   slug: string;
   businessName?: string;

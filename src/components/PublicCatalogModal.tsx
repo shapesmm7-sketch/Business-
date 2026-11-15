@@ -65,8 +65,8 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
 
   const ownerEmail = StorageService.resolveStoreOwnerEmail(settings.email);
   const currentSlug = (settings.slug || StorageService.generateStoreSlug(business.name || 'store')).trim();
-  const catalogUrl = StorageService.getPublicCatalogUrl(currentSlug, ownerEmail);
-  const relativeStorePath = `/store/${currentSlug}${ownerEmail ? `?email=${encodeURIComponent(ownerEmail)}` : ''}`;
+  const currentCatalogId = (settings.catalogId || '').trim();
+  const catalogUrl = StorageService.getPublicCatalogUrl(currentSlug, ownerEmail, currentCatalogId);
 
   const publicProductsCount = products.filter((p) => p.isPublicInCatalog !== false).length;
   const inStockPublicCount = products.filter(
@@ -86,7 +86,7 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
     const updated = StorageService.savePublicCatalogSettings({ slug: sanitized });
     setSettings(updated);
     setSlugInput(updated.slug);
-    showNotice(`Store link updated to /store/${updated.slug}`);
+    showNotice(`Catalog slug updated to "${updated.slug}"`);
   };
 
   const handleToggleExactQuantity = (newVal: boolean) => {
@@ -281,15 +281,22 @@ export const PublicCatalogModal: React.FC<PublicCatalogModalProps> = ({
 
           {/* Shareable Link Card */}
           <div className="p-4 rounded-2xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10.5px] font-bold text-sky-800 dark:text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5 text-sky-600" /> Your Live Catalog Link
-              </span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-[10.5px] font-bold text-sky-800 dark:text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Store className="w-3.5 h-3.5 text-sky-600" /> Your Live Catalog Link
+                </span>
+                {currentCatalogId && (
+                  <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 block mt-0.5 truncate">
+                    Catalog ID: {currentCatalogId}
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={handleManualSync}
                 disabled={isPublishing}
-                className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+                className="text-[10px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1 shrink-0"
                 title="Sync latest stock changes with cloud"
               >
                 <RefreshCw className={`w-3 h-3 ${isPublishing ? 'animate-spin' : ''}`} />

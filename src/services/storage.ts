@@ -1664,6 +1664,12 @@ export const StorageService = {
     return '';
   },
 
+  generateCatalogId(): string {
+    const ts = Date.now().toString(36);
+    const rand = Math.random().toString(36).substring(2, 7);
+    return `cat-${ts}-${rand}`;
+  },
+
   generateStoreSlug(businessName: string): string {
     if (!businessName || !businessName.trim()) return 'store';
     return businessName
@@ -1685,7 +1691,21 @@ export const StorageService = {
         : defaultSlug !== 'store'
         ? defaultSlug
         : savedSlug || defaultSlug;
+
+    let resolvedCatalogId = typeof saved.catalogId === 'string' ? saved.catalogId.trim() : '';
+    if (!resolvedCatalogId || !resolvedCatalogId.startsWith('cat-')) {
+      resolvedCatalogId = this.generateCatalogId();
+      try {
+        writeToStorage(STORAGE_KEYS.PUBLIC_CATALOG_SETTINGS, {
+          ...saved,
+          catalogId: resolvedCatalogId,
+          slug: resolvedSlug,
+        });
+      } catch (_) {}
+    }
+
     return {
+      catalogId: resolvedCatalogId,
       enabled: saved.enabled !== false, // default true
       slug: resolvedSlug,
       businessName: saved.businessName || profile.name || '',
@@ -1702,17 +1722,21 @@ export const StorageService = {
     };
   },
 
-  getPublicCatalogUrl(overrideSlug?: string, emailOverride?: string): string {
+  getPublicCatalogUrl(overrideSlug?: string, emailOverride?: string, catalogIdOverride?: string): string {
     let workerUrl = (this.getCloudflareConfig().workerUrl || '').trim();
     if (!workerUrl || workerUrl.includes('localhost') || workerUrl.includes('127.0.0.1')) {
       workerUrl = 'https://brivu.shapesmm7.workers.dev';
     }
     const base = workerUrl.replace(/\/+$/, '');
     const settings = this.getPublicCatalogSettings();
-    const cleanSlug = encodeURIComponent((overrideSlug || settings.slug || 'store').trim() || 'store');
+    const cleanSlug = (overrideSlug || settings.slug || 'store').trim() || 'store';
+    const cleanCatalogId = (catalogIdOverride || settings.catalogId || this.generateCatalogId()).trim();
     const ownerEmail = this.resolveStoreOwnerEmail(emailOverride || settings.email);
-    const emailQuery = ownerEmail ? `?email=${encodeURIComponent(ownerEmail)}` : '';
-    return `${base}/store/${cleanSlug}${emailQuery}`;
+    const params = new URLSearchParams();
+    if (cleanSlug) params.set('slug', cleanSlug);
+    if (ownerEmail) params.set('email', ownerEmail);
+    const qs = params.toString();
+    return `${base}/catalog/${encodeURIComponent(cleanCatalogId)}${qs ? `?${qs}` : ''}`;
   },
 
   savePublicCatalogSettings(settings: Partial<PublicCatalogSettings>): PublicCatalogSettings {
@@ -1720,6 +1744,7 @@ export const StorageService = {
     const updated: PublicCatalogSettings = {
       ...current,
       ...settings,
+      catalogId: (settings.catalogId && settings.catalogId.trim()) || current.catalogId || this.generateCatalogId(),
       slug: settings.slug ? this.generateStoreSlug(settings.slug) : current.slug,
       updatedAt: new Date().toISOString(),
     };
@@ -1813,6 +1838,7 @@ export const StorageService = {
     return {
       settings: {
         ...settings,
+        catalogId: settings.catalogId,
         email: ownerEmail || settings.email || profile.email || '',
         slug: overrideSlug || settings.slug,
       },
@@ -1836,10 +1862,15 @@ export const StorageService = {
     const settings = this.getPublicCatalogSettings();
     const ownerEmail = this.resolveStoreOwnerEmail(settings.email);
     const payload = this.getPublicCatalogPayload();
-    const storeUrl = this.getPublicCatalogUrl(settings.slug, ownerEmail);
+    const storeUrl = this.getPublicCatalogUrl(settings.slug, ownerEmail, settings.catalogId);
 
     try {
-      const res = await CloudflareService.publishStoreCatalog(settings.slug, payload, ownerEmail);
+      const res = await CloudflareService.publishStoreCatalog(
+        settings.slug,
+        payload,
+        ownerEmail,
+        settings.catalogId
+      );
       return {
         success: res.success,
         url: storeUrl,

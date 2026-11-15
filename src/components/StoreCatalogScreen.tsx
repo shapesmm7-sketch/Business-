@@ -31,6 +31,7 @@ import { Browser } from '@capacitor/browser';
 
 interface StoreCatalogScreenProps {
   slug?: string | null;
+  catalogId?: string | null;
   isMerchantPreview?: boolean;
   onNavigateHome?: () => void;
 }
@@ -49,12 +50,45 @@ function getStoreEmailFromLocation(): string {
   return clean && clean.includes('@') && !clean.startsWith('brivu-usr-') ? clean : '';
 }
 
+function getStoreCatalogIdFromLocation(): string {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = (params.get('catalogId') || params.get('catalog') || '').trim();
+  if (fromQuery) return fromQuery;
+
+  const pathname = window.location.pathname || '';
+  if (pathname.includes('/catalog/')) {
+    const after = pathname.split('/catalog/')[1];
+    if (after) {
+      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].split('#')[0].trim());
+      if (seg) return seg;
+    }
+  }
+  const hash = window.location.hash || '';
+  if (hash.includes('/catalog/')) {
+    const after = hash.split('/catalog/')[1];
+    if (after) {
+      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].trim());
+      if (seg) return seg;
+    }
+  }
+  const injected = String((window as any).__STORE_CATALOG_ID__ || '').trim();
+  return injected;
+}
+
 function isStoreUrlContext(): boolean {
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);
   const pathname = window.location.pathname || '';
   const hash = window.location.hash || '';
   return Boolean(
+    pathname.includes('/catalog/') ||
+    pathname === '/catalog' ||
+    pathname.endsWith('/catalog') ||
+    params.has('catalogId') ||
+    params.has('catalog') ||
+    hash.includes('/catalog/') ||
+    hash.startsWith('#/catalog') ||
     pathname.includes('/store/') ||
     pathname === '/store' ||
     pathname.endsWith('/store') ||
@@ -67,7 +101,8 @@ function isStoreUrlContext(): boolean {
 function buildPublicCatalogFromBackupData(
   bData: any,
   targetSlug: string,
-  ownerEmail: string
+  ownerEmail: string,
+  targetCatalogId?: string
 ): PublicCatalogPayload | null {
   if (!bData || typeof bData !== 'object') return null;
   const rawProducts = Array.isArray(bData.inventoryProducts)
@@ -80,6 +115,7 @@ function buildPublicCatalogFromBackupData(
   const categories = Array.isArray(bData.productCategories) ? bData.productCategories : [];
 
   const settings: PublicCatalogSettings = {
+    catalogId: targetCatalogId || savedSettings.catalogId || undefined,
     enabled: savedSettings.enabled !== false,
     slug: targetSlug || savedSettings.slug || 'store',
     businessName: savedSettings.businessName || profile.name || '',
@@ -157,10 +193,16 @@ function buildPublicCatalogFromBackupData(
   };
 }
 
-function isSsrCatalogValidForRequest(ssr: any, emailFromUrl: string): ssr is PublicCatalogPayload {
+function isSsrCatalogValidForRequest(
+  ssr: any,
+  emailFromUrl: string,
+  catalogIdFromUrl?: string
+): ssr is PublicCatalogPayload {
   if (!ssr || typeof ssr !== 'object') return false;
   const ssrEmail = String(ssr.settings?.email || ssr.business?.email || '').toLowerCase().trim();
   if (emailFromUrl && ssrEmail && ssrEmail !== emailFromUrl) return false;
+  const ssrCatalogId = String(ssr.settings?.catalogId || '').trim();
+  if (catalogIdFromUrl && ssrCatalogId && ssrCatalogId !== catalogIdFromUrl) return false;
   const hasProducts = Array.isArray(ssr.products) && ssr.products.length > 0;
   const hasRealBiz = Boolean(ssr.business?.name && ssr.business.name !== 'Brivu Store');
   return hasProducts || hasRealBiz;
@@ -168,16 +210,18 @@ function isSsrCatalogValidForRequest(ssr: any, emailFromUrl: string): ssr is Pub
 
 export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
   slug,
+  catalogId,
   isMerchantPreview = false,
   onNavigateHome,
 }) => {
   const emailFromUrl = useMemo(() => getStoreEmailFromLocation(), []);
+  const catalogIdFromUrl = useMemo(() => (catalogId || getStoreCatalogIdFromLocation()).trim(), [catalogId]);
   const externalStoreContext = useMemo(() => isStoreUrlContext(), []);
 
   const [catalog, setCatalog] = useState<PublicCatalogPayload | null>(() => {
     if (typeof window !== 'undefined') {
       const ssr = (window as any).__INITIAL_STORE_CATALOG__;
-      if (isSsrCatalogValidForRequest(ssr, getStoreEmailFromLocation())) {
+      if (isSsrCatalogValidForRequest(ssr, getStoreEmailFromLocation(), catalogId || getStoreCatalogIdFromLocation())) {
         return ssr;
       }
     }
@@ -200,9 +244,10 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
   useEffect(() => {
     const localSettings = StorageService.getPublicCatalogSettings();
     const targetSlug = (slug || localSettings.slug || 'store').trim().toLowerCase() || 'store';
+    const targetCatalogId = (catalogIdFromUrl || (!externalStoreContext ? localSettings.catalogId : '') || '').trim();
     const urlEmail = getStoreEmailFromLocation();
 
-    // Pure in-app owner preview (not opened from external /store/... URL)
+    // Pure in-app owner preview (not opened from external /catalog/... or /store/... URL)
     if (isMerchantPreview && !externalStoreContext && !urlEmail) {
       setCatalog(StorageService.getPublicCatalogPayload(targetSlug));
       setIsLoading(false);
@@ -212,7 +257,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
     let isMounted = true;
     const initialSsr =
       typeof window !== 'undefined' &&
-      isSsrCatalogValidForRequest((window as any).__INITIAL_STORE_CATALOG__, urlEmail)
+      isSsrCatalogValidForRequest((window as any).__INITIAL_STORE_CATALOG__, urlEmail, targetCatalogId)
         ? ((window as any).__INITIAL_STORE_CATALOG__ as PublicCatalogPayload)
         : null;
 
@@ -223,7 +268,11 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
 
     const resolveRemoteCatalog = async () => {
       try {
-        const res = await CloudflareService.fetchPublicStoreCatalog(targetSlug, urlEmail || undefined);
+        const res = await CloudflareService.fetchPublicStoreCatalog(
+          targetSlug,
+          urlEmail || undefined,
+          targetCatalogId || undefined
+        );
         if (!isMounted) return;
         if (res.success && res.data && (Array.isArray(res.data.products) || res.data.business)) {
           const fetchedProducts = Array.isArray(res.data.products) ? res.data.products : [];
@@ -234,11 +283,16 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
           }
         }
 
-        // Backup recovery by user email ID (matching how QR links recover from cloud backup)
+        // Backup recovery by user email ID
         if (urlEmail) {
-          const bData = await CloudflareService.fetchUserBackupData(urlEmail);
+          const bData = await CloudflareService.fetchUserBackupData(urlEmail, 4000);
           if (!isMounted) return;
-          const backupCatalog = buildPublicCatalogFromBackupData(bData, targetSlug, urlEmail);
+          const backupCatalog = buildPublicCatalogFromBackupData(
+            bData,
+            targetSlug,
+            urlEmail,
+            targetCatalogId || undefined
+          );
           if (backupCatalog) {
             setCatalog(backupCatalog);
             setIsLoading(false);
@@ -268,7 +322,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
           }
         }
 
-        setError(`Store "${targetSlug}" is currently not available.`);
+        setError(`Store "${targetCatalogId || targetSlug}" is currently not available.`);
       } catch (err: any) {
         if (!isMounted) return;
         if (initialSsr) {
@@ -295,7 +349,7 @@ export const StoreCatalogScreen: React.FC<StoreCatalogScreenProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [slug, emailFromUrl, isMerchantPreview, externalStoreContext]);
+  }, [slug, catalogIdFromUrl, emailFromUrl, isMerchantPreview, externalStoreContext]);
 
   const business = catalog?.business || {
     name: 'Brivu Store',

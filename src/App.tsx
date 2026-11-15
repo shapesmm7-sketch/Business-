@@ -100,6 +100,13 @@ export function isStoreCatalogPathFromUrl(): boolean {
   const pathname = window.location.pathname || '';
   const hash = window.location.hash || '';
   return Boolean(
+    pathname.includes('/catalog/') ||
+    pathname === '/catalog' ||
+    pathname.endsWith('/catalog') ||
+    params.has('catalogId') ||
+    params.has('catalog') ||
+    hash.includes('/catalog/') ||
+    hash.startsWith('#/catalog') ||
     pathname.includes('/store/') ||
     pathname === '/store' ||
     pathname.endsWith('/store') ||
@@ -109,9 +116,36 @@ export function isStoreCatalogPathFromUrl(): boolean {
   );
 }
 
+export function getStoreCatalogIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = (params.get('catalogId') || params.get('catalog') || '').trim();
+  if (fromQuery) return fromQuery;
+
+  const pathname = window.location.pathname || '';
+  if (pathname.includes('/catalog/')) {
+    const after = pathname.split('/catalog/')[1];
+    if (after) {
+      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].split('#')[0].trim());
+      if (seg) return seg;
+    }
+  }
+  const hash = window.location.hash || '';
+  if (hash.includes('/catalog/')) {
+    const after = hash.split('/catalog/')[1];
+    if (after) {
+      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].trim());
+      if (seg) return seg;
+    }
+  }
+  const injected = String((window as any).__STORE_CATALOG_ID__ || '').trim();
+  return injected || null;
+}
+
 export function getStoreSlugFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
+  if (params.get('slug')) return params.get('slug')!.trim();
   if (params.get('store')) return params.get('store')!.trim();
   const pathname = window.location.pathname || '';
   if (pathname.includes('/store/')) {
@@ -121,7 +155,7 @@ export function getStoreSlugFromUrl(): string | null {
       if (slug) return decodeURIComponent(slug);
     }
   }
-  if (pathname === '/store' || pathname.endsWith('/store')) {
+  if (pathname === '/store' || pathname.endsWith('/store') || pathname === '/catalog' || pathname.endsWith('/catalog')) {
     return 'store';
   }
   const hash = window.location.hash || '';
@@ -132,7 +166,7 @@ export function getStoreSlugFromUrl(): string | null {
       if (slug) return decodeURIComponent(slug);
     }
   }
-  if (hash.startsWith('#/store')) {
+  if (hash.startsWith('#/store') || hash.startsWith('#/catalog')) {
     return 'store';
   }
   return null;
@@ -243,6 +277,7 @@ export function App() {
 
   const [isCustomerDataResolving, setIsCustomerDataResolving] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
+    if (isStoreCatalogPathFromUrl()) return false;
     const params = new URLSearchParams(window.location.search);
     const pathname = window.location.pathname || '';
     const hasQrParams = Boolean(
@@ -271,6 +306,7 @@ export function App() {
 
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
+      if (isStoreCatalogPathFromUrl()) return null;
       const params = new URLSearchParams(window.location.search);
       const pathname = window.location.pathname || '';
       const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
@@ -1745,6 +1781,7 @@ export function App() {
         {activeScreen === 'public-catalog' && (
           <StoreCatalogScreen
             slug={getStoreSlugFromUrl()}
+            catalogId={getStoreCatalogIdFromUrl()}
             isMerchantPreview={!isStoreCatalogPathFromUrl()}
             onNavigateHome={!isStoreCatalogPathFromUrl() ? () => handleNavigate('home') : undefined}
           />

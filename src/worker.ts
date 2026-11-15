@@ -1534,10 +1534,21 @@ export function sanitizePublicStoreSlug(rawSlug: string): string {
   return cleaned || 'store';
 }
 
+export function deriveFallbackCatalogId(userEmail: string, slug: string): string {
+  const seed = `${String(userEmail || '').toLowerCase().trim()}::${sanitizePublicStoreSlug(slug || 'store')}`;
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `cat-${(h >>> 0).toString(36)}`;
+}
+
 export function sanitizePublicStoreCatalogPayload(
   payload: any,
   slugOverride?: string,
-  userEmailOverride?: string
+  userEmailOverride?: string,
+  catalogIdOverride?: string
 ): any {
   if (!payload || typeof payload !== 'object') return null;
   const rawSettings = payload.settings || {};
@@ -1548,6 +1559,10 @@ export function sanitizePublicStoreCatalogPayload(
     .toLowerCase()
     .trim();
   const cleanSlug = sanitizePublicStoreSlug(slugOverride || rawSettings.slug || rawBiz.name || 'store');
+  const rawCatalogId = String(catalogIdOverride || rawSettings.catalogId || '').trim();
+  const cleanCatalogId = rawCatalogId && !rawCatalogId.startsWith('qr-')
+    ? rawCatalogId
+    : deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug);
   const rawProducts = Array.isArray(payload.products) ? payload.products : [];
 
   const sanitizedProducts = rawProducts.map((p: any) => {
@@ -1586,6 +1601,7 @@ export function sanitizePublicStoreCatalogPayload(
 
   return {
     settings: {
+      catalogId: cleanCatalogId,
       enabled: rawSettings.enabled !== false,
       slug: cleanSlug,
       businessName: rawSettings.businessName || rawBiz.name || '',
@@ -1620,7 +1636,8 @@ export function buildPublicStoreCatalogFromBackup(
   backupData: any,
   userEmail: string,
   overrideSlug?: string,
-  existingSettings?: any
+  existingSettings?: any,
+  overrideCatalogId?: string
 ): any | null {
   if (!backupData || typeof backupData !== 'object') return null;
   const profile = backupData.profile || {};
@@ -1642,8 +1659,12 @@ export function buildPublicStoreCatalogFromBackup(
     savedSettings.slug ||
     'store';
   const cleanSlug = sanitizePublicStoreSlug(slugCandidate);
+  const cleanCatalogId = String(
+    overrideCatalogId || savedSettings.catalogId || deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug)
+  ).trim();
 
   const settings = {
+    catalogId: cleanCatalogId,
     enabled: savedSettings.enabled !== false,
     slug: cleanSlug,
     businessName: savedSettings.businessName || profile.name || '',
@@ -1720,7 +1741,8 @@ export function buildPublicStoreCatalogFromBackup(
       lastUpdated: new Date().toISOString(),
     },
     cleanSlug,
-    cleanEmail
+    cleanEmail,
+    cleanCatalogId
   );
 }
 
@@ -1729,13 +1751,20 @@ export async function upsertUserStoreCatalog(
   userEmail: string,
   rawSlug: string,
   payload: any,
-  nowIso?: string
-): Promise<string> {
+  nowIso?: string,
+  catalogIdOverride?: string
+): Promise<{ slug: string; catalogId: string }> {
   const cleanSlug = sanitizePublicStoreSlug(rawSlug || 'store');
   const cleanEmail = String(userEmail || '').toLowerCase().trim();
   const isRealEmail = Boolean(cleanEmail && cleanEmail.includes('@') && !cleanEmail.startsWith('brivu-usr-'));
   const rowKey = isRealEmail ? `${cleanSlug}::${cleanEmail}` : cleanSlug;
-  const sanitized = sanitizePublicStoreCatalogPayload(payload, cleanSlug, isRealEmail ? cleanEmail : undefined);
+  const sanitized = sanitizePublicStoreCatalogPayload(
+    payload,
+    cleanSlug,
+    isRealEmail ? cleanEmail : undefined,
+    catalogIdOverride
+  );
+  const resolvedCatalogId = String(sanitized?.settings?.catalogId || deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug));
   const catalogJson = JSON.stringify(sanitized);
   const now = nowIso || new Date().toISOString();
 
@@ -1764,48 +1793,99 @@ export async function upsertUserStoreCatalog(
     .bind(rowKey, isRealEmail ? cleanEmail : null, sanitized?.business?.name || cleanSlug, catalogJson, now)
     .run();
 
-  return cleanSlug;
+  if (isRealEmail) {
+    invalidateCachePattern(`storeCache:${cleanEmail}:`);
+  }
+  invalidateCachePattern('storeCache:');
+
+  return { slug: cleanSlug, catalogId: resolvedCatalogId };
 }
 
 export async function resolvePublicStoreCatalog(
   env: Env,
   slug: string,
-  userEmail: string
+  userEmail: string,
+  catalogId?: string
 ): Promise<any | null> {
   const db = getD1Database(env);
-  if (!db) return null;
+  const bucket = getR2Bucket(env);
+  if (!db && !bucket) return null;
 
   const cleanSlug = sanitizePublicStoreSlug(slug || 'store');
+  const cleanCatalogId = String(catalogId || '').trim();
   let cleanEmail = String(userEmail || '').toLowerCase().trim();
   if (cleanEmail.startsWith('brivu-usr-') || !cleanEmail.includes('@')) {
     cleanEmail = '';
   }
 
-  try {
-    await ensureD1Tables(db);
+  const cacheKey = `storeCache:${cleanEmail || 'anon'}:${cleanCatalogId || 'nocat'}:${cleanSlug}`;
+  const cached = getCachedQuery(cacheKey);
+  if (cached) return cached;
 
+  try {
     let storeRow: any = null;
-    if (cleanEmail) {
-      storeRow = await db
-        .prepare(
-          `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-           WHERE LOWER(user_email) = ?
-           ORDER BY CASE WHEN slug = ? OR slug = ? THEN 0 ELSE 1 END, updated_at DESC
-           LIMIT 1`
-        )
-        .bind(cleanEmail, `${cleanSlug}::${cleanEmail}`, cleanSlug)
-        .first();
-    } else {
-      storeRow = await db
-        .prepare(
-          `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-           WHERE slug = ? OR slug LIKE ?
-           ORDER BY updated_at DESC
-           LIMIT 1`
-        )
-        .bind(cleanSlug, `${cleanSlug}::%`)
-        .first();
-      if (storeRow?.user_email) {
+    if (db) {
+      if (cleanEmail && cleanCatalogId) {
+        storeRow = await runWithMissingTableRetry(db, () =>
+          db
+            .prepare(
+              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+               WHERE LOWER(user_email) = ?
+               ORDER BY CASE WHEN catalog_json LIKE ? THEN 0 WHEN slug = ? OR slug = ? THEN 1 ELSE 2 END, updated_at DESC
+               LIMIT 1`
+            )
+            .bind(cleanEmail, `%"catalogId":"${cleanCatalogId}"%`, `${cleanSlug}::${cleanEmail}`, cleanSlug)
+            .first()
+        );
+      } else if (cleanCatalogId) {
+        storeRow = await runWithMissingTableRetry(db, () =>
+          db
+            .prepare(
+              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+               WHERE catalog_json LIKE ? OR slug = ? OR slug LIKE ?
+               ORDER BY updated_at DESC
+               LIMIT 1`
+            )
+            .bind(`%"catalogId":"${cleanCatalogId}"%`, cleanCatalogId, `${cleanCatalogId}::%`)
+            .first()
+        );
+        if (!storeRow) {
+          const bCatRow: any = await db
+            .prepare('SELECT user_email FROM (SELECT user_email, backup_data FROM backups ORDER BY updated_at DESC LIMIT 30) WHERE backup_data LIKE ? LIMIT 1')
+            .bind(`%"catalogId":"${cleanCatalogId}"%`)
+            .first()
+            .catch(() => null);
+          if (bCatRow?.user_email) {
+            cleanEmail = String(bCatRow.user_email).toLowerCase().trim();
+          }
+        }
+      } else if (cleanEmail) {
+        storeRow = await runWithMissingTableRetry(db, () =>
+          db
+            .prepare(
+              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+               WHERE LOWER(user_email) = ?
+               ORDER BY CASE WHEN slug = ? OR slug = ? THEN 0 ELSE 1 END, updated_at DESC
+               LIMIT 1`
+            )
+            .bind(cleanEmail, `${cleanSlug}::${cleanEmail}`, cleanSlug)
+            .first()
+        );
+      } else {
+        storeRow = await runWithMissingTableRetry(db, () =>
+          db
+            .prepare(
+              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
+               WHERE slug = ? OR slug LIKE ?
+               ORDER BY updated_at DESC
+               LIMIT 1`
+            )
+            .bind(cleanSlug, `${cleanSlug}::%`)
+            .first()
+        );
+      }
+
+      if (!cleanEmail && storeRow?.user_email) {
         const rowEmail = String(storeRow.user_email).toLowerCase().trim();
         if (rowEmail.includes('@') && !rowEmail.startsWith('brivu-usr-')) {
           cleanEmail = rowEmail;
@@ -1820,42 +1900,71 @@ export async function resolvePublicStoreCatalog(
       } catch (_) {}
     }
 
-    // Check backups table for email to fill missing catalogs or fresher inventory updates
-    if (cleanEmail) {
-      const backupRow: any = await db
-        .prepare(
-          `SELECT backup_data, updated_at FROM backups
-           WHERE id = ? OR LOWER(user_email) = ?
-           ORDER BY updated_at DESC
-           LIMIT 1`
-        )
-        .bind(`user_${cleanEmail}`, cleanEmail)
-        .first();
+    // Check D1 backups (or R2 backup fallback) for email to fill missing catalogs or fresher inventory updates
+    if (cleanEmail && (db || bucket)) {
+      let backupRow: any = null;
+      let bData: any = null;
+      if (db) {
+        backupRow = await db
+          .prepare(
+            `SELECT backup_data, updated_at FROM backups
+             WHERE id = ? OR LOWER(user_email) = ?
+             ORDER BY updated_at DESC
+             LIMIT 1`
+          )
+          .bind(`user_${cleanEmail}`, cleanEmail)
+          .first()
+          .catch(() => null);
+        if (backupRow?.backup_data) {
+          try {
+            bData = JSON.parse(backupRow.backup_data);
+          } catch (_) {}
+        }
+      }
 
-      if (backupRow?.backup_data) {
+      if (!bData && bucket) {
         try {
-          const bData = JSON.parse(backupRow.backup_data);
-          const storeProductsCount = Array.isArray(parsedStore?.products) ? parsedStore.products.length : 0;
-          const storeTs = new Date(storeRow?.updated_at || parsedStore?.lastUpdated || 0).getTime();
-          const backupTs = new Date(backupRow?.updated_at || bData?.exportedAt || 0).getTime();
-
-          if (!parsedStore || storeProductsCount === 0 || backupTs > storeTs) {
-            const fromBackup = buildPublicStoreCatalogFromBackup(
-              bData,
-              cleanEmail,
-              cleanSlug !== 'store' ? cleanSlug : undefined,
-              parsedStore?.settings
-            );
-            if (fromBackup && (fromBackup.products.length > 0 || !parsedStore)) {
-              return fromBackup;
-            }
+          const userKey = encodeURIComponent(cleanEmail);
+          let backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
+          if (!backupObj) {
+            backupObj = await bucket.get(`users/${userKey}/backup.json`);
+          }
+          if (backupObj) {
+            bData = JSON.parse(await backupObj.text());
           }
         } catch (_) {}
+      }
+
+      if (bData) {
+        const storeProductsCount = Array.isArray(parsedStore?.products) ? parsedStore.products.length : 0;
+        const storeTs = new Date(storeRow?.updated_at || parsedStore?.lastUpdated || 0).getTime();
+        const backupTs = new Date(backupRow?.updated_at || bData?.exportedAt || 0).getTime();
+
+        if (!parsedStore || storeProductsCount === 0 || backupTs > storeTs) {
+          const fromBackup = buildPublicStoreCatalogFromBackup(
+            bData,
+            cleanEmail,
+            cleanSlug !== 'store' ? cleanSlug : undefined,
+            parsedStore?.settings,
+            cleanCatalogId || parsedStore?.settings?.catalogId
+          );
+          if (fromBackup && (fromBackup.products.length > 0 || !parsedStore)) {
+            setCachedQuery(cacheKey, fromBackup, 10);
+            return fromBackup;
+          }
+        }
       }
     }
 
     if (parsedStore) {
-      return sanitizePublicStoreCatalogPayload(parsedStore, cleanSlug, cleanEmail || undefined);
+      const sanitized = sanitizePublicStoreCatalogPayload(
+        parsedStore,
+        cleanSlug !== 'store' ? cleanSlug : undefined,
+        cleanEmail || undefined,
+        cleanCatalogId || undefined
+      );
+      setCachedQuery(cacheKey, sanitized, 10);
+      return sanitized;
     }
   } catch (_) {}
 
@@ -4049,14 +4158,20 @@ export default {
       );
     }
 
-    // 6.5. Store Catalog Publish endpoint (/api/store/publish)
-    if (url.pathname === '/api/store/publish' && request.method === 'POST') {
+    // 6.5. Live Stock Catalog Publish endpoint (/api/catalog/publish or legacy /api/store/publish)
+    if (
+      (url.pathname === '/api/catalog/publish' || url.pathname === '/api/store/publish') &&
+      request.method === 'POST'
+    ) {
       try {
         const body: any = await request.json().catch(() => ({}));
-        const rawSlug = String(body?.slug || body?.settings?.slug || '').trim().toLowerCase();
+        const rawSlug = String(body?.slug || body?.settings?.slug || body?.payload?.settings?.slug || '').trim().toLowerCase();
         const slug = sanitizePublicStoreSlug(rawSlug || 'store');
-
         const payload = body?.payload || body;
+        const catalogIdOverride = String(
+          body?.catalogId || payload?.settings?.catalogId || url.searchParams.get('catalogId') || ''
+        ).trim();
+
         const userEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
@@ -4072,17 +4187,30 @@ export default {
         const db = getD1Database(env);
         const now = new Date().toISOString();
 
+        let savedSlug = slug;
+        let savedCatalogId = catalogIdOverride || deriveFallbackCatalogId(userEmail || slug, slug);
         if (db) {
-          await upsertUserStoreCatalog(db, userEmail, slug, payload, now);
+          const saved = await upsertUserStoreCatalog(db, userEmail, slug, payload, now, catalogIdOverride || undefined);
+          savedSlug = saved.slug;
+          savedCatalogId = saved.catalogId;
         }
 
-        const publicUrl =
-          userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-')
-            ? `/store/${slug}?email=${encodeURIComponent(userEmail)}`
-            : `/store/${slug}`;
+        const qs = new URLSearchParams();
+        if (savedSlug) qs.set('slug', savedSlug);
+        if (userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-')) {
+          qs.set('email', userEmail);
+        }
+        const publicUrl = `/catalog/${encodeURIComponent(savedCatalogId)}${qs.toString() ? `?${qs.toString()}` : ''}`;
 
         return new Response(
-          JSON.stringify({ ok: true, success: true, slug, userEmail, url: publicUrl }),
+          JSON.stringify({
+            ok: true,
+            success: true,
+            slug: savedSlug,
+            catalogId: savedCatalogId,
+            userEmail,
+            url: publicUrl,
+          }),
           { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
         );
       } catch (err: any) {
@@ -4093,12 +4221,33 @@ export default {
       }
     }
 
-    // 6.6. Store Catalog Fetch endpoint (/api/store/:slug) - PUBLIC NO AUTH REQUIRED
-    if (url.pathname === '/api/store' || url.pathname.startsWith('/api/store/')) {
-      const rawSlug =
-        url.pathname === '/api/store'
+    // 6.6. Live Stock Catalog Fetch endpoint (/api/catalog/:catalogId & /api/store/:slug) - PUBLIC NO AUTH REQUIRED
+    if (
+      url.pathname === '/api/catalog' ||
+      url.pathname.startsWith('/api/catalog/') ||
+      url.pathname === '/api/store' ||
+      url.pathname.startsWith('/api/store/')
+    ) {
+      const isCatalogEndpoint = url.pathname === '/api/catalog' || url.pathname.startsWith('/api/catalog/');
+      let catalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
+      let rawSlug = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
+
+      if (isCatalogEndpoint) {
+        const seg = url.pathname === '/api/catalog'
+          ? ''
+          : decodeURIComponent(url.pathname.replace('/api/catalog/', '').split('/')[0] || '').trim();
+        if (seg && !catalogIdParam) {
+          catalogIdParam = seg;
+        }
+      } else {
+        const seg = url.pathname === '/api/store'
           ? 'store'
-          : decodeURIComponent(url.pathname.replace('/api/store/', '')).trim().toLowerCase();
+          : decodeURIComponent(url.pathname.replace('/api/store/', '').split('/')[0] || '').trim().toLowerCase();
+        if (seg && !rawSlug) {
+          rawSlug = seg;
+        }
+      }
+
       const slug = sanitizePublicStoreSlug(rawSlug || 'store');
       const userEmail = (
         url.searchParams.get('email') ||
@@ -4110,7 +4259,7 @@ export default {
         ''
       ).toLowerCase().trim();
 
-      const data = await resolvePublicStoreCatalog(env, slug, userEmail);
+      const data = await resolvePublicStoreCatalog(env, slug, userEmail, catalogIdParam || undefined);
       if (data) {
         return new Response(
           JSON.stringify({ ok: true, success: true, data }),
@@ -4126,7 +4275,7 @@ export default {
       }
 
       return new Response(
-        JSON.stringify({ ok: false, error: `Store "${slug}" not found` }),
+        JSON.stringify({ ok: false, error: `Catalog "${catalogIdParam || slug}" not found` }),
         {
           status: 404,
           headers: {
@@ -4620,9 +4769,18 @@ export default {
             try {
               const autoCatalog = buildPublicStoreCatalogFromBackup(backupData, userEmail);
               if (autoCatalog) {
-                await upsertUserStoreCatalog(db, userEmail, autoCatalog.settings.slug, autoCatalog, now);
+                await upsertUserStoreCatalog(
+                  db,
+                  userEmail,
+                  autoCatalog.settings.slug,
+                  autoCatalog,
+                  now,
+                  autoCatalog.settings.catalogId
+                );
               }
             } catch (_) {}
+          } else {
+            invalidateCachePattern(`storeCache:${userEmail}:`);
           }
         }
 
@@ -5315,11 +5473,15 @@ export default {
       }
     }
 
-    // Detect QR & Store HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
+    // Detect QR & Store/Catalog HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
     const isStaticAssetExt = /\.[a-z0-9]{1,8}$/i.test(url.pathname) && !url.pathname.endsWith('.html');
     const isStoreRoute =
+      url.pathname === '/catalog' ||
+      url.pathname.startsWith('/catalog/') ||
       url.pathname === '/store' ||
       url.pathname.startsWith('/store/') ||
+      url.searchParams.has('catalogId') ||
+      url.searchParams.has('catalog') ||
       url.searchParams.has('store');
     const isQrRoute =
       !isStoreRoute &&
@@ -5392,35 +5554,40 @@ export default {
       ).toLowerCase().trim();
 
       const tabParam = (url.searchParams.get('tab') || '').toLowerCase().trim();
-      let pageIdParam =
-        url.searchParams.get('qr') ||
-        url.searchParams.get('event') ||
-        url.searchParams.get('eventId') ||
-        (url.searchParams.get('events') ? 'events-hub-all' : '') ||
-        url.searchParams.get('website') ||
-        url.searchParams.get('websiteId') ||
-        (url.searchParams.get('websites') ? 'websites-hub-all' : '') ||
-        url.searchParams.get('social') ||
-        url.searchParams.get('socialId') ||
-        (url.searchParams.get('socials') ? 'socials-hub-all' : '') ||
-        '';
-      if (!pageIdParam && url.pathname.includes('/qr/')) {
-        pageIdParam = decodeURIComponent(url.pathname.split('/qr/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
-      }
-      if (!pageIdParam) {
-        if (tabParam === 'websites' || tabParam === 'website') pageIdParam = 'websites-hub-all';
-        else if (tabParam === 'socials' || tabParam === 'social') pageIdParam = 'socials-hub-all';
-        else if (tabParam === 'events' || tabParam === 'event') pageIdParam = 'events-hub-all';
-        else if (isQrRoute) pageIdParam = 'latest';
+      let pageIdParam = '';
+      if (isQrRoute) {
+        pageIdParam =
+          url.searchParams.get('qr') ||
+          url.searchParams.get('event') ||
+          url.searchParams.get('eventId') ||
+          (url.searchParams.get('events') ? 'events-hub-all' : '') ||
+          url.searchParams.get('website') ||
+          url.searchParams.get('websiteId') ||
+          (url.searchParams.get('websites') ? 'websites-hub-all' : '') ||
+          url.searchParams.get('social') ||
+          url.searchParams.get('socialId') ||
+          (url.searchParams.get('socials') ? 'socials-hub-all' : '') ||
+          '';
+        if (!pageIdParam && url.pathname.includes('/qr/')) {
+          pageIdParam = decodeURIComponent(url.pathname.split('/qr/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
+        }
+        if (!pageIdParam) {
+          if (tabParam === 'websites' || tabParam === 'website') pageIdParam = 'websites-hub-all';
+          else if (tabParam === 'socials' || tabParam === 'social') pageIdParam = 'socials-hub-all';
+          else if (tabParam === 'events' || tabParam === 'event') pageIdParam = 'events-hub-all';
+          else pageIdParam = 'latest';
+        }
       }
 
-      // Check if this is a Store request (/store, /store/:slug, or ?store=slug)
-      let storeSlugParam = '';
-      if (url.pathname.includes('/store/')) {
+      // Check if this is a Live Stock Catalog request (/catalog/:catalogId, /store/:slug, ?catalogId=, ?store=)
+      let storeCatalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
+      if (!storeCatalogIdParam && url.pathname.includes('/catalog/')) {
+        storeCatalogIdParam = decodeURIComponent(url.pathname.split('/catalog/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
+      }
+      let storeSlugParam = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
+      if (!storeSlugParam && url.pathname.includes('/store/')) {
         storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
-      } else if (url.searchParams.has('store')) {
-        storeSlugParam = (url.searchParams.get('store') || '').trim().toLowerCase();
-      } else if (url.pathname === '/store' || url.pathname.endsWith('/store')) {
+      } else if (!storeSlugParam && (url.pathname === '/store' || url.pathname.endsWith('/store'))) {
         storeSlugParam = 'store';
       }
 
@@ -5433,7 +5600,17 @@ export default {
       const [indexResponse, preloadedPage, preloadedStore] = await Promise.all([
         env.ASSETS.fetch(cleanIndexReq),
         isQrRoute ? withSsrTimeout(resolveHostedQrPage(env, pageIdParam, emailParam), 2500) : Promise.resolve(null),
-        isStoreRoute ? withSsrTimeout(resolvePublicStoreCatalog(env, sanitizePublicStoreSlug(storeSlugParam || 'store'), emailParam), 2500) : Promise.resolve(null),
+        isStoreRoute
+          ? withSsrTimeout(
+              resolvePublicStoreCatalog(
+                env,
+                sanitizePublicStoreSlug(storeSlugParam || 'store'),
+                emailParam,
+                storeCatalogIdParam || undefined
+              ),
+              2500
+            )
+          : Promise.resolve(null),
       ]);
 
       let html = await indexResponse.text();
@@ -5452,16 +5629,17 @@ export default {
       }
 
       if (isStoreRoute && preloadedStore) {
-        const resolvedSlug = sanitizePublicStoreSlug(storeSlugParam || 'store');
+        const resolvedSlug = sanitizePublicStoreSlug(storeSlugParam || preloadedStore?.settings?.slug || 'store');
+        const resolvedCatalogId = String(storeCatalogIdParam || preloadedStore?.settings?.catalogId || '').trim();
         const resolvedEmail = emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '';
-        const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
+        const scriptTag = `<script id="__INITIAL_STORE_DATA__">window.__INITIAL_STORE_CATALOG__=${safeScriptJson(preloadedStore)};window.__STORE_CATALOG_ID__=${safeScriptJson(resolvedCatalogId)};window.__STORE_SLUG__=${safeScriptJson(resolvedSlug)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
         if (html.includes('</head>')) {
           html = html.replace('</head>', `${scriptTag}</head>`);
         } else {
           html = `${scriptTag}${html}`;
         }
         const storeTitle = preloadedStore?.business?.name || preloadedStore?.settings?.businessName || 'Live Stock Catalog';
-        html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Brivu</title>`);
+        html = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlText(storeTitle)} | Live Catalog | Brivu</title>`);
       }
 
       const newHeaders = new Headers(indexResponse.headers);

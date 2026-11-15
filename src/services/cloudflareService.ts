@@ -1883,8 +1883,9 @@ export const CloudflareService = {
   async publishStoreCatalog(
     slug: string,
     payload: any,
-    emailOverride?: string
-  ): Promise<{ success: boolean; error?: string }> {
+    emailOverride?: string,
+    catalogIdOverride?: string
+  ): Promise<{ success: boolean; catalogId?: string; url?: string; error?: string }> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
     try {
@@ -1898,6 +1899,12 @@ export const CloudflareService = {
       )
         .toLowerCase()
         .trim();
+      const resolvedCatalogId = (
+        catalogIdOverride ||
+        payload?.settings?.catalogId ||
+        ''
+      ).trim();
+
       if (resolvedEmail && resolvedEmail.includes('@') && !resolvedEmail.startsWith('brivu-usr-')) {
         headers['X-User-Email'] = resolvedEmail;
         headers['X-User-Id'] = resolvedEmail;
@@ -1906,16 +1913,25 @@ export const CloudflareService = {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
       try {
-        const res = await fetch(`${cleanUrl}/api/store/publish`, {
+        const res = await fetch(`${cleanUrl}/api/catalog/publish`, {
           method: 'POST',
           headers,
           signal: controller.signal,
-          body: JSON.stringify({ slug, userEmail: resolvedEmail, payload }),
+          body: JSON.stringify({
+            slug,
+            catalogId: resolvedCatalogId || undefined,
+            userEmail: resolvedEmail,
+            payload,
+          }),
         });
         const text = await res.text();
         const parsed = parseWorkerResponse(text);
         if (res.ok && (parsed.data?.ok || parsed.data?.success)) {
-          return { success: true };
+          return {
+            success: true,
+            catalogId: parsed.data?.catalogId || resolvedCatalogId || undefined,
+            url: parsed.data?.url,
+          };
         }
         return { success: false, error: parsed.data?.error || parsed.error || 'Failed to publish store catalog' };
       } finally {
@@ -1928,27 +1944,40 @@ export const CloudflareService = {
   },
 
   /**
-   * Public unauthenticated fetch of store catalog by slug and optional owner email
+   * Public unauthenticated fetch of store catalog by unique catalogId, slug, and optional owner email
    */
   async fetchPublicStoreCatalog(
     slug: string,
-    email?: string
+    email?: string,
+    catalogId?: string
   ): Promise<{ success: boolean; data?: any; error?: string }> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
     const cleanSlug = (slug || 'store').trim().toLowerCase() || 'store';
     const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanCatalogId = (catalogId || '').trim();
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      const timeout = setTimeout(() => controller.abort(), 6000);
       try {
         const queryParts: string[] = [];
+        if (cleanCatalogId) {
+          queryParts.push(`catalogId=${encodeURIComponent(cleanCatalogId)}`);
+        }
+        if (cleanSlug) {
+          queryParts.push(`slug=${encodeURIComponent(cleanSlug)}`);
+        }
         if (cleanEmail && cleanEmail.includes('@')) {
           queryParts.push(`email=${encodeURIComponent(cleanEmail)}`);
         }
         queryParts.push(`_t=${Date.now()}`);
+
+        const pathTarget = cleanCatalogId
+          ? `/api/catalog/${encodeURIComponent(cleanCatalogId)}`
+          : `/api/store/${encodeURIComponent(cleanSlug)}`;
+
         const res = await fetch(
-          `${cleanUrl}/api/store/${encodeURIComponent(cleanSlug)}?${queryParts.join('&')}`,
+          `${cleanUrl}${pathTarget}?${queryParts.join('&')}`,
           {
             method: 'GET',
             cache: 'no-store',
@@ -1963,7 +1992,7 @@ export const CloudflareService = {
             return { success: true, data: payload };
           }
         }
-        return { success: false, error: `Store "${cleanSlug}" not found` };
+        return { success: false, error: `Store "${cleanCatalogId || cleanSlug}" not found` };
       } finally {
         clearTimeout(timeout);
       }
