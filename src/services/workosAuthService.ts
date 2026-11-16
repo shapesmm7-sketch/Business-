@@ -226,15 +226,14 @@ export const WorkOSAuthService = {
         }
       }
 
-      // 2. Generate PKCE pair
-      const { codeVerifier, codeChallenge } = await generatePKCE();
+      // 2. Clear any stale PKCE verifier from previous versions; use confidential Worker exchange
       try {
-        localStorage.setItem('workos_pkce_verifier', codeVerifier);
-        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
+        localStorage.removeItem('workos_pkce_verifier');
+        sessionStorage.removeItem('workos_pkce_verifier');
       } catch (_) {}
 
       // 3. Check WorkOS configuration on Cloudflare Worker
-      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
+      const config = await CloudflareService.getWorkOSConfig();
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
 
       const isNative = typeof window !== 'undefined' && (
@@ -244,7 +243,6 @@ export const WorkOSAuthService = {
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1'
       );
-      const cloudflareBaseUrl = 'https://brivu.shapesmm7.workers.dev';
       const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
 
       let returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
@@ -270,7 +268,7 @@ export const WorkOSAuthService = {
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
-      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
+      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&state=${stateParam}`;
 
       // Start background session polling immediately on native Android / mobile
       if (isNative) {

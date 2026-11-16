@@ -1,17 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ExternalLink, ArrowRight, Smartphone } from 'lucide-react';
+import { CheckCircle2, ArrowRight } from 'lucide-react';
 import { CloudflareService } from '../services/cloudflareService';
 import { WorkOSAuthService } from '../services/workosAuthService';
+
+function parseOAuthState(rawState: string | null): { sessionId?: string; platform?: string; returnUrl?: string } {
+  if (!rawState) return {};
+  try {
+    const parsed = JSON.parse(decodeURIComponent(rawState));
+    if (parsed && typeof parsed === 'object') {
+      return {
+        sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : undefined,
+        platform: typeof parsed.platform === 'string' ? parsed.platform : undefined,
+        returnUrl: typeof parsed.returnUrl === 'string' ? parsed.returnUrl : undefined,
+      };
+    }
+  } catch {
+    try {
+      const parsed = JSON.parse(rawState);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {}
+  }
+  return {};
+}
 
 export const GoogleAuthPopupPage: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
-  const [authCode, setAuthCode] = useState('');
+  const [appReturnHref, setAppReturnHref] = useState('/');
+  const [isAndroidFlow, setIsAndroidFlow] = useState(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const error = urlParams.get('error') || urlParams.get('error_description');
+    const stateInfo = parseOAuthState(urlParams.get('state'));
+    const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase();
+    const detectedAndroid = !window.opener && (stateInfo.platform === 'android' || ua.includes('android'));
+    setIsAndroidFlow(detectedAndroid);
 
     if (error) {
       setStatus('error');
@@ -19,51 +44,57 @@ export const GoogleAuthPopupPage: React.FC = () => {
       return;
     }
 
-    const sessionId = urlParams.get('auth_session');
+    const sessionId = urlParams.get('auth_session') || stateInfo.sessionId || '';
     const rawUser = urlParams.get('user');
+
+    const finishWithUser = async (resolvedUser: any) => {
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: resolvedUser, sessionId }, '*');
+        } catch (_) {}
+        setStatus('success');
+        setTimeout(() => {
+          try { window.close(); } catch (_) {}
+        }, 400);
+        return;
+      }
+
+      if (detectedAndroid) {
+        const params: string[] = [];
+        if (sessionId) params.push(`auth_session=${encodeURIComponent(sessionId)}`);
+        if (resolvedUser) params.push(`user=${encodeURIComponent(JSON.stringify(resolvedUser))}`);
+        const deepLink = `brivu://auth/callback?${params.join('&')}`;
+        setAppReturnHref(deepLink);
+        setStatus('success');
+        setTimeout(() => {
+          try { window.location.href = deepLink; } catch (_) {}
+        }, 200);
+        return;
+      }
+
+      await WorkOSAuthService.saveAndSyncUser(resolvedUser);
+      setAppReturnHref('/');
+      setStatus('success');
+      setTimeout(() => {
+        window.location.replace('/');
+      }, 300);
+    };
 
     if (rawUser) {
       try {
         const parsed = JSON.parse(decodeURIComponent(rawUser));
         if (parsed && (parsed.email || parsed.id)) {
-          WorkOSAuthService.saveAndSyncUser(parsed).then(() => {
-            if (window.opener) {
-              try {
-                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: parsed }, '*');
-              } catch (_) {}
-            }
-            setStatus('success');
-            setTimeout(() => {
-              if (window.opener) {
-                try { window.close(); } catch (_) {}
-              } else {
-                window.location.replace('/');
-              }
-            }, 400);
-          });
+          finishWithUser(parsed);
           return;
         }
       } catch (_) {}
     }
 
-    if (sessionId) {
+    if (urlParams.get('auth_session')) {
       setStatus('loading');
       CloudflareService.checkAuthSessionStatus(sessionId).then(async (check) => {
         if (check.status === 'completed' && check.user) {
-          await WorkOSAuthService.saveAndSyncUser(check.user);
-          if (window.opener) {
-            try {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user: check.user, sessionId }, '*');
-            } catch (_) {}
-          }
-          setStatus('success');
-          setTimeout(() => {
-            if (window.opener) {
-              try { window.close(); } catch (_) {}
-            } else {
-              window.location.replace('/');
-            }
-          }, 400);
+          await finishWithUser(check.user);
         } else if (code) {
           proceedWithCodeExchange(code);
         } else {
@@ -79,19 +110,18 @@ export const GoogleAuthPopupPage: React.FC = () => {
     if (code) {
       proceedWithCodeExchange(code);
     } else {
-      setStatus('loading');
+      setStatus('error');
+      setErrorMsg('Missing Google Sign-In authorization code.');
     }
 
     function proceedWithCodeExchange(c: string) {
-      setAuthCode(c);
       setStatus('loading');
 
       if (window.opener) {
-        // Send the real code back to Brivu main window (desktop popup flow)
         try {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: c }, '*');
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: c, sessionId }, '*');
         } catch (_) {}
-        
+
         setStatus('success');
         setTimeout(() => {
           try {
@@ -99,16 +129,11 @@ export const GoogleAuthPopupPage: React.FC = () => {
           } catch (_) {}
         }, 800);
       } else {
-        // Direct exchange for mobile Chrome / web browser flow
         const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
 
         CloudflareService.authenticateWorkOSCode(c, undefined, verifier).then(async (authRes) => {
           if (authRes.success && authRes.user) {
-            await WorkOSAuthService.saveAndSyncUser(authRes.user);
-            setStatus('success');
-            setTimeout(() => {
-              window.location.replace('/');
-            }, 300);
+            await finishWithUser(authRes.user);
           } else {
             setStatus('error');
             setErrorMsg(authRes.message || 'Authentication code exchange failed');
@@ -134,13 +159,15 @@ export const GoogleAuthPopupPage: React.FC = () => {
               onClick={() => {
                 if (window.opener) {
                   window.close();
+                } else if (isAndroidFlow) {
+                  window.location.href = 'brivu://auth/callback';
                 } else {
                   window.location.href = '/';
                 }
               }}
               className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-xl transition cursor-pointer"
             >
-              Return Home
+              {isAndroidFlow ? 'Return to Brivu App' : 'Return Home'}
             </button>
           </div>
         </div>
@@ -157,23 +184,21 @@ export const GoogleAuthPopupPage: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <h3 className="text-lg font-black tracking-tight text-white">Google Sign-In Complete</h3>
+            <h3 className="text-lg font-black tracking-tight text-white">Sign-In Approved!</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Your Google authentication was approved by WorkOS. Return to the Brivu app to finish connecting.
+              Your Google account has been verified. Return to the Brivu app to continue.
             </p>
           </div>
 
-          {authCode && (
-            <div className="w-full space-y-3">
-              <a
-                href="/"
-                className="w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/25 active:scale-95 transition cursor-pointer"
-              >
-                <span>Continue to Brivu Application</span>
-                <ArrowRight className="w-4 h-4 ml-auto" />
-              </a>
-            </div>
-          )}
+          <div className="w-full space-y-3">
+            <a
+              href={appReturnHref}
+              className="w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/25 active:scale-95 transition cursor-pointer"
+            >
+              <span>{isAndroidFlow ? 'Open Brivu App' : 'Continue to Brivu Application'}</span>
+              <ArrowRight className="w-4 h-4 ml-auto" />
+            </a>
+          </div>
         </div>
       </div>
     );

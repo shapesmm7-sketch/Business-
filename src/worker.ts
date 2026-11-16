@@ -2991,6 +2991,7 @@ export default {
 
       // 1. Direct server-side exchange on worker for immediate zero-delay sign-in
       let authenticatedUser: any = null;
+      let exchangeError = '';
       if (authCode) {
         try {
           const cleanApiKey = (env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
@@ -3032,15 +3033,56 @@ export default {
                 updatedAt: new Date().toISOString(),
                 syncedToCloudflare: true,
               };
+
+              const db = getD1Database(env);
+              if (db && email) {
+                try {
+                  await ensureD1Tables(db);
+                  const nowIso = new Date().toISOString();
+                  await db.prepare(`
+                    INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(email) DO UPDATE SET
+                      name = excluded.name,
+                      first_name = excluded.first_name,
+                      last_name = excluded.last_name,
+                      profile_picture_url = excluded.profile_picture_url,
+                      updated_at = excluded.updated_at,
+                      last_login = excluded.last_login
+                  `).bind(
+                    email,
+                    email,
+                    name,
+                    firstName,
+                    lastName,
+                    profilePictureUrl,
+                    'google',
+                    nowIso,
+                    nowIso,
+                    nowIso
+                  ).run();
+                } catch (_) {}
+              }
+            } else {
+              const errData: any = await wRes.json().catch(() => null);
+              const rawMsg = errData?.error_description || errData?.message || errData?.error || 'Could not verify Google Sign-In.';
+              exchangeError = `WorkOS Error: ${rawMsg}`;
             }
+          } else {
+            exchangeError = 'WorkOS API key is not configured on the Cloudflare Worker.';
           }
-        } catch (exErr) {
+        } catch (exErr: any) {
+          exchangeError = String(exErr?.message || exErr || 'Google Sign-In verification failed.');
           console.warn('Callback direct server-side exchange note:', exErr);
         }
+      } else if (!authError) {
+        exchangeError = 'Missing authorization code from Google Sign-In.';
       }
 
-      // 2. Persist session for instant polling in web and Android
-      if (sessionId) {
+      const finalAuthError = authError || (!authenticatedUser ? exchangeError : '');
+
+      // 2. Persist session for instant polling in web and Android when user authenticated
+      if (sessionId && authenticatedUser) {
         authSessionsCache.set(sessionId, {
           status: 'completed',
           user: authenticatedUser,
@@ -3057,12 +3099,15 @@ export default {
             await db.prepare(`
               INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
               VALUES (?, ?, ?, ?, ?)
-            `).bind(sessionId, 'completed', authCode, authenticatedUser ? JSON.stringify(authenticatedUser) : null, Date.now()).run();
+            `).bind(sessionId, 'completed', authCode, JSON.stringify(authenticatedUser), Date.now()).run();
           } catch (_) {}
         }
       }
 
       // 3. Serve the clean, web-only callback landing page (never triggers Play Store or custom scheme errors)
+      const escapeHtmlCallback = (str: string) =>
+        String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3156,19 +3201,19 @@ export default {
 </head>
 <body>
   <div class="card">
-    ${authError ? `
+    ${finalAuthError ? `
       <div class="icon-error">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       </div>
-      <h1>Authentication Notice</h1>
-      <p>${authError}</p>
-      <a href="/" class="btn">Return Home</a>
+      <h1>Google Sign-In Error</h1>
+      <p>${escapeHtmlCallback(finalAuthError)}</p>
+      <a href="${platform === 'android' ? 'brivu://auth/callback' : '/'}" class="btn">${platform === 'android' ? 'Return to Brivu App' : 'Return Home'}</a>
     ` : `
       <div class="icon-success">
         <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
       </div>
       <h1>Sign-In Approved!</h1>
-      ${authenticatedUser?.email ? `<div class="user-pill">${authenticatedUser.email}</div>` : ''}
+      ${authenticatedUser?.email ? `<div class="user-pill">${escapeHtmlCallback(authenticatedUser.email)}</div>` : ''}
       <p id="statusMsg">Your Google account has been verified. Returning to Brivu...</p>
       <div id="actionButtons" style="margin-top: 1.25rem;">
         <a id="btnPrimary" href="/" class="btn">Open Brivu App</a>
@@ -3185,7 +3230,7 @@ export default {
       var sessionId = ${JSON.stringify(sessionId)};
       var platform = ${JSON.stringify(platform)};
 
-      if (!code && !user) return;
+      if (!user) return;
 
       // 1. Web Popup Flow: post message to opener window and close cleanly
       if (window.opener) {
@@ -3203,14 +3248,18 @@ export default {
       var isMobile = isAndroid || userAgent.indexOf('iphone') >= 0 || userAgent.indexOf('ipad') >= 0;
       var isAndroidApp = platform === 'android' || isAndroid || isMobile;
 
-      // Build payload parameters
+      // Build clean payload parameters
       var userParam = user ? '&user=' + encodeURIComponent(JSON.stringify(user)) : '';
       var sessionParam = sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '';
-      var codeParam = code ? '&code=' + encodeURIComponent(code) : '';
+      var queryParts = [];
+      if (sessionId) queryParts.push('auth_session=' + encodeURIComponent(sessionId));
+      if (user) queryParts.push('user=' + encodeURIComponent(JSON.stringify(user)));
+      if (code) queryParts.push('code=' + encodeURIComponent(code));
+      var queryStr = queryParts.join('&');
 
       // Direct Android app deep link schemes registered in AndroidManifest.xml
-      var appSchemeUrl = 'brivu://auth/callback?' + codeParam + sessionParam + userParam;
-      var appIntentUrl = 'intent://auth/callback?' + codeParam + sessionParam + userParam + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
+      var appSchemeUrl = 'brivu://auth/callback?' + queryStr;
+      var appIntentUrl = 'intent://auth/callback?' + queryStr + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
 
       var btnPrimary = document.getElementById('btnPrimary');
       var btnWebSecondary = document.getElementById('btnWebSecondary');
@@ -3239,7 +3288,7 @@ export default {
         }
         if (btnWebSecondary) {
           btnWebSecondary.style.display = 'block';
-          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?auth_session=' + encodeURIComponent(sessionId || '') + userParam;
+          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?' + queryStr;
         }
 
         // Auto-launch into Android app immediately
@@ -3261,7 +3310,7 @@ export default {
 
         var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
         var sep = dest.indexOf('?') >= 0 ? '&' : '?';
-        var webDestination = dest + sep + (code ? 'code=' + encodeURIComponent(code) : '') + sessionParam + userParam;
+        var webDestination = dest + sep + (queryStr || ('code=' + encodeURIComponent(code || '') + sessionParam + userParam));
 
         if (btnPrimary) {
           btnPrimary.textContent = 'Continue to Brivu';
@@ -3272,9 +3321,9 @@ export default {
           try {
             var target = new URL(targetUrl);
             if (target.hostname !== 'localhost' && target.hostname !== '127.0.0.1' && target.origin !== window.location.origin) {
-              target.searchParams.set('code', code);
               if (sessionId) target.searchParams.set('auth_session', sessionId);
               if (user) target.searchParams.set('user', JSON.stringify(user));
+              if (code) target.searchParams.set('code', code);
               window.location.replace(target.toString());
             }
           } catch (_) {}

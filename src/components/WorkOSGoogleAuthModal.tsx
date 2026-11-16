@@ -13,7 +13,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { WorkOSUser } from '../types';
-import { WorkOSAuthService, generatePKCE } from '../services/workosAuthService';
+import { WorkOSAuthService } from '../services/workosAuthService';
 import { CloudflareService } from '../services/cloudflareService';
 import { StorageService } from '../services/storage';
 
@@ -142,11 +142,10 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     setStatusMsg({ type: 'info', text: 'Connecting to Google...' });
 
     try {
-      // 1. Generate secure PKCE challenge
-      const { codeVerifier, codeChallenge } = await generatePKCE();
+      // 1. Clear any stale PKCE verifier; confidential Worker exchange handles verification
       try {
-        localStorage.setItem('workos_pkce_verifier', codeVerifier);
-        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
+        localStorage.removeItem('workos_pkce_verifier');
+        sessionStorage.removeItem('workos_pkce_verifier');
       } catch (_) {}
 
       // 2. Generate a unique session ID for web polling (enables instant web & Android login)
@@ -156,7 +155,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         sessionStorage.setItem('workos_session_id', sessionId);
       } catch (_) {}
 
-      const config = await CloudflareService.getWorkOSConfig(codeChallenge);
+      const config = await CloudflareService.getWorkOSConfig();
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
 
       const isNative = typeof window !== 'undefined' && (
@@ -166,7 +165,6 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1'
       );
-      const cloudflareBaseUrl = 'https://brivu.shapesmm7.workers.dev';
       const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
 
       let returnUrl = typeof window !== 'undefined' ? (window.location.origin + window.location.pathname) : '';
@@ -186,7 +184,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
-      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
+      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&state=${stateParam}`;
 
       // Background session poller: checks session status every 1.2s for zero-delay instant login
       let pollTimer: any = null;
