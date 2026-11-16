@@ -13,7 +13,6 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { QRCodeHostingScreen } from './components/QRCodeHostingScreen';
 import { QRCustomerViewScreen } from './components/QRCustomerViewScreen';
-import { StoreCatalogScreen } from './components/StoreCatalogScreen';
 import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
 import { UpgradeScreen } from './components/UpgradeScreen';
 import { AppLockScreen } from './components/AppLockScreen';
@@ -26,6 +25,7 @@ import { SyncToGoogleDriveScreen } from './components/SyncToGoogleDriveScreen';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
 import { StorageService } from './services/storage';
+import { GoogleDriveService } from './services/googleDriveService';
 import { CloudflareService } from './services/cloudflareService';
 import { QRHostingService } from './services/qrHostingService';
 import { PdfGenerator } from './services/pdfGenerator';
@@ -47,7 +47,6 @@ import {
 
 export function getQrPageIdFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
-  if (isStoreCatalogPathFromUrl()) return null;
 
   // 1. Check query parameters
   const params = new URLSearchParams(window.location.search);
@@ -94,87 +93,8 @@ export function getQrPageIdFromUrl(): string | null {
   return null;
 }
 
-export function isStoreCatalogPathFromUrl(): boolean {
-  if (typeof window === 'undefined') return false;
-  const params = new URLSearchParams(window.location.search);
-  const pathname = window.location.pathname || '';
-  const hash = window.location.hash || '';
-  return Boolean(
-    pathname.includes('/catalog/') ||
-    pathname === '/catalog' ||
-    pathname.endsWith('/catalog') ||
-    params.has('catalogId') ||
-    params.has('catalog') ||
-    hash.includes('/catalog/') ||
-    hash.startsWith('#/catalog') ||
-    pathname.includes('/store/') ||
-    pathname === '/store' ||
-    pathname.endsWith('/store') ||
-    params.has('store') ||
-    hash.includes('/store/') ||
-    hash.startsWith('#/store')
-  );
-}
-
-export function getStoreCatalogIdFromUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
-  const fromQuery = (params.get('catalogId') || params.get('catalog') || '').trim();
-  if (fromQuery) return fromQuery;
-
-  const pathname = window.location.pathname || '';
-  if (pathname.includes('/catalog/')) {
-    const after = pathname.split('/catalog/')[1];
-    if (after) {
-      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].split('#')[0].trim());
-      if (seg) return seg;
-    }
-  }
-  const hash = window.location.hash || '';
-  if (hash.includes('/catalog/')) {
-    const after = hash.split('/catalog/')[1];
-    if (after) {
-      const seg = decodeURIComponent(after.split('/')[0].split('?')[0].trim());
-      if (seg) return seg;
-    }
-  }
-  const injected = String((window as any).__STORE_CATALOG_ID__ || '').trim();
-  return injected || null;
-}
-
-export function getStoreSlugFromUrl(): string | null {
-  if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('slug')) return params.get('slug')!.trim();
-  if (params.get('store')) return params.get('store')!.trim();
-  const pathname = window.location.pathname || '';
-  if (pathname.includes('/store/')) {
-    const after = pathname.split('/store/')[1];
-    if (after) {
-      const slug = after.split('/')[0].split('?')[0].split('#')[0].trim();
-      if (slug) return decodeURIComponent(slug);
-    }
-  }
-  if (pathname === '/store' || pathname.endsWith('/store') || pathname === '/catalog' || pathname.endsWith('/catalog')) {
-    return 'store';
-  }
-  const hash = window.location.hash || '';
-  if (hash.includes('/store/')) {
-    const after = hash.split('/store/')[1];
-    if (after) {
-      const slug = after.split('/')[0].split('?')[0].trim();
-      if (slug) return decodeURIComponent(slug);
-    }
-  }
-  if (hash.startsWith('#/store') || hash.startsWith('#/catalog')) {
-    return 'store';
-  }
-  return null;
-}
-
 export function isCustomerPathFromUrl(): boolean {
   if (typeof window === 'undefined') return false;
-  if (isStoreCatalogPathFromUrl()) return false;
   const params = new URLSearchParams(window.location.search);
   if (
     params.get('qr') ||
@@ -248,16 +168,13 @@ export function App() {
     StorageService.getAppLockConfig()
   );
   const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
-    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) {
+    if (isCustomerPathFromUrl()) {
       return false;
     }
     return StorageService.isAppLocked();
   });
 
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
-    if (isStoreCatalogPathFromUrl()) {
-      return 'public-catalog';
-    }
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
     }
@@ -277,7 +194,6 @@ export function App() {
 
   const [isCustomerDataResolving, setIsCustomerDataResolving] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    if (isStoreCatalogPathFromUrl()) return false;
     const params = new URLSearchParams(window.location.search);
     const pathname = window.location.pathname || '';
     const hasQrParams = Boolean(
@@ -306,7 +222,6 @@ export function App() {
 
   const [activeCustomerPage, setActiveCustomerPage] = useState<QRCodeHostedPage | null>(() => {
     if (typeof window !== 'undefined') {
-      if (isStoreCatalogPathFromUrl()) return null;
       const params = new URLSearchParams(window.location.search);
       const pathname = window.location.pathname || '';
       const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
@@ -479,10 +394,6 @@ export function App() {
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=events...)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (isStoreCatalogPathFromUrl()) {
-        setActiveScreen('public-catalog');
-        return;
-      }
       const params = new URLSearchParams(window.location.search);
       const qrPageId = getQrPageIdFromUrl();
       const photoIdParam = params.get('photo') || params.get('photoId');
@@ -809,9 +720,15 @@ export function App() {
     };
   }, []);
 
+  // Automatically back up local stock changes to Google Drive when connected
+  useEffect(() => {
+    if (isCustomerPathFromUrl()) return;
+    GoogleDriveService.initAutoSyncListener();
+  }, []);
+
   // Initialize Google AdMob SDK once on mount and preload live Native Advanced & Interstitial ads
   useEffect(() => {
-    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) return;
+    if (isCustomerPathFromUrl()) return;
     let active = true;
     AdMobService.initNativeAdMob()
       .then(() => {
@@ -828,7 +745,7 @@ export function App() {
 
   // Setup global interaction tracking on mount
   useEffect(() => {
-    if (isCustomerPathFromUrl() || isStoreCatalogPathFromUrl()) return;
+    if (isCustomerPathFromUrl()) return;
     // Track user clicks / taps to trigger an ad popup every 25 interactions
     const handleGlobalInteraction = () => {
       AdMobService.recordInteraction();
@@ -1009,7 +926,7 @@ export function App() {
       setLockConfig(currentCfg);
 
       // Check if the customer QR public view or live public store catalog is active
-      const isPublic = isCustomerPathFromUrl() || isStoreCatalogPathFromUrl();
+      const isPublic = isCustomerPathFromUrl();
 
       if (isPublic) return;
 
@@ -1400,7 +1317,7 @@ export function App() {
     return <GoogleAuthPopupPage />;
   }
 
-  const isPublicCustomerView = isCustomerPathFromUrl() || isStoreCatalogPathFromUrl();
+  const isPublicCustomerView = isCustomerPathFromUrl();
 
   // If App PIN is active and app is locked, lock the WHOLE APP completely
   if (!isPublicCustomerView && isAppLocked && lockConfig && lockConfig.isEnabled) {
@@ -1423,8 +1340,8 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Header - shown on all screens except Inventory, QR Customer View, Public Store Catalog, and Google Drive Sync */}
-      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'public-catalog' && activeScreen !== 'google-drive-sync' && (
+      {/* Header - shown on all screens except Inventory, QR Customer View, and Google Drive Sync */}
+      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'google-drive-sync' && (
         <Header
           business={business}
           darkMode={settings.darkMode}
@@ -1446,7 +1363,7 @@ export function App() {
       )}
 
       {/* Main Screen Content */}
-      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'public-catalog' || activeScreen === 'google-drive-sync' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
+      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'google-drive-sync' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
         {activeScreen === 'home' && (
           <HomeScreen
             business={business}
@@ -1778,15 +1695,6 @@ export function App() {
           )
         )}
 
-        {activeScreen === 'public-catalog' && (
-          <StoreCatalogScreen
-            slug={getStoreSlugFromUrl()}
-            catalogId={getStoreCatalogIdFromUrl()}
-            isMerchantPreview={!isStoreCatalogPathFromUrl()}
-            onNavigateHome={!isStoreCatalogPathFromUrl() ? () => handleNavigate('home') : undefined}
-          />
-        )}
-
         {activeScreen === 'upgrade' && (
           <UpgradeScreen
             onBack={() => handleNavigate(previousScreen !== 'upgrade' ? previousScreen : 'home')}
@@ -1840,7 +1748,6 @@ export function App() {
           'settings',
           'qr-hosting',
           'qr-customer-view',
-          'public-catalog',
           'upgrade',
           'app-lock-setup',
           'cloud-backup',
@@ -1866,10 +1773,10 @@ export function App() {
 
 
       {/* Google AdMob Modal Overlays (Interstitial, Rewarded, App Open) */}
-      {activeScreen !== 'public-catalog' && activeScreen !== 'qr-customer-view' && <AdMobModalOverlay />}
+      {activeScreen !== 'qr-customer-view' && <AdMobModalOverlay />}
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'public-catalog', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
+      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}

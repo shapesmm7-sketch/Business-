@@ -501,24 +501,9 @@ export async function ensureD1Tables(db: any): Promise<void> {
             updated_at TEXT
           )
         `),
-        db.prepare(`
-          CREATE TABLE IF NOT EXISTS store_catalogs (
-            slug TEXT PRIMARY KEY,
-            catalog_id TEXT,
-            user_email TEXT,
-            business_name TEXT,
-            catalog_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-          )
-        `),
-        db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_slug ON store_catalogs(slug)`),
-        db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_user ON store_catalogs(user_email)`),
       ];
 
       await executeD1Batch(db, ddlStatements, 35);
-      // Safely upgrade existing store_catalogs tables to include catalog_id column + index
-      await db.prepare(`ALTER TABLE store_catalogs ADD COLUMN catalog_id TEXT`).run().catch(() => {});
-      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_catalog_id ON store_catalogs(catalog_id)`).run().catch(() => {});
       d1SchemaReady = true;
     } catch (_) {
       // Fallback safely on next call if batch failed transiently
@@ -1532,1226 +1517,6 @@ export async function resolveHostedQrPage(
   };
 }
 
-export function sanitizePublicStoreSlug(rawSlug: string): string {
-  const cleaned = String(rawSlug || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return cleaned || 'store';
-}
-
-export function deriveFallbackCatalogId(userEmail: string, slug: string): string {
-  const seed = `${String(userEmail || '').toLowerCase().trim()}::${sanitizePublicStoreSlug(slug || 'store')}`;
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return `cat-${(h >>> 0).toString(36)}`;
-}
-
-export function sanitizePublicStoreCatalogPayload(
-  payload: any,
-  slugOverride?: string,
-  userEmailOverride?: string,
-  catalogIdOverride?: string
-): any {
-  if (!payload || typeof payload !== 'object') return null;
-  const rawSettings = payload.settings || {};
-  const rawBiz = payload.business || {};
-  const cleanEmail = String(
-    userEmailOverride || rawSettings.email || rawBiz.email || ''
-  )
-    .toLowerCase()
-    .trim();
-  const cleanSlug = sanitizePublicStoreSlug(slugOverride || rawSettings.slug || rawBiz.name || 'store');
-  const rawCatalogId = String(catalogIdOverride || rawSettings.catalogId || '').trim();
-  const cleanCatalogId = rawCatalogId && !rawCatalogId.startsWith('qr-')
-    ? rawCatalogId
-    : deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug);
-  const rawProducts = Array.isArray(payload.products) ? payload.products : [];
-
-  const sanitizedProducts = rawProducts.map((p: any) => {
-    const qty = Number(p?.quantity ?? p?.stockQuantity ?? 0);
-    const isAvailable = qty > 0;
-    const status = qty === 0 ? 'out-of-stock' : qty < 5 ? 'low-stock' : 'in-stock';
-    return {
-      id: String(p?.id || ''),
-      itemId: String(p?.itemId || ''),
-      name: String(p?.name || 'Unnamed Product'),
-      description: p?.description ? String(p.description) : undefined,
-      image: p?.image ? String(p.image) : undefined,
-      sizes: Array.isArray(p?.sizes) ? p.sizes : undefined,
-      color: p?.color ? String(p.color) : undefined,
-      quantity: qty,
-      unit: p?.unit ? String(p.unit) : undefined,
-      sellingPrice: Number(p?.sellingPrice ?? p?.price ?? 0),
-      categoryId: p?.categoryId ? String(p.categoryId) : undefined,
-      categoryName: p?.categoryName ? String(p.categoryName) : undefined,
-      categoryColor: p?.categoryColor ? String(p.categoryColor) : undefined,
-      isAvailable,
-      status,
-    };
-  });
-
-  const rawCategories = Array.isArray(payload.categories) ? payload.categories : [];
-  const sanitizedCategories = rawCategories.map((c: any) => ({
-    id: String(c?.id || ''),
-    name: String(c?.name || ''),
-    color: c?.color ? String(c.color) : undefined,
-    count:
-      typeof c?.count === 'number'
-        ? c.count
-        : sanitizedProducts.filter((cp: any) => cp.categoryId === c?.id).length,
-  }));
-
-  return {
-    settings: {
-      catalogId: cleanCatalogId,
-      enabled: rawSettings.enabled !== false,
-      slug: cleanSlug,
-      businessName: rawSettings.businessName || rawBiz.name || '',
-      tagline: rawSettings.tagline || rawBiz.description || '',
-      phone: rawSettings.phone || rawBiz.phone || '',
-      whatsapp: rawSettings.whatsapp || rawBiz.whatsapp || rawBiz.phone || '',
-      email: cleanEmail,
-      address: rawSettings.address || rawBiz.address || '',
-      currency: rawSettings.currency || rawBiz.currency || 'UGX',
-      showExactQuantity: rawSettings.showExactQuantity !== false,
-      hideOutOfStock: rawSettings.hideOutOfStock === true,
-      allowWhatsAppOrders: rawSettings.allowWhatsAppOrders !== false,
-      updatedAt: rawSettings.updatedAt || payload.lastUpdated || new Date().toISOString(),
-    },
-    business: {
-      name: rawBiz.name || rawSettings.businessName || 'Brivu Store',
-      description: rawBiz.description || rawSettings.tagline || '',
-      logo: rawBiz.logo || undefined,
-      phone: rawBiz.phone || rawSettings.phone || '',
-      whatsapp: rawBiz.whatsapp || rawBiz.phone || rawSettings.whatsapp || '',
-      email: cleanEmail || rawBiz.email || rawSettings.email || '',
-      address: rawBiz.address || rawSettings.address || '',
-      currency: rawBiz.currency || rawSettings.currency || 'UGX',
-    },
-    categories: sanitizedCategories,
-    products: sanitizedProducts,
-    lastUpdated: payload.lastUpdated || new Date().toISOString(),
-  };
-}
-
-export function buildPublicStoreCatalogFromBackup(
-  backupData: any,
-  userEmail: string,
-  overrideSlug?: string,
-  existingSettings?: any,
-  overrideCatalogId?: string
-): any | null {
-  if (!backupData || typeof backupData !== 'object') return null;
-  const profile = backupData.profile || {};
-  const savedSettings = backupData.publicCatalogSettings || existingSettings || {};
-  const rawProducts = Array.isArray(backupData.inventoryProducts)
-    ? backupData.inventoryProducts
-    : Array.isArray(backupData.products)
-    ? backupData.products
-    : [];
-  const rawCategories = Array.isArray(backupData.productCategories) ? backupData.productCategories : [];
-
-  const cleanEmail = String(userEmail || savedSettings.email || profile.email || '')
-    .toLowerCase()
-    .trim();
-  const slugCandidate =
-    overrideSlug ||
-    (savedSettings.slug && savedSettings.slug !== 'store' ? savedSettings.slug : '') ||
-    (profile.name ? sanitizePublicStoreSlug(profile.name) : '') ||
-    savedSettings.slug ||
-    'store';
-  const cleanSlug = sanitizePublicStoreSlug(slugCandidate);
-  const cleanCatalogId = String(
-    overrideCatalogId || savedSettings.catalogId || deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug)
-  ).trim();
-
-  const settings = {
-    catalogId: cleanCatalogId,
-    enabled: savedSettings.enabled !== false,
-    slug: cleanSlug,
-    businessName: savedSettings.businessName || profile.name || '',
-    tagline: savedSettings.tagline || profile.description || '',
-    phone: savedSettings.phone || profile.phone || '',
-    whatsapp: savedSettings.whatsapp || profile.whatsapp || profile.phone || '',
-    email: cleanEmail,
-    address: savedSettings.address || profile.address || '',
-    currency: savedSettings.currency || profile.currency || 'UGX',
-    showExactQuantity: savedSettings.showExactQuantity !== false,
-    hideOutOfStock: savedSettings.hideOutOfStock === true,
-    allowWhatsAppOrders: savedSettings.allowWhatsAppOrders !== false,
-    updatedAt: savedSettings.updatedAt || backupData.exportedAt || new Date().toISOString(),
-  };
-
-  const publicProducts = rawProducts.filter((p: any) => p && p.isPublicInCatalog !== false);
-  const visibleProducts = settings.hideOutOfStock
-    ? publicProducts.filter((p: any) => Number(p.quantity ?? p.stockQuantity ?? 0) > 0)
-    : publicProducts;
-
-  const catMap = new Map<string, any>(rawCategories.map((c: any) => [c.id, c]));
-
-  const catalogProducts = visibleProducts.map((p: any) => {
-    const qty = Number(p.quantity ?? p.stockQuantity ?? 0);
-    const cat = p.categoryId ? catMap.get(p.categoryId) : undefined;
-    const isAvailable = qty > 0;
-    const status = qty === 0 ? 'out-of-stock' : qty < 5 ? 'low-stock' : 'in-stock';
-
-    return {
-      id: p.id,
-      itemId: p.itemId || '',
-      name: p.name || 'Unnamed Product',
-      description: p.description || undefined,
-      image: p.image || undefined,
-      sizes: Array.isArray(p.sizes) ? p.sizes : undefined,
-      color: p.color || undefined,
-      quantity: qty,
-      unit: p.unit || undefined,
-      sellingPrice: Number(p.sellingPrice ?? p.price ?? 0),
-      categoryId: p.categoryId || undefined,
-      categoryName: cat?.name || p.category || undefined,
-      categoryColor: cat?.color || undefined,
-      isAvailable,
-      status,
-    };
-  });
-
-  const categories = rawCategories.map((c: any) => ({
-    id: c.id,
-    name: c.name,
-    color: c.color,
-    count: catalogProducts.filter((cp: any) => cp.categoryId === c.id).length,
-  }));
-
-  if (catalogProducts.length === 0 && !profile.name && !backupData.publicCatalogSettings) {
-    return null;
-  }
-
-  return sanitizePublicStoreCatalogPayload(
-    {
-      settings,
-      business: {
-        name: profile.name || settings.businessName || 'Brivu Store',
-        description: profile.description || settings.tagline || '',
-        logo: profile.logo || undefined,
-        phone: profile.phone || settings.phone || '',
-        whatsapp: profile.whatsapp || profile.phone || settings.whatsapp || '',
-        email: cleanEmail,
-        address: profile.address || settings.address || '',
-        currency: profile.currency || settings.currency || 'UGX',
-      },
-      categories,
-      products: catalogProducts,
-      lastUpdated: new Date().toISOString(),
-    },
-    cleanSlug,
-    cleanEmail,
-    cleanCatalogId
-  );
-}
-
-export async function upsertUserStoreCatalog(
-  db: any,
-  userEmail: string,
-  rawSlug: string,
-  payload: any,
-  nowIso?: string,
-  catalogIdOverride?: string
-): Promise<{ slug: string; catalogId: string }> {
-  const cleanSlug = sanitizePublicStoreSlug(rawSlug || 'store');
-  const cleanEmail = String(userEmail || '').toLowerCase().trim();
-  const isRealEmail = Boolean(cleanEmail && cleanEmail.includes('@') && !cleanEmail.startsWith('brivu-usr-'));
-  const rowKey = isRealEmail ? `${cleanSlug}::${cleanEmail}` : cleanSlug;
-  const sanitized = sanitizePublicStoreCatalogPayload(
-    payload,
-    cleanSlug,
-    isRealEmail ? cleanEmail : undefined,
-    catalogIdOverride
-  );
-  const resolvedCatalogId = String(sanitized?.settings?.catalogId || deriveFallbackCatalogId(cleanEmail || cleanSlug, cleanSlug));
-  const catalogJson = JSON.stringify(sanitized);
-  const now = nowIso || new Date().toISOString();
-
-  await ensureD1Tables(db);
-  if (isRealEmail) {
-    try {
-      await db
-        .prepare('DELETE FROM store_catalogs WHERE LOWER(user_email) = ? AND slug != ?')
-        .bind(cleanEmail, rowKey)
-        .run();
-    } catch (_) {}
-  }
-
-  await db
-    .prepare(
-      `
-      INSERT INTO store_catalogs (slug, catalog_id, user_email, business_name, catalog_json, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(slug) DO UPDATE SET
-        catalog_id = excluded.catalog_id,
-        user_email = excluded.user_email,
-        business_name = excluded.business_name,
-        catalog_json = excluded.catalog_json,
-        updated_at = excluded.updated_at
-    `
-    )
-    .bind(rowKey, resolvedCatalogId, isRealEmail ? cleanEmail : null, sanitized?.business?.name || cleanSlug, catalogJson, now)
-    .run();
-
-  if (isRealEmail) {
-    invalidateCachePattern(`storeCache:${cleanEmail}:`);
-  }
-  invalidateCachePattern('storeCache:');
-
-  return { slug: cleanSlug, catalogId: resolvedCatalogId };
-}
-
-export async function resolvePublicStoreCatalog(
-  env: Env,
-  slug: string,
-  userEmail: string,
-  catalogId?: string
-): Promise<any | null> {
-  const db = getD1Database(env);
-  const bucket = getR2Bucket(env);
-  if (!db && !bucket) return null;
-
-  const cleanSlug = sanitizePublicStoreSlug(slug || 'store');
-  const cleanCatalogId = String(catalogId || '').trim();
-  let cleanEmail = String(userEmail || '').toLowerCase().trim();
-  if (cleanEmail.startsWith('brivu-usr-') || !cleanEmail.includes('@')) {
-    cleanEmail = '';
-  }
-
-  const cacheKey = `storeCache:${cleanEmail || 'anon'}:${cleanCatalogId || 'nocat'}:${cleanSlug}`;
-  const cached = getCachedQuery(cacheKey);
-  if (cached) return cached;
-
-  try {
-    let storeRow: any = null;
-    if (db) {
-      if (cleanEmail && cleanCatalogId) {
-        storeRow = await runWithMissingTableRetry(db, () =>
-          db
-            .prepare(
-              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-               WHERE LOWER(user_email) = ?
-               ORDER BY CASE WHEN catalog_id = ? OR catalog_json LIKE ? THEN 0 WHEN slug = ? OR slug = ? THEN 1 ELSE 2 END, updated_at DESC
-               LIMIT 1`
-            )
-            .bind(cleanEmail, cleanCatalogId, `%"catalogId":"${cleanCatalogId}"%`, `${cleanSlug}::${cleanEmail}`, cleanSlug)
-            .first()
-        );
-      } else if (cleanCatalogId) {
-        storeRow = await runWithMissingTableRetry(db, () =>
-          db
-            .prepare(
-              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-               WHERE catalog_id = ? OR catalog_json LIKE ? OR slug = ? OR slug LIKE ?
-               ORDER BY updated_at DESC
-               LIMIT 1`
-            )
-            .bind(cleanCatalogId, `%"catalogId":"${cleanCatalogId}"%`, cleanCatalogId, `${cleanCatalogId}::%`)
-            .first()
-        );
-        if (!storeRow) {
-          const bCatRow: any = await db
-            .prepare('SELECT user_email FROM (SELECT user_email, backup_data FROM backups ORDER BY updated_at DESC LIMIT 30) WHERE backup_data LIKE ? LIMIT 1')
-            .bind(`%"catalogId":"${cleanCatalogId}"%`)
-            .first()
-            .catch(() => null);
-          if (bCatRow?.user_email) {
-            cleanEmail = String(bCatRow.user_email).toLowerCase().trim();
-          }
-        }
-      } else if (cleanEmail) {
-        storeRow = await runWithMissingTableRetry(db, () =>
-          db
-            .prepare(
-              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-               WHERE LOWER(user_email) = ?
-               ORDER BY CASE WHEN slug = ? OR slug = ? THEN 0 ELSE 1 END, updated_at DESC
-               LIMIT 1`
-            )
-            .bind(cleanEmail, `${cleanSlug}::${cleanEmail}`, cleanSlug)
-            .first()
-        );
-      } else {
-        storeRow = await runWithMissingTableRetry(db, () =>
-          db
-            .prepare(
-              `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-               WHERE slug = ? OR slug LIKE ?
-               ORDER BY updated_at DESC
-               LIMIT 1`
-            )
-            .bind(cleanSlug, `${cleanSlug}::%`)
-            .first()
-        );
-      }
-
-      if (!cleanEmail && storeRow?.user_email) {
-        const rowEmail = String(storeRow.user_email).toLowerCase().trim();
-        if (rowEmail.includes('@') && !rowEmail.startsWith('brivu-usr-')) {
-          cleanEmail = rowEmail;
-        }
-      }
-    }
-
-    let parsedStore: any = null;
-    if (storeRow?.catalog_json) {
-      try {
-        parsedStore = JSON.parse(storeRow.catalog_json);
-      } catch (_) {}
-    }
-
-    // Check D1 backups (or R2 backup fallback) for email to fill missing catalogs or fresher inventory updates
-    if (cleanEmail && (db || bucket)) {
-      let backupRow: any = null;
-      let bData: any = null;
-      if (db) {
-        backupRow = await db
-          .prepare(
-            `SELECT backup_data, updated_at FROM backups
-             WHERE id = ? OR LOWER(user_email) = ?
-             ORDER BY updated_at DESC
-             LIMIT 1`
-          )
-          .bind(`user_${cleanEmail}`, cleanEmail)
-          .first()
-          .catch(() => null);
-        if (backupRow?.backup_data) {
-          try {
-            bData = JSON.parse(backupRow.backup_data);
-          } catch (_) {}
-        }
-      }
-
-      if (!bData && bucket) {
-        try {
-          const userKey = encodeURIComponent(cleanEmail);
-          let backupObj = await bucket.get(`users/${userKey}/latest_backup.json`);
-          if (!backupObj) {
-            backupObj = await bucket.get(`users/${userKey}/backup.json`);
-          }
-          if (backupObj) {
-            bData = JSON.parse(await backupObj.text());
-          }
-        } catch (_) {}
-      }
-
-      if (bData) {
-        const storeProductsCount = Array.isArray(parsedStore?.products) ? parsedStore.products.length : 0;
-        const storeTs = new Date(storeRow?.updated_at || parsedStore?.lastUpdated || 0).getTime();
-        const backupTs = new Date(backupRow?.updated_at || bData?.exportedAt || 0).getTime();
-
-        if (!parsedStore || storeProductsCount === 0 || backupTs > storeTs) {
-          const fromBackup = buildPublicStoreCatalogFromBackup(
-            bData,
-            cleanEmail,
-            cleanSlug !== 'store' ? cleanSlug : undefined,
-            parsedStore?.settings,
-            cleanCatalogId || parsedStore?.settings?.catalogId
-          );
-          if (fromBackup && (fromBackup.products.length > 0 || !parsedStore)) {
-            setCachedQuery(cacheKey, fromBackup, 10);
-            return fromBackup;
-          }
-        }
-      }
-    }
-
-    if (parsedStore) {
-      const sanitized = sanitizePublicStoreCatalogPayload(
-        parsedStore,
-        cleanSlug !== 'store' ? cleanSlug : undefined,
-        cleanEmail || undefined,
-        cleanCatalogId || undefined
-      );
-      setCachedQuery(cacheKey, sanitized, 10);
-      return sanitized;
-    }
-  } catch (_) {}
-
-  return null;
-}
-
-function escapeCatalogHtmlText(str: any): string {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function safeCatalogScriptJson(val: any): string {
-  return JSON.stringify(val ?? null)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-}
-
-export function renderStandaloneCatalogHtml(
-  catalog: any | null,
-  opts: { catalogId?: string; slug?: string; email?: string; origin?: string }
-): string {
-  const bizName = String(catalog?.business?.name || catalog?.settings?.businessName || 'Live Stock Catalog').trim() || 'Live Stock Catalog';
-  const bizDesc = String(catalog?.business?.description || catalog?.settings?.tagline || 'Browse real-time available stock, prices, sizes, and inquire directly.').trim();
-  const logoUrl = String(catalog?.business?.logo || '').trim();
-  const safeLogoMeta = logoUrl.startsWith('https://') || logoUrl.startsWith('http://') ? logoUrl : '';
-  const resolvedSlug = sanitizePublicStoreSlug(opts.slug || catalog?.settings?.slug || 'store');
-  const resolvedCatalogId = String(opts.catalogId || catalog?.settings?.catalogId || '').trim();
-  const resolvedEmail = String(opts.email || catalog?.settings?.email || catalog?.business?.email || '').toLowerCase().trim();
-  const canonicalUrl = `${opts.origin || ''}${resolvedCatalogId ? `/catalog/${encodeURIComponent(resolvedCatalogId)}` : `/store/${encodeURIComponent(resolvedSlug)}`}`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>${escapeCatalogHtmlText(bizName)} | Live Stock Catalog | Brivu</title>
-  <meta name="description" content="${escapeCatalogHtmlText(bizDesc)}" />
-  <meta property="og:title" content="${escapeCatalogHtmlText(bizName)} — Live Stock Catalog" />
-  <meta property="og:description" content="${escapeCatalogHtmlText(bizDesc)}" />
-  <meta property="og:type" content="website" />
-  ${canonicalUrl ? `<meta property="og:url" content="${escapeCatalogHtmlText(canonicalUrl)}" />` : ''}
-  ${safeLogoMeta ? `<meta property="og:image" content="${escapeCatalogHtmlText(safeLogoMeta)}" />` : ''}
-  <style>
-    :root {
-      --bg: #f1f5f9;
-      --surface: #ffffff;
-      --surface-alt: #f8fafc;
-      --border: #e2e8f0;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --text-soft: #94a3b8;
-      --sky: #0284c7;
-      --sky-hover: #0369a1;
-      --sky-tint: #f0f9ff;
-      --emerald: #059669;
-      --emerald-hover: #047857;
-      --emerald-tint: #ecfdf5;
-      --amber: #d97706;
-      --amber-tint: #fef3c7;
-      --rose: #e11d48;
-      --rose-tint: #ffe4e6;
-      --purple: #7e22ce;
-      --purple-tint: #faf5ff;
-      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-      --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #020617;
-        --surface: #0f172a;
-        --surface-alt: #1e293b;
-        --border: #1e293b;
-        --text: #f8fafc;
-        --text-muted: #94a3b8;
-        --text-soft: #64748b;
-        --sky: #38bdf8;
-        --sky-hover: #0ea5e9;
-        --sky-tint: rgba(14, 165, 233, 0.14);
-        --emerald: #10b981;
-        --emerald-hover: #059669;
-        --emerald-tint: rgba(16, 185, 129, 0.14);
-        --amber: #f59e0b;
-        --amber-tint: rgba(245, 158, 11, 0.14);
-        --rose: #fb7185;
-        --rose-tint: rgba(244, 63, 94, 0.16);
-        --purple: #d8b4fe;
-        --purple-tint: rgba(126, 34, 206, 0.22);
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-        --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.55);
-      }
-    }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
-    button, input, a { font-family: inherit; }
-    .page-shell { min-height: 100vh; display: flex; flex-direction: column; padding-bottom: 48px; }
-    .container { width: 100%; max-width: 768px; margin: 0 auto; }
-
-    /* Top Header */
-    .topbar { position: sticky; top: 0; z-index: 40; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); backdrop-filter: blur(10px); }
-    .topbar-inner { padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .brand-logo { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
-    .brand-initials { width: 38px; height: 38px; border-radius: 12px; background: #0284c7; color: #fff; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .brand-title { margin: 0; font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.25; }
-    .live-pill { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; color: var(--emerald); margin-top: 2px; }
-    .live-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--emerald); animation: pulse 1.8s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
-    .icon-btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); border-radius: 12px; padding: 8px 10px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; cursor: pointer; transition: transform 0.12s, background 0.15s; flex-shrink: 0; }
-    .icon-btn:active { transform: scale(0.96); }
-
-    /* Hero */
-    .hero { background: var(--surface); border-bottom: 1px solid var(--border); }
-    .hero-inner { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .hero-desc { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.5; }
-    .actions-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    .btn-wa { border: none; background: #059669; color: #fff; border-radius: 12px; padding: 9px 14px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm); }
-    .btn-wa:hover { background: #047857; }
-    .btn-call { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); border-radius: 12px; padding: 8px 13px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
-    .addr-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); padding: 4px 6px; }
-
-    /* Main Catalog */
-    .main { padding: 16px 12px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
-    @media (min-width: 640px) { .main { padding: 18px 16px; } }
-    .search-wrap { position: relative; }
-    .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-soft); pointer-events: none; }
-    .search-input { width: 100%; padding: 11px 36px 11px 38px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; outline: none; box-shadow: var(--shadow-sm); }
-    .search-input:focus { border-color: #0284c7; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.16); }
-    .search-clear { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: var(--text-soft); cursor: pointer; padding: 4px; display: inline-flex; }
-
-    /* Categories */
-    .cat-header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; margin-bottom: 6px; }
-    .cat-title { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .cat-count { font-size: 11px; color: var(--text-soft); }
-    .cat-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-    .cat-strip::-webkit-scrollbar { display: none; }
-    .cat-pill { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; padding: 8px 13px; font-size: 12px; font-weight: 800; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; transition: transform 0.12s; }
-    .cat-pill.active { background: #0284c7; border-color: transparent; color: #fff; box-shadow: var(--shadow-sm); }
-    .cat-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
-    .cat-badge { font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--surface-alt); color: var(--text-muted); }
-    .cat-pill.active .cat-badge { background: rgba(255, 255, 255, 0.22); color: #fff; }
-
-    /* Grid */
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; transition: transform 0.15s, box-shadow 0.2s; }
-    .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-    .card-media { position: relative; aspect-ratio: 1 / 1; width: 100%; background: var(--surface-alt); overflow: hidden; }
-    .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .card-placeholder { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-soft); padding: 12px; background: linear-gradient(135deg, var(--surface-alt), var(--sky-tint)); }
-    .stock-badge { position: absolute; top: 8px; right: 8px; border-radius: 999px; padding: 3px 8px; font-size: 10px; font-weight: 800; color: #fff; display: inline-flex; align-items: center; gap: 4px; box-shadow: var(--shadow-sm); }
-    .stock-in { background: #059669; }
-    .stock-low { background: #d97706; }
-    .stock-out { background: #e11d48; }
-    .stock-dot { width: 5px; height: 5px; border-radius: 999px; background: #fff; }
-    .cat-overlay { position: absolute; bottom: 8px; left: 8px; max-width: 82%; border-radius: 6px; padding: 2px 6px; font-size: 9.5px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-body { padding: 11px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; flex: 1; }
-    .card-title { margin: 0; font-size: 13px; font-weight: 800; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .tags-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-    .tag-size { font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--surface-alt); color: var(--text-muted); }
-    .tag-color { font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--purple-tint); color: var(--purple); }
-    .card-footer { padding-top: 8px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    .price-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); display: block; }
-    .price-val { font-size: 13px; font-weight: 900; color: var(--sky); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .wa-mini { border: none; border-radius: 10px; padding: 7px; background: var(--emerald-tint); color: var(--emerald); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .wa-mini:hover { background: #059669; color: #fff; }
-
-    /* Empty / Loading / Error / Paused */
-    .state-box { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px 18px; }
-    .state-card { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 36px 20px; text-align: center; }
-    .state-icon { width: 64px; height: 64px; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
-    .state-title { margin: 0; font-size: 17px; font-weight: 800; }
-    .state-sub { margin: 6px auto 0; max-width: 340px; font-size: 12.5px; color: var(--text-muted); line-height: 1.5; }
-    .spinner { width: 28px; height: 28px; border: 3px solid var(--sky-tint); border-top-color: var(--sky); border-radius: 999px; animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Modal */
-    .modal-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(2, 6, 23, 0.76); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 14px; }
-    .modal-panel { position: relative; width: 100%; max-width: 440px; max-height: 90vh; background: var(--surface); border: 1px solid var(--border); border-radius: 24px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-md); }
-    .modal-close { position: absolute; top: 12px; right: 12px; z-index: 5; width: 34px; height: 34px; border: none; border-radius: 999px; background: rgba(15, 23, 42, 0.68); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-    .modal-img-wrap { width: 100%; aspect-ratio: 1 / 1; max-height: 320px; background: var(--surface-alt); overflow: hidden; flex-shrink: 0; }
-    .modal-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .modal-body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-    .modal-price { font-size: 20px; font-weight: 900; color: var(--sky); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 4px; }
-    .modal-section-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); margin-bottom: 5px; display: block; }
-    .chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
-    .size-chip { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); font-size: 12px; font-weight: 800; }
-
-    .footer { text-align: center; padding: 26px 16px 10px; font-size: 11px; color: var(--text-soft); }
-    .footer strong { color: var(--text-muted); }
-  </style>
-</head>
-<body>
-  <div id="catalog-root" class="page-shell"></div>
-
-  <script>
-    window.__INITIAL_STORE_CATALOG__ = ${safeCatalogScriptJson(catalog)};
-    window.__STORE_CATALOG_ID__ = ${safeCatalogScriptJson(resolvedCatalogId)};
-    window.__STORE_SLUG__ = ${safeCatalogScriptJson(resolvedSlug)};
-    window.__OWNER_EMAIL__ = ${safeCatalogScriptJson(resolvedEmail)};
-
-    (function () {
-      var root = document.getElementById('catalog-root');
-      var catalog = window.__INITIAL_STORE_CATALOG__;
-      var catalogId = window.__STORE_CATALOG_ID__ || '';
-      var slug = window.__STORE_SLUG__ || 'store';
-      var ownerEmail = window.__OWNER_EMAIL__ || '';
-      var selectedCategoryId = 'all';
-      var searchQuery = '';
-      var selectedProduct = null;
-      var copiedTimeout = null;
-      var copied = false;
-
-      function safeImg(src) {
-        if (!src || typeof src !== 'string') return '';
-        var s = src.trim();
-        if (s.indexOf('https://') === 0 || s.indexOf('http://') === 0 || s.indexOf('data:image/') === 0) return s;
-        return '';
-      }
-      function safeHex(c, fallback) {
-        if (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.trim())) return c.trim();
-        return fallback || '#0284c7';
-      }
-      function el(tag, className, text) {
-        var node = document.createElement(tag);
-        if (className) node.className = className;
-        if (text !== undefined && text !== null) node.textContent = String(text);
-        return node;
-      }
-      function svgEl(pathD, size, strokeWidth) {
-        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', String(size || 16));
-        svg.setAttribute('height', String(size || 16));
-        svg.setAttribute('viewBox', '0 0 24 24');
-        svg.setAttribute('fill', 'none');
-        svg.setAttribute('stroke', 'currentColor');
-        svg.setAttribute('stroke-width', String(strokeWidth || 2));
-        svg.setAttribute('stroke-linecap', 'round');
-        svg.setAttribute('stroke-linejoin', 'round');
-        var paths = Array.isArray(pathD) ? pathD : [pathD];
-        for (var i = 0; i < paths.length; i++) {
-          var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          p.setAttribute('d', paths[i]);
-          svg.appendChild(p);
-        }
-        return svg;
-      }
-      var ICONS = {
-        bag: ['M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z', 'M3 6h18', 'M16 10a4 4 0 0 1-8 0'],
-        wa: 'M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z',
-        phone: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z',
-        pin: ['M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z', 'M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0'],
-        search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z', 'm21 21-4.3-4.3'],
-        share: ['M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8', 'M16 6l-4-4-4 4', 'M12 2v13'],
-        check: 'M20 6 9 17l-5-5',
-        close: ['M18 6 6 18', 'm6 6 12 12'],
-        clock: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 6v6l4 2']
-      };
-      function formatPrice(amount, currency) {
-        var n = Number(amount || 0);
-        return (currency || 'UGX') + ' ' + n.toLocaleString();
-      }
-      function openWa(biz, currency, prod) {
-        var phone = (biz && (biz.whatsapp || biz.phone)) || '';
-        var clean = String(phone).replace(/[^0-9]/g, '');
-        if (!clean) return;
-        var msg = 'Hello *' + (biz.name || 'Store') + '*!';
-        if (prod) {
-          msg += ' I am interested in ordering *' + prod.name + '* (' + formatPrice(prod.sellingPrice, currency) + ').';
-          if (Array.isArray(prod.sizes) && prod.sizes.length) {
-            msg += ' Available sizes: ' + prod.sizes.join(', ') + '.';
-          }
-          msg += ' Is this item currently in stock?';
-        } else {
-          msg += ' I am browsing your live stock catalog and would like to make an inquiry.';
-        }
-        window.open('https://wa.me/' + clean + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer');
-      }
-
-      function renderLoading() {
-        root.textContent = '';
-        var box = el('div', 'state-box');
-        var icon = el('div', 'state-icon');
-        icon.style.background = 'var(--sky-tint)';
-        icon.appendChild(el('div', 'spinner'));
-        box.appendChild(icon);
-        box.appendChild(el('h3', 'state-title', 'Loading Live Catalog...'));
-        box.appendChild(el('p', 'state-sub', 'Fetching real-time stock and pricing.'));
-        root.appendChild(box);
-      }
-
-      function renderNotFound(msg) {
-        root.textContent = '';
-        var box = el('div', 'state-box');
-        var icon = el('div', 'state-icon');
-        icon.style.background = 'var(--rose-tint)';
-        icon.style.color = 'var(--rose)';
-        icon.appendChild(svgEl(ICONS.bag, 28, 2));
-        box.appendChild(icon);
-        box.appendChild(el('h3', 'state-title', 'Store Catalog Not Found'));
-        box.appendChild(el('p', 'state-sub', msg || 'This live stock catalog link is inactive or does not exist.'));
-        root.appendChild(box);
-      }
-
-      function renderModal(biz, settings, currency) {
-        var existing = document.getElementById('catalog-modal');
-        if (existing) existing.remove();
-        if (!selectedProduct) return;
-
-        var p = selectedProduct;
-        var backdrop = el('div', 'modal-backdrop');
-        backdrop.id = 'catalog-modal';
-        backdrop.onclick = function () { selectedProduct = null; renderModal(biz, settings, currency); };
-
-        var panel = el('div', 'modal-panel');
-        panel.onclick = function (e) { e.stopPropagation(); };
-
-        var closeBtn = el('button', 'modal-close');
-        closeBtn.type = 'button';
-        closeBtn.setAttribute('aria-label', 'Close');
-        closeBtn.appendChild(svgEl(ICONS.close, 16, 2.5));
-        closeBtn.onclick = function () { selectedProduct = null; renderModal(biz, settings, currency); };
-        panel.appendChild(closeBtn);
-
-        var imgWrap = el('div', 'modal-img-wrap');
-        var pImg = safeImg(p.image);
-        if (pImg) {
-          var img = document.createElement('img');
-          img.src = pImg;
-          img.alt = p.name || '';
-          imgWrap.appendChild(img);
-        } else {
-          var ph = el('div', 'card-placeholder');
-          ph.appendChild(svgEl(ICONS.bag, 44, 1.8));
-          if (p.itemId) ph.appendChild(el('span', 'tag-size', '#' + p.itemId));
-          imgWrap.appendChild(ph);
-        }
-        panel.appendChild(imgWrap);
-
-        var body = el('div', 'modal-body');
-        var badges = el('div', 'chip-wrap');
-        if (p.categoryName) {
-          var catBadge = el('span', 'size-chip', p.categoryName);
-          catBadge.style.background = safeHex(p.categoryColor, '#475569');
-          catBadge.style.color = '#fff';
-          catBadge.style.borderColor = 'transparent';
-          badges.appendChild(catBadge);
-        }
-        var qty = Number(p.quantity || 0);
-        var stkTxt = qty <= 0 ? 'Out of Stock' : (settings.showExactQuantity !== false ? qty + ' units available' : 'In Stock');
-        var stkChip = el('span', 'size-chip', stkTxt);
-        stkChip.style.background = qty <= 0 ? 'var(--rose-tint)' : qty < 5 ? 'var(--amber-tint)' : 'var(--emerald-tint)';
-        stkChip.style.color = qty <= 0 ? 'var(--rose)' : qty < 5 ? 'var(--amber)' : 'var(--emerald)';
-        stkChip.style.borderColor = 'transparent';
-        badges.appendChild(stkChip);
-        body.appendChild(badges);
-
-        var headInfo = el('div');
-        headInfo.appendChild(el('h2', 'state-title', p.name || 'Product'));
-        headInfo.appendChild(el('div', 'modal-price', formatPrice(p.sellingPrice, currency)));
-        body.appendChild(headInfo);
-
-        if (Array.isArray(p.sizes) && p.sizes.length) {
-          var szSec = el('div');
-          szSec.appendChild(el('span', 'modal-section-label', 'Available Sizes'));
-          var szWrap = el('div', 'chip-wrap');
-          p.sizes.forEach(function (s) { szWrap.appendChild(el('span', 'size-chip', s)); });
-          szSec.appendChild(szWrap);
-          body.appendChild(szSec);
-        }
-        if (p.color) {
-          var clrSec = el('div');
-          clrSec.appendChild(el('span', 'modal-section-label', 'Color'));
-          clrSec.appendChild(el('span', 'tag-color', p.color));
-          body.appendChild(clrSec);
-        }
-        if (p.description) {
-          var dSec = el('div');
-          dSec.appendChild(el('span', 'modal-section-label', 'Description'));
-          dSec.appendChild(el('p', 'hero-desc', p.description));
-          body.appendChild(dSec);
-        }
-
-        var ctas = el('div', 'actions-row');
-        ctas.style.flexDirection = 'column';
-        ctas.style.alignItems = 'stretch';
-        if (biz.whatsapp || biz.phone) {
-          var waBtn = el('button', 'btn-wa');
-          waBtn.type = 'button';
-          waBtn.style.justifyContent = 'center';
-          waBtn.style.padding = '12px 16px';
-          waBtn.appendChild(svgEl(ICONS.wa, 16, 2));
-          waBtn.appendChild(el('span', '', 'Inquire / Order via WhatsApp'));
-          waBtn.onclick = function () { openWa(biz, currency, p); };
-          ctas.appendChild(waBtn);
-        }
-        if (biz.phone) {
-          var telA = el('a', 'btn-call');
-          telA.href = 'tel:' + biz.phone;
-          telA.style.justifyContent = 'center';
-          telA.appendChild(svgEl(ICONS.phone, 15, 2));
-          telA.appendChild(el('span', '', 'Call Store: ' + biz.phone));
-          ctas.appendChild(telA);
-        }
-        body.appendChild(ctas);
-        panel.appendChild(body);
-        backdrop.appendChild(panel);
-        document.body.appendChild(backdrop);
-      }
-
-      function renderCatalog() {
-        if (!catalog) { renderLoading(); return; }
-        var biz = catalog.business || { name: 'Brivu Store', currency: 'UGX' };
-        var settings = catalog.settings || { enabled: true, showExactQuantity: true, hideOutOfStock: false, allowWhatsAppOrders: true };
-        var currency = biz.currency || settings.currency || 'UGX';
-
-        if (biz.name) {
-          document.title = biz.name + ' | Live Stock Catalog | Brivu';
-        }
-
-        if (settings.enabled === false) {
-          root.textContent = '';
-          var box = el('div', 'state-box');
-          var icon = el('div', 'state-icon');
-          icon.style.background = 'var(--amber-tint)';
-          icon.style.color = 'var(--amber)';
-          icon.appendChild(svgEl(ICONS.clock, 28, 2));
-          box.appendChild(icon);
-          box.appendChild(el('h3', 'state-title', (biz.name || 'Store') + ' is Currently Closed'));
-          box.appendChild(el('p', 'state-sub', 'The live stock catalog is temporarily paused. Please contact the business directly.'));
-          var acts = el('div', 'actions-row');
-          acts.style.marginTop = '16px';
-          acts.style.justifyContent = 'center';
-          if (biz.phone) {
-            var cA = el('a', 'btn-call');
-            cA.href = 'tel:' + biz.phone;
-            cA.appendChild(svgEl(ICONS.phone, 14, 2));
-            cA.appendChild(el('span', '', 'Call Business'));
-            acts.appendChild(cA);
-          }
-          if (biz.whatsapp || biz.phone) {
-            var wB = el('button', 'btn-wa');
-            wB.type = 'button';
-            wB.appendChild(svgEl(ICONS.wa, 14, 2));
-            wB.appendChild(el('span', '', 'Message on WhatsApp'));
-            wB.onclick = function () { openWa(biz, currency); };
-            acts.appendChild(wB);
-          }
-          box.appendChild(acts);
-          root.appendChild(box);
-          return;
-        }
-
-        var rawProducts = Array.isArray(catalog.products) ? catalog.products : [];
-        var categories = Array.isArray(catalog.categories) ? catalog.categories : [];
-
-        root.textContent = '';
-
-        // Top Bar
-        var header = el('header', 'topbar');
-        var headerInner = el('div', 'container topbar-inner');
-        var brand = el('div', 'brand');
-        var logoSrc = safeImg(biz.logo);
-        if (logoSrc) {
-          var logoImg = document.createElement('img');
-          logoImg.className = 'brand-logo';
-          logoImg.src = logoSrc;
-          logoImg.alt = biz.name || '';
-          brand.appendChild(logoImg);
-        } else {
-          brand.appendChild(el('div', 'brand-initials', String(biz.name || 'BS').substring(0, 2).toUpperCase()));
-        }
-        var brandText = el('div');
-        brandText.style.minWidth = '0';
-        brandText.appendChild(el('h1', 'brand-title', biz.name || 'Brivu Store'));
-        var livePill = el('div', 'live-pill');
-        livePill.appendChild(el('span', 'live-dot'));
-        livePill.appendChild(el('span', '', 'Live Stock Catalog'));
-        brandText.appendChild(livePill);
-        brand.appendChild(brandText);
-        headerInner.appendChild(brand);
-
-        var shareBtn = el('button', 'icon-btn');
-        shareBtn.type = 'button';
-        shareBtn.appendChild(svgEl(copied ? ICONS.check : ICONS.share, 15, 2));
-        shareBtn.appendChild(el('span', '', copied ? 'Copied' : 'Share'));
-        shareBtn.onclick = function () {
-          var url = window.location.href;
-          if (navigator.share) {
-            navigator.share({ title: (biz.name || 'Store') + ' | Live Catalog', url: url }).catch(function () {});
-          } else if (navigator.clipboard) {
-            navigator.clipboard.writeText(url).then(function () {
-              copied = true;
-              renderCatalog();
-              clearTimeout(copiedTimeout);
-              copiedTimeout = setTimeout(function () { copied = false; renderCatalog(); }, 2000);
-            }).catch(function () {});
-          }
-        };
-        headerInner.appendChild(shareBtn);
-        header.appendChild(headerInner);
-        root.appendChild(header);
-
-        // Hero Banner
-        if (biz.description || biz.whatsapp || biz.phone || biz.address) {
-          var hero = el('section', 'hero');
-          var heroInner = el('div', 'container hero-inner');
-          if (biz.description) {
-            heroInner.appendChild(el('p', 'hero-desc', biz.description));
-          }
-          var row = el('div', 'actions-row');
-          if (biz.whatsapp || biz.phone) {
-            var waCta = el('button', 'btn-wa');
-            waCta.type = 'button';
-            waCta.appendChild(svgEl(ICONS.wa, 15, 2));
-            waCta.appendChild(el('span', '', 'Chat on WhatsApp'));
-            waCta.onclick = function () { openWa(biz, currency); };
-            row.appendChild(waCta);
-          }
-          if (biz.phone) {
-            var callCta = el('a', 'btn-call');
-            callCta.href = 'tel:' + biz.phone;
-            callCta.appendChild(svgEl(ICONS.phone, 14, 2));
-            callCta.appendChild(el('span', '', biz.phone));
-            row.appendChild(callCta);
-          }
-          if (biz.address) {
-            var addr = el('span', 'addr-tag');
-            addr.appendChild(svgEl(ICONS.pin, 13, 2));
-            addr.appendChild(el('span', '', biz.address));
-            row.appendChild(addr);
-          }
-          if (row.childNodes.length) heroInner.appendChild(row);
-          hero.appendChild(heroInner);
-          root.appendChild(hero);
-        }
-
-        // Main Content
-        var main = el('main', 'container main');
-
-        // Search Bar
-        var searchWrap = el('div', 'search-wrap');
-        var sIcon = el('span', 'search-icon');
-        sIcon.appendChild(svgEl(ICONS.search, 16, 2));
-        searchWrap.appendChild(sIcon);
-        var searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'search-input';
-        searchInput.placeholder = 'Search products by name, size, or color...';
-        searchInput.value = searchQuery;
-        searchInput.oninput = function (e) {
-          searchQuery = e.target.value || '';
-          renderProductsSection(productsHost, rawProducts, settings, biz, currency);
-          clearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
-        };
-        searchWrap.appendChild(searchInput);
-        var clearBtn = el('button', 'search-clear');
-        clearBtn.type = 'button';
-        clearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
-        clearBtn.appendChild(svgEl(ICONS.close, 15, 2));
-        clearBtn.onclick = function () {
-          searchQuery = '';
-          searchInput.value = '';
-          clearBtn.style.display = 'none';
-          renderProductsSection(productsHost, rawProducts, settings, biz, currency);
-        };
-        searchWrap.appendChild(clearBtn);
-        main.appendChild(searchWrap);
-
-        // Categories
-        if (categories.length > 0) {
-          var catSec = el('div');
-          var catHdr = el('div', 'cat-header');
-          catHdr.appendChild(el('span', 'cat-title', 'Categories'));
-          catHdr.appendChild(el('span', 'cat-count', rawProducts.length + ' items available'));
-          catSec.appendChild(catHdr);
-
-          var strip = el('div', 'cat-strip');
-          var allPill = el('button', 'cat-pill' + (selectedCategoryId === 'all' ? ' active' : ''));
-          allPill.type = 'button';
-          allPill.appendChild(el('span', '', 'All Products'));
-          allPill.appendChild(el('span', 'cat-badge', String(rawProducts.length)));
-          allPill.onclick = function () { selectedCategoryId = 'all'; renderCatalog(); };
-          strip.appendChild(allPill);
-
-          categories.forEach(function (cat) {
-            var isAct = selectedCategoryId === cat.id;
-            var pill = el('button', 'cat-pill' + (isAct ? ' active' : ''));
-            pill.type = 'button';
-            var clr = safeHex(cat.color, '#0284c7');
-            if (isAct) pill.style.background = clr;
-            var dot = el('span', 'cat-dot');
-            dot.style.background = isAct ? '#ffffff' : clr;
-            pill.appendChild(dot);
-            pill.appendChild(el('span', '', cat.name || 'Category'));
-            pill.appendChild(el('span', 'cat-badge', String(cat.count || 0)));
-            pill.onclick = function () { selectedCategoryId = cat.id; renderCatalog(); };
-            strip.appendChild(pill);
-          });
-
-          catSec.appendChild(strip);
-          main.appendChild(catSec);
-        }
-
-        var productsHost = el('div');
-        renderProductsSection(productsHost, rawProducts, settings, biz, currency);
-        main.appendChild(productsHost);
-        root.appendChild(main);
-
-        var footer = el('footer', 'footer');
-        var fp1 = el('p', '', 'Powered by ');
-        fp1.appendChild(el('strong', '', 'Brivu'));
-        fp1.appendChild(document.createTextNode(' • Live Stock Catalog'));
-        footer.appendChild(fp1);
-        root.appendChild(footer);
-
-        renderModal(biz, settings, currency);
-      }
-
-      function renderProductsSection(host, rawProducts, settings, biz, currency) {
-        host.textContent = '';
-        var q = searchQuery.toLowerCase().trim();
-        var filtered = rawProducts.filter(function (p) {
-          if (selectedCategoryId !== 'all' && p.categoryId !== selectedCategoryId) return false;
-          if (settings.hideOutOfStock && Number(p.quantity || 0) <= 0) return false;
-          if (!q) return true;
-          return (
-            String(p.name || '').toLowerCase().indexOf(q) !== -1 ||
-            String(p.categoryName || '').toLowerCase().indexOf(q) !== -1 ||
-            String(p.color || '').toLowerCase().indexOf(q) !== -1 ||
-            (Array.isArray(p.sizes) && p.sizes.some(function (s) { return String(s).toLowerCase().indexOf(q) !== -1; }))
-          );
-        });
-
-        if (filtered.length === 0) {
-          var empty = el('div', 'state-card');
-          var icon = el('div', 'state-icon');
-          icon.style.background = 'var(--surface-alt)';
-          icon.style.color = 'var(--text-soft)';
-          icon.appendChild(svgEl(ICONS.bag, 24, 2));
-          empty.appendChild(icon);
-          empty.appendChild(el('h3', 'state-title', 'No products found'));
-          empty.appendChild(el('p', 'state-sub', q ? 'No items match "' + searchQuery + '".' : 'Check back soon for new stock arrivals!'));
-          host.appendChild(empty);
-          return;
-        }
-
-        var grid = el('div', 'grid');
-        filtered.forEach(function (prod) {
-          var card = el('div', 'card');
-          card.onclick = function () { selectedProduct = prod; renderModal(biz, settings, currency); };
-
-          var media = el('div', 'card-media');
-          var pImg = safeImg(prod.image);
-          if (pImg) {
-            var img = document.createElement('img');
-            img.src = pImg;
-            img.alt = prod.name || '';
-            img.loading = 'lazy';
-            media.appendChild(img);
-          } else {
-            var ph = el('div', 'card-placeholder');
-            ph.appendChild(svgEl(ICONS.bag, 30, 1.8));
-            if (prod.itemId) ph.appendChild(el('span', 'tag-size', '#' + prod.itemId));
-            media.appendChild(ph);
-          }
-
-          var qty = Number(prod.quantity || 0);
-          var isOut = qty <= 0;
-          var isLow = qty > 0 && qty < 5;
-          var sBadge = el('span', 'stock-badge ' + (isOut ? 'stock-out' : isLow ? 'stock-low' : 'stock-in'));
-          sBadge.appendChild(el('span', 'stock-dot'));
-          var sLabel = isOut
-            ? 'Out of Stock'
-            : isLow
-            ? (settings.showExactQuantity !== false ? 'Only ' + qty + ' left' : 'Low Stock')
-            : (settings.showExactQuantity !== false ? qty + ' in stock' : 'In Stock');
-          sBadge.appendChild(el('span', '', sLabel));
-          media.appendChild(sBadge);
-
-          if (prod.categoryName) {
-            var cBadge = el('span', 'cat-overlay', prod.categoryName);
-            cBadge.style.background = safeHex(prod.categoryColor, '#475569');
-            media.appendChild(cBadge);
-          }
-          card.appendChild(media);
-
-          var body = el('div', 'card-body');
-          var top = el('div');
-          top.appendChild(el('h3', 'card-title', prod.name || 'Product'));
-          if ((Array.isArray(prod.sizes) && prod.sizes.length) || prod.color) {
-            var tags = el('div', 'tags-row');
-            if (Array.isArray(prod.sizes) && prod.sizes.length) {
-              tags.appendChild(el('span', 'tag-size', 'Sizes: ' + prod.sizes.join(', ')));
-            }
-            if (prod.color) {
-              tags.appendChild(el('span', 'tag-color', prod.color));
-            }
-            top.appendChild(tags);
-          }
-          body.appendChild(top);
-
-          var foot = el('div', 'card-footer');
-          var priceBox = el('div');
-          priceBox.appendChild(el('span', 'price-label', 'Price'));
-          priceBox.appendChild(el('span', 'price-val', formatPrice(prod.sellingPrice, currency)));
-          foot.appendChild(priceBox);
-
-          if (settings.allowWhatsAppOrders !== false && (biz.whatsapp || biz.phone)) {
-            var waMini = el('button', 'wa-mini');
-            waMini.type = 'button';
-            waMini.title = 'Order via WhatsApp';
-            waMini.appendChild(svgEl(ICONS.wa, 16, 2));
-            waMini.onclick = function (e) {
-              e.stopPropagation();
-              openWa(biz, currency, prod);
-            };
-            foot.appendChild(waMini);
-          }
-          body.appendChild(foot);
-          card.appendChild(body);
-          grid.appendChild(card);
-        });
-        host.appendChild(grid);
-      }
-
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && selectedProduct) {
-          selectedProduct = null;
-          var biz = (catalog && catalog.business) || {};
-          var settings = (catalog && catalog.settings) || {};
-          renderModal(biz, settings, biz.currency || settings.currency || 'UGX');
-        }
-      });
-
-      function fetchLiveCatalog(silent) {
-        var qs = [];
-        if (slug) qs.push('slug=' + encodeURIComponent(slug));
-        if (ownerEmail) qs.push('email=' + encodeURIComponent(ownerEmail));
-        var endpoint = catalogId
-          ? '/api/catalog/' + encodeURIComponent(catalogId) + (qs.length ? '?' + qs.join('&') : '')
-          : '/api/store/' + encodeURIComponent(slug || 'store') + (ownerEmail ? '?email=' + encodeURIComponent(ownerEmail) : '');
-
-        fetch(endpoint, { cache: 'no-store' })
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (json) {
-            if (json && json.data && (Array.isArray(json.data.products) || json.data.business)) {
-              catalog = json.data;
-              renderCatalog();
-            } else if (!silent && !catalog) {
-              renderNotFound('This store catalog could not be found.');
-            }
-          })
-          .catch(function () {
-            if (!silent && !catalog) {
-              renderNotFound('Unable to connect to the live catalog server.');
-            }
-          });
-      }
-
-      if (catalog && (Array.isArray(catalog.products) || catalog.business)) {
-        renderCatalog();
-        fetchLiveCatalog(true);
-      } else {
-        renderLoading();
-        fetchLiveCatalog(false);
-      }
-    })();
-  </script>
-</body>
-</html>`;
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -2991,7 +1756,6 @@ export default {
 
       // 1. Direct server-side exchange on worker for immediate zero-delay sign-in
       let authenticatedUser: any = null;
-      let exchangeError = '';
       if (authCode) {
         try {
           const cleanApiKey = (env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
@@ -3033,56 +1797,15 @@ export default {
                 updatedAt: new Date().toISOString(),
                 syncedToCloudflare: true,
               };
-
-              const db = getD1Database(env);
-              if (db && email) {
-                try {
-                  await ensureD1Tables(db);
-                  const nowIso = new Date().toISOString();
-                  await db.prepare(`
-                    INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(email) DO UPDATE SET
-                      name = excluded.name,
-                      first_name = excluded.first_name,
-                      last_name = excluded.last_name,
-                      profile_picture_url = excluded.profile_picture_url,
-                      updated_at = excluded.updated_at,
-                      last_login = excluded.last_login
-                  `).bind(
-                    email,
-                    email,
-                    name,
-                    firstName,
-                    lastName,
-                    profilePictureUrl,
-                    'google',
-                    nowIso,
-                    nowIso,
-                    nowIso
-                  ).run();
-                } catch (_) {}
-              }
-            } else {
-              const errData: any = await wRes.json().catch(() => null);
-              const rawMsg = errData?.error_description || errData?.message || errData?.error || 'Could not verify Google Sign-In.';
-              exchangeError = `WorkOS Error: ${rawMsg}`;
             }
-          } else {
-            exchangeError = 'WorkOS API key is not configured on the Cloudflare Worker.';
           }
-        } catch (exErr: any) {
-          exchangeError = String(exErr?.message || exErr || 'Google Sign-In verification failed.');
+        } catch (exErr) {
           console.warn('Callback direct server-side exchange note:', exErr);
         }
-      } else if (!authError) {
-        exchangeError = 'Missing authorization code from Google Sign-In.';
       }
 
-      const finalAuthError = authError || (!authenticatedUser ? exchangeError : '');
-
-      // 2. Persist session for instant polling in web and Android when user authenticated
-      if (sessionId && authenticatedUser) {
+      // 2. Persist session for instant polling in web and Android
+      if (sessionId) {
         authSessionsCache.set(sessionId, {
           status: 'completed',
           user: authenticatedUser,
@@ -3099,15 +1822,12 @@ export default {
             await db.prepare(`
               INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
               VALUES (?, ?, ?, ?, ?)
-            `).bind(sessionId, 'completed', authCode, JSON.stringify(authenticatedUser), Date.now()).run();
+            `).bind(sessionId, 'completed', authCode, authenticatedUser ? JSON.stringify(authenticatedUser) : null, Date.now()).run();
           } catch (_) {}
         }
       }
 
       // 3. Serve the clean, web-only callback landing page (never triggers Play Store or custom scheme errors)
-      const escapeHtmlCallback = (str: string) =>
-        String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3201,19 +1921,19 @@ export default {
 </head>
 <body>
   <div class="card">
-    ${finalAuthError ? `
+    ${authError ? `
       <div class="icon-error">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       </div>
-      <h1>Google Sign-In Error</h1>
-      <p>${escapeHtmlCallback(finalAuthError)}</p>
-      <a href="${platform === 'android' ? 'brivu://auth/callback' : '/'}" class="btn">${platform === 'android' ? 'Return to Brivu App' : 'Return Home'}</a>
+      <h1>Authentication Notice</h1>
+      <p>${authError}</p>
+      <a href="/" class="btn">Return Home</a>
     ` : `
       <div class="icon-success">
         <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
       </div>
       <h1>Sign-In Approved!</h1>
-      ${authenticatedUser?.email ? `<div class="user-pill">${escapeHtmlCallback(authenticatedUser.email)}</div>` : ''}
+      ${authenticatedUser?.email ? `<div class="user-pill">${authenticatedUser.email}</div>` : ''}
       <p id="statusMsg">Your Google account has been verified. Returning to Brivu...</p>
       <div id="actionButtons" style="margin-top: 1.25rem;">
         <a id="btnPrimary" href="/" class="btn">Open Brivu App</a>
@@ -3230,7 +1950,7 @@ export default {
       var sessionId = ${JSON.stringify(sessionId)};
       var platform = ${JSON.stringify(platform)};
 
-      if (!user) return;
+      if (!code && !user) return;
 
       // 1. Web Popup Flow: post message to opener window and close cleanly
       if (window.opener) {
@@ -3248,18 +1968,14 @@ export default {
       var isMobile = isAndroid || userAgent.indexOf('iphone') >= 0 || userAgent.indexOf('ipad') >= 0;
       var isAndroidApp = platform === 'android' || isAndroid || isMobile;
 
-      // Build clean payload parameters
+      // Build payload parameters
       var userParam = user ? '&user=' + encodeURIComponent(JSON.stringify(user)) : '';
       var sessionParam = sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '';
-      var queryParts = [];
-      if (sessionId) queryParts.push('auth_session=' + encodeURIComponent(sessionId));
-      if (user) queryParts.push('user=' + encodeURIComponent(JSON.stringify(user)));
-      if (code) queryParts.push('code=' + encodeURIComponent(code));
-      var queryStr = queryParts.join('&');
+      var codeParam = code ? '&code=' + encodeURIComponent(code) : '';
 
       // Direct Android app deep link schemes registered in AndroidManifest.xml
-      var appSchemeUrl = 'brivu://auth/callback?' + queryStr;
-      var appIntentUrl = 'intent://auth/callback?' + queryStr + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
+      var appSchemeUrl = 'brivu://auth/callback?' + codeParam + sessionParam + userParam;
+      var appIntentUrl = 'intent://auth/callback?' + codeParam + sessionParam + userParam + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
 
       var btnPrimary = document.getElementById('btnPrimary');
       var btnWebSecondary = document.getElementById('btnWebSecondary');
@@ -3288,7 +2004,7 @@ export default {
         }
         if (btnWebSecondary) {
           btnWebSecondary.style.display = 'block';
-          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?' + queryStr;
+          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?auth_session=' + encodeURIComponent(sessionId || '') + userParam;
         }
 
         // Auto-launch into Android app immediately
@@ -3310,7 +2026,7 @@ export default {
 
         var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
         var sep = dest.indexOf('?') >= 0 ? '&' : '?';
-        var webDestination = dest + sep + (queryStr || ('code=' + encodeURIComponent(code || '') + sessionParam + userParam));
+        var webDestination = dest + sep + (code ? 'code=' + encodeURIComponent(code) : '') + sessionParam + userParam;
 
         if (btnPrimary) {
           btnPrimary.textContent = 'Continue to Brivu';
@@ -3321,9 +2037,9 @@ export default {
           try {
             var target = new URL(targetUrl);
             if (target.hostname !== 'localhost' && target.hostname !== '127.0.0.1' && target.origin !== window.location.origin) {
+              target.searchParams.set('code', code);
               if (sessionId) target.searchParams.set('auth_session', sessionId);
               if (user) target.searchParams.set('user', JSON.stringify(user));
-              if (code) target.searchParams.set('code', code);
               window.location.replace(target.toString());
             }
           } catch (_) {}
@@ -4992,135 +3708,6 @@ export default {
       );
     }
 
-    // 6.5. Live Stock Catalog Publish endpoint (/api/catalog/publish or legacy /api/store/publish)
-    if (
-      (url.pathname === '/api/catalog/publish' || url.pathname === '/api/store/publish') &&
-      request.method === 'POST'
-    ) {
-      try {
-        const body: any = await request.json().catch(() => ({}));
-        const rawSlug = String(body?.slug || body?.settings?.slug || body?.payload?.settings?.slug || '').trim().toLowerCase();
-        const slug = sanitizePublicStoreSlug(rawSlug || 'store');
-        const payload = body?.payload || body;
-        const catalogIdOverride = String(
-          body?.catalogId || payload?.settings?.catalogId || url.searchParams.get('catalogId') || ''
-        ).trim();
-
-        const userEmail = (
-          request.headers.get('X-User-Email') ||
-          request.headers.get('X-User-Id') ||
-          url.searchParams.get('email') ||
-          url.searchParams.get('user_id') ||
-          body?.userEmail ||
-          body?.email ||
-          payload?.settings?.email ||
-          payload?.business?.email ||
-          ''
-        ).toLowerCase().trim();
-
-        const db = getD1Database(env);
-        const now = new Date().toISOString();
-
-        let savedSlug = slug;
-        let savedCatalogId = catalogIdOverride || deriveFallbackCatalogId(userEmail || slug, slug);
-        if (db) {
-          const saved = await upsertUserStoreCatalog(db, userEmail, slug, payload, now, catalogIdOverride || undefined);
-          savedSlug = saved.slug;
-          savedCatalogId = saved.catalogId;
-        }
-
-        const qs = new URLSearchParams();
-        if (savedSlug) qs.set('slug', savedSlug);
-        if (userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-')) {
-          qs.set('email', userEmail);
-        }
-        const publicUrl = `/catalog/${encodeURIComponent(savedCatalogId)}${qs.toString() ? `?${qs.toString()}` : ''}`;
-
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            success: true,
-            slug: savedSlug,
-            catalogId: savedCatalogId,
-            userEmail,
-            url: publicUrl,
-          }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-        );
-      } catch (err: any) {
-        return new Response(
-          JSON.stringify({ ok: false, error: err?.message || 'Failed to publish store catalog' }),
-          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
-    // 6.6. Live Stock Catalog Fetch endpoint (/api/catalog/:catalogId & /api/store/:slug) - PUBLIC NO AUTH REQUIRED
-    if (
-      url.pathname === '/api/catalog' ||
-      url.pathname.startsWith('/api/catalog/') ||
-      url.pathname === '/api/store' ||
-      url.pathname.startsWith('/api/store/')
-    ) {
-      const isCatalogEndpoint = url.pathname === '/api/catalog' || url.pathname.startsWith('/api/catalog/');
-      let catalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
-      let rawSlug = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
-
-      if (isCatalogEndpoint) {
-        const seg = url.pathname === '/api/catalog'
-          ? ''
-          : decodeURIComponent(url.pathname.replace('/api/catalog/', '').split('/')[0] || '').trim();
-        if (seg && !catalogIdParam) {
-          catalogIdParam = seg;
-        }
-      } else {
-        const seg = url.pathname === '/api/store'
-          ? 'store'
-          : decodeURIComponent(url.pathname.replace('/api/store/', '').split('/')[0] || '').trim().toLowerCase();
-        if (seg && !rawSlug) {
-          rawSlug = seg;
-        }
-      }
-
-      const slug = sanitizePublicStoreSlug(rawSlug || 'store');
-      const userEmail = (
-        url.searchParams.get('email') ||
-        url.searchParams.get('u') ||
-        url.searchParams.get('user') ||
-        url.searchParams.get('user_id') ||
-        request.headers.get('X-User-Email') ||
-        request.headers.get('X-User-Id') ||
-        ''
-      ).toLowerCase().trim();
-
-      const data = await resolvePublicStoreCatalog(env, slug, userEmail, catalogIdParam || undefined);
-      if (data) {
-        return new Response(
-          JSON.stringify({ ok: true, success: true, data }),
-          {
-            status: 200,
-            headers: {
-              ...CORS_HEADERS,
-              'Content-Type': 'application/json',
-              'Cache-Control': 'no-store, no-cache, must-revalidate',
-            },
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ ok: false, error: `Catalog "${catalogIdParam || slug}" not found` }),
-        {
-          status: 404,
-          headers: {
-            ...CORS_HEADERS,
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-          },
-        }
-      );
-    }
-
     // 7. Data Sync Push endpoint (/api/sync/push)
     if (url.pathname === '/api/sync/push' && request.method === 'POST') {
       try {
@@ -5174,20 +3761,15 @@ export default {
 
           await ensureD1Tables(db);
 
-          // Fast short-circuit if backup_data is completely identical AND qr_pages & store_catalogs already populated
+          // Fast short-circuit if backup_data is completely identical AND qr_pages already populated
           let existingBackupRow: any = null;
           let existingQrRow: any = null;
-          let existingStoreRow: any = null;
-          const hasInventoryProducts = Array.isArray(backupData.inventoryProducts) && backupData.inventoryProducts.length > 0;
           try {
             existingBackupRow = await db.prepare('SELECT backup_data FROM backups WHERE id = ?').bind(`user_${userEmail}`).first();
             existingQrRow = await db.prepare('SELECT id FROM qr_pages WHERE user_email = ? LIMIT 1').bind(userEmail).first();
-            if (hasInventoryProducts) {
-              existingStoreRow = await db.prepare('SELECT slug FROM store_catalogs WHERE LOWER(user_email) = ? LIMIT 1').bind(userEmail).first();
-            }
           } catch (_) {}
 
-          if (existingBackupRow?.backup_data === backupJson && existingQrRow?.id && (!hasInventoryProducts || existingStoreRow?.slug)) {
+          if (existingBackupRow?.backup_data === backupJson && existingQrRow?.id) {
             return new Response(
               JSON.stringify({
                 ok: true,
@@ -5588,26 +4170,6 @@ export default {
               preserveExistingPhotosIfEmpty: true,
               preserveExistingIfEmpty: true,
             });
-          }
-
-          // E. Auto-update user's Live Stock Catalog row whenever inventory or catalog settings sync
-          const inv = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts : (Array.isArray(backupData.inventory) ? backupData.inventory : []);
-          if (inv.length > 0 || backupData.publicCatalogSettings) {
-            try {
-              const autoCatalog = buildPublicStoreCatalogFromBackup(backupData, userEmail);
-              if (autoCatalog) {
-                await upsertUserStoreCatalog(
-                  db,
-                  userEmail,
-                  autoCatalog.settings.slug,
-                  autoCatalog,
-                  now,
-                  autoCatalog.settings.catalogId
-                );
-              }
-            } catch (_) {}
-          } else {
-            invalidateCachePattern(`storeCache:${userEmail}:`);
           }
         }
 
@@ -6300,89 +4862,28 @@ export default {
       }
     }
 
-    // Detect QR & Store/Catalog HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
+    // Detect QR HTML routes upfront so `not_found_handling = "single-page-application"` doesn't short-circuit Step 6 SSR injection
     const isStaticAssetExt = /\.[a-z0-9]{1,8}$/i.test(url.pathname) && !url.pathname.endsWith('.html');
-    const isStoreRoute =
-      url.pathname === '/catalog' ||
-      url.pathname.startsWith('/catalog/') ||
-      url.pathname === '/store' ||
-      url.pathname.startsWith('/store/') ||
-      url.searchParams.has('catalogId') ||
-      url.searchParams.has('catalog') ||
-      url.searchParams.has('store');
     const isQrRoute =
-      !isStoreRoute &&
-      (url.pathname === '/qr' ||
-        url.pathname.startsWith('/qr/') ||
-        url.pathname === '/menu' ||
-        url.pathname.startsWith('/menu/') ||
-        url.searchParams.has('qr') ||
-        url.searchParams.has('email') ||
-        url.searchParams.has('u') ||
-        url.searchParams.has('user') ||
-        url.searchParams.has('event') ||
-        url.searchParams.has('eventId') ||
-        url.searchParams.has('events') ||
-        url.searchParams.has('website') ||
-        url.searchParams.has('websiteId') ||
-        url.searchParams.has('websites') ||
-        url.searchParams.has('social') ||
-        url.searchParams.has('socialId') ||
-        url.searchParams.has('socials'));
-    const shouldServeStandaloneStore =
-      request.method === 'GET' && !isStaticAssetExt && isStoreRoute;
+      url.pathname === '/qr' ||
+      url.pathname.startsWith('/qr/') ||
+      url.pathname === '/menu' ||
+      url.pathname.startsWith('/menu/') ||
+      url.searchParams.has('qr') ||
+      url.searchParams.has('email') ||
+      url.searchParams.has('u') ||
+      url.searchParams.has('user') ||
+      url.searchParams.has('event') ||
+      url.searchParams.has('eventId') ||
+      url.searchParams.has('events') ||
+      url.searchParams.has('website') ||
+      url.searchParams.has('websiteId') ||
+      url.searchParams.has('websites') ||
+      url.searchParams.has('social') ||
+      url.searchParams.has('socialId') ||
+      url.searchParams.has('socials');
     const shouldInjectSsrHtml =
       request.method === 'GET' && !isStaticAssetExt && isQrRoute;
-
-    // 4b. Dedicated Standalone Live Stock Catalog HTML Page (completely separate from Business QR / SPA bundle)
-    if (shouldServeStandaloneStore) {
-      const emailParam = (
-        url.searchParams.get('email') ||
-        url.searchParams.get('u') ||
-        url.searchParams.get('user') ||
-        url.searchParams.get('user_id') ||
-        request.headers.get('X-User-Email') ||
-        request.headers.get('X-User-Id') ||
-        ''
-      ).toLowerCase().trim();
-
-      let storeCatalogIdParam = (url.searchParams.get('catalogId') || url.searchParams.get('catalog') || '').trim();
-      if (!storeCatalogIdParam && url.pathname.includes('/catalog/')) {
-        storeCatalogIdParam = decodeURIComponent(url.pathname.split('/catalog/')[1]?.split('?')[0]?.split('/')[0] || '').trim();
-      }
-      let storeSlugParam = (url.searchParams.get('slug') || url.searchParams.get('store') || '').trim().toLowerCase();
-      if (!storeSlugParam && url.pathname.includes('/store/')) {
-        storeSlugParam = decodeURIComponent(url.pathname.split('/store/')[1]?.split('?')[0]?.split('/')[0] || '').trim().toLowerCase();
-      } else if (!storeSlugParam && (url.pathname === '/store' || url.pathname.endsWith('/store'))) {
-        storeSlugParam = 'store';
-      }
-
-      const preloadedStore = await Promise.race([
-        resolvePublicStoreCatalog(
-          env,
-          sanitizePublicStoreSlug(storeSlugParam || 'store'),
-          emailParam,
-          storeCatalogIdParam || undefined
-        ).catch(() => null),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
-      ]);
-
-      const standaloneHtml = renderStandaloneCatalogHtml(preloadedStore, {
-        catalogId: storeCatalogIdParam || preloadedStore?.settings?.catalogId || undefined,
-        slug: storeSlugParam || preloadedStore?.settings?.slug || 'store',
-        email: emailParam || preloadedStore?.settings?.email || preloadedStore?.business?.email || '',
-        origin: url.origin,
-      });
-
-      return new Response(standaloneHtml, {
-        status: 200,
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-        },
-      });
-    }
 
     // 5. Try serving exact static asset from ASSETS binding (skip for HTML QR routes so Step 6 preloads user data)
     if (!shouldInjectSsrHtml) {

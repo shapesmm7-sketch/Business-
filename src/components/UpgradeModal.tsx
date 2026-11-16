@@ -294,7 +294,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                   ☁️ <strong>Cloud Sync & Backup:</strong> Safe real-time backup to the cloud with instant restoration on any phone.
                 </p>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
-                  🌐 <strong>Live QR Hosting:</strong> Enables 24/7 public online hosting for your business catalog & QR flyers.
+                  🌐 <strong>Live QR Hosting:</strong> Enables 24/7 public online hosting for your business QR pages, menus, events &amp; flyers.
                 </p>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px] font-bold text-purple-700 dark:text-purple-300">
                   🚫 <strong>100% Ad-Free:</strong> All AdMob banners, interstitial popups, and ads disappear completely.

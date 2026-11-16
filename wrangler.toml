@@ -6,7 +6,7 @@ compatibility_date = "2024-10-06"
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/", "/callback", "/auth/callback", "/catalog", "/catalog/*", "/store", "/store/*", "/qr", "/qr/*", "/menu", "/menu/*", "/api/*"]
+run_worker_first = ["/", "/qr", "/qr/*", "/menu", "/menu/*", "/api/*"]
 
 [build]
 command = "npm run build"

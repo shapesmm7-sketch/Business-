@@ -63,6 +63,12 @@ const GoogleDriveNative = registerPlugin<GoogleDrivePluginInterface>('GoogleDriv
 
 const STORAGE_ACCOUNT_KEY = 'brivu_google_drive_account';
 const STORAGE_LAST_SYNC_KEY = 'brivu_google_drive_last_sync';
+const STOCK_AUTO_BACKUP_FILENAME = 'brivu_stock_auto_backup.json';
+
+let stockAutoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let stockAutoSyncInFlight = false;
+let stockAutoSyncQueued = false;
+let autoSyncListenerAttached = false;
 
 // Google Cloud Console OAuth 2.0 Web Client ID
 export const GOOGLE_OAUTH_CLIENT_ID =
@@ -1001,5 +1007,147 @@ export const GoogleDriveService = {
     } catch (err: any) {
       return { success: false, error: err?.message || 'Error restoring data from Google Drive' };
     }
+  },
+
+  /**
+   * Attempts to retrieve a Google Drive access token silently without opening any UI popups.
+   */
+  async getSilentAccessToken(): Promise<string | null> {
+    const account = this.getStoredAccount();
+    if (!account || !account.connected) return null;
+
+    if (this.isNativeAndroid()) {
+      try {
+        const res = await GoogleDriveNative.getAccessToken();
+        if (res?.accessToken) {
+          account.accessToken = res.accessToken;
+          account.tokenExpiresAt = Date.now() + 3600 * 1000;
+          localStorage.setItem(STORAGE_ACCOUNT_KEY, JSON.stringify(account));
+          return res.accessToken;
+        }
+      } catch {
+        // Fall through to cached token check
+      }
+    }
+
+    const isExpired = account.tokenExpiresAt ? Date.now() > account.tokenExpiresAt - 120000 : false;
+    if (!isExpired && account.accessToken) {
+      return account.accessToken;
+    }
+    return null;
+  },
+
+  /**
+   * Silently upserts stock items + embedded product photos + business backup into
+   * "Brivu Backups/brivu_stock_auto_backup.json" in the user's connected Google Drive.
+   */
+  async syncStockQuietly(): Promise<boolean> {
+    if (stockAutoSyncInFlight) {
+      stockAutoSyncQueued = true;
+      return false;
+    }
+    stockAutoSyncInFlight = true;
+    try {
+      const accessToken = await this.getSilentAccessToken();
+      if (!accessToken) return false;
+
+      const folderId = await this.getOrCreateBrivuFolder(accessToken);
+      const payload = await StorageService.exportBackupWithEmbeddedPhotos();
+      const photoStats = this.getPhotoStats();
+      (payload as any).photoStats = photoStats;
+      const payloadStr = JSON.stringify(payload);
+      const now = new Date();
+      const formattedSyncTime = formatSyncTimestamp(now);
+
+      // Find existing auto-backup file so Google Drive is updated in-place cleanly
+      const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+        `'${folderId}' in parents and name = '${STOCK_AUTO_BACKUP_FILENAME}' and trashed = false`
+      )}&spaces=drive&pageSize=1&fields=files(id,name)`;
+      const searchRes = await fetch(searchUrl, {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      let existingFileId: string | null = null;
+      if (searchRes.ok) {
+        const searchData = await searchRes.json().catch(() => null);
+        existingFileId = searchData?.files?.[0]?.id || null;
+      }
+
+      const boundary = '-------314159265358979323846';
+      const delimiter = `\r\n--${boundary}\r\n`;
+      const closeDelimiter = `\r\n--${boundary}--`;
+      const metadata = existingFileId
+        ? {
+            name: STOCK_AUTO_BACKUP_FILENAME,
+            mimeType: 'application/json',
+            description: `Brivu automatic local + Google Drive stock & data backup (${now.toLocaleString()})`,
+          }
+        : {
+            name: STOCK_AUTO_BACKUP_FILENAME,
+            mimeType: 'application/json',
+            parents: [folderId],
+            description: `Brivu automatic local + Google Drive stock & data backup (${now.toLocaleString()})`,
+          };
+
+      const multipartBody =
+        delimiter +
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify(metadata) +
+        delimiter +
+        'Content-Type: application/json\r\n\r\n' +
+        payloadStr +
+        closeDelimiter;
+
+      const uploadEndpoint = existingFileId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFileId)}?uploadType=multipart&fields=id,name,modifiedTime`
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime';
+
+      const uploadRes = await fetch(uploadEndpoint, {
+        method: existingFileId ? 'PATCH' : 'POST',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': `multipart/related; boundary="${boundary}"`,
+        },
+        body: multipartBody,
+      });
+
+      if (!uploadRes.ok) return false;
+
+      localStorage.setItem(STORAGE_LAST_SYNC_KEY, formattedSyncTime);
+      const account = this.getStoredAccount();
+      if (account) {
+        account.lastSyncTime = formattedSyncTime;
+        localStorage.setItem(STORAGE_ACCOUNT_KEY, JSON.stringify(account));
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      stockAutoSyncInFlight = false;
+      if (stockAutoSyncQueued) {
+        stockAutoSyncQueued = false;
+        this.scheduleStockAutoSync(1500);
+      }
+    }
+  },
+
+  scheduleStockAutoSync(delayMs = 2500): void {
+    if (typeof window === 'undefined') return;
+    const acc = this.getStoredAccount();
+    if (!acc || !acc.connected) return;
+    if (stockAutoSyncTimer) clearTimeout(stockAutoSyncTimer);
+    stockAutoSyncTimer = setTimeout(() => {
+      stockAutoSyncTimer = null;
+      this.syncStockQuietly().catch(() => {});
+    }, delayMs);
+  },
+
+  initAutoSyncListener(): void {
+    if (typeof window === 'undefined' || autoSyncListenerAttached) return;
+    autoSyncListenerAttached = true;
+    window.addEventListener('brivu_inventory_changed', () => {
+      this.scheduleStockAutoSync(2500);
+    });
   },
 };

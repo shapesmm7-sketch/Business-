@@ -64,7 +64,6 @@ import {
   EyeOff,
   RotateCcw,
   List,
-  Globe,
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
@@ -75,7 +74,6 @@ import { compressImageFile } from '../utils/imageCompressor';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { StaffManageModal } from './StaffManageModal';
 import { AgentManageModal } from './AgentManageModal';
-import { PublicCatalogModal } from './PublicCatalogModal';
 import { PhoneInputField } from './PhoneInputField';
 import { jsPDF } from 'jspdf';
 
@@ -778,10 +776,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [sellingPrice, setSellingPrice] = useState<string>('0.0');
   const [taxPercent, setTaxPercent] = useState<string>('0');
   const [isCompressingImage, setIsCompressingImage] = useState<boolean>(false);
-  const [isPublicInCatalog, setIsPublicInCatalog] = useState<boolean>(true);
   const [productDescription, setProductDescription] = useState<string>('');
   const [stockViewMode, setStockViewMode] = useState<'grid' | 'list'>(() => StorageService.getStockViewMode());
-  const [isPublicCatalogModalOpen, setIsPublicCatalogModalOpen] = useState<boolean>(false);
   const [showInlineCategoryInput, setShowInlineCategoryInput] = useState<boolean>(false);
   const [quickCategoryName, setQuickCategoryName] = useState<string>('');
   const [brokenImageKeys, setBrokenImageKeys] = useState<Record<string, boolean>>({});
@@ -799,22 +795,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsCompressingImage(true);
       const compressed = await compressImageFile(file, { maxDimension: 320, quality: 0.68 });
       setImage(compressed);
-
-      // Upload to Cloudflare R2 first
-      try {
-        const uploadRes = await CloudflareService.uploadFile({
-          data: compressed,
-          filename: `product_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-          folder: 'photos',
-        });
-        if (uploadRes.success && uploadRes.url) {
-          setImage(uploadRes.url);
-          showToast('Product photo saved to Cloud Storage!');
-        }
-      } catch (cfErr) {
-        console.warn('Cloudflare product photo upload note:', cfErr);
-      }
+      showToast('Product photo saved locally!');
     } catch (err) {
       console.warn('Failed to compress image:', err);
       showToast('Could not process photo');
@@ -904,7 +885,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       sellingPrice: selling,
       taxPercent: tax,
       categoryId: productCategoryId || undefined,
-      isPublicInCatalog,
       createdAt: editingProductId ? (products.find((p) => p.id === editingProductId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -913,7 +893,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     refreshData();
 
     if (saved) {
-      showToast(editingProductId ? 'Product updated & saved to Cloud Storage!' : 'Product saved to Cloud Storage & inventory!');
+      showToast(editingProductId ? 'Product updated in local storage!' : 'Product saved to local storage & inventory!');
       AdMobService.showInterstitial('product_saved');
     } else {
       showToast(`Could not save: Product with ID "${targetItemId}" already exists.`);
@@ -924,7 +904,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setEditingProductId(null);
     setName('');
     setProductDescription('');
-    setIsPublicInCatalog(true);
     setProductCategoryId('');
     setImage(undefined);
     setSelectedSizes([]);
@@ -977,7 +956,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setItemId(prod.itemId);
     setName(prod.name);
     setProductDescription(prod.description || '');
-    setIsPublicInCatalog(prod.isPublicInCatalog !== false);
     setProductCategoryId(prod.categoryId || '');
     setImage(prod.image);
     setSelectedSizes(prod.sizes || []);
@@ -4941,57 +4919,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               rows={2}
               value={productDescription}
               onChange={(e) => setProductDescription(e.target.value)}
-              placeholder="Add key features or details for customers in your online store..."
+              placeholder="Add key features or product notes..."
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none resize-none"
             />
-          </div>
-
-          {/* SHOW IN PUBLIC CATALOG TOGGLE */}
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                  isPublicInCatalog
-                    ? 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400'
-                    : 'bg-slate-200 text-slate-500 dark:bg-slate-700'
-                }`}
-              >
-                <Globe className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white">
-                    Show in Public Catalog
-                  </span>
-                  <span
-                    className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
-                      isPublicInCatalog
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                        : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {isPublicInCatalog ? 'Public' : 'Hidden'}
-                  </span>
-                </div>
-                <p className="text-[10.5px] text-slate-400">
-                  Allow customers to view and order this item in your online store
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isPublicInCatalog}
-              onClick={() => setIsPublicInCatalog(!isPublicInCatalog)}
-              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors shrink-0 ${
-                isPublicInCatalog
-                  ? 'bg-sky-600 justify-end'
-                  : 'bg-slate-300 dark:bg-slate-600 justify-start'
-              }`}
-            >
-              <div className="bg-white w-4 h-4 rounded-full shadow-md" />
-            </button>
           </div>
 
           {/* SAVE BUTTON */}
@@ -6565,17 +6495,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         <span className="hidden sm:inline">List</span>
                       </button>
                     </div>
-
-                    {/* Live Catalog Quick Button */}
-                    <button
-                      type="button"
-                      onClick={() => setIsPublicCatalogModalOpen(true)}
-                      className="px-2 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition shrink-0 flex items-center gap-1 text-[11px] font-bold"
-                      title="Manage Live Public Catalog"
-                    >
-                      <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span className="hidden xs:inline">Catalog</span>
-                    </button>
                   </div>
 
                   <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
@@ -6643,7 +6562,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       const isOutOfStock = prod.quantity === 0;
                       const isLowStock = prod.quantity > 0 && prod.quantity < 5;
                       const catObj = productCategories.find((c) => c.id === prod.categoryId);
-                      const isPublic = prod.isPublicInCatalog !== false;
 
                       return (
                         <React.Fragment key={prod.id}>
@@ -6676,27 +6594,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                   </span>
                                 </div>
                               )}
-
-                              {/* Top-Right: Public Catalog Visibility Toggle */}
-                              <div className="absolute top-2 right-2 z-10">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    StorageService.toggleProductPublicCatalog(prod.id);
-                                    setProducts(StorageService.getInventoryProducts());
-                                  }}
-                                  className={`px-1.5 py-0.5 rounded-full text-[9px] font-extrabold flex items-center gap-1 shadow-md backdrop-blur-xs transition ${
-                                    isPublic
-                                      ? 'bg-emerald-600/90 text-white hover:bg-emerald-600'
-                                      : 'bg-slate-900/80 text-slate-300 hover:bg-slate-800'
-                                  }`}
-                                  title={isPublic ? 'Public in Live Catalog (Click to hide)' : 'Hidden from Live Catalog (Click to show)'}
-                                >
-                                  <Globe className="w-2.5 h-2.5" />
-                                  <span>{isPublic ? 'Public' : 'Hidden'}</span>
-                                </button>
-                              </div>
 
                               {/* Bottom-Left: Stock Status Indicator */}
                               <div className="absolute bottom-2 left-2 z-10">
@@ -6831,7 +6728,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       const isOutOfStock = prod.quantity === 0;
                       const isLowStock = prod.quantity > 0 && prod.quantity < 5;
                       const catObj = productCategories.find((c) => c.id === prod.categoryId);
-                      const isPublic = prod.isPublicInCatalog !== false;
 
                       return (
                         <React.Fragment key={prod.id}>
@@ -6898,7 +6794,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                               </div>
                             </div>
 
-                            {/* Stock Status Badge & Public Toggle */}
+                            {/* Stock Status Badge */}
                             <div className="shrink-0 flex flex-col items-end gap-1">
                               <span
                                 className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
@@ -6914,24 +6810,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 </span>
                                 <span>{isOutOfStock ? 'Out' : `${prod.quantity} in stock`}</span>
                               </span>
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  StorageService.toggleProductPublicCatalog(prod.id);
-                                  setProducts(StorageService.getInventoryProducts());
-                                }}
-                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5 transition ${
-                                  isPublic
-                                    ? 'text-emerald-600 dark:text-emerald-400 hover:underline'
-                                    : 'text-slate-400 hover:text-slate-600'
-                                }`}
-                                title={isPublic ? 'Visible in Public Catalog (click to hide)' : 'Hidden from Public Catalog (click to show)'}
-                              >
-                                <Globe className="w-2.5 h-2.5" />
-                                <span>{isPublic ? 'Public' : 'Hidden'}</span>
-                              </button>
                             </div>
                           </div>
 
@@ -11761,15 +11639,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           />
         </div>
       )}
-
-      {/* Feature 2: Public Live Stock Catalog Modal */}
-      <PublicCatalogModal
-        isOpen={isPublicCatalogModalOpen}
-        onClose={() => setIsPublicCatalogModalOpen(false)}
-        business={business}
-        products={products}
-        onProductsUpdated={refreshData}
-      />
 
     </div>
   );
