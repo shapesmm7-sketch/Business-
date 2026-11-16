@@ -13,7 +13,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { WorkOSUser } from '../types';
-import { WorkOSAuthService } from '../services/workosAuthService';
+import { WorkOSAuthService, generatePKCE } from '../services/workosAuthService';
 import { CloudflareService } from '../services/cloudflareService';
 import { StorageService } from '../services/storage';
 
@@ -142,10 +142,11 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
     setStatusMsg({ type: 'info', text: 'Connecting to Google...' });
 
     try {
-      // 1. Clear any stale PKCE verifier; confidential Worker exchange handles verification
+      // 1. Generate PKCE verifier & challenge so Google Sign-In works cleanly without requiring client_secret
+      const { codeVerifier, codeChallenge } = await generatePKCE();
       try {
-        localStorage.removeItem('workos_pkce_verifier');
-        sessionStorage.removeItem('workos_pkce_verifier');
+        localStorage.setItem('workos_pkce_verifier', codeVerifier);
+        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
       } catch (_) {}
 
       // 2. Generate a unique session ID for web polling (enables instant web & Android login)
@@ -154,6 +155,9 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
         localStorage.setItem('workos_session_id', sessionId);
         sessionStorage.setItem('workos_session_id', sessionId);
       } catch (_) {}
+
+      // Store PKCE verifier on Worker under sessionId so /callback can exchange even from Chrome Custom Tabs
+      await CloudflareService.initWorkOSAuthSession(sessionId, codeVerifier).catch(() => false);
 
       const config = await CloudflareService.getWorkOSConfig();
       const clientId = config.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
@@ -184,7 +188,7 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
-      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&state=${stateParam}`;
+      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
       // Background session poller: checks session status every 1.2s for zero-delay instant login
       let pollTimer: any = null;
@@ -228,6 +232,12 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
             const check = await CloudflareService.checkAuthSessionStatus(sessionId);
             if (check.status === 'completed' && check.user) {
               await handleSuccessfulLogin(check.user);
+            } else if (check.status === 'completed' && check.code) {
+              stopSessionPolling();
+              const exch = await WorkOSAuthService.authenticateCode(check.code, codeVerifier);
+              if (exch.success && exch.user) {
+                await handleSuccessfulLogin(exch.user);
+              }
             }
           } catch (_) {}
         }, 1200);
@@ -253,6 +263,12 @@ export const WorkOSGoogleAuthModal: React.FC<WorkOSGoogleAuthModalProps> = ({
                 if (check.status === 'completed' && check.user) {
                   await handleSuccessfulLogin(check.user);
                   return;
+                } else if (check.status === 'completed' && check.code) {
+                  const exch = await WorkOSAuthService.authenticateCode(check.code, codeVerifier);
+                  if (exch.success && exch.user) {
+                    await handleSuccessfulLogin(exch.user);
+                    return;
+                  }
                 }
               }
             } catch (_) {}

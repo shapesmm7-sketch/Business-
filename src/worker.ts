@@ -84,7 +84,85 @@ export function getD1Database(env: any): any {
 }
 
 // In-memory auth session cache for fast instant login polling across web and Android
-const authSessionsCache = new Map<string, { status: string; code?: string; user?: any; createdAt: number }>();
+const authSessionsCache = new Map<string, { status: string; code?: string; codeVerifier?: string; user?: any; createdAt: number }>();
+
+async function resolveSessionCodeVerifier(sessionId: string, env: Env): Promise<string | undefined> {
+  if (!sessionId) return undefined;
+  const cached = authSessionsCache.get(sessionId);
+  if (cached?.codeVerifier) return cached.codeVerifier;
+
+  const db = getD1Database(env);
+  if (db) {
+    try {
+      await ensureD1Tables(db);
+      const row: any = await db
+        .prepare('SELECT status, code FROM auth_sessions WHERE session_id = ?')
+        .bind(sessionId)
+        .first();
+      if (row && row.status === 'pending' && typeof row.code === 'string' && row.code.trim()) {
+        return row.code.trim();
+      }
+    } catch (_) {}
+  }
+  return undefined;
+}
+
+async function exchangeWorkOSAuthCode(opts: {
+  clientId: string;
+  apiKey?: string;
+  code: string;
+  codeVerifier?: string;
+}): Promise<Response | null> {
+  const cleanClientId = (opts.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim();
+  const cleanApiKey = (opts.apiKey || '').trim();
+  const code = (opts.code || '').trim();
+  const codeVerifier = (opts.codeVerifier || '').trim();
+
+  let workosRes: Response | null = null;
+
+  // 1. Official PKCE exchange WITHOUT client_secret first (prevents invalid client_secret errors)
+  if (codeVerifier) {
+    workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: cleanClientId,
+        code,
+        code_verifier: codeVerifier,
+        grant_type: 'authorization_code',
+      }),
+    });
+    if (workosRes.ok) {
+      return workosRes;
+    }
+  }
+
+  // 2. Standard confidential / client_secret fallback if API key is provided
+  if (cleanApiKey) {
+    const secretBody: any = {
+      client_id: cleanClientId,
+      client_secret: cleanApiKey,
+      code,
+      grant_type: 'authorization_code',
+    };
+    if (codeVerifier) {
+      secretBody.code_verifier = codeVerifier;
+    }
+    const secretRes = await fetch('https://api.workos.com/user_management/authenticate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cleanApiKey}`,
+      },
+      body: JSON.stringify(secretBody),
+    });
+    if (secretRes.ok || !workosRes) {
+      workosRes = secretRes;
+    }
+  }
+
+  return workosRes;
+}
 
 export function hasRealQrPageContent(page: any): boolean {
   if (!page || typeof page !== 'object') return false;
@@ -1754,50 +1832,42 @@ export default {
         returnUrl = 'https://brivu.shapesmm7.workers.dev/';
       }
 
-      // 1. Direct server-side exchange on worker for immediate zero-delay sign-in
+      // 1. Direct server-side exchange on worker for immediate zero-delay sign-in (PKCE-first, no client_secret needed)
       let authenticatedUser: any = null;
       if (authCode) {
         try {
           const cleanApiKey = (env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
           const cleanClientId = (env.WORKOS_CLIENT_ID || workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
+          const sessionVerifier = sessionId ? await resolveSessionCodeVerifier(sessionId, env) : undefined;
 
-          if (cleanApiKey) {
-            const wRes = await fetch('https://api.workos.com/user_management/authenticate', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${cleanApiKey}`,
-              },
-              body: JSON.stringify({
-                client_id: cleanClientId,
-                client_secret: cleanApiKey,
-                code: authCode,
-                grant_type: 'authorization_code',
-              }),
-            });
+          const wRes = await exchangeWorkOSAuthCode({
+            clientId: cleanClientId,
+            apiKey: cleanApiKey,
+            code: authCode,
+            codeVerifier: sessionVerifier,
+          });
 
-            if (wRes.ok) {
-              const wData: any = await wRes.json();
-              const u = wData.user || wData;
-              const firstName = u.first_name || u.firstName || '';
-              const lastName = u.last_name || u.lastName || '';
-              const email = (u.email || '').toLowerCase().trim();
-              const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
-              const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
+          if (wRes && wRes.ok) {
+            const wData: any = await wRes.json();
+            const u = wData.user || wData;
+            const firstName = u.first_name || u.firstName || '';
+            const lastName = u.last_name || u.lastName || '';
+            const email = (u.email || '').toLowerCase().trim();
+            const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
+            const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
 
-              authenticatedUser = {
-                id: email || u.id || `workos_usr_${Date.now()}`,
-                email,
-                firstName,
-                lastName,
-                name,
-                profilePictureUrl,
-                emailVerified: true,
-                provider: 'google',
-                updatedAt: new Date().toISOString(),
-                syncedToCloudflare: true,
-              };
-            }
+            authenticatedUser = {
+              id: email || u.id || `workos_usr_${Date.now()}`,
+              email,
+              firstName,
+              lastName,
+              name,
+              profilePictureUrl,
+              emailVerified: true,
+              provider: 'google',
+              updatedAt: new Date().toISOString(),
+              syncedToCloudflare: true,
+            };
           }
         } catch (exErr) {
           console.warn('Callback direct server-side exchange note:', exErr);
@@ -2059,6 +2129,51 @@ export default {
       });
     }
 
+    // 2b-init. WorkOS PKCE Auth Session Init Endpoint (/api/auth/session/init)
+    if (url.pathname === '/api/auth/session/init' && request.method === 'POST') {
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const sessionId = String(body?.sessionId || '').trim();
+        const codeVerifier = typeof body?.codeVerifier === 'string' ? body.codeVerifier.trim() : '';
+        if (!sessionId) {
+          return new Response(JSON.stringify({ ok: false, error: 'Missing sessionId' }), {
+            status: 400,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const nowMs = Date.now();
+        authSessionsCache.set(sessionId, {
+          status: 'pending',
+          codeVerifier: codeVerifier || undefined,
+          createdAt: nowMs,
+        });
+
+        const db = getD1Database(env);
+        if (db && codeVerifier) {
+          try {
+            await ensureD1Tables(db);
+            const fifteenMinsAgo = nowMs - (15 * 60 * 1000);
+            await db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR session_id LIKE '%@%'`).bind(fifteenMinsAgo).run().catch(() => {});
+            await db.prepare(`
+              INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
+              VALUES (?, ?, ?, ?, ?)
+            `).bind(sessionId, 'pending', codeVerifier, null, nowMs).run();
+          } catch (_) {}
+        }
+
+        return new Response(JSON.stringify({ ok: true, sessionId }), {
+          status: 200,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ ok: false, error: err?.message || 'Failed to init session' }), {
+          status: 500,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // 2b. WorkOS Auth Session Polling Endpoint (/api/auth/session/status)
     // Instant real-time status check for web and Android login without any custom URL schemes
     if (url.pathname === '/api/auth/session/status' && request.method === 'GET') {
@@ -2080,7 +2195,8 @@ export default {
             if (row) {
               session = {
                 status: row.status,
-                code: row.code,
+                code: row.status === 'completed' ? row.code : undefined,
+                codeVerifier: row.status === 'pending' ? row.code : undefined,
                 user: row.user_json ? JSON.parse(row.user_json) : null,
                 createdAt: row.created_at,
               };
@@ -2161,7 +2277,7 @@ export default {
     if (url.pathname === '/api/auth/workos/authenticate' && request.method === 'POST') {
       try {
         const body: any = await request.json().catch(() => ({}));
-        const { code, redirectUri, codeVerifier } = body;
+        const { code, codeVerifier, sessionId } = body;
         const bucket = getR2Bucket(env);
         const db = getD1Database(env);
 
@@ -2176,70 +2292,15 @@ export default {
           );
         }
 
+        const resolvedVerifier = codeVerifier || (sessionId ? await resolveSessionCodeVerifier(String(sessionId), env) : undefined);
+
         let user: any = null;
-        let workosRes: Response | null = null;
-
-        // 1. If PKCE codeVerifier is present, use official PKCE exchange
-        if (codeVerifier) {
-          const pkceBody: any = {
-            client_id: cleanClientId,
-            code,
-            code_verifier: codeVerifier,
-            grant_type: 'authorization_code',
-          };
-          if (cleanApiKey) {
-            pkceBody.client_secret = cleanApiKey;
-          }
-
-          const pkceHeaders: any = { 'Content-Type': 'application/json' };
-          if (cleanApiKey) {
-            pkceHeaders['Authorization'] = `Bearer ${cleanApiKey}`;
-          }
-
-          workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
-            method: 'POST',
-            headers: pkceHeaders,
-            body: JSON.stringify(pkceBody),
-          });
-
-          // If rejected with secret error, retry PKCE without secret
-          if (!workosRes.ok && pkceBody.client_secret) {
-            try {
-              const retryPkceRes = await fetch('https://api.workos.com/user_management/authenticate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  client_id: cleanClientId,
-                  code,
-                  code_verifier: codeVerifier,
-                  grant_type: 'authorization_code',
-                }),
-              });
-              if (retryPkceRes.ok) {
-                workosRes = retryPkceRes;
-              }
-            } catch (_) {}
-          }
-        }
-
-        // 2. If PKCE not used or failed, try standard API key code exchange
-        if (!workosRes || !workosRes.ok) {
-          if (cleanApiKey) {
-            workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${cleanApiKey}`,
-              },
-              body: JSON.stringify({
-                client_id: cleanClientId,
-                client_secret: cleanApiKey,
-                code,
-                grant_type: 'authorization_code',
-              }),
-            });
-          }
-        }
+        const workosRes = await exchangeWorkOSAuthCode({
+          clientId: cleanClientId,
+          apiKey: cleanApiKey,
+          code,
+          codeVerifier: resolvedVerifier,
+        });
 
         if (workosRes && workosRes.ok) {
           const wData: any = await workosRes.json();

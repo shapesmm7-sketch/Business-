@@ -90,6 +90,7 @@ export const WorkOSAuthService = {
     if (user) {
       return { success: true, user, message: 'Google Sign-In successful!' };
     }
+    exchangedCodes.delete(code);
     return { success: false, message: 'Failed to complete sign-in. Please try again.' };
   },
 
@@ -226,10 +227,11 @@ export const WorkOSAuthService = {
         }
       }
 
-      // 2. Clear any stale PKCE verifier from previous versions; use confidential Worker exchange
+      // 2. Generate PKCE code_verifier & code_challenge so login works cleanly without needing client_secret
+      const { codeVerifier, codeChallenge } = await generatePKCE();
       try {
-        localStorage.removeItem('workos_pkce_verifier');
-        sessionStorage.removeItem('workos_pkce_verifier');
+        localStorage.setItem('workos_pkce_verifier', codeVerifier);
+        sessionStorage.setItem('workos_pkce_verifier', codeVerifier);
       } catch (_) {}
 
       // 3. Check WorkOS configuration on Cloudflare Worker
@@ -261,6 +263,9 @@ export const WorkOSAuthService = {
         sessionStorage.setItem('workos_session_id', sessionId);
       } catch (_) {}
 
+      // Store PKCE verifier under sessionId on Worker so /callback can exchange even from Chrome Custom Tabs
+      await CloudflareService.initWorkOSAuthSession(sessionId, codeVerifier).catch(() => false);
+
       const stateObj = {
         sessionId,
         platform: isNative ? 'android' : 'web',
@@ -268,7 +273,7 @@ export const WorkOSAuthService = {
       };
       const stateParam = encodeURIComponent(JSON.stringify(stateObj));
 
-      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&state=${stateParam}`;
+      const authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256&state=${stateParam}`;
 
       // Start background session polling immediately on native Android / mobile
       if (isNative) {
@@ -288,6 +293,15 @@ export const WorkOSAuthService = {
               try {
                 await Browser.close();
               } catch (_) {}
+            } else if (check.status === 'completed' && check.code) {
+              isDone = true;
+              clearInterval(pollTimer);
+              const exch = await this.authenticateCode(check.code, codeVerifier);
+              if (exch.success && exch.user) {
+                try {
+                  await Browser.close();
+                } catch (_) {}
+              }
             }
           } catch (_) {}
         }, 1200);
@@ -306,6 +320,10 @@ export const WorkOSAuthService = {
                   isDone = true;
                   if (pollTimer) clearInterval(pollTimer);
                   await this.saveAndSyncUser(check.user);
+                } else if (check.status === 'completed' && check.code) {
+                  isDone = true;
+                  if (pollTimer) clearInterval(pollTimer);
+                  await this.authenticateCode(check.code, codeVerifier);
                 }
               }
             } catch (_) {}

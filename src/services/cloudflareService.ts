@@ -1682,9 +1682,39 @@ export const CloudflareService = {
   },
 
   /**
+   * Pre-register a PKCE auth session on Cloudflare Worker so /callback can exchange the code without client_secret
+   */
+  async initWorkOSAuthSession(sessionId: string, codeVerifier?: string): Promise<boolean> {
+    if (!sessionId) return false;
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
+      ? normalizeUrl(currentOrigin)
+      : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      try {
+        const res = await fetch(`${cleanUrl}/api/auth/session/init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ sessionId, codeVerifier }),
+        });
+        return res.ok;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch {
+      return false;
+    }
+  },
+
+  /**
    * Exchange WorkOS Auth code via Cloudflare Worker (with PKCE support)
    */
-  async authenticateWorkOSCode(code: string, redirectUri?: string, codeVerifier?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
+  async authenticateWorkOSCode(code: string, redirectUri?: string, codeVerifier?: string, sessionId?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
@@ -1692,6 +1722,7 @@ export const CloudflareService = {
       : normalizeUrl(config.workerUrl);
 
     const resolvedVerifier = codeVerifier || (typeof window !== 'undefined' ? localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined : undefined);
+    const resolvedSessionId = sessionId || (typeof window !== 'undefined' ? localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id') || undefined : undefined);
     const effectiveClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
 
     try {
@@ -1715,6 +1746,7 @@ export const CloudflareService = {
           body: JSON.stringify({
             code,
             codeVerifier: resolvedVerifier,
+            sessionId: resolvedSessionId,
             redirectUri: redirectUri && !redirectUri.includes('localhost') && !redirectUri.includes('127.0.0.1')
               ? redirectUri
               : 'https://brivu.shapesmm7.workers.dev/callback',
@@ -1737,7 +1769,7 @@ export const CloudflareService = {
         };
       }
 
-      // If worker returned an error and resolvedVerifier is available, try direct WorkOS PKCE exchange
+      // If worker returned an error and resolvedVerifier is available, try direct WorkOS PKCE exchange (no client_secret)
       if (resolvedVerifier) {
         try {
           const directRes = await fetch('https://api.workos.com/user_management/authenticate', {

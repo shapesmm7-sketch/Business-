@@ -916,6 +916,19 @@ export function App() {
             try {
               await Browser.close();
             } catch (_) {}
+          } else if (check.status === 'completed' && check.code) {
+            try {
+              localStorage.removeItem('workos_session_id');
+              sessionStorage.removeItem('workos_session_id');
+            } catch (_) {}
+            const exch = await WorkOSAuthService.authenticateCode(check.code);
+            if (exch.success && exch.user) {
+              refreshData();
+              window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: exch.user }));
+              try {
+                await Browser.close();
+              } catch (_) {}
+            }
           }
         }
       } catch (resumeAuthErr) {
@@ -1018,6 +1031,17 @@ export function App() {
                   refreshData();
                   window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: check.user }));
                   return;
+                } else if (check.status === 'completed' && check.code) {
+                  try {
+                    localStorage.removeItem('workos_session_id');
+                    sessionStorage.removeItem('workos_session_id');
+                  } catch (_) {}
+                  const exch = await WorkOSAuthService.authenticateCode(check.code);
+                  if (exch.success && exch.user) {
+                    refreshData();
+                    window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: exch.user }));
+                    return;
+                  }
                 }
               }
 

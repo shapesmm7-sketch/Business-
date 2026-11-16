@@ -131,7 +131,7 @@ export const GoogleAuthPopupPage: React.FC = () => {
       } else {
         const verifier = localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined;
 
-        CloudflareService.authenticateWorkOSCode(c, undefined, verifier).then(async (authRes) => {
+        CloudflareService.authenticateWorkOSCode(c, undefined, verifier, sessionId).then(async (authRes) => {
           if (authRes.success && authRes.user) {
             await finishWithUser(authRes.user);
           } else {
