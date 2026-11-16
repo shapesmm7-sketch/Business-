@@ -504,6 +504,7 @@ export async function ensureD1Tables(db: any): Promise<void> {
         db.prepare(`
           CREATE TABLE IF NOT EXISTS store_catalogs (
             slug TEXT PRIMARY KEY,
+            catalog_id TEXT,
             user_email TEXT,
             business_name TEXT,
             catalog_json TEXT NOT NULL,
@@ -515,6 +516,9 @@ export async function ensureD1Tables(db: any): Promise<void> {
       ];
 
       await executeD1Batch(db, ddlStatements, 35);
+      // Safely upgrade existing store_catalogs tables to include catalog_id column + index
+      await db.prepare(`ALTER TABLE store_catalogs ADD COLUMN catalog_id TEXT`).run().catch(() => {});
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_store_catalogs_catalog_id ON store_catalogs(catalog_id)`).run().catch(() => {});
       d1SchemaReady = true;
     } catch (_) {
       // Fallback safely on next call if batch failed transiently
@@ -1784,16 +1788,17 @@ export async function upsertUserStoreCatalog(
   await db
     .prepare(
       `
-      INSERT INTO store_catalogs (slug, user_email, business_name, catalog_json, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO store_catalogs (slug, catalog_id, user_email, business_name, catalog_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(slug) DO UPDATE SET
+        catalog_id = excluded.catalog_id,
         user_email = excluded.user_email,
         business_name = excluded.business_name,
         catalog_json = excluded.catalog_json,
         updated_at = excluded.updated_at
     `
     )
-    .bind(rowKey, isRealEmail ? cleanEmail : null, sanitized?.business?.name || cleanSlug, catalogJson, now)
+    .bind(rowKey, resolvedCatalogId, isRealEmail ? cleanEmail : null, sanitized?.business?.name || cleanSlug, catalogJson, now)
     .run();
 
   if (isRealEmail) {
@@ -1834,10 +1839,10 @@ export async function resolvePublicStoreCatalog(
             .prepare(
               `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
                WHERE LOWER(user_email) = ?
-               ORDER BY CASE WHEN catalog_json LIKE ? THEN 0 WHEN slug = ? OR slug = ? THEN 1 ELSE 2 END, updated_at DESC
+               ORDER BY CASE WHEN catalog_id = ? OR catalog_json LIKE ? THEN 0 WHEN slug = ? OR slug = ? THEN 1 ELSE 2 END, updated_at DESC
                LIMIT 1`
             )
-            .bind(cleanEmail, `%"catalogId":"${cleanCatalogId}"%`, `${cleanSlug}::${cleanEmail}`, cleanSlug)
+            .bind(cleanEmail, cleanCatalogId, `%"catalogId":"${cleanCatalogId}"%`, `${cleanSlug}::${cleanEmail}`, cleanSlug)
             .first()
         );
       } else if (cleanCatalogId) {
@@ -1845,11 +1850,11 @@ export async function resolvePublicStoreCatalog(
           db
             .prepare(
               `SELECT slug, user_email, catalog_json, updated_at FROM store_catalogs
-               WHERE catalog_json LIKE ? OR slug = ? OR slug LIKE ?
+               WHERE catalog_id = ? OR catalog_json LIKE ? OR slug = ? OR slug LIKE ?
                ORDER BY updated_at DESC
                LIMIT 1`
             )
-            .bind(`%"catalogId":"${cleanCatalogId}"%`, cleanCatalogId, `${cleanCatalogId}::%`)
+            .bind(cleanCatalogId, `%"catalogId":"${cleanCatalogId}"%`, cleanCatalogId, `${cleanCatalogId}::%`)
             .first()
         );
         if (!storeRow) {

@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc && vite build && rm -rf dist/assets/aistudio",
     "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.5",
