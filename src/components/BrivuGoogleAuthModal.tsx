@@ -5,7 +5,6 @@ import {
   LogOut,
   CheckCircle2,
   AlertCircle,
-  Cloud,
   RefreshCw,
   ShieldCheck,
   Mail,
@@ -39,6 +38,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
   const [error, setError] = useState<string | null>(initialNotice);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showWebFallbackButton, setShowWebFallbackButton] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const webButtonRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -46,9 +46,14 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
       setUser(BrivuAuthService.getCurrentUser());
       setError(initialNotice || null);
       setStatusMessage(null);
+      setImgError(false);
       setShowWebFallbackButton(!Capacitor.isNativePlatform());
     }
   }, [isOpen, initialNotice]);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [user?.profilePictureUrl]);
 
   useEffect(() => {
     const handleAuthChanged = (e: any) => {
@@ -115,7 +120,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
     if (!user) return;
     setIsSyncing(true);
     setError(null);
-    setStatusMessage('Syncing user profile, email & data to Cloudflare...');
+    setStatusMessage('Syncing user profile, email & data online...');
     try {
       const res = await BrivuAuthService.syncUserData();
       if (res.success) {
@@ -177,7 +182,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
             <div>
               <h3 className="text-sm font-black tracking-tight">Brivu Account</h3>
               <p className="text-[11px] text-slate-300 font-medium">
-                Google Verified &amp; Cloudflare Backup
+                Google Verified &amp; Cloud Backup
               </p>
             </div>
           </div>
@@ -211,10 +216,11 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
             <div className="space-y-4">
               {/* Signed In User Card */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center gap-3.5">
-                {user.profilePictureUrl ? (
+                {user.profilePictureUrl && !imgError ? (
                   <img
                     src={user.profilePictureUrl}
                     alt={user.name || user.email}
+                    onError={() => setImgError(true)}
                     className="w-12 h-12 rounded-2xl object-cover border border-slate-200 dark:border-slate-600 shadow-sm shrink-0"
                   />
                 ) : (
@@ -233,12 +239,6 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">{user.email}</span>
                   </div>
-                  {user.syncedToCloudflare && (
-                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 mt-1">
-                      <Cloud className="w-3 h-3" />
-                      <span>Stored in Cloudflare D1 &amp; Active</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -251,7 +251,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                   className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-md shadow-indigo-500/20 disabled:opacity-60 cursor-pointer"
                 >
                   <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing with Cloudflare...' : 'Sync Profile & Data Online'}</span>
+                  <span>{isSyncing ? 'Syncing online...' : 'Sync Profile & Data Online'}</span>
                 </button>
 
                 <button
@@ -278,7 +278,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                       7-Day Free Trial Ended
                     </h4>
                     <p className="text-xs text-rose-800/90 dark:text-rose-200/80 leading-relaxed font-medium">
-                      Your 7-day free trial has ended. Subscribe to a Pro plan to enable Google Sign-In, automatic Cloudflare backup, and live QR page hosting. Your local data remains completely safe on your device!
+                      Your 7-day free trial has ended. Subscribe to a Pro plan to enable Google Sign-In, automatic cloud backup, and live QR page hosting. Your local data remains completely safe on your device!
                     </p>
                   </div>
 
@@ -310,7 +310,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                     Continue with Google
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Choose your Google account right inside Brivu to verify your identity, sync your business profile to Cloudflare, and protect your receipts and QR pages across reinstalls.
+                    Choose your Google account right inside Brivu to verify your identity, sync your business profile online, and protect your receipts and QR pages across reinstalls.
                   </p>
                 </div>
 

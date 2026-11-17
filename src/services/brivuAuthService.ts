@@ -519,13 +519,13 @@ export const BrivuAuthService = {
       }
       return {
         success: true,
-        message: 'Profile & all app data securely synced to Cloudflare!',
+        message: 'Profile & all app data securely synced online!',
       };
     }
 
     return {
       success: false,
-      message: profileRes.message || dataRes.message || 'Cloudflare sync encountered an issue',
+      message: profileRes.message || dataRes.message || 'Cloud sync encountered an issue',
     };
   },
 
