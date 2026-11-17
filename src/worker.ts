@@ -1884,10 +1884,15 @@ export async function resolveHostedQrPage(
   };
 }
 
+const DEFAULT_GOOGLE_WEB_CLIENT_ID =
+  '97897075021-g672moeae0a7i2834ipcjpot5u7fur8e.apps.googleusercontent.com';
+
 export default {
   async fetch(request: Request, env: Env, ctx?: { waitUntil?: (promise: Promise<any>) => void }): Promise<Response> {
     const url = new URL(request.url);
-    const googleWebClientId = (env.GOOGLE_WEB_CLIENT_ID || '').trim().replace(/^['"]|['"]$/g, '');
+    const googleWebClientId =
+      (env.GOOGLE_WEB_CLIENT_ID || '').trim().replace(/^['"]|['"]$/g, '') ||
+      DEFAULT_GOOGLE_WEB_CLIENT_ID;
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {

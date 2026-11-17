@@ -140,7 +140,9 @@ export const BrivuAuthService = {
       return cachedWebClientId;
     }
 
-    return '';
+    const defaultClientId = '97897075021-g672moeae0a7i2834ipcjpot5u7fur8e.apps.googleusercontent.com';
+    writeCachedWebClientId(defaultClientId);
+    return defaultClientId;
   },
 
   /**

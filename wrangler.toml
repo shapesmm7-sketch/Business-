@@ -12,8 +12,8 @@ run_worker_first = ["/", "/qr", "/qr/*", "/menu", "/menu/*", "/api/*"]
 command = "npm run build"
 
 [vars]
-# Set your Google Cloud Web Application OAuth 2.0 Client ID from Project "Brivu" (97897075021)
-GOOGLE_WEB_CLIENT_ID = ""
+# Google Cloud Web Application OAuth 2.0 Client ID from Project "Brivu" (97897075021)
+GOOGLE_WEB_CLIENT_ID = "97897075021-g672moeae0a7i2834ipcjpot5u7fur8e.apps.googleusercontent.com"
 
 # R2 Object Storage Bucket Binding (Preserved across all deploys)
 [[r2_buckets]]

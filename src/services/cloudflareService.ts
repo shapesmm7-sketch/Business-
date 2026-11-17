@@ -1661,7 +1661,7 @@ export const CloudflareService = {
     const envWebClientId =
       (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_WEB_CLIENT_ID
         ? String(import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID).trim()
-        : '') || '';
+        : '') || '97897075021-g672moeae0a7i2834ipcjpot5u7fur8e.apps.googleusercontent.com';
 
     try {
       const controller = new AbortController();
