@@ -3686,7 +3686,7 @@ export const StorageService = {
         return false;
       }
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
+      const timer = setTimeout(() => controller.abort(), 3000);
       try {
         const res = await fetch(target, { cache: 'no-store', signal: controller.signal });
         if (!res.ok) return false;
@@ -3740,19 +3740,29 @@ export const StorageService = {
 
     let inventoryChanged = false;
     const products = this.getInventoryProducts();
+    const productVerifyIndices: number[] = [];
     for (let i = 0; i < products.length; i++) {
       const prod = products[i];
       const backupImg = prodBackupMap.get(prod.id);
       if (!prod.image && backupImg) {
         products[i] = { ...prod, image: backupImg };
         inventoryChanged = true;
-      } else if (prod.image && !prod.image.startsWith('data:image/')) {
-        const ok = await verifyRemoteImage(prod.image);
-        if (!ok && backupImg) {
-          products[i] = { ...prod, image: backupImg };
-          inventoryChanged = true;
-        }
+      } else if (backupImg && prod.image && !prod.image.startsWith('data:image/')) {
+        productVerifyIndices.push(i);
       }
+    }
+    for (let b = 0; b < productVerifyIndices.length; b += 4) {
+      const batch = productVerifyIndices.slice(b, b + 4);
+      await Promise.all(
+        batch.map(async (idx) => {
+          const prod = products[idx];
+          const backupImg = prodBackupMap.get(prod.id);
+          if (backupImg && !(await verifyRemoteImage(prod.image))) {
+            products[idx] = { ...prod, image: backupImg };
+            inventoryChanged = true;
+          }
+        })
+      );
     }
 
     if (inventoryChanged) {
@@ -3773,19 +3783,29 @@ export const StorageService = {
         if (fb && fb.startsWith('data:image/')) bMap.set(String(item.id), fb);
       }
       let changed = false;
+      const verifyIndices: number[] = [];
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
         const fb = bMap.get(item.id);
         if (!item.profilePic && fb) {
           list[i] = { ...item, profilePic: fb };
           changed = true;
-        } else if (item.profilePic && !item.profilePic.startsWith('data:image/')) {
-          const ok = await verifyRemoteImage(item.profilePic);
-          if (!ok && fb) {
-            list[i] = { ...item, profilePic: fb };
-            changed = true;
-          }
+        } else if (fb && item.profilePic && !item.profilePic.startsWith('data:image/')) {
+          verifyIndices.push(i);
         }
+      }
+      for (let b = 0; b < verifyIndices.length; b += 4) {
+        const batch = verifyIndices.slice(b, b + 4);
+        await Promise.all(
+          batch.map(async (idx) => {
+            const item = list[idx];
+            const fb = bMap.get(item.id);
+            if (fb && !(await verifyRemoteImage(item.profilePic))) {
+              list[idx] = { ...item, profilePic: fb };
+              changed = true;
+            }
+          })
+        );
       }
       if (changed) {
         writeToStorage(storageKey, list);

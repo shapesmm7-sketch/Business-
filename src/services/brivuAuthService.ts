@@ -23,9 +23,33 @@ interface BrivuAuthPluginInterface {
 
 const BrivuAuthPlugin = registerPlugin<BrivuAuthPluginInterface>('BrivuAuthPlugin');
 
+const WEB_CLIENT_ID_CACHE_KEY = 'brivu_google_web_client_id';
 let cachedWebClientId = '';
 let gsiScriptPromise: Promise<void> | null = null;
 let lastSessionCheckAt = 0;
+
+function readCachedWebClientId(): string {
+  if (cachedWebClientId) return cachedWebClientId;
+  if (typeof localStorage === 'undefined') return '';
+  try {
+    const val = (localStorage.getItem(WEB_CLIENT_ID_CACHE_KEY) || '').trim();
+    if (val) cachedWebClientId = val;
+    return val;
+  } catch {
+    return '';
+  }
+}
+
+function writeCachedWebClientId(value: string): void {
+  const clean = (value || '').trim();
+  if (!clean) return;
+  cachedWebClientId = clean;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(WEB_CLIENT_ID_CACHE_KEY, clean);
+    } catch {}
+  }
+}
 
 function loadGoogleIdentityServicesScript(): Promise<void> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -88,20 +112,31 @@ export const BrivuAuthService = {
   },
 
   async getGoogleWebClientId(): Promise<string> {
-    if (cachedWebClientId) return cachedWebClientId;
+    const warm = readCachedWebClientId();
+    if (warm) {
+      // Refresh in background so Worker updates propagate without blocking taps
+      CloudflareService.getAuthConfig()
+        .then((cfg) => {
+          if (cfg.googleWebClientId && cfg.googleWebClientId.trim()) {
+            writeCachedWebClientId(cfg.googleWebClientId);
+          }
+        })
+        .catch(() => {});
+      return warm;
+    }
 
     const envClientId =
       typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_WEB_CLIENT_ID
         ? String(import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID).trim()
         : '';
     if (envClientId) {
-      cachedWebClientId = envClientId;
+      writeCachedWebClientId(envClientId);
       return envClientId;
     }
 
     const remoteConfig = await CloudflareService.getAuthConfig();
     if (remoteConfig.googleWebClientId && remoteConfig.googleWebClientId.trim()) {
-      cachedWebClientId = remoteConfig.googleWebClientId.trim();
+      writeCachedWebClientId(remoteConfig.googleWebClientId);
       return cachedWebClientId;
     }
 
@@ -124,27 +159,12 @@ export const BrivuAuthService = {
     const webClientId = await this.getGoogleWebClientId();
 
     if (Capacitor.isNativePlatform()) {
+      let nativeRes: NativeGoogleSignInResult;
       try {
         StorageService.markSystemActionActive(120000);
-        const nativeRes = await BrivuAuthPlugin.signInWithGoogle({
+        nativeRes = await BrivuAuthPlugin.signInWithGoogle({
           serverClientId: webClientId || undefined,
         });
-
-        if (nativeRes?.cancelled) {
-          return {
-            success: false,
-            cancelled: true,
-          };
-        }
-
-        if (!nativeRes?.success || !nativeRes.idToken) {
-          return {
-            success: false,
-            message: nativeRes?.error || 'Could not obtain Google account credential on this device.',
-          };
-        }
-
-        return await this.completeGoogleIdTokenSignIn(nativeRes.idToken);
       } catch (err: any) {
         return {
           success: false,
@@ -153,6 +173,22 @@ export const BrivuAuthService = {
       } finally {
         StorageService.consumeSystemActionActive();
       }
+
+      if (nativeRes?.cancelled) {
+        return {
+          success: false,
+          cancelled: true,
+        };
+      }
+
+      if (!nativeRes?.success || !nativeRes.idToken) {
+        return {
+          success: false,
+          message: nativeRes?.error || 'Could not obtain Google account credential on this device.',
+        };
+      }
+
+      return await this.completeGoogleIdTokenSignIn(nativeRes.idToken);
     }
 
     // Web platform: Google Identity Services (returns verifiable OpenID ID token directly)
@@ -353,15 +389,6 @@ export const BrivuAuthService = {
           name: profile.name || cleanUser.name || cleanEmail.split('@')[0],
         });
       }
-
-      const trial = StorageService.getTrialStatus();
-      if (!trial.isGracePeriodExpired || trial.subscribed) {
-        try {
-          await CloudflareService.pullFromCloudflare(cleanEmail);
-        } catch (pullErr) {
-          console.warn('Note pulling backup from Cloudflare on login:', pullErr);
-        }
-      }
     }
 
     if (typeof window !== 'undefined') {
@@ -370,21 +397,39 @@ export const BrivuAuthService = {
       window.dispatchEvent(new CustomEvent('brivu_data_restored'));
     }
 
+    // Run cloud pull and background profile/data sync asynchronously so login completes immediately
     const trialStatus = StorageService.getTrialStatus();
-    if (!trialStatus.isExpired || trialStatus.subscribed) {
-      CloudflareService.syncUserProfile(cleanUser, StorageService.getProfile())
-        .then((syncRes) => {
-          if (syncRes.success) {
-            const finalUser: BrivuUser = {
-              ...cleanUser,
-              syncedToCloudflare: true,
-              cloudflareStoredAt: new Date().toISOString(),
-            };
-            StorageService.saveAuthUser(finalUser);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
+    if (cleanEmail) {
+      setTimeout(() => {
+        void (async () => {
+          if (!trialStatus.isGracePeriodExpired || trialStatus.subscribed) {
+            try {
+              const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
+              if (pullRes.success && typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+                window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+              }
+            } catch (pullErr) {
+              console.warn('Background cloud restore note on login:', pullErr);
+            }
           }
-        })
-        .catch(() => {});
+
+          if (!trialStatus.isExpired || trialStatus.subscribed) {
+            try {
+              const syncRes = await CloudflareService.syncUserProfile(cleanUser, StorageService.getProfile());
+              if (syncRes.success) {
+                const finalUser: BrivuUser = {
+                  ...cleanUser,
+                  syncedToCloudflare: true,
+                  cloudflareStoredAt: new Date().toISOString(),
+                };
+                StorageService.saveAuthUser(finalUser);
+                CloudflareService.syncAllToCloudflare().catch(() => {});
+              }
+            } catch {}
+          }
+        })();
+      }, 50);
     }
 
     return cleanUser;

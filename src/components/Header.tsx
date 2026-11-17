@@ -281,8 +281,9 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
-      <div className="max-w-2xl mx-auto px-4 py-2.5">
+    <>
+      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
+        <div className="max-w-2xl mx-auto px-4 py-2.5">
         {/* Top Header Row */}
         <div className="flex items-center justify-between gap-3">
           {/* Brand & Business Identity on the Left */}
@@ -433,7 +434,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      </header>
 
       {/* TOP MENU SECTION DROPDOWN / OVERLAY (When Menu is clicked) */}
       {isMenuOpen && (
@@ -895,6 +897,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{toastMsg}</span>
         </div>
       )}
-    </header>
+    </>
   );
 };

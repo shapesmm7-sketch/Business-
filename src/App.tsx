@@ -955,9 +955,10 @@ export function App() {
       console.warn('[AppLock] CapApp setup note:', capErr);
     }
 
-    // Validate persisted Brivu session on startup (non-blocking)
+    // Validate persisted Brivu session and pre-warm Google Auth config on startup (non-blocking)
     if (!isCustomerPathFromUrl()) {
       BrivuAuthService.validateSession().catch(() => {});
+      BrivuAuthService.getGoogleWebClientId().catch(() => {});
     }
 
     const handleUserUpdatedSync = () => {

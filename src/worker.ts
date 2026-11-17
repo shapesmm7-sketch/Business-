@@ -375,12 +375,21 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
       existingRow.id
     ).run();
 
-    const refreshed = await db
-      .prepare('SELECT * FROM users WHERE id = ? LIMIT 1')
-      .bind(existingRow.id)
-      .first()
-      .catch(() => null);
-    return mapDbRowToBrivuUser(refreshed || existingRow, nowIso);
+    return mapDbRowToBrivuUser(
+      {
+        ...existingRow,
+        google_sub: claims.sub,
+        email: cleanEmail || existingRow.email,
+        name: claims.name || existingRow.name,
+        first_name: claims.givenName || existingRow.first_name,
+        last_name: claims.familyName || existingRow.last_name,
+        profile_picture_url: claims.picture || existingRow.profile_picture_url,
+        provider: 'google',
+        updated_at: nowIso,
+        last_login: nowIso,
+      },
+      nowIso
+    );
   }
 
   // 3. Brand new Brivu user (canonical email as id to stay consistent across backups/qr_pages/files)
@@ -400,14 +409,8 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
     nowIso
   ).run();
 
-  const created = await db
-    .prepare('SELECT * FROM users WHERE id = ? LIMIT 1')
-    .bind(cleanEmail)
-    .first()
-    .catch(() => null);
-
   return mapDbRowToBrivuUser(
-    created || {
+    {
       id: cleanEmail,
       email: cleanEmail,
       google_sub: claims.sub,
@@ -1882,7 +1885,7 @@ export async function resolveHostedQrPage(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: { waitUntil?: (promise: Promise<any>) => void }): Promise<Response> {
     const url = new URL(request.url);
     const googleWebClientId = (env.GOOGLE_WEB_CLIENT_ID || '').trim().replace(/^['"]|['"]$/g, '');
 
@@ -2074,6 +2077,12 @@ export default {
 
     // 2a. Brivu Native Google Sign-In Configuration (/api/auth/config)
     if (url.pathname === '/api/auth/config' && request.method === 'GET') {
+      const db = getD1Database(env);
+      const warmTasks: Promise<any>[] = [fetchGoogleJwks(false).catch(() => {})];
+      if (db) warmTasks.push(ensureD1Tables(db).catch(() => {}));
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(Promise.all(warmTasks));
+      }
       return new Response(
         JSON.stringify({
           ok: true,
@@ -2138,10 +2147,8 @@ export default {
 
         if (db) {
           try {
-            await ensureD1Tables(db);
             const tokenHash = await sha256Hex(rawSessionToken);
             const sessionId = `bsess_${generateSecureToken(12)}`;
-            await db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
             await db.prepare(`
               INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, created_at, expires_at, last_seen_at, revoked_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
@@ -2155,6 +2162,10 @@ export default {
               expiresAt,
               nowMs
             ).run();
+            const prunePromise = db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
+            if (ctx?.waitUntil) {
+              ctx.waitUntil(prunePromise);
+            }
           } catch (sessErr) {
             console.warn('D1 brivu_sessions insert note:', sessErr);
           }

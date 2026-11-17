@@ -949,11 +949,11 @@ export const CloudflareService = {
       const importResult = StorageService.importBackup(rawBackupData, false);
       if (importResult.success) {
         StorageService.recoverRestoredProductPhotos(rawBackupData).catch(() => {});
-        // Recover QR gallery photos from Cloud storage if business QR page photos are missing
+        // Recover QR gallery photos from Cloud storage asynchronously if business QR page photos are missing
         const pages = StorageService.getHostedQRPages();
         const needsPhotoRecovery = pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
         if (needsPhotoRecovery) {
-          await this.recoverQrPhotosFromCloud(email, false).catch(() => {});
+          this.recoverQrPhotosFromCloud(email, false).catch(() => {});
         }
 
         try {
@@ -1068,10 +1068,18 @@ export const CloudflareService = {
       const queryParam = params.toString() ? `?${params.toString()}` : '';
       const targetUrl = `${normalizeUrl(config.workerUrl)}/api/files${queryParam}`;
 
-      const res = await fetch(targetUrl, {
-        method: 'GET',
-        headers,
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!res.ok) return [];
       const rawText = await res.text().catch(() => '');
@@ -1517,14 +1525,22 @@ export const CloudflareService = {
         ...(page?.preserveExistingIfEmpty ? { preserveExistingIfEmpty: true } : {}),
       };
 
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(cleanPage),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(targetUrl, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify(cleanPage),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const rawText = await response.text().catch(() => '');
       const parsed = parseWorkerResponse(rawText);
@@ -1594,11 +1610,19 @@ export const CloudflareService = {
         },
       };
 
-      const res = await fetch(`${cleanUrl}/api/user/profile`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/user/profile`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const text = await res.text();
       const parsed = parseWorkerResponse(text);
