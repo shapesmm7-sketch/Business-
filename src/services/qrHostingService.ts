@@ -43,7 +43,7 @@ export class QRHostingService {
       return emailOverride.toLowerCase().trim();
     }
     // Signed-in account email is canonical for D1/R2 QR storage so links match saved cloud records
-    const user = StorageService.getWorkOSUser();
+    const user = StorageService.getAuthUser();
     if (user && user.email && user.email.includes('@')) {
       return user.email.toLowerCase().trim();
     }

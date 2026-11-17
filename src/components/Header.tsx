@@ -27,13 +27,13 @@ import {
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
-import { ActiveScreen, BusinessProfile, AppLockConfig, WorkOSUser } from '../types';
+import { ActiveScreen, BusinessProfile, AppLockConfig, BrivuUser } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NotificationModal } from './NotificationModal';
 import { RateUsModal } from './RateUsModal';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
-import { WorkOSGoogleAuthModal } from './WorkOSGoogleAuthModal';
-import { WorkOSAuthService } from '../services/workosAuthService';
+import { BrivuGoogleAuthModal } from './BrivuGoogleAuthModal';
+import { BrivuAuthService } from '../services/brivuAuthService';
 import { getLanguageByCode } from '../data/languages';
 import { t } from '../utils/i18n';
 import { StorageService } from '../services/storage';
@@ -74,10 +74,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isRateUsOpen, setIsRateUsOpen] = useState(false);
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
-  const [isWorkosModalOpen, setIsWorkosModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalNotice, setAuthModalNotice] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [workosUser, setWorkosUser] = useState<WorkOSUser | null>(() =>
-    WorkOSAuthService.getCurrentUser()
+  const [authUser, setAuthUser] = useState<BrivuUser | null>(() =>
+    BrivuAuthService.getCurrentUser()
   );
   const [lockConfig, setLockConfig] = useState<AppLockConfig | null>(() =>
     StorageService.getAppLockConfig()
@@ -86,51 +87,57 @@ export const Header: React.FC<HeaderProps> = ({
   const handleStartGoogleSignIn = async () => {
     const trial = StorageService.getTrialStatus();
     if (trial.isExpired && !trial.subscribed) {
-      setIsWorkosModalOpen(true);
+      setAuthModalNotice(null);
+      setIsAuthModalOpen(true);
       return;
     }
     setIsSigningIn(true);
+    setAuthModalNotice(null);
     try {
-      const res = await WorkOSAuthService.signInWithGoogle();
-      if (!res.success && res.message) {
-        setToastMsg(res.message);
-        setTimeout(() => setToastMsg(null), 4000);
+      const res = await BrivuAuthService.signInWithGoogle();
+      if (res.success && res.user) {
+        setAuthUser(res.user);
+      } else if (res.cancelled) {
+        // User closed the native chooser; no error banner needed
+      } else if (res.needsWebButtonFallback || res.message) {
+        setAuthModalNotice(res.message || null);
+        setIsAuthModalOpen(true);
       }
     } catch {
-      // Handled
+      setIsAuthModalOpen(true);
     } finally {
-      setTimeout(() => setIsSigningIn(false), 2500);
+      setIsSigningIn(false);
     }
   };
 
-  // Process OAuth redirect callback if returning from Google / WorkOS
   useEffect(() => {
-    WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
-      if (usr) {
-        setIsSigningIn(false);
-        setWorkosUser(usr);
-        setIsWorkosModalOpen(false);
-        setToastMsg(`Welcome, ${usr.name || usr.email}! Signed in successfully.`);
-        setTimeout(() => setToastMsg(null), 3500);
-      }
-    });
-
     const handleUserUpdate = (e: any) => {
       setIsSigningIn(false);
       if (e.detail) {
-        setWorkosUser(e.detail);
-        setIsWorkosModalOpen(false);
+        setAuthUser(e.detail);
+        setIsAuthModalOpen(false);
+        setAuthModalNotice(null);
         setToastMsg(`Welcome, ${e.detail.name || e.detail.email}! Signed in successfully.`);
         setTimeout(() => setToastMsg(null), 3500);
       } else {
-        setWorkosUser(null);
-        setIsWorkosModalOpen(false);
+        setAuthUser(null);
+        setIsAuthModalOpen(false);
         setToastMsg('Signed out successfully.');
         setTimeout(() => setToastMsg(null), 3000);
       }
     };
-    window.addEventListener('workos_user_updated', handleUserUpdate);
-    return () => window.removeEventListener('workos_user_updated', handleUserUpdate);
+    const handleAuthExpired = (e: any) => {
+      setAuthUser(null);
+      setAuthModalNotice(e?.detail?.message || 'Your Brivu session expired. Please sign in with Google again.');
+      setToastMsg('Your session expired. Please sign in again.');
+      setTimeout(() => setToastMsg(null), 4000);
+    };
+    window.addEventListener('brivu_auth_changed', handleUserUpdate);
+    window.addEventListener('brivu_auth_expired', handleAuthExpired);
+    return () => {
+      window.removeEventListener('brivu_auth_changed', handleUserUpdate);
+      window.removeEventListener('brivu_auth_expired', handleAuthExpired);
+    };
   }, []);
 
   useEffect(() => {
@@ -329,19 +336,20 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-header-google-auth"
               type="button"
               onClick={() => {
-                if (workosUser) {
-                  setIsWorkosModalOpen(true);
+                if (authUser) {
+                  setAuthModalNotice(null);
+                  setIsAuthModalOpen(true);
                 } else {
                   handleStartGoogleSignIn();
                 }
               }}
               disabled={isSigningIn}
               className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-bold cursor-pointer ${
-                workosUser
+                authUser
                   ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                   : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
-              aria-label={workosUser ? 'Account & Cloud Sync' : 'Sign In with Google'}
+              aria-label={authUser ? 'Account & Cloud Sync' : 'Sign In with Google'}
             >
               <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
                 <path
@@ -362,7 +370,7 @@ export const Header: React.FC<HeaderProps> = ({
                 />
               </svg>
               <span className="hidden xs:inline sm:inline text-[11px]">
-                {workosUser
+                {authUser
                   ? 'Account'
                   : isSigningIn
                   ? 'Connecting...'
@@ -459,16 +467,17 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Menu Sections List */}
             <div className="p-4 space-y-3 overflow-y-auto">
-              {/* TOP OF APPS MENU: GOOGLE SIGN IN CARD (WORKOS AUTHKIT) */}
+              {/* TOP OF APPS MENU: GOOGLE SIGN IN CARD (BRIVU AUTH) */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 text-white shadow-xl relative overflow-hidden">
                 <div className="flex items-center justify-between gap-3 relative z-10">
-                  {workosUser ? (
+                  {authUser ? (
                     <button
                       id="btn-menu-account"
                       type="button"
                       onClick={() => {
                         setIsMenuOpen(false);
-                        setIsWorkosModalOpen(true);
+                        setAuthModalNotice(null);
+                        setIsAuthModalOpen(true);
                       }}
                       className="w-full flex items-center justify-between text-left cursor-pointer group py-1"
                     >
@@ -861,18 +870,22 @@ export const Header: React.FC<HeaderProps> = ({
         onClose={() => setIsLanguageModalOpen(false)}
       />
 
-      {/* WorkOS Google Auth Modal */}
-      <WorkOSGoogleAuthModal
-        isOpen={isWorkosModalOpen}
-        onClose={() => setIsWorkosModalOpen(false)}
+      {/* Brivu Google Auth Modal */}
+      <BrivuGoogleAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setAuthModalNotice(null);
+        }}
         onUserChange={(usr) => {
-          setWorkosUser(usr);
+          setAuthUser(usr);
           if (!usr) {
             setToastMsg('Signed out successfully.');
             setTimeout(() => setToastMsg(null), 3000);
           }
         }}
         onNavigate={onNavigate}
+        initialNotice={authModalNotice}
       />
 
       {/* Toast Notification Banner */}

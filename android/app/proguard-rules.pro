@@ -55,6 +55,9 @@
 -keep public class com.brivu.myapp.GoogleDrivePlugin {
     public *;
 }
+-keep public class com.brivu.myapp.BrivuAuthPlugin {
+    public *;
+}
 -keep public class com.brivu.myapp.BluetoothPrinterPlugin {
     public *;
 }
@@ -76,3 +79,9 @@
 # 7. Don't warn on optional third-party references
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# 8. AndroidX Credential Manager & Google Identity (Sign in with Google)
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-dontwarn androidx.credentials.**
+-dontwarn com.google.android.libraries.identity.googleid.**

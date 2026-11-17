@@ -27,7 +27,8 @@ import {
   AppLockConfig,
   CloudflareConfig,
   ThermalPrinterDevice,
-  WorkOSUser,
+  BrivuUser,
+  BrivuAuthSession,
 } from '../types';
 import { PushNotificationService } from './pushNotificationService';
 import { CloudflareService } from './cloudflareService';
@@ -65,7 +66,8 @@ const STORAGE_KEYS = {
   INITIAL_PROFILE_SETUP_DONE: 'quickreceipt_initial_profile_setup_done_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
-  WORKOS_USER: 'quickreceipt_workos_user_v1',
+  AUTH_USER: 'brivu_auth_user_v1',
+  AUTH_SESSION: 'brivu_auth_session_v1',
   ACTIVE_WORKSPACE_USER: 'quickreceipt_active_workspace_user_v1',
   STOCK_VIEW_MODE: 'quickreceipt_stock_view_mode_v1',
 };
@@ -3088,7 +3090,7 @@ export const StorageService = {
   },
 
   getAuthenticatedEmail(): string {
-    const user = this.getWorkOSUser();
+    const user = this.getAuthUser();
     if (user && user.email && user.email.includes('@')) {
       return user.email.toLowerCase().trim();
     }
@@ -3132,7 +3134,7 @@ export const StorageService = {
 
   syncReceiptToCloudflare(receipt: Receipt): void {
     try {
-      const user = this.getWorkOSUser();
+      const user = this.getAuthUser();
       const status = this.getTrialStatus();
       if (!user?.email && status.isExpired && !this.isSubscribed()) {
         console.info('Skip background Cloudflare receipt sync: Trial expired without subscription.');
@@ -3278,34 +3280,98 @@ export const StorageService = {
     }
   },
 
-  getWorkOSUser(): WorkOSUser | null {
+  cleanupLegacyAuthArtifacts(): void {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.WORKOS_USER);
-      return data ? JSON.parse(data) : null;
+      const legacyKeys = [
+        'quickreceipt_workos_user_v1',
+        'workos_pkce_verifier',
+        'workos_session_id',
+        'workos_web_return_url',
+      ];
+      for (const k of legacyKeys) {
+        try {
+          localStorage.removeItem(k);
+        } catch {}
+        try {
+          sessionStorage.removeItem(k);
+        } catch {}
+      }
+    } catch {}
+  },
+
+  getAuthUser(): BrivuUser | null {
+    try {
+      const session = this.getAuthSession();
+      if (session && session.expiresAt && Date.now() > session.expiresAt) {
+        return null;
+      }
+      const data = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+      return data ? (JSON.parse(data) as BrivuUser) : null;
     } catch {
       return null;
     }
   },
 
-  saveWorkOSUser(user: WorkOSUser | null): void {
+  saveAuthUser(user: BrivuUser | null): void {
     try {
+      this.cleanupLegacyAuthArtifacts();
       if (!user) {
-        localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+        localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
       } else {
         const cleanEmail = (user.email || '').toLowerCase().trim();
-        const updatedUser: WorkOSUser = {
+        const updatedUser: BrivuUser = {
           ...user,
-          id: cleanEmail || user.id,
+          id: user.id || cleanEmail,
           email: cleanEmail,
+          provider: 'google',
         };
-        localStorage.setItem(STORAGE_KEYS.WORKOS_USER, JSON.stringify(updatedUser));
+        localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updatedUser));
         if (cleanEmail) {
           writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanEmail);
         }
       }
     } catch (err) {
-      console.warn('Failed to save WorkOS user to localStorage:', err);
+      console.warn('Failed to save Brivu user to localStorage:', err);
     }
+  },
+
+  getAuthSession(): BrivuAuthSession | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as BrivuAuthSession;
+      if (!parsed || !parsed.sessionToken) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
+  saveAuthSession(session: BrivuAuthSession | null): void {
+    try {
+      if (!session || !session.sessionToken) {
+        localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+      } else {
+        localStorage.setItem(
+          STORAGE_KEYS.AUTH_SESSION,
+          JSON.stringify({
+            sessionToken: session.sessionToken,
+            expiresAt: Number(session.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+            userEmail: (session.userEmail || '').toLowerCase().trim(),
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('Failed to save Brivu session:', err);
+    }
+  },
+
+  clearAuthSession(): void {
+    this.cleanupLegacyAuthArtifacts();
+    try {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    } catch {}
   },
 
   /**
@@ -3349,7 +3415,7 @@ export const StorageService = {
    */
   switchUserSession(newUserEmail: string | null): void {
     const activeWorkspaceUser = (localStorage.getItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER) || '').toLowerCase().trim();
-    const prevUser = this.getWorkOSUser();
+    const prevUser = this.getAuthUser();
     const prevEmail = (prevUser?.email || activeWorkspaceUser || '').toLowerCase().trim();
     const cleanNewEmail = (newUserEmail || '').toLowerCase().trim();
 
@@ -3364,9 +3430,9 @@ export const StorageService = {
     }
 
     if (!cleanNewEmail) {
-      // User signed out:
+      // User signed out (preserve separate Google Drive connection keys!)
       try {
-        localStorage.removeItem(STORAGE_KEYS.WORKOS_USER);
+        this.clearAuthSession();
         localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
         localStorage.removeItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER);
         const cf = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, null as any);
@@ -3463,7 +3529,7 @@ export const StorageService = {
     }
   },
 
-  clearWorkOSUser(): void {
+  clearAuthUser(): void {
     this.switchUserSession(null);
   },
 

@@ -174,7 +174,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       });
     };
     window.addEventListener('brivu_data_refreshed', syncFromStorage);
-    window.addEventListener('workos_user_updated', syncFromStorage);
+    window.addEventListener('brivu_auth_changed', syncFromStorage);
     window.addEventListener('storage', syncFromStorage);
 
     const authEmail = StorageService.getAuthenticatedEmail();
@@ -188,7 +188,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
 
     return () => {
       window.removeEventListener('brivu_data_refreshed', syncFromStorage);
-      window.removeEventListener('workos_user_updated', syncFromStorage);
+      window.removeEventListener('brivu_auth_changed', syncFromStorage);
       window.removeEventListener('storage', syncFromStorage);
     };
   }, []);

@@ -190,18 +190,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [uploadProgressText, setUploadProgressText] = useState<string>('Uploading...');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
-    Boolean(StorageService.getWorkOSUser()?.email)
+    Boolean(StorageService.getAuthUser()?.email)
   );
   useEffect(() => {
     const syncAuth = (e: any) => {
       if (e && 'detail' in e) {
         setIsLoggedIn(Boolean(e.detail?.email));
       } else {
-        setIsLoggedIn(Boolean(StorageService.getWorkOSUser()?.email));
+        setIsLoggedIn(Boolean(StorageService.getAuthUser()?.email));
       }
     };
-    window.addEventListener('workos_user_updated', syncAuth);
-    return () => window.removeEventListener('workos_user_updated', syncAuth);
+    window.addEventListener('brivu_auth_changed', syncAuth);
+    return () => window.removeEventListener('brivu_auth_changed', syncAuth);
   }, []);
 
   const showToast = (msg: string) => {
@@ -342,11 +342,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       }
     };
     window.addEventListener('brivu_data_refreshed', handleRefresh);
-    window.addEventListener('workos_user_updated', handleRefresh);
+    window.addEventListener('brivu_auth_changed', handleRefresh);
     window.addEventListener('storage', handleRefresh);
     return () => {
       window.removeEventListener('brivu_data_refreshed', handleRefresh);
-      window.removeEventListener('workos_user_updated', handleRefresh);
+      window.removeEventListener('brivu_auth_changed', handleRefresh);
       window.removeEventListener('storage', handleRefresh);
     };
   }, [activePageId]);

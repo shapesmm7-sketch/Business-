@@ -20,7 +20,6 @@ import { AppLockSetupScreen } from './components/AppLockSetupScreen';
 import { CloudBackupScreen } from './components/CloudBackupScreen';
 import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { QrCodeScannerModal } from './components/QrCodeScannerModal';
-import { GoogleAuthPopupPage } from './components/GoogleAuthPopupPage';
 import { SyncToGoogleDriveScreen } from './components/SyncToGoogleDriveScreen';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
@@ -31,8 +30,7 @@ import { QRHostingService } from './services/qrHostingService';
 import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
-import { Browser } from '@capacitor/browser';
-import { WorkOSAuthService } from './services/workosAuthService';
+import { BrivuAuthService } from './services/brivuAuthService';
 import { AlertCircle, Ticket, Sparkles, Loader2 } from 'lucide-react';
 import {
   ActiveScreen,
@@ -445,8 +443,8 @@ export function App() {
         const resolveSignedInEmail = (): string => {
           const authEmail = StorageService.getAuthenticatedEmail();
           if (authEmail) return authEmail.toLowerCase().trim();
-          const workosUser = StorageService.getWorkOSUser();
-          if (workosUser?.email) return workosUser.email.toLowerCase().trim();
+          const authUser = StorageService.getAuthUser();
+          if (authUser?.email) return authUser.email.toLowerCase().trim();
           const profEmail = StorageService.getProfile()?.email;
           return profEmail ? profEmail.toLowerCase().trim() : '';
         };
@@ -900,40 +898,8 @@ export function App() {
     };
 
     const handleAppResuming = async () => {
-      // 0. Instant resume check: if an OAuth session was completed in browser, log the user in immediately!
-      try {
-        const pendingSessionId = localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id');
-        if (pendingSessionId) {
-          const check = await CloudflareService.checkAuthSessionStatus(pendingSessionId);
-          if (check.status === 'completed' && check.user) {
-            try {
-              localStorage.removeItem('workos_session_id');
-              sessionStorage.removeItem('workos_session_id');
-            } catch (_) {}
-            await WorkOSAuthService.saveAndSyncUser(check.user);
-            refreshData();
-            window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: check.user }));
-            try {
-              await Browser.close();
-            } catch (_) {}
-          } else if (check.status === 'completed' && check.code) {
-            try {
-              localStorage.removeItem('workos_session_id');
-              sessionStorage.removeItem('workos_session_id');
-            } catch (_) {}
-            const exch = await WorkOSAuthService.authenticateCode(check.code);
-            if (exch.success && exch.user) {
-              refreshData();
-              window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: exch.user }));
-              try {
-                await Browser.close();
-              } catch (_) {}
-            }
-          }
-        }
-      } catch (resumeAuthErr) {
-        console.warn('OAuth resume check note:', resumeAuthErr);
-      }
+      // Validate persisted Brivu session silently on app resume
+      BrivuAuthService.validateSession().catch(() => {});
 
       const currentCfg = StorageService.getAppLockConfig();
       setLockConfig(currentCfg);
@@ -951,7 +917,7 @@ export function App() {
       }
 
       if (currentCfg?.isEnabled && currentCfg.pin && currentCfg.autoLockOnExit !== false) {
-        // If returning from system dialog (e.g. file picker / share sheet), do not lock
+        // If returning from system dialog (e.g. file picker / share sheet / native Google chooser), do not lock
         if (StorageService.consumeSystemActionActive()) {
           return;
         }
@@ -973,7 +939,6 @@ export function App() {
 
     // 2. Native Capacitor App State Change
     let capListenerHandle: any = null;
-    let urlOpenHandle: any = null;
     try {
       CapApp.addListener('appStateChange', (state) => {
         if (!state.isActive) {
@@ -990,116 +955,18 @@ export function App() {
       console.warn('[AppLock] CapApp setup note:', capErr);
     }
 
-    // 2b. Native Capacitor Deep Link listener for OAuth callback
-    try {
-      CapApp.addListener('appUrlOpen', async (data) => {
-        if (data && data.url) {
-          const urlStr = data.url;
-          if (urlStr.includes('code=') || urlStr.includes('/callback') || urlStr.includes('auth_session=') || urlStr.includes('user=')) {
-            try {
-              // Close system browser / Custom Tab if open
-              try {
-                await Browser.close();
-              } catch (_) {}
-
-              const dummyUrl = new URL(urlStr.replace(/^[a-zA-Z0-9_.-]+:\/\//, 'https://dummy.host/'));
-              
-              // 1. If direct user JSON was passed in deep link, log in immediately
-              const userRaw = dummyUrl.searchParams.get('user');
-              if (userRaw) {
-                try {
-                  const parsedUser = JSON.parse(decodeURIComponent(userRaw));
-                  if (parsedUser && (parsedUser.email || parsedUser.id)) {
-                    await WorkOSAuthService.saveAndSyncUser(parsedUser);
-                    refreshData();
-                    window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: parsedUser }));
-                    return;
-                  }
-                } catch (_) {}
-              }
-
-              // 2. If auth_session is passed, resolve via session status
-              const sId = dummyUrl.searchParams.get('auth_session') || localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id');
-              if (sId) {
-                const check = await CloudflareService.checkAuthSessionStatus(sId);
-                if (check.status === 'completed' && check.user) {
-                  try {
-                    localStorage.removeItem('workos_session_id');
-                    sessionStorage.removeItem('workos_session_id');
-                  } catch (_) {}
-                  await WorkOSAuthService.saveAndSyncUser(check.user);
-                  refreshData();
-                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: check.user }));
-                  return;
-                } else if (check.status === 'completed' && check.code) {
-                  try {
-                    localStorage.removeItem('workos_session_id');
-                    sessionStorage.removeItem('workos_session_id');
-                  } catch (_) {}
-                  const exch = await WorkOSAuthService.authenticateCode(check.code);
-                  if (exch.success && exch.user) {
-                    refreshData();
-                    window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: exch.user }));
-                    return;
-                  }
-                }
-              }
-
-              // 3. Fallback: authenticate code if not yet exchanged
-              const code = dummyUrl.searchParams.get('code');
-              if (code) {
-                const res = await WorkOSAuthService.authenticateCode(code);
-                if (res.success && res.user) {
-                  refreshData();
-                  window.dispatchEvent(new CustomEvent('workos_user_updated', { detail: res.user }));
-                }
-              }
-            } catch (err) {
-              console.warn('[OAuth] Deep link parsing error:', err);
-            }
-          }
-        }
-      }).then((handle) => {
-        urlOpenHandle = handle;
-      }).catch(() => {});
-    } catch (_) {}
+    // Validate persisted Brivu session on startup (non-blocking)
+    if (!isCustomerPathFromUrl()) {
+      BrivuAuthService.validateSession().catch(() => {});
+    }
 
     const handleUserUpdatedSync = () => {
       refreshData();
     };
-    window.addEventListener('workos_user_updated', handleUserUpdatedSync);
+    window.addEventListener('brivu_auth_changed', handleUserUpdatedSync);
+    window.addEventListener('brivu_auth_expired', handleUserUpdatedSync);
     window.addEventListener('brivu_data_refreshed', handleUserUpdatedSync);
     window.addEventListener('storage', handleUserUpdatedSync);
-
-    // 2a. Global OAuth popup message listener
-    const handleOAuthMessage = async (event: MessageEvent) => {
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        try {
-          const { code, user } = event.data;
-          if (user) {
-            await WorkOSAuthService.saveAndSyncUser(user);
-            refreshData();
-          } else if (code) {
-            const res = await WorkOSAuthService.authenticateCode(code);
-            if (res.success) {
-              refreshData();
-            }
-          }
-        } catch (err) {
-          console.warn('[OAuth] Popup message handling error:', err);
-        }
-      }
-    };
-    window.addEventListener('message', handleOAuthMessage);
-
-    // 2b. Process web OAuth callback code or session if returning from Google / WorkOS
-    if (typeof window !== 'undefined' && (window.location.search.includes('code=') || window.location.search.includes('auth_session='))) {
-      WorkOSAuthService.handleCallbackIfPresent().then((usr) => {
-        if (usr) {
-          refreshData();
-        }
-      });
-    }
 
     // 3. Pagehide / beforeunload listeners (clean web unload)
     const handlePageHide = () => {
@@ -1129,8 +996,8 @@ export function App() {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);
       document.removeEventListener('click', handleFileInputClick, true);
-      window.removeEventListener('message', handleOAuthMessage);
-      window.removeEventListener('workos_user_updated', handleUserUpdatedSync);
+      window.removeEventListener('brivu_auth_changed', handleUserUpdatedSync);
+      window.removeEventListener('brivu_auth_expired', handleUserUpdatedSync);
       window.removeEventListener('brivu_data_refreshed', handleUserUpdatedSync);
       window.removeEventListener('storage', handleUserUpdatedSync);
       if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
@@ -1328,18 +1195,6 @@ export function App() {
     setSettings(updated);
     StorageService.saveSettings(updated);
   };
-
-  // Check if we are inside an OAuth popup window or dedicated callback route
-  const isNative = typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.());
-  const isOauthPopup = typeof window !== 'undefined' && !isNative && (
-    (Boolean(window.opener) && (window.location.search.includes('code=') || window.location.search.includes('error='))) ||
-    window.location.pathname.includes('/auth/callback') ||
-    window.location.pathname.endsWith('/callback')
-  );
-
-  if (isOauthPopup) {
-    return <GoogleAuthPopupPage />;
-  }
 
   const isPublicCustomerView = isCustomerPathFromUrl();
 

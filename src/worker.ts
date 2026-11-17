@@ -15,15 +15,13 @@ export interface Env {
   R2?: any;
   brivu_r2?: any;
   BRIVU_BUCKET?: any;
-  WORKOS_API_KEY?: string;
-  WORKOS_CLIENT_ID?: string;
-  WORKOS_REDIRECT_URI?: string;
+  GOOGLE_WEB_CLIENT_ID?: string;
 }
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Sync-Key, X-User-Email, X-User-Id, X-Requested-With, X-WorkOS-Client-Id, X-WorkOS-Api-Key, Origin, Accept',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Brivu-Session, X-Sync-Key, X-User-Email, X-User-Id, X-Requested-With, Origin, Accept',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -83,85 +81,347 @@ export function getD1Database(env: any): any {
   return null;
 }
 
-// In-memory auth session cache for fast instant login polling across web and Android
-const authSessionsCache = new Map<string, { status: string; code?: string; codeVerifier?: string; user?: any; createdAt: number }>();
+// Brivu Session Duration (30 days)
+const BRIVU_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const BRIVU_SESSION_RENEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-async function resolveSessionCodeVerifier(sessionId: string, env: Env): Promise<string | undefined> {
-  if (!sessionId) return undefined;
-  const cached = authSessionsCache.get(sessionId);
-  if (cached?.codeVerifier) return cached.codeVerifier;
-
-  const db = getD1Database(env);
-  if (db) {
-    try {
-      await ensureD1Tables(db);
-      const row: any = await db
-        .prepare('SELECT status, code FROM auth_sessions WHERE session_id = ?')
-        .bind(sessionId)
-        .first();
-      if (row && row.status === 'pending' && typeof row.code === 'string' && row.code.trim()) {
-        return row.code.trim();
-      }
-    } catch (_) {}
-  }
-  return undefined;
+interface CachedGoogleJwks {
+  keys: JsonWebKey[];
+  expiresAt: number;
 }
 
-async function exchangeWorkOSAuthCode(opts: {
-  clientId: string;
-  apiKey?: string;
-  code: string;
-  codeVerifier?: string;
-}): Promise<Response | null> {
-  const cleanClientId = (opts.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim();
-  const cleanApiKey = (opts.apiKey || '').trim();
-  const code = (opts.code || '').trim();
-  const codeVerifier = (opts.codeVerifier || '').trim();
+let googleJwksCache: CachedGoogleJwks | null = null;
 
-  let workosRes: Response | null = null;
+function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  const padded = base64Url.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((base64Url.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
-  // 1. Official PKCE exchange WITHOUT client_secret first (prevents invalid client_secret errors)
-  if (codeVerifier) {
-    workosRes = await fetch('https://api.workos.com/user_management/authenticate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: cleanClientId,
-        code,
-        code_verifier: codeVerifier,
-        grant_type: 'authorization_code',
-      }),
-    });
-    if (workosRes.ok) {
-      return workosRes;
-    }
+function decodeJwtPartJson(part: string): any {
+  const bytes = base64UrlToUint8Array(part);
+  const text = new TextDecoder().decode(bytes);
+  return JSON.parse(text);
+}
+
+async function fetchGoogleJwks(forceRefresh = false): Promise<JsonWebKey[]> {
+  if (!forceRefresh && googleJwksCache && Date.now() < googleJwksCache.expiresAt && googleJwksCache.keys.length > 0) {
+    return googleJwksCache.keys;
   }
 
-  // 2. Standard confidential / client_secret fallback if API key is provided
-  if (cleanApiKey) {
-    const secretBody: any = {
-      client_id: cleanClientId,
-      client_secret: cleanApiKey,
-      code,
-      grant_type: 'authorization_code',
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/certs', {
+    cf: { cacheTtl: 1800, cacheEverything: true },
+  } as RequestInit);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google public certificates (HTTP ${res.status})`);
+  }
+
+  const cacheControl = res.headers.get('Cache-Control') || '';
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const maxAgeMs = maxAgeMatch ? Math.max(60, Math.min(3600, parseInt(maxAgeMatch[1], 10))) * 1000 : 1800 * 1000;
+
+  const data: any = await res.json();
+  const keys = Array.isArray(data?.keys) ? (data.keys as JsonWebKey[]) : [];
+  if (keys.length === 0) {
+    throw new Error('Google public certificate set is empty');
+  }
+
+  googleJwksCache = {
+    keys,
+    expiresAt: Date.now() + maxAgeMs,
+  };
+  return keys;
+}
+
+interface VerifiedGoogleClaims {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  givenName: string;
+  familyName: string;
+  picture: string;
+  exp: number;
+}
+
+async function verifyGoogleIdToken(idToken: string, expectedAudience: string): Promise<VerifiedGoogleClaims> {
+  const cleanToken = (idToken || '').trim();
+  const parts = cleanToken.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Malformed Google ID token.');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  let header: any;
+  let payload: any;
+  try {
+    header = decodeJwtPartJson(headerB64);
+    payload = decodeJwtPartJson(payloadB64);
+  } catch {
+    throw new Error('Invalid Google ID token encoding.');
+  }
+
+  if (header?.alg !== 'RS256' || typeof header?.kid !== 'string' || !header.kid) {
+    throw new Error('Unsupported or missing Google ID token signing algorithm/key ID.');
+  }
+
+  let keys = await fetchGoogleJwks(false);
+  let matchingJwk: any = keys.find((k: any) => k.kid === header.kid);
+  if (!matchingJwk) {
+    // Handle Google key rotation by forcing a single JWK refresh
+    keys = await fetchGoogleJwks(true);
+    matchingJwk = keys.find((k: any) => k.kid === header.kid);
+  }
+  if (!matchingJwk) {
+    throw new Error('Matching Google signing certificate not found.');
+  }
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'jwk',
+    matchingJwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+
+  const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+  const signatureBytes = base64UrlToUint8Array(signatureB64);
+  const isSignatureValid = await crypto.subtle.verify(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    cryptoKey,
+    signatureBytes,
+    signingInput
+  );
+
+  if (!isSignatureValid) {
+    throw new Error('Google ID token cryptographic signature verification failed.');
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const iss = String(payload?.iss || '');
+  if (iss !== 'https://accounts.google.com' && iss !== 'accounts.google.com') {
+    throw new Error('Invalid Google ID token issuer.');
+  }
+
+  const aud = String(payload?.aud || '');
+  if (!expectedAudience || aud !== expectedAudience) {
+    throw new Error('Google ID token audience mismatch. Ensure GOOGLE_WEB_CLIENT_ID matches the Web Client ID in Google Cloud project Brivu.');
+  }
+
+  const exp = Number(payload?.exp || 0);
+  if (!exp || exp + 60 < nowSec) {
+    throw new Error('Google ID token has expired. Please sign in again.');
+  }
+
+  const nbf = Number(payload?.nbf || 0);
+  if (nbf && nbf - 60 > nowSec) {
+    throw new Error('Google ID token is not valid yet.');
+  }
+
+  const sub = String(payload?.sub || '').trim();
+  const email = String(payload?.email || '').toLowerCase().trim();
+  const emailVerified = payload?.email_verified === true || payload?.email_verified === 'true';
+
+  if (!sub || !email || !email.includes('@')) {
+    throw new Error('Google ID token is missing required user subject or email claims.');
+  }
+  if (!emailVerified) {
+    throw new Error('Your Google account email is not verified.');
+  }
+
+  const givenName = String(payload?.given_name || '').trim();
+  const familyName = String(payload?.family_name || '').trim();
+  const name = String(payload?.name || `${givenName} ${familyName}`.trim() || email.split('@')[0] || 'Google User').trim();
+  const picture = String(payload?.picture || '').trim();
+
+  return {
+    sub,
+    email,
+    emailVerified: true,
+    name,
+    givenName,
+    familyName,
+    picture,
+    exp,
+  };
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+function generateSecureToken(byteLength = 32): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', encoded);
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function extractBrivuSessionToken(request: Request): string {
+  const direct = request.headers.get('X-Brivu-Session');
+  if (direct && direct.trim()) return direct.trim();
+  const authHeader = request.headers.get('Authorization') || '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim();
+    // Static email values stored in legacy apiKey field are not cryptographic session tokens
+    if (token && !token.includes('@') && token.length >= 32) {
+      return token;
+    }
+  }
+  return '';
+}
+
+function mapDbRowToBrivuUser(row: any, nowIso?: string) {
+  const cleanEmail = String(row?.email || '').toLowerCase().trim();
+  return {
+    id: row?.id || cleanEmail,
+    googleSub: row?.google_sub || undefined,
+    email: cleanEmail,
+    firstName: row?.first_name || '',
+    lastName: row?.last_name || '',
+    name: row?.name || cleanEmail || 'Google User',
+    profilePictureUrl: row?.profile_picture_url || '',
+    emailVerified: true,
+    provider: 'google' as const,
+    createdAt: row?.created_at || nowIso,
+    updatedAt: row?.updated_at || nowIso,
+    lastLogin: row?.last_login || nowIso,
+    syncedToCloudflare: true,
+    cloudflareStoredAt: nowIso || row?.updated_at,
+  };
+}
+
+/**
+ * Safely creates or retrieves a Brivu user after Google ID token verification.
+ * Migrates pre-existing WorkOS/legacy records matched strictly by verified email
+ * by attaching google_sub without creating duplicate accounts or losing data.
+ */
+async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
+  const nowIso = new Date().toISOString();
+  const cleanEmail = claims.email.toLowerCase().trim();
+
+  if (!db) {
+    return {
+      id: cleanEmail,
+      googleSub: claims.sub,
+      email: cleanEmail,
+      firstName: claims.givenName,
+      lastName: claims.familyName,
+      name: claims.name,
+      profilePictureUrl: claims.picture,
+      emailVerified: true,
+      provider: 'google' as const,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastLogin: nowIso,
+      syncedToCloudflare: true,
+      cloudflareStoredAt: nowIso,
     };
-    if (codeVerifier) {
-      secretBody.code_verifier = codeVerifier;
-    }
-    const secretRes = await fetch('https://api.workos.com/user_management/authenticate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cleanApiKey}`,
-      },
-      body: JSON.stringify(secretBody),
-    });
-    if (secretRes.ok || !workosRes) {
-      workosRes = secretRes;
-    }
   }
 
-  return workosRes;
+  await ensureD1Tables(db);
+
+  // 1. Primary lookup: immutable Google subject ID
+  let existingRow: any = await db
+    .prepare('SELECT * FROM users WHERE google_sub = ? LIMIT 1')
+    .bind(claims.sub)
+    .first()
+    .catch(() => null);
+
+  // 2. Migration lookup: verified email match for existing accounts created prior to native Google Sign-In
+  if (!existingRow) {
+    existingRow = await db
+      .prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+      .bind(cleanEmail, cleanEmail)
+      .first()
+      .catch(() => null);
+  }
+
+  if (existingRow) {
+    await db.prepare(`
+      UPDATE users
+      SET google_sub = ?,
+          email = COALESCE(NULLIF(?, ''), email),
+          name = COALESCE(NULLIF(?, ''), name),
+          first_name = COALESCE(NULLIF(?, ''), first_name),
+          last_name = COALESCE(NULLIF(?, ''), last_name),
+          profile_picture_url = COALESCE(NULLIF(?, ''), profile_picture_url),
+          provider = 'google',
+          updated_at = ?,
+          last_login = ?
+      WHERE id = ?
+    `).bind(
+      claims.sub,
+      cleanEmail,
+      claims.name,
+      claims.givenName,
+      claims.familyName,
+      claims.picture,
+      nowIso,
+      nowIso,
+      existingRow.id
+    ).run();
+
+    const refreshed = await db
+      .prepare('SELECT * FROM users WHERE id = ? LIMIT 1')
+      .bind(existingRow.id)
+      .first()
+      .catch(() => null);
+    return mapDbRowToBrivuUser(refreshed || existingRow, nowIso);
+  }
+
+  // 3. Brand new Brivu user (canonical email as id to stay consistent across backups/qr_pages/files)
+  await db.prepare(`
+    INSERT INTO users (id, email, google_sub, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'google', ?, ?, ?)
+  `).bind(
+    cleanEmail,
+    cleanEmail,
+    claims.sub,
+    claims.name,
+    claims.givenName,
+    claims.familyName,
+    claims.picture,
+    nowIso,
+    nowIso,
+    nowIso
+  ).run();
+
+  const created = await db
+    .prepare('SELECT * FROM users WHERE id = ? LIMIT 1')
+    .bind(cleanEmail)
+    .first()
+    .catch(() => null);
+
+  return mapDbRowToBrivuUser(
+    created || {
+      id: cleanEmail,
+      email: cleanEmail,
+      google_sub: claims.sub,
+      name: claims.name,
+      first_name: claims.givenName,
+      last_name: claims.familyName,
+      profile_picture_url: claims.picture,
+      provider: 'google',
+      created_at: nowIso,
+      updated_at: nowIso,
+      last_login: nowIso,
+    },
+    nowIso
+  );
 }
 
 export function hasRealQrPageContent(page: any): boolean {
@@ -457,6 +717,7 @@ export async function ensureD1Tables(db: any): Promise<void> {
           CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
+            google_sub TEXT,
             name TEXT,
             first_name TEXT,
             last_name TEXT,
@@ -469,12 +730,30 @@ export async function ensureD1Tables(db: any): Promise<void> {
         `),
         db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`),
         db.prepare(`
-          CREATE TABLE IF NOT EXISTS auth_sessions (
-            session_id TEXT PRIMARY KEY,
-            status TEXT,
-            code TEXT,
-            user_json TEXT,
-            created_at INTEGER
+          CREATE TABLE IF NOT EXISTS brivu_sessions (
+            id TEXT PRIMARY KEY,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id TEXT NOT NULL,
+            user_email TEXT NOT NULL,
+            google_sub TEXT,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            revoked_at INTEGER
+          )
+        `),
+        db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_brivu_sessions_token_hash ON brivu_sessions(token_hash)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_user_email ON brivu_sessions(user_email)`),
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS business_profile (
+            user_email TEXT PRIMARY KEY,
+            name TEXT,
+            description TEXT,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            currency TEXT,
+            updated_at TEXT
           )
         `),
         db.prepare(`
@@ -582,6 +861,13 @@ export async function ensureD1Tables(db: any): Promise<void> {
       ];
 
       await executeD1Batch(db, ddlStatements, 35);
+      // Safe schema migration for existing live D1 users table
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN google_sub TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)`).run();
+      } catch (_) {}
       d1SchemaReady = true;
     } catch (_) {
       // Fallback safely on next call if batch failed transiently
@@ -1598,13 +1884,7 @@ export async function resolveHostedQrPage(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    
-    // Read WorkOS overrides from custom headers or search params
-    const headerClientId = request.headers.get('X-WorkOS-Client-Id') || url.searchParams.get('workos_client_id');
-    const headerApiKey = request.headers.get('X-WorkOS-Api-Key') || url.searchParams.get('workos_api_key');
-
-    const workosClientId = (headerClientId || env.WORKOS_CLIENT_ID || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
-    const workosApiKey = (headerApiKey || env.WORKOS_API_KEY || 'sk_a2V5XzAxTTRCVzFBRjBaMTg1RU1SR1lRNE5SWVZYLGZ2RWhseTNSUEJOVVZaSmJqOUM3Mk5lQWnl').trim().replace(/^['"]|['"]$/g, '');
+    const googleWebClientId = (env.GOOGLE_WEB_CLIENT_ID || '').trim().replace(/^['"]|['"]$/g, '');
 
     // 1. Handle CORS Preflight OPTIONS requests
     if (request.method === 'OPTIONS') {
@@ -1618,7 +1898,7 @@ export default {
       });
     }
 
-    // 1b. Digital Asset Links for Google Play Deep Links & Credential Sharing domain verification
+    // 1b. Digital Asset Links for Android Credential Sharing & App Links verification
     if (
       url.pathname === '/.well-known/assetlinks.json' ||
       url.pathname === '/.well-known/assetlinks'
@@ -1645,9 +1925,8 @@ export default {
           status: 'connected',
           d1Bound,
           r2Bound,
-          workosConfigured: Boolean(workosClientId && workosApiKey),
-          cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
-          cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
+          googleAuthConfigured: Boolean(googleWebClientId),
+          authProvider: 'brivu-google',
           timestamp: new Date().toISOString(),
         }),
         {
@@ -1793,588 +2072,91 @@ export default {
       }
     }
 
-    // 2a. WorkOS OAuth Callback Handler (/callback and /auth/callback)
-    // Pure Web-based OAuth handling for both Website and Android app (zero Play Store links or custom schemes)
-    if (url.pathname === '/callback' || url.pathname === '/auth/callback') {
-      const authCode = url.searchParams.get('code') || '';
-      const authError = url.searchParams.get('error') || url.searchParams.get('error_description') || '';
-      const rawState = url.searchParams.get('state') || '';
-
-      let sessionId = '';
-      let returnUrl = '';
-      let platform = '';
-
-      if (rawState) {
-        try {
-          const parsed = JSON.parse(decodeURIComponent(rawState));
-          if (parsed && typeof parsed === 'object') {
-            sessionId = parsed.sessionId || '';
-            returnUrl = parsed.returnUrl || '';
-            platform = parsed.platform || '';
-          }
-        } catch (_) {
-          if (rawState.startsWith('http://') || rawState.startsWith('https://')) {
-            returnUrl = decodeURIComponent(rawState);
-          }
-        }
-      }
-
-      // Check referer header if returnUrl is not explicitly in state
-      if (!returnUrl) {
-        const referer = request.headers.get('Referer') || request.headers.get('referrer') || '';
-        if (referer && !referer.includes('google.com') && !referer.includes('workos.com') && !referer.includes(url.hostname)) {
-          returnUrl = referer;
-        }
-      }
-
-      // CRITICAL: NEVER permit localhost or 127.0.0.1 as returnUrl on mobile or web
-      if (returnUrl && (returnUrl.includes('localhost') || returnUrl.includes('127.0.0.1') || returnUrl.includes('capacitor:'))) {
-        returnUrl = 'https://brivu.shapesmm7.workers.dev/';
-      }
-
-      // 1. Direct server-side exchange on worker for immediate zero-delay sign-in (PKCE-first, no client_secret needed)
-      let authenticatedUser: any = null;
-      if (authCode) {
-        try {
-          const cleanApiKey = (env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
-          const cleanClientId = (env.WORKOS_CLIENT_ID || workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
-          const sessionVerifier = sessionId ? await resolveSessionCodeVerifier(sessionId, env) : undefined;
-
-          const wRes = await exchangeWorkOSAuthCode({
-            clientId: cleanClientId,
-            apiKey: cleanApiKey,
-            code: authCode,
-            codeVerifier: sessionVerifier,
-          });
-
-          if (wRes && wRes.ok) {
-            const wData: any = await wRes.json();
-            const u = wData.user || wData;
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const email = (u.email || '').toLowerCase().trim();
-            const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
-            const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
-
-            authenticatedUser = {
-              id: email || u.id || `workos_usr_${Date.now()}`,
-              email,
-              firstName,
-              lastName,
-              name,
-              profilePictureUrl,
-              emailVerified: true,
-              provider: 'google',
-              updatedAt: new Date().toISOString(),
-              syncedToCloudflare: true,
-            };
-          }
-        } catch (exErr) {
-          console.warn('Callback direct server-side exchange note:', exErr);
-        }
-      }
-
-      // 2. Persist session for instant polling in web and Android
-      if (sessionId) {
-        authSessionsCache.set(sessionId, {
-          status: 'completed',
-          user: authenticatedUser,
-          code: authCode,
-          createdAt: Date.now(),
-        });
-
-        const db = getD1Database(env);
-        if (db) {
-          try {
-            await ensureD1Tables(db);
-            const fifteenMinsAgo = Date.now() - (15 * 60 * 1000);
-            await db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR session_id LIKE '%@%'`).bind(fifteenMinsAgo).run().catch(() => {});
-            await db.prepare(`
-              INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
-              VALUES (?, ?, ?, ?, ?)
-            `).bind(sessionId, 'completed', authCode, authenticatedUser ? JSON.stringify(authenticatedUser) : null, Date.now()).run();
-          } catch (_) {}
-        }
-      }
-
-      // 3. Serve the clean, web-only callback landing page (never triggers Play Store or custom scheme errors)
-      const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brivu - Google Sign-In Approved</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: #030712;
-      color: #f9fafb;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1.5rem;
-    }
-    .card {
-      background-color: #111827;
-      border: 1px solid #1f2937;
-      border-radius: 1.5rem;
-      padding: 2.25rem 2rem;
-      max-width: 440px;
-      width: 100%;
-      text-align: center;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    }
-    .icon-error {
-      width: 56px;
-      height: 56px;
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: 1.25rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1.25rem;
-    }
-    .icon-error svg { width: 28px; height: 28px; stroke: #ef4444; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    .icon-success {
-      width: 56px;
-      height: 56px;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      border-radius: 1.25rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 1.25rem;
-    }
-    .icon-success svg { width: 28px; height: 28px; stroke: #10b981; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    h1 { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
-    p { font-size: 0.875rem; color: #9ca3af; line-height: 1.5; margin-bottom: 1.25rem; }
-    .user-pill {
-      display: inline-block;
-      background: #1f2937;
-      border: 1px solid #374151;
-      padding: 0.35rem 0.85rem;
-      border-radius: 9999px;
-      font-size: 0.8rem;
-      color: #e5e7eb;
-      margin-bottom: 1.25rem;
-      max-width: 90%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 0.875rem 1.25rem;
-      border-radius: 1rem;
-      font-weight: 700;
-      font-size: 0.875rem;
-      text-decoration: none;
-      cursor: pointer;
-      transition: all 0.2s;
-      background: linear-gradient(135deg, #4f46e5, #4338ca);
-      color: #ffffff;
-      border: none;
-    }
-    .btn:hover { opacity: 0.95; }
-    .btn-secondary {
-      background: #1f2937;
-      color: #e5e7eb;
-      border: 1px solid #374151;
-      margin-top: 0.75rem;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    ${authError ? `
-      <div class="icon-error">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      </div>
-      <h1>Authentication Notice</h1>
-      <p>${authError}</p>
-      <a href="/" class="btn">Return Home</a>
-    ` : `
-      <div class="icon-success">
-        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-      </div>
-      <h1>Sign-In Approved!</h1>
-      ${authenticatedUser?.email ? `<div class="user-pill">${authenticatedUser.email}</div>` : ''}
-      <p id="statusMsg">Your Google account has been verified. Returning to Brivu...</p>
-      <div id="actionButtons" style="margin-top: 1.25rem;">
-        <a id="btnPrimary" href="/" class="btn">Open Brivu App</a>
-        <a id="btnWebSecondary" href="https://brivu.shapesmm7.workers.dev/" class="btn btn-secondary" style="display: none;">Continue on Web Instead</a>
-      </div>
-    `}
-  </div>
-
-  <script>
-    (function() {
-      var code = ${JSON.stringify(authCode)};
-      var user = ${JSON.stringify(authenticatedUser)};
-      var returnUrl = ${JSON.stringify(returnUrl)};
-      var sessionId = ${JSON.stringify(sessionId)};
-      var platform = ${JSON.stringify(platform)};
-
-      if (!code && !user) return;
-
-      // 1. Web Popup Flow: post message to opener window and close cleanly
-      if (window.opener) {
-        try {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', code: code, user: user, sessionId: sessionId }, '*');
-          setTimeout(function() {
-            try { window.close(); } catch (_) {}
-          }, 400);
-          return;
-        } catch (_) {}
-      }
-
-      var userAgent = (navigator.userAgent || '').toLowerCase();
-      var isAndroid = userAgent.indexOf('android') >= 0;
-      var isMobile = isAndroid || userAgent.indexOf('iphone') >= 0 || userAgent.indexOf('ipad') >= 0;
-      var isAndroidApp = platform === 'android' || isAndroid || isMobile;
-
-      // Build payload parameters
-      var userParam = user ? '&user=' + encodeURIComponent(JSON.stringify(user)) : '';
-      var sessionParam = sessionId ? '&auth_session=' + encodeURIComponent(sessionId) : '';
-      var codeParam = code ? '&code=' + encodeURIComponent(code) : '';
-
-      // Direct Android app deep link schemes registered in AndroidManifest.xml
-      var appSchemeUrl = 'brivu://auth/callback?' + codeParam + sessionParam + userParam;
-      var appIntentUrl = 'intent://auth/callback?' + codeParam + sessionParam + userParam + '#Intent;scheme=brivu;package=com.brivu.myapp;end';
-
-      var btnPrimary = document.getElementById('btnPrimary');
-      var btnWebSecondary = document.getElementById('btnWebSecondary');
-      var statusMsg = document.getElementById('statusMsg');
-
-      function openAndroidApp(e) {
-        if (e && e.preventDefault) e.preventDefault();
-        try {
-          window.location.href = appSchemeUrl;
-        } catch (_) {}
-        setTimeout(function() {
-          try {
-            window.location.href = appIntentUrl;
-          } catch (_) {}
-        }, 200);
-      }
-
-      if (isAndroidApp) {
-        if (statusMsg) {
-          statusMsg.textContent = 'Account verified! Opening your Brivu Android App...';
-        }
-        if (btnPrimary) {
-          btnPrimary.textContent = 'Open Brivu App & Log In';
-          btnPrimary.href = appSchemeUrl;
-          btnPrimary.onclick = openAndroidApp;
-        }
-        if (btnWebSecondary) {
-          btnWebSecondary.style.display = 'block';
-          btnWebSecondary.href = 'https://brivu.shapesmm7.workers.dev/?auth_session=' + encodeURIComponent(sessionId || '') + userParam;
-        }
-
-        // Auto-launch into Android app immediately
-        setTimeout(function() {
-          openAndroidApp();
-        }, 200);
-      } else {
-        // Desktop Web Flow
-        var targetUrl = returnUrl;
-        try {
-          if (!targetUrl) {
-            targetUrl = localStorage.getItem('workos_web_return_url') || sessionStorage.getItem('workos_web_return_url');
-          }
-        } catch (_) {}
-
-        if (targetUrl && (targetUrl.indexOf('localhost') >= 0 || targetUrl.indexOf('127.0.0.1') >= 0 || targetUrl.indexOf('capacitor:') >= 0)) {
-          targetUrl = 'https://brivu.shapesmm7.workers.dev/';
-        }
-
-        var dest = targetUrl || 'https://brivu.shapesmm7.workers.dev/';
-        var sep = dest.indexOf('?') >= 0 ? '&' : '?';
-        var webDestination = dest + sep + (code ? 'code=' + encodeURIComponent(code) : '') + sessionParam + userParam;
-
-        if (btnPrimary) {
-          btnPrimary.textContent = 'Continue to Brivu';
-          btnPrimary.href = webDestination;
-        }
-
-        if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
-          try {
-            var target = new URL(targetUrl);
-            if (target.hostname !== 'localhost' && target.hostname !== '127.0.0.1' && target.origin !== window.location.origin) {
-              target.searchParams.set('code', code);
-              if (sessionId) target.searchParams.set('auth_session', sessionId);
-              if (user) target.searchParams.set('user', JSON.stringify(user));
-              window.location.replace(target.toString());
-            }
-          } catch (_) {}
-        }
-      }
-    })();
-  </script>
-</body>
-</html>`;
-
-      return new Response(html, {
-        status: 200,
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'text/html; charset=utf-8',
-        },
-      });
-    }
-
-    // 2b-init. WorkOS PKCE Auth Session Init Endpoint (/api/auth/session/init)
-    if (url.pathname === '/api/auth/session/init' && request.method === 'POST') {
-      try {
-        const body: any = await request.json().catch(() => ({}));
-        const sessionId = String(body?.sessionId || '').trim();
-        const codeVerifier = typeof body?.codeVerifier === 'string' ? body.codeVerifier.trim() : '';
-        if (!sessionId) {
-          return new Response(JSON.stringify({ ok: false, error: 'Missing sessionId' }), {
-            status: 400,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-          });
-        }
-
-        const nowMs = Date.now();
-        authSessionsCache.set(sessionId, {
-          status: 'pending',
-          codeVerifier: codeVerifier || undefined,
-          createdAt: nowMs,
-        });
-
-        const db = getD1Database(env);
-        if (db && codeVerifier) {
-          try {
-            await ensureD1Tables(db);
-            const fifteenMinsAgo = nowMs - (15 * 60 * 1000);
-            await db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR session_id LIKE '%@%'`).bind(fifteenMinsAgo).run().catch(() => {});
-            await db.prepare(`
-              INSERT OR REPLACE INTO auth_sessions (session_id, status, code, user_json, created_at)
-              VALUES (?, ?, ?, ?, ?)
-            `).bind(sessionId, 'pending', codeVerifier, null, nowMs).run();
-          } catch (_) {}
-        }
-
-        return new Response(JSON.stringify({ ok: true, sessionId }), {
-          status: 200,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        });
-      } catch (err: any) {
-        return new Response(JSON.stringify({ ok: false, error: err?.message || 'Failed to init session' }), {
-          status: 500,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        });
-      }
-    }
-
-    // 2b. WorkOS Auth Session Polling Endpoint (/api/auth/session/status)
-    // Instant real-time status check for web and Android login without any custom URL schemes
-    if (url.pathname === '/api/auth/session/status' && request.method === 'GET') {
-      const sessionId = url.searchParams.get('session_id') || '';
-      if (!sessionId) {
-        return new Response(JSON.stringify({ ok: false, error: 'Missing session_id' }), {
-          status: 400,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        });
-      }
-
-      let session = authSessionsCache.get(sessionId);
-      if (!session) {
-        const db = getD1Database(env);
-        if (db) {
-          try {
-            await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT * FROM auth_sessions WHERE session_id = ?').bind(sessionId).first();
-            if (row) {
-              session = {
-                status: row.status,
-                code: row.status === 'completed' ? row.code : undefined,
-                codeVerifier: row.status === 'pending' ? row.code : undefined,
-                user: row.user_json ? JSON.parse(row.user_json) : null,
-                createdAt: row.created_at,
-              };
-              authSessionsCache.set(sessionId, session);
-            }
-          } catch (_) {}
-        }
-      }
-
-      if (session && session.status === 'completed') {
-        const payload = {
-          ok: true,
-          success: true,
-          status: 'completed',
-          user: session.user,
-          code: session.code,
-        };
-        // Handshake consumed: clean up temporary session from in-memory cache and D1 table
-        authSessionsCache.delete(sessionId);
-        const db = getD1Database(env);
-        if (db) {
-          try {
-            await db.prepare('DELETE FROM auth_sessions WHERE session_id = ?').bind(sessionId).run();
-          } catch (_) {}
-        }
-        return new Response(JSON.stringify(payload), {
-          status: 200,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-        });
-      }
-
-      return new Response(JSON.stringify({
-        ok: true,
-        status: 'pending',
-      }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 2c. WorkOS Auth Authorize / Config endpoint (/api/auth/workos/authorize)
-    if (url.pathname === '/api/auth/workos/authorize') {
-      const redirectUri = 'https://brivu.shapesmm7.workers.dev/callback';
-
-      const clientId = workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-      const codeChallenge = url.searchParams.get('code_challenge');
-      const isConfigured = Boolean(clientId);
-      
-      let authUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&provider=GoogleOAuth`;
-      if (codeChallenge) {
-        authUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
-      }
-
+    // 2a. Brivu Native Google Sign-In Configuration (/api/auth/config)
+    if (url.pathname === '/api/auth/config' && request.method === 'GET') {
       return new Response(
         JSON.stringify({
           ok: true,
-          configured: isConfigured,
-          clientId,
-          redirectUri,
-          authUrl,
-          provider: 'GoogleOAuth',
-          cloudflareClientIdConfigured: Boolean(env.WORKOS_CLIENT_ID),
-          cloudflareApiKeyConfigured: Boolean(env.WORKOS_API_KEY),
-          isUsingFallback: !Boolean(env.WORKOS_CLIENT_ID) && !headerClientId,
-          message: 'WorkOS AuthKit Google Sign-In ready',
+          configured: Boolean(googleWebClientId),
+          googleWebClientId,
+          androidClientId: '97897075021-nm7g3g62r1hluqo2gc19k95fa32083k7.apps.googleusercontent.com',
+          authProvider: 'brivu-google',
+          message: googleWebClientId
+            ? 'Brivu native Google authentication ready'
+            : 'GOOGLE_WEB_CLIENT_ID is not set yet on the Cloudflare Worker.',
         }),
         {
           status: 200,
-          headers: {
-            ...CORS_HEADERS,
-            'Content-Type': 'application/json',
-          },
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         }
       );
     }
 
-    // 2c. WorkOS Auth Code Authenticate endpoint (/api/auth/workos/authenticate)
-    if (url.pathname === '/api/auth/workos/authenticate' && request.method === 'POST') {
+    // 2b. Brivu Independent Google ID Token Verification & Session Issue (/api/auth/google)
+    if (url.pathname === '/api/auth/google' && request.method === 'POST') {
       try {
         const body: any = await request.json().catch(() => ({}));
-        const { code, codeVerifier, sessionId } = body;
-        const bucket = getR2Bucket(env);
+        const idToken = String(body?.idToken || '').trim();
         const db = getD1Database(env);
 
-        // Resolve clean API key and Client ID from request body, headers, or Cloudflare Worker env
-        const cleanApiKey = (body?.workosApiKey || headerApiKey || env.WORKOS_API_KEY || workosApiKey || '').trim().replace(/^['"]|['"]$/g, '');
-        const cleanClientId = (body?.workosClientId || headerClientId || env.WORKOS_CLIENT_ID || workosClientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB').trim().replace(/^['"]|['"]$/g, '');
-
-        if (!code) {
-          return new Response(
-            JSON.stringify({ ok: false, success: false, error: 'No authorization code received from Google Sign-In.' }),
-            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const resolvedVerifier = codeVerifier || (sessionId ? await resolveSessionCodeVerifier(String(sessionId), env) : undefined);
-
-        let user: any = null;
-        const workosRes = await exchangeWorkOSAuthCode({
-          clientId: cleanClientId,
-          apiKey: cleanApiKey,
-          code,
-          codeVerifier: resolvedVerifier,
-        });
-
-        if (workosRes && workosRes.ok) {
-          const wData: any = await workosRes.json();
-          const u = wData.user || wData;
-          const firstName = u.first_name || u.firstName || '';
-          const lastName = u.last_name || u.lastName || '';
-          const email = (u.email || '').toLowerCase().trim();
-          const name = (u.name || `${firstName} ${lastName}`.trim() || email || 'Google User').trim();
-          const profilePictureUrl = u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '';
-          const emailVerified = u.email_verified ?? u.emailVerified ?? true;
-
-          // User ID on Cloudflare is the user's authentic email
-          user = {
-            id: email || u.id || `workos_usr_${Date.now()}`,
-            email,
-            firstName,
-            lastName,
-            name,
-            profilePictureUrl,
-            emailVerified,
-            provider: 'google',
-            updatedAt: new Date().toISOString(),
-            syncedToCloudflare: true,
-          };
-        } else {
-          const errData: any = workosRes ? await workosRes.json().catch(() => null) : null;
-          const rawMsg = errData?.error_description || errData?.message || errData?.error || 'Authentication code exchange failed';
+        if (!googleWebClientId) {
           return new Response(
             JSON.stringify({
               ok: false,
               success: false,
-              error: `WorkOS Error: ${rawMsg}`,
-              details: errData,
+              error: 'Google Web Client ID (GOOGLE_WEB_CLIENT_ID) is not configured on the Brivu server. Add the Web application OAuth 2.0 Client ID from Google Cloud Project Brivu (97897075021) to Cloudflare Worker settings.',
             }),
-            {
-              status: 400,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-            }
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
 
-        if (user && user.email && db) {
-          const cleanEmail = user.email.toLowerCase().trim();
-          const nowIso = new Date().toISOString();
-          user.id = cleanEmail;
-          user.syncedToCloudflare = true;
-          user.cloudflareStoredAt = nowIso;
+        if (!idToken) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Google ID token is required.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
 
+        let claims: VerifiedGoogleClaims;
+        try {
+          claims = await verifyGoogleIdToken(idToken, googleWebClientId);
+        } catch (verifyErr: any) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              error: verifyErr?.message || 'Google ID token verification failed.',
+            }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const user = await upsertVerifiedGoogleUser(db, claims);
+        const rawSessionToken = generateSecureToken(32);
+        const nowMs = Date.now();
+        const expiresAt = nowMs + BRIVU_SESSION_TTL_MS;
+
+        if (db) {
           try {
             await ensureD1Tables(db);
+            const tokenHash = await sha256Hex(rawSessionToken);
+            const sessionId = `bsess_${generateSecureToken(12)}`;
+            await db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
             await db.prepare(`
-              INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(email) DO UPDATE SET
-                name = excluded.name,
-                first_name = excluded.first_name,
-                last_name = excluded.last_name,
-                profile_picture_url = excluded.profile_picture_url,
-                updated_at = excluded.updated_at,
-                last_login = excluded.last_login
+              INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, created_at, expires_at, last_seen_at, revoked_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
             `).bind(
-              cleanEmail,
-              cleanEmail,
-              user.name || '',
-              user.firstName || '',
-              user.lastName || '',
-              user.profilePictureUrl || '',
-              user.provider || 'google',
-              nowIso,
-              nowIso,
-              nowIso
+              sessionId,
+              tokenHash,
+              user.id,
+              user.email,
+              claims.sub,
+              nowMs,
+              expiresAt,
+              nowMs
             ).run();
-          } catch (d1Err) {
-            console.warn('D1 auth user store note:', d1Err);
+          } catch (sessErr) {
+            console.warn('D1 brivu_sessions insert note:', sessErr);
           }
         }
 
@@ -2383,20 +2165,131 @@ export default {
             ok: true,
             success: true,
             user,
-            storedInCloudflare: true,
-            message: 'Authenticated and saved user profile & email in D1',
+            sessionToken: rawSessionToken,
+            expiresAt,
+            storedInCloudflare: Boolean(db),
+            message: 'Verified with Google and signed into Brivu.',
           }),
           {
             status: 200,
-            headers: {
-              ...CORS_HEADERS,
-              'Content-Type': 'application/json',
-            },
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           }
         );
       } catch (err: any) {
         return new Response(
           JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2c. Brivu Session Validation & Sliding Refresh (/api/auth/session)
+    if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+      try {
+        const db = getD1Database(env);
+        const rawToken = extractBrivuSessionToken(request);
+        if (!rawToken) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: false, error: 'Missing Brivu session token.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, error: 'Database not bound.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        await ensureD1Tables(db);
+        const tokenHash = await sha256Hex(rawToken);
+        const sessionRow: any = await db
+          .prepare('SELECT * FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
+          .bind(tokenHash)
+          .first()
+          .catch(() => null);
+
+        if (!sessionRow) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Session not found or expired.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const nowMs = Date.now();
+        if (sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Your Brivu session has expired. Please sign in again.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        let nextExpiresAt = Number(sessionRow.expires_at);
+        if (nextExpiresAt - nowMs < BRIVU_SESSION_RENEW_WINDOW_MS) {
+          nextExpiresAt = nowMs + BRIVU_SESSION_TTL_MS;
+        }
+        await db.prepare('UPDATE brivu_sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?')
+          .bind(nowMs, nextExpiresAt, sessionRow.id)
+          .run()
+          .catch(() => {});
+
+        const userRow: any = await db
+          .prepare('SELECT * FROM users WHERE id = ? OR LOWER(email) = ? LIMIT 1')
+          .bind(sessionRow.user_id, String(sessionRow.user_email || '').toLowerCase().trim())
+          .first()
+          .catch(() => null);
+
+        const user = userRow
+          ? mapDbRowToBrivuUser(userRow)
+          : {
+              id: sessionRow.user_id,
+              googleSub: sessionRow.google_sub || undefined,
+              email: sessionRow.user_email,
+              name: sessionRow.user_email,
+              emailVerified: true,
+              provider: 'google',
+              syncedToCloudflare: true,
+            };
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            authenticated: true,
+            user,
+            expiresAt: nextExpiresAt,
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, authenticated: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2c-logout. Brivu Session Logout (/api/auth/logout)
+    if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        const body: any = await request.json().catch(() => ({}));
+        const rawToken = extractBrivuSessionToken(request) || String(body?.sessionToken || '').trim();
+        if (db && rawToken) {
+          await ensureD1Tables(db);
+          const tokenHash = await sha256Hex(rawToken);
+          await db.prepare('UPDATE brivu_sessions SET revoked_at = ? WHERE token_hash = ?')
+            .bind(Date.now(), tokenHash)
+            .run()
+            .catch(() => {});
+        }
+        return new Response(
+          JSON.stringify({ ok: true, loggedOut: true }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
           { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
         );
       }

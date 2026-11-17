@@ -142,7 +142,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   };
 
   const handleSyncAll = async () => {
-    const user = StorageService.getWorkOSUser();
+    const user = StorageService.getAuthUser();
     if (!user || !user.email) {
       showToast('Please sign in with Google to save & backup your data to the cloud.');
       return;
@@ -166,7 +166,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   };
 
   const handleRestore = async () => {
-    const user = StorageService.getWorkOSUser();
+    const user = StorageService.getAuthUser();
     if (!user || !user.email) {
       showToast('Please sign in with Google to restore your cloud data.');
       return;

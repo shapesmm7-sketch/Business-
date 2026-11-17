@@ -664,11 +664,6 @@ export interface CloudflareConfig {
   lastErrorMessage?: string;
   filesFolder?: string;
 
-  // Custom live WorkOS override variables
-  customWorkosClientId?: string;
-  customWorkosApiKey?: string;
-  overrideWorkosKeys?: boolean;
-
   // Optional Direct R2 / S3 API Configuration
   accessKeyId?: string;
   secretAccessKey?: string;
@@ -696,33 +691,40 @@ export interface CloudflareSyncResponse {
   data?: any;
 }
 
-export interface WorkOSUser {
+export interface BrivuUser {
   id: string;
+  googleSub?: string;
   email: string;
   firstName?: string;
   lastName?: string;
   name?: string;
   profilePictureUrl?: string;
   emailVerified?: boolean;
-  provider?: 'google' | 'workos' | string;
+  provider?: 'google' | string;
+  createdAt?: string;
   updatedAt?: string;
   syncedToCloudflare?: boolean;
   cloudflareStoredAt?: string;
 }
 
-export interface WorkOSAuthConfig {
-  clientId?: string;
-  apiKeyConfigured?: boolean;
-  redirectUri?: string;
-  authUrl?: string;
-  workerUrl?: string;
-  cloudflareClientIdConfigured?: boolean;
-  cloudflareApiKeyConfigured?: boolean;
-  isUsingFallback?: boolean;
+export interface BrivuAuthSession {
+  sessionToken: string;
+  expiresAt: number;
+  userEmail: string;
 }
 
-export interface WorkOSAuthState {
-  user: WorkOSUser | null;
+export interface BrivuAuthConfig {
+  configured: boolean;
+  googleWebClientId?: string;
+  androidClientId?: string;
+  authProvider?: string;
+  workerUrl?: string;
+  message?: string;
+}
+
+export interface BrivuAuthState {
+  user: BrivuUser | null;
+  session: BrivuAuthSession | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   lastSyncedAt?: string;

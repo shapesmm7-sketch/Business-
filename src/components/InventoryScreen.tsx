@@ -145,12 +145,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setShoppingList(StorageService.getShoppingListItems());
       setProductCategories(StorageService.getProductCategories());
     };
-    window.addEventListener('workos_user_updated', handleSync);
+    window.addEventListener('brivu_auth_changed', handleSync);
     window.addEventListener('storage_updated', handleSync);
     window.addEventListener('brivu_data_restored', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
-      window.removeEventListener('workos_user_updated', handleSync);
+      window.removeEventListener('brivu_auth_changed', handleSync);
       window.removeEventListener('storage_updated', handleSync);
       window.removeEventListener('brivu_data_restored', handleSync);
       window.removeEventListener('storage', handleSync);
@@ -213,18 +213,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
   // Logged-in account state (for showing header Cloud Sync button)
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
-    Boolean(StorageService.getWorkOSUser()?.email)
+    Boolean(StorageService.getAuthUser()?.email)
   );
   useEffect(() => {
     const syncAuth = (e: any) => {
       if (e && 'detail' in e) {
         setIsLoggedIn(Boolean(e.detail?.email));
       } else {
-        setIsLoggedIn(Boolean(StorageService.getWorkOSUser()?.email));
+        setIsLoggedIn(Boolean(StorageService.getAuthUser()?.email));
       }
     };
-    window.addEventListener('workos_user_updated', syncAuth);
-    return () => window.removeEventListener('workos_user_updated', syncAuth);
+    window.addEventListener('brivu_auth_changed', syncAuth);
+    return () => window.removeEventListener('brivu_auth_changed', syncAuth);
   }, []);
 
   // Toast / notification feedback

@@ -4,4 +4,5 @@
     <string name="title_activity_main">Brivu</string>
     <string name="package_name">com.brivu.myapp</string>
     <string name="custom_url_scheme">com.brivu.myapp</string>
+    <string name="google_web_client_id"></string>
 </resources>

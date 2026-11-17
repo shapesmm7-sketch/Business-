@@ -1,4 +1,4 @@
-import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, WorkOSUser, WorkOSAuthConfig } from '../types';
+import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, BrivuUser, BrivuAuthConfig } from '../types';
 import { StorageService } from './storage';
 import { optimizeImageForR2 } from '../utils/imageCompressor';
 
@@ -278,6 +278,10 @@ export const CloudflareService = {
     if (key && key.trim() !== '') {
       headers['X-Sync-Key'] = key.trim();
       headers['Authorization'] = `Bearer ${key.trim()}`;
+    }
+    const session = StorageService.getAuthSession();
+    if (session?.sessionToken) {
+      headers['X-Brivu-Session'] = session.sessionToken;
     }
     const cleanEmail = this.getUserEmail();
     if (cleanEmail) {
@@ -692,7 +696,7 @@ export const CloudflareService = {
               'X-User-Id': userEmail,
             },
             signal: controller.signal,
-            body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user: StorageService.getWorkOSUser() }),
+            body: JSON.stringify({ backupData, userEmail, user_id: userEmail, user: StorageService.getAuthUser() }),
           });
         } finally {
           clearTimeout(timeoutId);
@@ -1301,7 +1305,7 @@ export const CloudflareService = {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const user = StorageService.getWorkOSUser();
+      const user = StorageService.getAuthUser();
       const profile = StorageService.getProfile();
       const brivuId = StorageService.getBrivuUserId();
       const userEmail = (
@@ -1570,7 +1574,7 @@ export const CloudflareService = {
   /**
    * Sync user profile, data, and email to Cloudflare
    */
-  async syncUserProfile(user: WorkOSUser, businessProfile?: any): Promise<CloudflareSyncResponse> {
+  async syncUserProfile(user: BrivuUser, businessProfile?: any): Promise<CloudflareSyncResponse> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
     try {
@@ -1621,138 +1625,85 @@ export const CloudflareService = {
   },
 
   /**
-   * Fetch WorkOS Auth configuration from Cloudflare Worker
+   * Fetch Brivu independent Google Sign-In configuration from Cloudflare Worker
    */
-  async getWorkOSConfig(codeChallenge?: string): Promise<WorkOSAuthConfig> {
+  async getAuthConfig(): Promise<BrivuAuthConfig> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
-      ? normalizeUrl(currentOrigin)
-      : normalizeUrl(config.workerUrl);
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+    const envWebClientId =
+      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_WEB_CLIENT_ID
+        ? String(import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID).trim()
+        : '') || '';
+
     try {
-      const headers = this.getAuthHeaders();
-      if (config.overrideWorkosKeys && config.customWorkosClientId) {
-        headers['X-WorkOS-Client-Id'] = config.customWorkosClientId;
-      }
-      if (config.overrideWorkosKeys && config.customWorkosApiKey) {
-        headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
-      }
-
-      const callbackUri = 'https://brivu.shapesmm7.workers.dev/callback';
-      let authEndpoint = `${cleanUrl}/api/auth/workos/authorize?redirect_uri=${encodeURIComponent(callbackUri)}`;
-      if (codeChallenge) {
-        authEndpoint += `&code_challenge=${encodeURIComponent(codeChallenge)}`;
-      }
-
-      const res = await fetch(authEndpoint, {
-        headers,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return {
-          clientId: data.clientId || 'client_01M4BGNT60CPMEA9P83WD6NRSB',
-          apiKeyConfigured: Boolean(data.configured),
-          authUrl: data.authUrl || '',
-          redirectUri: callbackUri,
-          workerUrl: cleanUrl,
-          cloudflareClientIdConfigured: data.cloudflareClientIdConfigured,
-          cloudflareApiKeyConfigured: data.cloudflareApiKeyConfigured,
-          isUsingFallback: data.isUsingFallback,
-        };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(`${cleanUrl}/api/auth/config`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const webClientId = String(data.googleWebClientId || envWebClientId || '').trim();
+          return {
+            configured: Boolean(webClientId),
+            googleWebClientId: webClientId,
+            androidClientId: data.androidClientId || '97897075021-nm7g3g62r1hluqo2gc19k95fa32083k7.apps.googleusercontent.com',
+            authProvider: data.authProvider || 'brivu-google',
+            workerUrl: cleanUrl,
+            message: data.message,
+          };
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (err) {
-      console.warn('Failed to fetch WorkOS config from Cloudflare:', err);
+      console.warn('Failed to fetch Brivu auth config from Cloudflare:', err);
     }
-    const defaultClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-    const callbackUri = 'https://brivu.shapesmm7.workers.dev/callback';
-    let defaultAuthUrl = `https://api.workos.com/user_management/authorize?response_type=code&client_id=${encodeURIComponent(defaultClientId)}&redirect_uri=${encodeURIComponent(callbackUri)}&provider=GoogleOAuth`;
-    if (codeChallenge) {
-      defaultAuthUrl += `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
-    }
+
     return {
-      clientId: defaultClientId,
-      apiKeyConfigured: true,
-      authUrl: defaultAuthUrl,
-      redirectUri: callbackUri,
+      configured: Boolean(envWebClientId),
+      googleWebClientId: envWebClientId,
+      androidClientId: '97897075021-nm7g3g62r1hluqo2gc19k95fa32083k7.apps.googleusercontent.com',
+      authProvider: 'brivu-google',
       workerUrl: cleanUrl,
-      cloudflareClientIdConfigured: false,
-      cloudflareApiKeyConfigured: false,
-      isUsingFallback: true,
+      message: envWebClientId ? undefined : 'Could not reach Brivu server to load Google Web Client ID.',
     };
   },
 
   /**
-   * Pre-register a PKCE auth session on Cloudflare Worker so /callback can exchange the code without client_secret
+   * Verify Google ID token cryptographically on the Cloudflare Worker and issue a Brivu session
    */
-  async initWorkOSAuthSession(sessionId: string, codeVerifier?: string): Promise<boolean> {
-    if (!sessionId) return false;
+  async authenticateWithGoogleIdToken(idToken: string): Promise<{
+    success: boolean;
+    user?: BrivuUser;
+    sessionToken?: string;
+    expiresAt?: number;
+    message?: string;
+  }> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
-      ? normalizeUrl(currentOrigin)
-      : normalizeUrl(config.workerUrl);
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let res: Response;
       try {
-        const res = await fetch(`${cleanUrl}/api/auth/session/init`, {
+        res = await fetch(`${cleanUrl}/api/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
-          body: JSON.stringify({ sessionId, codeVerifier }),
-        });
-        return res.ok;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } catch {
-      return false;
-    }
-  },
-
-  /**
-   * Exchange WorkOS Auth code via Cloudflare Worker (with PKCE support)
-   */
-  async authenticateWorkOSCode(code: string, redirectUri?: string, codeVerifier?: string, sessionId?: string): Promise<{ success: boolean; user?: WorkOSUser; message?: string }> {
-    const config = this.getConfig();
-    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
-      ? normalizeUrl(currentOrigin)
-      : normalizeUrl(config.workerUrl);
-
-    const resolvedVerifier = codeVerifier || (typeof window !== 'undefined' ? localStorage.getItem('workos_pkce_verifier') || sessionStorage.getItem('workos_pkce_verifier') || undefined : undefined);
-    const resolvedSessionId = sessionId || (typeof window !== 'undefined' ? localStorage.getItem('workos_session_id') || sessionStorage.getItem('workos_session_id') || undefined : undefined);
-    const effectiveClientId = config.overrideWorkosKeys && config.customWorkosClientId ? config.customWorkosClientId : 'client_01M4BGNT60CPMEA9P83WD6NRSB';
-
-    try {
-      const headers = this.getAuthHeaders();
-      headers['Content-Type'] = 'application/json';
-      if (config.overrideWorkosKeys && config.customWorkosClientId) {
-        headers['X-WorkOS-Client-Id'] = config.customWorkosClientId;
-      }
-      if (config.overrideWorkosKeys && config.customWorkosApiKey) {
-        headers['X-WorkOS-Api-Key'] = config.customWorkosApiKey;
-      }
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      let res: Response;
-      try {
-        res = await fetch(`${cleanUrl}/api/auth/workos/authenticate`, {
-          method: 'POST',
-          headers,
-          signal: controller.signal,
-          body: JSON.stringify({
-            code,
-            codeVerifier: resolvedVerifier,
-            sessionId: resolvedSessionId,
-            redirectUri: redirectUri && !redirectUri.includes('localhost') && !redirectUri.includes('127.0.0.1')
-              ? redirectUri
-              : 'https://brivu.shapesmm7.workers.dev/callback',
-            workosClientId: config.overrideWorkosKeys ? config.customWorkosClientId : undefined,
-            workosApiKey: config.overrideWorkosKeys ? config.customWorkosApiKey : undefined,
-          }),
+          body: JSON.stringify({ idToken }),
         });
       } finally {
         clearTimeout(timeoutId);
@@ -1761,134 +1712,133 @@ export const CloudflareService = {
       const text = await res.text();
       const parsed = parseWorkerResponse(text);
 
-      if (res.ok && parsed.ok && parsed.data?.user) {
+      if (res.ok && parsed.ok && parsed.data?.user && parsed.data?.sessionToken) {
         return {
           success: true,
-          user: parsed.data.user,
-          message: 'Authenticated successfully with WorkOS & Cloudflare',
+          user: parsed.data.user as BrivuUser,
+          sessionToken: String(parsed.data.sessionToken),
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          message: parsed.data.message || 'Signed in to Brivu successfully.',
         };
       }
 
-      // If worker returned an error and resolvedVerifier is available, try direct WorkOS PKCE exchange (no client_secret)
-      if (resolvedVerifier) {
-        try {
-          const directRes = await fetch('https://api.workos.com/user_management/authenticate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              client_id: effectiveClientId,
-              code,
-              code_verifier: resolvedVerifier,
-              grant_type: 'authorization_code',
-            }),
-          });
-          if (directRes.ok) {
-            const wData = await directRes.json();
-            const u = wData.user || wData;
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const user: WorkOSUser = {
-              id: u.id || `workos_usr_${Date.now()}`,
-              email: u.email || '',
-              firstName,
-              lastName,
-              name: (u.name || `${firstName} ${lastName}`.trim() || u.email || 'Google User').trim(),
-              profilePictureUrl: u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '',
-              emailVerified: u.email_verified ?? u.emailVerified ?? true,
-              provider: 'google',
-              updatedAt: new Date().toISOString(),
-              syncedToCloudflare: false,
-            };
-            return {
-              success: true,
-              user,
-              message: 'Authenticated successfully with Google & WorkOS',
-            };
-          }
-        } catch (_) {}
-      }
-
       return {
         success: false,
-        message: parsed.error || parsed.data?.error || 'Authentication failed',
+        message: parsed.data?.error || parsed.error || `Sign-in verification failed (HTTP ${res.status}).`,
       };
     } catch (err: any) {
-      // Direct PKCE fallback in case worker is completely unreachable
-      if (resolvedVerifier) {
-        try {
-          const directRes = await fetch('https://api.workos.com/user_management/authenticate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              client_id: effectiveClientId,
-              code,
-              code_verifier: resolvedVerifier,
-              grant_type: 'authorization_code',
-            }),
-          });
-          if (directRes.ok) {
-            const wData = await directRes.json();
-            const u = wData.user || wData;
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const user: WorkOSUser = {
-              id: u.id || `workos_usr_${Date.now()}`,
-              email: u.email || '',
-              firstName,
-              lastName,
-              name: (u.name || `${firstName} ${lastName}`.trim() || u.email || 'Google User').trim(),
-              profilePictureUrl: u.profile_picture_url || u.profilePictureUrl || u.avatar_url || '',
-              emailVerified: u.email_verified ?? u.emailVerified ?? true,
-              provider: 'google',
-              updatedAt: new Date().toISOString(),
-              syncedToCloudflare: false,
-            };
-            return {
-              success: true,
-              user,
-              message: 'Authenticated successfully with Google & WorkOS',
-            };
-          }
-        } catch (_) {}
-      }
-
       return {
         success: false,
-        message: err?.message || 'Error authenticating with WorkOS via Cloudflare',
+        message: err?.name === 'AbortError'
+          ? 'Sign-in verification timed out. Check your internet connection and try again.'
+          : err?.message || 'Unable to verify Google sign-in with Brivu server.',
       };
     }
   },
 
   /**
-   * Check real-time auth session status for instant web and Android login
+   * Validate and refresh an active Brivu session on Cloudflare Worker
    */
-  async checkAuthSessionStatus(sessionId: string): Promise<{ status: 'pending' | 'completed' | 'error'; user?: WorkOSUser; code?: string }> {
+  async validateBrivuSession(sessionToken: string): Promise<{
+    valid: boolean;
+    expired?: boolean;
+    offline?: boolean;
+    user?: BrivuUser;
+    expiresAt?: number;
+    message?: string;
+  }> {
+    if (!sessionToken) {
+      return { valid: false, expired: false, message: 'No active session token.' };
+    }
+
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-    const cleanUrl = currentOrigin && currentOrigin.includes('workers.dev')
-      ? normalizeUrl(currentOrigin)
-      : normalizeUrl(config.workerUrl);
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
 
     try {
-      const res = await fetch(`${cleanUrl}/api/auth/session/status?session_id=${encodeURIComponent(sessionId)}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === 'completed' && data.user) {
-          return { status: 'completed', user: data.user, code: data.code };
-        }
-        return { status: 'pending' };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/session`, {
+          method: 'GET',
+          headers: {
+            'X-Brivu-Session': sessionToken,
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
       }
-    } catch (_) {}
-    return { status: 'pending' };
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok && parsed.data?.authenticated && parsed.data?.user) {
+        return {
+          valid: true,
+          user: parsed.data.user as BrivuUser,
+          expiresAt: Number(parsed.data.expiresAt),
+        };
+      }
+
+      if (res.status === 401) {
+        return {
+          valid: false,
+          expired: true,
+          message: parsed.data?.error || 'Your Brivu session has expired. Please sign in again.',
+        };
+      }
+
+      return {
+        valid: false,
+        offline: true,
+        message: parsed.data?.error || parsed.error || `Session check deferred (HTTP ${res.status})`,
+      };
+    } catch (err: any) {
+      return {
+        valid: false,
+        offline: true,
+        message: err?.message || 'Network unavailable for session check.',
+      };
+    }
+  },
+
+  /**
+   * Revoke an active Brivu session on Cloudflare Worker
+   */
+  async logoutBrivuSession(sessionToken?: string): Promise<void> {
+    if (!sessionToken) return;
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      await fetch(`${cleanUrl}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Brivu-Session': sessionToken,
+        },
+        body: JSON.stringify({ sessionToken }),
+      });
+    } catch {
+      // Best-effort remote revocation; local session is always cleared
+    }
   },
 
   /**
    * Fetch all stored user profiles and emails from Cloudflare
    */
-  async getStoredUserProfiles(): Promise<{ success: boolean; users?: WorkOSUser[]; emails?: string[] }> {
+  async getStoredUserProfiles(): Promise<{ success: boolean; users?: BrivuUser[]; emails?: string[] }> {
     const config = this.getConfig();
     const cleanUrl = normalizeUrl(config.workerUrl);
     try {
