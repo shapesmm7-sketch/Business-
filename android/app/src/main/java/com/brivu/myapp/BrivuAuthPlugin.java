@@ -25,7 +25,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 
 @CapacitorPlugin(name = "BrivuAuthPlugin")
 public class BrivuAuthPlugin extends Plugin {
@@ -124,7 +123,7 @@ public class BrivuAuthPlugin extends Plugin {
                 ret.put("familyName", googleCred.getFamilyName() != null ? googleCred.getFamilyName() : "");
                 ret.put("profilePictureUrl", googleCred.getProfilePictureUri() != null ? googleCred.getProfilePictureUri().toString() : "");
                 call.resolve(ret);
-            } catch (GoogleIdTokenParsingException e) {
+            } catch (Exception e) {
                 Log.e(TAG, "Failed parsing GoogleIdTokenCredential", e);
                 call.reject("Invalid Google ID token credential received.", "TOKEN_PARSE_ERROR", e);
             }
