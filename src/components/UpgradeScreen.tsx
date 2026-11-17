@@ -223,30 +223,16 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-emerald-950 dark:text-emerald-200">
-                You are now a Brivu Pro Member!
+                Brivu Pro Active
               </h2>
               <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                {selectedPlan.name} plan activated successfully for {selectedPlan.formattedPrice}. Cloud sync and live QR hosting are now active.
+                {selectedPlan.name} ({selectedPlan.formattedPrice}) activated via Google Play.
               </p>
             </div>
           </div>
           <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-emerald-200 dark:border-emerald-800 text-xs space-y-1">
             <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Cloud Sync Status:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <Cloud className="w-3.5 h-3.5" />
-                Active & Protected
-              </strong>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">QR & Link Hosting:</span>
-              <strong className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <Globe2 className="w-3.5 h-3.5" />
-                Live Online
-              </strong>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Plan Valid Until:</span>
+              <span className="text-slate-500 dark:text-slate-400">Valid Until:</span>
               <strong className="text-slate-800 dark:text-slate-200">
                 {subscription?.expiresAt ? new Date(subscription.expiresAt).toLocaleDateString() : 'Active'}
               </strong>
@@ -264,26 +250,22 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
 
       {/* Hero Header Card */}
       <div className="relative rounded-3xl p-5 sm:p-6 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-2xl border border-amber-500/30 overflow-hidden">
-        {/* Glow Spheres */}
         <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-36 h-36 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shadow-md shadow-amber-500/30">
                 <Crown className="w-4 h-4 fill-slate-950" />
               </div>
               <span className="text-xs font-black tracking-wider uppercase text-amber-400">
-                Brivu Pro Suite
+                Brivu Pro
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Unlock cloud sync and live qr code /business info hosting
+              Upgrade Your Subscription
             </h2>
-            <p className="text-xs sm:text-sm text-indigo-200/90 max-w-md leading-relaxed">
-              Keep your entire business permanently backed up to the cloud and activate 24/7 online hosting for customer QR codes and business links.
-            </p>
           </div>
 
           <div className="shrink-0 p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-center sm:text-right w-full sm:w-auto">
@@ -320,95 +302,44 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
         )}
       </div>
 
-      {/* CRITICAL DATA NOTICE & HOSTING REQUIREMENT BOX */}
-      <div className="space-y-3">
-        {/* 1. DATA LOSS WARNING / CLOUD SYNC CALLOUT */}
-        <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/10 dark:from-amber-950/40 dark:via-rose-950/30 dark:to-amber-950/40 border-2 border-amber-500/40 dark:border-amber-500/50 shadow-sm relative overflow-hidden">
-          <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30 mt-0.5">
-              <ShieldAlert className="w-5 h-5" />
+      {/* Subscription Benefits (3 Concise Points) */}
+      <div className="rounded-3xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+        <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
+          What's Included
+        </h3>
+        <ul className="space-y-2.5">
+          <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4" />
             </div>
-            <div className="space-y-2 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm font-black text-amber-950 dark:text-amber-200 uppercase tracking-tight">
-                  Protect Your Data: Free vs Pro Cloud Storage
-                </h3>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-500 text-white leading-none">
-                  Data Safety Notice
-                </span>
-              </div>
-
-              <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                <p className="bg-rose-100/80 dark:bg-rose-950/60 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800/80 text-rose-950 dark:text-rose-200 font-medium">
-                  ⚠️ <strong>Without a subscription:</strong> All your receipts, products, inventory, expenses, worker ledgers, and business settings are stored <strong>only on your device's local storage</strong>. If you uninstall the app, reset your phone, or clear your browser data, <span className="underline font-bold text-rose-600 dark:text-rose-400">you can permanently lose all your information</span>.
-                </p>
-                <p className="bg-emerald-100/80 dark:bg-emerald-950/60 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/80 text-emerald-950 dark:text-emerald-200 font-medium flex items-start gap-2">
-                  <Cloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <span>
-                    ☁️ <strong>Upgrade to unlock Cloud Sync:</strong> All your information is automatically and securely backed up to the cloud. Even if your phone is lost, stolen, replaced, or the app is uninstalled, you can restore all your data instantly anytime.
-                  </span>
-                </p>
-              </div>
+            <span>Remove ads</span>
+          </li>
+          <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <Cloud className="w-4 h-4" />
             </div>
-          </div>
-        </div>
-
-        {/* 2. QR CODE & BUSINESS LINK HOSTING REQUIREMENT */}
-        <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-indigo-50 to-teal-50 dark:from-indigo-950/40 dark:to-teal-950/30 border-2 border-indigo-300 dark:border-indigo-800/80 shadow-sm relative overflow-hidden">
-          <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20 mt-0.5">
-              <QrCode className="w-5 h-5" />
+            <span>Unlock cloud sync for QR code info, events and business info</span>
+          </li>
+          <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <HardDrive className="w-4 h-4" />
             </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm font-black text-indigo-950 dark:text-indigo-200 uppercase tracking-tight">
-                  QR Code & Business Link Hosting Requirement
-                </h3>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-600 text-white leading-none">
-                  Online Hosting
-                </span>
-              </div>
-              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                🌐 <strong>Need your QR Code & Business Link to work online?</strong> If you want customers to scan your QR code from table flyers, stickers, or cards, or browse your live public business menu and item catalog from anywhere, <strong>you need to subscribe</strong>. Free tier links only operate in offline preview on your own device; an active subscription enables 24/7 public cloud hosting.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. 100% AD-FREE BENEFIT */}
-        <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/40 dark:to-pink-950/30 border-2 border-purple-300 dark:border-purple-800/80 shadow-sm relative overflow-hidden">
-          <div className="flex items-start gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-500/20 mt-0.5">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-sm font-black text-purple-950 dark:text-purple-200 uppercase tracking-tight">
-                  100% Ad-Free Experience
-                </h3>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-600 text-white leading-none">
-                  Zero Ads
-                </span>
-              </div>
-              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
-                🚫 <strong>All ads removed completely:</strong> Subscribing instantly removes all banner ads, popup interstitial ads, and interactions ads throughout the entire app. Enjoy a smooth, uninterrupted, and ultra-fast workflow.
-              </p>
-            </div>
-          </div>
+            <span>Unlock Google Drive sync for receipts, invoices and inventory</span>
+          </li>
+        </ul>
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800">
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            For free users, all data is saved locally on your phone. The QR Code section requires a subscription and cloud sync to host your information and open it online.
+          </p>
         </div>
       </div>
 
       {/* Subscription Plans Selection Section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-              Select Your Subscription Plan
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Unlocks Cloud Sync, Live QR Hosting & 100% Ad-Free access immediately
-            </p>
-          </div>
+          <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+            Choose a Plan
+          </h3>
           <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-lg">
             Instant Activation
           </span>
@@ -430,9 +361,9 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                 }`}
               >
                 {/* Left: Radio and Plan Info */}
-                <div className="flex items-start gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                       isSelected
                         ? 'border-amber-500 bg-amber-500 text-slate-950'
                         : 'border-slate-300 dark:border-slate-600 bg-transparent'
@@ -458,22 +389,6 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                           {plan.badge}
                         </span>
                       )}
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-snug">
-                      {plan.description}
-                    </p>
-                    <div className="flex items-center gap-2 sm:gap-3 mt-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-purple-500" /> 100% Ad-Free
-                      </span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Cloud className="w-3 h-3" /> Full Cloud Sync
-                      </span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Globe2 className="w-3 h-3" /> Live QR Hosting
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -512,13 +427,13 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           {isProcessing ? (
             <>
               <RefreshCw className="w-5 h-5 animate-spin" />
-              <span>Activating Cloud Sync & Pro Plan...</span>
+              <span>Processing...</span>
             </>
           ) : (
             <>
               <Crown className="w-5 h-5 fill-white" />
               <span>
-                {isCurrentlyActive ? 'Switch Plan' : 'Subscribe to Unlock Cloud Sync'} — {selectedPlan.formattedPrice} ({selectedPlan.periodLabel.replace('/ ', '')})
+                {isCurrentlyActive ? 'Switch Plan' : 'Subscribe'} — {selectedPlan.formattedPrice} ({selectedPlan.periodLabel.replace('/ ', '')})
               </span>
               <ArrowRight className="w-5 h-5" />
             </>
@@ -540,7 +455,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
 
         <div className="flex items-center justify-center gap-2 text-xs text-slate-400 font-medium pt-1 text-center">
           <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-          <span>256-Bit SSL Encrypted • Unlimited Cloud Sync • Live QR Code Hosting</span>
+          <span>Secured by Google Play Billing</span>
         </div>
 
         {/* Restore Purchases Button */}
