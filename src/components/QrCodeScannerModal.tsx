@@ -20,6 +20,11 @@ import {
   Plus,
   Loader2,
   Eye,
+  Wifi,
+  Mail,
+  Phone,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { CameraSource } from '@capacitor/camera';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -63,6 +68,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
   const [hasTorch, setHasTorch] = useState<boolean>(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const html5ScannerRef = useRef<Html5Qrcode | null>(null);
   const isMountedRef = useRef<boolean>(true);
@@ -351,6 +357,8 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                   {scanResult.type === 'receipt' && <ReceiptIcon className="w-5 h-5" />}
                   {scanResult.type === 'customer_page' && <QrCode className="w-5 h-5" />}
                   {scanResult.type === 'inventory_item' && <Boxes className="w-5 h-5" />}
+                  {scanResult.type === 'wifi' && <Wifi className="w-5 h-5" />}
+                  {scanResult.type === 'contact' && <Mail className="w-5 h-5" />}
                   {(scanResult.type === 'url' || scanResult.type === 'text') && (
                     <CheckCircle2 className="w-5 h-5" />
                   )}
@@ -480,7 +488,94 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                 </div>
               )}
 
+              {scanResult.wifiData && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                    <span>Network (SSID):</span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {scanResult.wifiData.ssid}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                    <span>Password:</span>
+                    <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                      {scanResult.wifiData.password || 'None (Open Network)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                    <span>Security:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {scanResult.wifiData.security}
+                    </span>
+                  </div>
+                  {scanResult.wifiData.password && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(scanResult.wifiData!.password || '');
+                          setCopiedField('wifi');
+                          setTimeout(() => setCopiedField(null), 2000);
+                        } catch {}
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      {copiedField === 'wifi' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedField === 'wifi' ? 'Password Copied' : 'Copy Wi-Fi Password'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
+              {scanResult.contactData && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2 text-xs">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Name:</span>
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {scanResult.contactData.name}
+                    </span>
+                  </div>
+                  {scanResult.contactData.email && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400 gap-2">
+                      <span>Email:</span>
+                      <a
+                        href={`mailto:${scanResult.contactData.email}`}
+                        className="font-semibold text-indigo-600 dark:text-indigo-400 underline truncate"
+                      >
+                        {scanResult.contactData.email}
+                      </a>
+                    </div>
+                  )}
+                  {scanResult.contactData.phone && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>Phone:</span>
+                      <a
+                        href={`tel:${scanResult.contactData.phone}`}
+                        className="font-semibold text-emerald-600 dark:text-emerald-400 underline flex items-center gap-1"
+                      >
+                        <Phone className="w-3 h-3" />
+                        <span>{scanResult.contactData.phone}</span>
+                      </a>
+                    </div>
+                  )}
+                  {scanResult.contactData.whatsapp && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>WhatsApp:</span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {scanResult.contactData.whatsapp}
+                      </span>
+                    </div>
+                  )}
+                  {scanResult.contactData.address && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400 gap-2">
+                      <span>Address:</span>
+                      <span className="font-semibold text-slate-900 dark:text-white text-right">
+                        {scanResult.contactData.address}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* RESET SCAN BUTTON */}
               <button

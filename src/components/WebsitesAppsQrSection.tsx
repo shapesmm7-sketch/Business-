@@ -371,13 +371,13 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
     const defaultTitle = isAllSelected
       ? 'Websites & Apps Hub'
       : (activeItem?.title || 'Website QR');
-    const qrName = tableNumberForPrint || defaultTitle;
-    const bizName = business.name || '';
+    const customQrName = tableNumberForPrint.trim();
+    const bizName = (business.name || '').trim();
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
-      name: qrName,
-      businessName: bizName && bizName !== qrName ? bizName : undefined,
+      name: customQrName,
+      businessName: customQrName && bizName && bizName !== customQrName ? bizName : undefined,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,
@@ -385,16 +385,17 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
       accentColor: activeDarkColor,
     });
 
-    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileLabel = customQrName || defaultTitle;
+    const safeName = fileLabel.replace(/[^a-zA-Z0-9]/g, '_');
     await saveFile({
       data: finalPngUrl,
       filename: `${safeName}_QRCode.png`,
       mimeType: 'image/png',
-      title: `${qrName} QR Code`,
+      title: customQrName ? `${customQrName} QR Code` : 'QR Code',
       destination: 'photos',
       folder: 'qr_codes',
     });
-    showToast('High-resolution QR code with name saved!');
+    showToast(customQrName ? 'High-resolution QR code with name saved!' : 'High-resolution QR code saved!');
   };
 
   const handleDownloadTableStandPdf = async () => {

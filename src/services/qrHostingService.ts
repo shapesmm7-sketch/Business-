@@ -1587,7 +1587,7 @@ export class QRHostingService {
    */
   static async generateNamedQrPng(options: {
     qrDataUrl: string;
-    name: string;
+    name?: string;
     businessName?: string;
     subtitle?: string;
     tag?: string;
@@ -1619,26 +1619,28 @@ export class QRHostingService {
         ? options.boxBorderColor
         : null;
 
-      // Clean up names so business name is NEVER mixed into the pill badge
-      let rawName = (options.name || 'QR Code').trim();
-      let rawBizName = (options.businessName || '').trim();
+      // Only render name/business header when the user explicitly entered a QR code name
+      let rawName = (options.name || '').trim();
+      let rawBizName = rawName ? (options.businessName || '').trim() : '';
 
-      // If name contains " - ", separate them or strip out business name
-      if (rawName.includes(' - ')) {
-        const parts = rawName.split(' - ');
-        if (!rawBizName && parts.length > 1) {
-          rawBizName = parts[0].trim();
-        }
-        rawName = parts[parts.length - 1].trim(); // strictly the QR Code Name
-      } else if (rawBizName && rawName.toLowerCase().startsWith(rawBizName.toLowerCase())) {
-        const stripped = rawName.slice(rawBizName.length).replace(/^[\s\-(]+/, '').replace(/\)+$/, '').trim();
-        if (stripped) {
-          rawName = stripped;
+      if (rawName) {
+        // If name contains " - ", separate them or strip out business name
+        if (rawName.includes(' - ')) {
+          const parts = rawName.split(' - ');
+          if (!rawBizName && parts.length > 1) {
+            rawBizName = parts[0].trim();
+          }
+          rawName = parts[parts.length - 1].trim(); // strictly the QR Code Name
+        } else if (rawBizName && rawName.toLowerCase().startsWith(rawBizName.toLowerCase())) {
+          const stripped = rawName.slice(rawBizName.length).replace(/^[\s\-(]+/, '').replace(/\)+$/, '').trim();
+          if (stripped) {
+            rawName = stripped;
+          }
         }
       }
 
-      const topBizTitle = rawBizName;
-      const pillQrCodeName = rawName.toUpperCase();
+      const topBizTitle = rawName ? rawBizName : '';
+      const pillQrCodeName = rawName ? rawName.toUpperCase() : '';
 
       // Measure top business title
       const testCanvas = document.createElement('canvas');
@@ -1646,7 +1648,7 @@ export class QRHostingService {
       const testCtx = testCanvas.getContext('2d');
 
       let topHeaderHeight = 0;
-      let topBizY = 60;
+      const topBizY = 60;
       if (topBizTitle && testCtx) {
         testCtx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         topHeaderHeight = 60;
@@ -1655,9 +1657,9 @@ export class QRHostingService {
       // Layout coordinates
       const qrSize = 700;
       const boxPaddingX = 46;
-      const topBadgeSpace = 120; // Ample breathing space for pill badge at the top
+      const topBadgeSpace = pillQrCodeName ? 120 : boxPaddingX;
       const boxWidth = qrSize + boxPaddingX * 2; // 792
-      const boxHeight = qrSize + topBadgeSpace + boxPaddingX; // 866
+      const boxHeight = qrSize + topBadgeSpace + boxPaddingX;
       const boxX = (canvasWidth - boxWidth) / 2; // 144
       const boxY = topHeaderHeight > 0 ? topBizY + topHeaderHeight + 20 : 70;
 
@@ -1696,7 +1698,7 @@ export class QRHostingService {
         c.closePath();
       };
 
-      // Draw Business Name OUTSIDE the box on top if present
+      // Draw Business Name OUTSIDE the box on top only if both a QR name and distinct business name are provided
       if (topBizTitle) {
         ctx.fillStyle = primaryColor;
         ctx.font = 'bold 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
@@ -1729,25 +1731,27 @@ export class QRHostingService {
         ctx.stroke();
       }
 
-      // Draw Pill Badge INSIDE the Box above the QR Code (Contains ONLY QR Code Name)
-      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      const textMetrics = ctx.measureText(pillQrCodeName);
-      const pillWidth = Math.max(220, Math.min(boxWidth - 80, textMetrics.width + 64));
-      const pillHeight = 56;
-      const pillX = (canvasWidth - pillWidth) / 2;
-      const pillY = boxY + 30;
+      // Draw Pill Badge INSIDE the Box above the QR Code ONLY if a QR Code Name was entered
+      if (pillQrCodeName) {
+        ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        const textMetrics = ctx.measureText(pillQrCodeName);
+        const pillWidth = Math.max(220, Math.min(boxWidth - 80, textMetrics.width + 64));
+        const pillHeight = 56;
+        const pillX = (canvasWidth - pillWidth) / 2;
+        const pillY = boxY + 30;
 
-      // Pill Background (Dark theme color or black)
-      ctx.fillStyle = primaryColor;
-      drawRoundRect(ctx, pillX, pillY, pillWidth, pillHeight, 28);
-      ctx.fill();
+        // Pill Background (Dark theme color or black)
+        ctx.fillStyle = primaryColor;
+        drawRoundRect(ctx, pillX, pillY, pillWidth, pillHeight, 28);
+        ctx.fill();
 
-      // Pill Text (White bold centered)
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(pillQrCodeName, canvasWidth / 2, pillY + pillHeight / 2 + 1);
+        // Pill Text (White bold centered)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pillQrCodeName, canvasWidth / 2, pillY + pillHeight / 2 + 1);
+      }
 
       // Draw QR Code Image inside Box (with dedicated white backing and ample margin)
       const qrY = boxY + topBadgeSpace;

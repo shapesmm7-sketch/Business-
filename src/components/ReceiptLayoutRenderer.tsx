@@ -110,7 +110,7 @@ export interface ReceiptRenderData {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
-  documentType?: 'receipt' | 'invoice';
+  documentType?: 'receipt' | 'invoice' | 'quotation';
   dueDate?: string;
   paymentTerms?: string;
   paymentMethod: string;
@@ -174,12 +174,16 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   const rawStoreName = (storeName || '').trim();
   const cleanStoreName = (rawStoreName && rawStoreName.toLowerCase() !== 'business name') ? rawStoreName : '';
 
+  const isQuotation = documentType === 'quotation';
   const isInvoice = documentType === 'invoice';
-  const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+  const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
   let effectiveBadgeText = defaultBadge;
   if (customTheme?.badgeText && customTheme.badgeText.trim()) {
     const trimmed = customTheme.badgeText.trim();
-    if (isInvoice && (trimmed.toUpperCase() === 'RECEIPT' || trimmed === 'Receipt')) {
+    const upper = trimmed.toUpperCase();
+    if (isQuotation && (upper === 'RECEIPT' || upper === 'INVOICE')) {
+      effectiveBadgeText = 'QUOTATION';
+    } else if (isInvoice && upper === 'RECEIPT') {
       effectiveBadgeText = 'INVOICE';
     } else {
       effectiveBadgeText = trimmed;
@@ -428,18 +432,18 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           <div className="flex justify-between items-start text-xs font-sans text-slate-600 dark:text-slate-400 mb-3">
             <div>
               <div className="font-bold text-slate-900 dark:text-white">
-                {isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'} {customerName || (isInvoice ? 'Valued Client' : 'General Customer')}
+                {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'} {customerName || (isQuotation || isInvoice ? 'Valued Client' : 'General Customer')}
               </div>
               {customerPhone && <div className="text-[11px] text-slate-500">Phone: {customerPhone}</div>}
               {customerEmail && <div className="text-[11px] text-slate-500">Email: {customerEmail}</div>}
               {customerAddress && <div className="text-[11px] text-slate-500">Address: {customerAddress}</div>}
             </div>
-            <span className="font-mono font-bold whitespace-nowrap">{isInvoice ? 'Invoice No.' : 'No.'} {receiptNumber}</span>
+            <span className="font-mono font-bold whitespace-nowrap">{isQuotation ? 'Quotation No.' : isInvoice ? 'Invoice No.' : 'No.'} {receiptNumber}</span>
           </div>
 
           <div className="font-sans text-xs border-t border-b border-slate-300 dark:border-slate-700 py-2.5 space-y-2">
             <div className="flex justify-between font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-200 dark:border-slate-800">
-              <span>{isInvoice ? 'Item Description' : 'Paid For'}</span>
+              <span>{isQuotation || isInvoice ? 'Item Description' : 'Paid For'}</span>
               <span className="text-center">Qty × Price</span>
               <span>Amount</span>
             </div>
@@ -498,7 +502,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`pb-4 border-b border-slate-100 dark:border-slate-800 ${isCustomHeader ? 'p-3.5 rounded-xl shadow-xs' : ''}`} style={headerStyle}>
           <div className="text-center pb-1">
             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-full font-sans inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -590,7 +594,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`pb-3 border-b border-slate-200 dark:border-slate-700 ${isCustomHeader ? 'p-3.5 rounded-xl shadow-xs' : ''}`} style={headerStyle}>
           <div className="text-center pb-1">
             <span className="text-[9px] font-bold px-3 py-0.5 rounded-sm uppercase tracking-widest shadow-xs inline-block" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || defaultBadge}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -613,7 +617,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               )}
               {address && <p className="text-[11px] text-slate-500 text-center" style={headerAddressStyle}>{address}</p>}
               <div className="text-xs font-mono text-slate-500 mt-0.5 text-center font-bold">
-                {isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:'} {receiptNumber} • {formattedDate}
+                {isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:'} {receiptNumber} • {formattedDate}
               </div>
             </div>
           </div>
@@ -621,7 +625,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         <div className="my-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 text-xs">
           <span className="font-bold block text-slate-800 dark:text-slate-200">
-            {isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'} {customerName || (isInvoice ? 'Client' : 'Walk-in Client')}
+            {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'} {customerName || (isQuotation || isInvoice ? 'Client' : 'Walk-in Client')}
           </span>
           {customerPhone && <span className="text-slate-500 text-[11px] block">Tel: {customerPhone}</span>}
           {customerEmail && <span className="text-slate-500 text-[11px] block">Email: {customerEmail}</span>}
@@ -630,7 +634,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         <div className="text-xs space-y-1.5 py-2 border-b border-slate-200 dark:border-slate-700">
           <div className="flex justify-between font-bold text-slate-500 text-[10px] uppercase pb-1">
-            <span>{isInvoice ? 'Item Description' : 'Paid For'}</span>
+            <span>{isQuotation || isInvoice ? 'Item Description' : 'Paid For'}</span>
             <span>Amount</span>
           </div>
           {items.map((item) => (
@@ -689,7 +693,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className="pb-2 border-b border-dashed border-slate-300 dark:border-slate-700">
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-sm inline-block shadow-xs" style={receiptBadgeStyle}>
-              *** {customTheme?.badgeText || defaultBadge} ***
+              *** {effectiveBadgeText} ***
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[36px]">
@@ -777,7 +781,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           <div className="pb-4 border-b border-amber-500/30" style={headerStyle}>
             <div className="text-center mb-1">
               <span className="text-[10px] font-bold tracking-widest uppercase px-3 py-0.5 rounded-full inline-block font-sans shadow-xs" style={receiptBadgeStyle}>
-                {customTheme?.badgeText || 'RECEIPT'}
+                {effectiveBadgeText}
               </span>
             </div>
             <div className="relative flex items-center justify-center min-h-[46px]">
@@ -891,7 +895,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             <div className="flex items-center justify-center mb-1">
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-wider uppercase px-3 py-0.5 rounded-full shadow-xs" style={receiptBadgeStyle}>
                 <Leaf className="w-3.5 h-3.5" />
-                <span>{customTheme?.badgeText || 'RECEIPT'}</span>
+                <span>{effectiveBadgeText}</span>
               </span>
             </div>
             <div className="relative flex items-center justify-center min-h-[44px]">
@@ -972,7 +976,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className="bg-slate-950 text-white p-4 sm:p-5" style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-black uppercase tracking-widest px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -995,7 +999,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         {/* Heavy Boxed Grid Table */}
         <div className="p-4 sm:p-5 space-y-3">
           <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-2">
-            <span>RECEIPT: #{receiptNumber}</span>
+            <span>{isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT'}: #{receiptNumber}</span>
             <span>{formattedDate}</span>
           </div>
 
@@ -1050,7 +1054,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className="pb-3 border-b border-indigo-500/30" style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[9px] tracking-widest uppercase font-bold px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1119,7 +1123,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         <div className="text-center text-[9px] text-slate-400 pt-3 flex items-center justify-center gap-1">
           <Sparkles className="w-3 h-3 text-cyan-400" />
-          <span>Authenticated Digital Invoice</span>
+          <span>Authenticated Digital {isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt'}</span>
         </div>
         <div className="pt-2.5 flex flex-col items-center justify-center">
           <ReceiptQrCodeSection data={data} darkBg={true} size={42} />
@@ -1138,7 +1142,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className="bg-stone-900 text-amber-300 p-3.5 border-b-2 border-dashed border-stone-600" style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1214,7 +1218,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className="bg-gradient-to-r from-cyan-950 via-teal-900 to-cyan-950 p-4 sm:p-5 text-white" style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1295,7 +1299,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`border-b-4 border-black dark:border-white pb-3 mb-4 ${isCustomHeader ? 'p-3.5' : ''}`} style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-xs sm:text-sm font-black uppercase tracking-widest px-3.5 py-1 inline-block border-2 border-current shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1367,7 +1371,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`pb-4 border-b border-rose-900/30 ${isCustomHeader ? 'p-3.5 rounded-xl shadow-xs' : ''}`} style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold tracking-widest uppercase px-3 py-0.5 rounded-full inline-block font-serif shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1444,7 +1448,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`pb-3 border-b border-sky-200/60 dark:border-slate-700 ${isCustomHeader ? 'p-3.5 rounded-2xl shadow-xs' : ''}`} style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold tracking-widest uppercase px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1518,7 +1522,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         <div className={`pb-3 border-b-2 border-[#8c6d58] ${isCustomHeader ? 'p-3.5 rounded-xl shadow-xs' : ''}`} style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-0.5 rounded-sm inline-block shadow-xs" style={receiptBadgeStyle}>
-              {customTheme?.badgeText || 'RECEIPT'}
+              {effectiveBadgeText}
             </span>
           </div>
           <div className="relative flex items-center justify-center min-h-[44px]">
@@ -1621,14 +1625,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         <div className="p-4 sm:p-5 space-y-3">
           <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">
-            <span>{isInvoice ? 'Invoice:' : 'Receipt:'} #{receiptNumber}</span>
+            <span>{isQuotation ? 'Quotation:' : isInvoice ? 'Invoice:' : 'Receipt:'} #{receiptNumber}</span>
             <span>{formattedDate}</span>
           </div>
 
           {(customerName || customerPhone || customerEmail || customerAddress) && (
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs flex flex-col gap-1">
               <div className="font-bold text-slate-800 dark:text-slate-200">
-                {isInvoice ? 'INVOICE TO:' : 'CUSTOMER:'} {customerName || (isInvoice ? 'Valued Client' : 'General Customer')}
+                {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'CUSTOMER:'} {customerName || (isQuotation || isInvoice ? 'Valued Client' : 'General Customer')}
               </div>
               {customerPhone && <div className="text-slate-600 dark:text-slate-400 text-[11px]">Phone: {customerPhone}</div>}
               {customerEmail && <div className="text-slate-600 dark:text-slate-400 text-[11px]">Email: {customerEmail}</div>}

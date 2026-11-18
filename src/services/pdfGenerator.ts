@@ -209,6 +209,8 @@ export const PdfGenerator = {
     const hasChange = receipt.balance > 0;
     const currency = receipt.businessSnapshot.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const isCompact = receipt.template === 'compact';
 
     const totalsX = isCompact ? margin : Math.max(margin + 40, pageWidth - margin - 85);
@@ -241,7 +243,7 @@ export const PdfGenerator = {
       doc.setFontSize(9.5);
       if (isOwed) {
         doc.setTextColor(217, 119, 6); // amber-600
-        doc.text(isInvoice ? 'Balance Due to Pay:' : 'Balance Due:', totalsX, y);
+        doc.text(isBillStyle ? 'Balance Due to Pay:' : 'Balance Due:', totalsX, y);
         doc.text(formatCurrency(Math.abs(receipt.balance), currency), rightMargin, y, { align: 'right' });
       } else {
         doc.setTextColor(16, 185, 129); // emerald-500
@@ -256,7 +258,7 @@ export const PdfGenerator = {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(15, 23, 42);
-      doc.text(isInvoice ? 'Amount in Words:' : 'Amount Paid in Words:', margin, y);
+      doc.text(isBillStyle ? 'Amount in Words:' : 'Amount Paid in Words:', margin, y);
       doc.setFont('helvetica', 'italic');
       const wordsLines = doc.splitTextToSize(receipt.amountInWords.toUpperCase(), pageWidth - margin * 2 - 38);
       doc.text(wordsLines, margin + 38, y);
@@ -463,6 +465,7 @@ export const PdfGenerator = {
 
         const resolvedBiz = resolveEffectiveBusinessProfile(receipt);
         const isInvoice = receipt.documentType === 'invoice';
+        const isQuotation = receipt.documentType === 'quotation';
         const currency = resolvedBiz.currency || receipt.currency || 'UGX';
 
         const [logoDataUrl, sigDataUrl] = await Promise.all([
@@ -506,6 +509,16 @@ export const PdfGenerator = {
           accentColor: receipt.accentColor,
           customTheme: (() => {
             const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
+            const rawBadge = receipt.customTheme?.badgeText || saved?.badgeText;
+            const resolvedBadge = isQuotation
+              ? !rawBadge || rawBadge.toUpperCase() === 'RECEIPT' || rawBadge.toUpperCase() === 'INVOICE'
+                ? 'QUOTATION'
+                : rawBadge
+              : isInvoice
+              ? !rawBadge || rawBadge.toUpperCase() === 'RECEIPT'
+                ? 'INVOICE'
+                : rawBadge
+              : rawBadge || 'RECEIPT';
             return {
               headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
               headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
@@ -514,7 +527,7 @@ export const PdfGenerator = {
               paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
               accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor,
               fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
-              badgeText: receipt.customTheme?.badgeText || saved?.badgeText || (isInvoice ? 'INVOICE' : 'RECEIPT'),
+              badgeText: resolvedBadge,
             };
           })(),
           isSample: false,
@@ -645,7 +658,8 @@ export const PdfGenerator = {
   async downloadReceiptPhoto(receipt: Receipt): Promise<SaveFileResult> {
     await ensureStoragePermission();
     const isInvoice = receipt.documentType === 'invoice';
-    const prefix = isInvoice ? 'Invoice' : 'Receipt';
+    const isQuotation = receipt.documentType === 'quotation';
+    const prefix = isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.png`;
 
@@ -685,7 +699,7 @@ export const PdfGenerator = {
       mimeType: 'image/png',
       title: `${prefix} ${receipt.receiptNumber}`,
       destination: 'photos',
-      folder: isInvoice ? 'invoices' : 'receipts',
+      folder: isQuotation ? 'quotations' : isInvoice ? 'invoices' : 'receipts',
     });
   },
 
@@ -748,11 +762,15 @@ export const PdfGenerator = {
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const accentColor = receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate(receipt.template || 'modern');
-    const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+    const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let effectiveBadge = receipt.customTheme?.badgeText || savedCustom?.badgeText || defaultBadge;
-    if (isInvoice && effectiveBadge.toUpperCase() === 'RECEIPT') {
+    if (isQuotation && (effectiveBadge.toUpperCase() === 'RECEIPT' || effectiveBadge.toUpperCase() === 'INVOICE')) {
+      effectiveBadge = 'QUOTATION';
+    } else if (isInvoice && effectiveBadge.toUpperCase() === 'RECEIPT') {
       effectiveBadge = 'INVOICE';
     }
     const customTheme: TemplateCustomization = {
@@ -924,12 +942,12 @@ export const PdfGenerator = {
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:', margin + 6, y + 6.5);
+    doc.text(isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:', margin + 6, y + 6.5);
 
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42);
-    const defaultCust = isInvoice ? 'Valued Client' : 'General Customer (Walk-in)';
+    const defaultCust = isBillStyle ? 'Valued Client' : 'General Customer (Walk-in)';
     const custNameLines = doc.splitTextToSize(receipt.customerName || defaultCust, 75);
     doc.text(custNameLines[0], margin + 6, y + 12);
 
@@ -944,18 +962,18 @@ export const PdfGenerator = {
       });
     }
 
-    // Details column (Invoice No / Receipt No)
+    // Details column (Invoice No / Quotation No / Receipt No)
     const col2X = margin + 92;
 
     // Doc No (Row 1)
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:', col2X, y + 6.5);
+    doc.text(isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:', col2X, y + 6.5);
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(receipt.receiptNumber, col2X + 22, y + 6.5);
+    doc.text(receipt.receiptNumber, col2X + 26, y + 6.5);
 
     // Date & Time (Row 2)
     doc.setFont(theme.pdf.font, 'normal');
@@ -963,8 +981,11 @@ export const PdfGenerator = {
     doc.setTextColor(71, 85, 105);
     doc.text(`Date: ${formatDateTime(receipt.createdAt)}`, col2X, y + 12);
 
-    // Row 3: Due Date / Payment Info
-    if (isInvoice) {
+    // Row 3: Due Date / Valid Until / Payment Info
+    if (isQuotation) {
+      const validText = receipt.dueDate ? `Valid Until: ${receipt.dueDate}` : `Terms: ${receipt.paymentTerms || 'Upon acceptance'}`;
+      doc.text(validText, col2X, y + 17.5);
+    } else if (isInvoice) {
       const dueText = receipt.dueDate ? `Due Date: ${receipt.dueDate}` : `Terms: ${receipt.paymentTerms || 'Due on receipt'}`;
       doc.text(dueText, col2X, y + 17.5);
     } else {
@@ -983,7 +1004,7 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(51, 65, 85);
-    doc.text(isInvoice ? 'ITEM DESCRIPTION' : 'PAID FOR', margin + 4, y + 6);
+    doc.text(isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR', margin + 4, y + 6);
     doc.text('QTY', margin + 105, y + 6, { align: 'center' });
     doc.text('PRICE', margin + 140, y + 6, { align: 'right' });
     doc.text('AMOUNT', pageWidth - margin - 4, y + 6, { align: 'right' });
@@ -1047,12 +1068,12 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
-    doc.text(isInvoice ? 'TOTAL DUE:' : 'GRAND TOTAL:', totalsX, y + 8);
+    doc.text(isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL DUE:' : 'GRAND TOTAL:', totalsX, y + 8);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin - 4, y + 8, { align: 'right' });
 
     y += 18;
 
-    if (!isInvoice || (receipt.amountPaid && receipt.amountPaid > 0)) {
+    if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
       doc.setTextColor(100, 116, 139);
@@ -1099,6 +1120,8 @@ export const PdfGenerator = {
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
     let y = 18;
@@ -1106,9 +1129,10 @@ export const PdfGenerator = {
     // Formal Top Header with Logo on the left and Centered Text
     const hasLogo = Boolean(business.logo && business.logo.startsWith('data:image'));
     const logoSize = hasLogo ? 16 : 0;
-    const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+    const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let badgeText = receipt.customTheme?.badgeText || defaultBadge;
-    if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
+    if (isQuotation && (badgeText.toUpperCase() === 'RECEIPT' || badgeText.toUpperCase() === 'INVOICE')) badgeText = 'QUOTATION';
+    else if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
 
     // 1. "RECEIPT" / "INVOICE" - centered on top with background badge matching word size
     doc.setFont('times', 'bold');
@@ -1189,13 +1213,16 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
-    doc.text(`${isInvoice ? 'Invoice No' : 'Receipt No'}: ${receipt.receiptNumber}`, margin, y);
+    doc.text(`${isQuotation ? 'Quotation No' : isInvoice ? 'Invoice No' : 'Receipt No'}: ${receipt.receiptNumber}`, margin, y);
     doc.text(`Date & Time: ${formatDateTime(receipt.createdAt)}`, pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     doc.setFontSize(9.5);
     doc.setTextColor(70, 70, 70);
-    if (isInvoice) {
+    if (isQuotation) {
+      doc.text(`Valid Until: ${receipt.dueDate || 'On Request'}`, margin, y);
+      doc.text(`Terms: ${receipt.paymentTerms || 'Upon acceptance'}`, pageWidth - margin, y, { align: 'right' });
+    } else if (isInvoice) {
       doc.text(`Due Date: ${receipt.dueDate || 'On Receipt'}`, margin, y);
       doc.text(`Terms: ${receipt.paymentTerms || 'Due on receipt'}`, pageWidth - margin, y, { align: 'right' });
     } else {
@@ -1204,11 +1231,11 @@ export const PdfGenerator = {
     }
     y += 6;
 
-    const custPrefix = isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
+    const custPrefix = isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(0, 0, 0);
-    doc.text(`${custPrefix} ${receipt.customerName || (isInvoice ? 'Valued Client' : 'General Customer')}`, margin, y);
+    doc.text(`${custPrefix} ${receipt.customerName || (isBillStyle ? 'Valued Client' : 'General Customer')}`, margin, y);
     y += 5;
 
     doc.setFont('helvetica', 'normal');
@@ -1238,7 +1265,7 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
-    doc.text(isInvoice ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
+    doc.text(isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
     doc.text('QTY', margin + 110, y, { align: 'center' });
     doc.text('PRICE', margin + 140, y, { align: 'right' });
     doc.text('TOTAL', pageWidth - margin, y, { align: 'right' });
@@ -1279,14 +1306,14 @@ export const PdfGenerator = {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(isInvoice ? 'TOTAL DUE:' : 'TOTAL DUE:', tX, y);
+    doc.text(isQuotation ? 'QUOTED TOTAL:' : 'TOTAL DUE:', tX, y);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y, { align: 'right' });
     y += 2;
     doc.line(tX, y + 1, pageWidth - margin, y + 1);
     doc.line(tX, y + 2, pageWidth - margin, y + 2);
     y += 8;
 
-    if (!isInvoice || (receipt.amountPaid && receipt.amountPaid > 0)) {
+    if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.text(`Amount Paid (${receipt.paymentMethod || 'Bank'}):`, tX, y);
@@ -1325,6 +1352,8 @@ export const PdfGenerator = {
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const margin = 22;
     const contentWidth = pageWidth - margin * 2;
     let y = 22;
@@ -1332,9 +1361,10 @@ export const PdfGenerator = {
     // Minimal Header with Logo on the left and Centered Text
     const hasLogo = Boolean(business.logo && business.logo.startsWith('data:image'));
     const logoSize = hasLogo ? 15 : 0;
-    const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+    const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let badgeText = receipt.customTheme?.badgeText || defaultBadge;
-    if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
+    if (isQuotation && (badgeText.toUpperCase() === 'RECEIPT' || badgeText.toUpperCase() === 'INVOICE')) badgeText = 'QUOTATION';
+    else if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
 
     // 1. "RECEIPT" / "INVOICE" badge - centered on top with background matching word size
     doc.setFont('helvetica', 'bold');
@@ -1407,20 +1437,20 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(17, 24, 39);
-    doc.text(`${isInvoice ? 'Invoice' : 'Receipt'} ${receipt.receiptNumber}`, margin, y);
+    doc.text(`${isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt'} ${receipt.receiptNumber}`, margin, y);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(107, 114, 128);
-    const rightMeta = isInvoice && receipt.dueDate ? `Due: ${receipt.dueDate}` : formatDateTime(receipt.createdAt);
+    const rightMeta = isQuotation && receipt.dueDate ? `Valid Until: ${receipt.dueDate}` : isInvoice && receipt.dueDate ? `Due: ${receipt.dueDate}` : formatDateTime(receipt.createdAt);
     doc.text(rightMeta, pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     if (receipt.customerName || receipt.customerPhone || receipt.customerEmail || receipt.customerAddress) {
-      const cLabel = isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
+      const cLabel = isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(17, 24, 39);
-      doc.text(`${cLabel} ${receipt.customerName || (isInvoice ? 'Valued Client' : 'Customer')}`, margin, y);
+      doc.text(`${cLabel} ${receipt.customerName || (isBillStyle ? 'Valued Client' : 'Customer')}`, margin, y);
       y += 5;
 
       doc.setFont('helvetica', 'normal');
@@ -1453,7 +1483,7 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(156, 163, 175);
-    doc.text(isInvoice ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
+    doc.text(isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
     doc.text('QTY', margin + 110, y, { align: 'center' });
     doc.text('TOTAL', pageWidth - margin, y, { align: 'right' });
     y += 6;
@@ -1492,11 +1522,11 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(17, 24, 39);
-    doc.text(isInvoice ? 'Total Due' : 'Total', sumX, y + 2);
+    doc.text(isQuotation ? 'Quoted Total' : isInvoice ? 'Total Due' : 'Total', sumX, y + 2);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 2, { align: 'right' });
     y += 10;
 
-    if (!isInvoice || (receipt.amountPaid && receipt.amountPaid > 0)) {
+    if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
       doc.setTextColor(107, 114, 128);
@@ -1536,6 +1566,8 @@ export const PdfGenerator = {
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const accentColor = receipt.accentColor;
     const theme = resolveEffectiveTheme('business', accentColor);
     const margin = 16;
@@ -1543,9 +1575,10 @@ export const PdfGenerator = {
     let y = 16;
 
     // Top Brand Bar (Themed) - full width
-    const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+    const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let badgeText = receipt.customTheme?.badgeText || defaultBadge;
-    if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
+    if (isQuotation && (badgeText.toUpperCase() === 'RECEIPT' || badgeText.toUpperCase() === 'INVOICE')) badgeText = 'QUOTATION';
+    else if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
     doc.setFillColor(theme.pdf.headerBg[0], theme.pdf.headerBg[1], theme.pdf.headerBg[2]);
     doc.rect(margin, y, contentWidth, 8, 'F');
 
@@ -1640,12 +1673,12 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:', margin + 6, y + 6);
+    doc.text(isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:', margin + 6, y + 6);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(receipt.customerName || (isInvoice ? 'Valued Client' : 'Walk-in Client'), margin + 6, y + 11);
+    doc.text(receipt.customerName || (isBillStyle ? 'Valued Client' : 'Walk-in Client'), margin + 6, y + 11);
 
     let bizCustY = y + 15.5;
     if (bizContactLines.length > 0) {
@@ -1663,17 +1696,19 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:', col2X, y + 6);
+    doc.text(isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:', col2X, y + 6);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(receipt.receiptNumber, col2X + 22, y + 6);
+    doc.text(receipt.receiptNumber, col2X + 26, y + 6);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
     doc.text(`Date: ${formatDateTime(receipt.createdAt)}`, col2X, y + 11);
-    if (isInvoice) {
+    if (isQuotation) {
+      doc.text(receipt.dueDate ? `Valid Until: ${receipt.dueDate}` : `Terms: ${receipt.paymentTerms || 'Upon acceptance'}`, col2X, y + 16);
+    } else if (isInvoice) {
       doc.text(receipt.dueDate ? `Due Date: ${receipt.dueDate}` : `Terms: ${receipt.paymentTerms || 'Due on receipt'}`, col2X, y + 16);
     } else {
       doc.text(`Payment: ${receipt.paymentMethod}`, col2X, y + 16);
@@ -1687,7 +1722,7 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(30, 41, 59);
-    doc.text(isInvoice ? 'ITEM / SERVICE DESCRIPTION' : 'PAID FOR', margin + 3, y + 5.5);
+    doc.text(isBillStyle ? 'ITEM / SERVICE DESCRIPTION' : 'PAID FOR', margin + 3, y + 5.5);
     doc.text('QUANTITY', margin + 105, y + 5.5, { align: 'center' });
     doc.text('PRICE', margin + 140, y + 5.5, { align: 'right' });
     doc.text('TOTAL AMOUNT', pageWidth - margin - 3, y + 5.5, { align: 'right' });
@@ -1729,7 +1764,7 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(isInvoice ? 'TOTAL PAYABLE:' : 'FINAL TOTAL:', boxX + 4, y + 25.5);
+    doc.text(isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL PAYABLE:' : 'FINAL TOTAL:', boxX + 4, y + 25.5);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin - 4, y + 25.5, { align: 'right' });
 
     // Official Stamp & Signature Area (on top of thank you message)
@@ -1790,14 +1825,17 @@ export const PdfGenerator = {
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
+    const isQuotation = receipt.documentType === 'quotation';
+    const isBillStyle = isInvoice || isQuotation;
     const margin = 5;
     const contentWidth = rollWidth - margin * 2;
     let y = 6;
 
-    // 1. "RECEIPT" / "INVOICE" as the first thing on top - centered with thermal inverted background box matching text
-    const defaultBadge = isInvoice ? 'INVOICE' : 'RECEIPT';
+    // 1. "RECEIPT" / "INVOICE" / "QUOTATION" as the first thing on top - centered with thermal inverted background box matching text
+    const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let badgeText = receipt.customTheme?.badgeText || defaultBadge;
-    if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
+    if (isQuotation && (badgeText.toUpperCase() === 'RECEIPT' || badgeText.toUpperCase() === 'INVOICE')) badgeText = 'QUOTATION';
+    else if (isInvoice && badgeText.toUpperCase() === 'RECEIPT') badgeText = 'INVOICE';
     const badgeStr = `*** ${badgeText} ***`;
     doc.setFont('courier', 'bold');
     doc.setFontSize(8.5);
@@ -1872,12 +1910,12 @@ export const PdfGenerator = {
 
     // Metadata
     doc.setFontSize(8);
-    doc.text(`${isInvoice ? 'INV' : 'RC'}: ${receipt.receiptNumber}`, margin, y);
+    doc.text(`${isQuotation ? 'QTN' : isInvoice ? 'INV' : 'RC'}: ${receipt.receiptNumber}`, margin, y);
     y += 3.5;
     doc.text(`DATE: ${formatDateTime(receipt.createdAt)}`, margin, y);
     y += 3.5;
     if (receipt.customerName) {
-      doc.text(`${isInvoice ? 'INVOICE TO' : 'CUST'}: ${receipt.customerName}`, margin, y);
+      doc.text(`${isQuotation ? 'QUOTATION TO' : isInvoice ? 'INVOICE TO' : 'CUST'}: ${receipt.customerName}`, margin, y);
       y += 3.5;
     }
     if (receipt.customerPhone) {
@@ -1892,9 +1930,9 @@ export const PdfGenerator = {
       doc.text(`ADDR: ${receipt.customerAddress}`, margin, y);
       y += 3.5;
     }
-    if (isInvoice) {
+    if (isBillStyle) {
       if (receipt.dueDate) {
-        doc.text(`DUE DATE: ${receipt.dueDate}`, margin, y);
+        doc.text(`${isQuotation ? 'VALID UNTIL' : 'DUE DATE'}: ${receipt.dueDate}`, margin, y);
         y += 3.5;
       }
     } else {
@@ -1907,7 +1945,7 @@ export const PdfGenerator = {
 
     // Compact Item Lines
     doc.setFont('courier', 'bold');
-    doc.text(isInvoice ? 'ITEM DESCRIPTION  QTY    AMOUNT' : 'PAID FOR          QTY    AMOUNT', margin, y);
+    doc.text(isBillStyle ? 'ITEM DESCRIPTION  QTY    AMOUNT' : 'PAID FOR          QTY    AMOUNT', margin, y);
     y += 3;
     doc.setFont('courier', 'normal');
 
@@ -1997,7 +2035,7 @@ export const PdfGenerator = {
     doc.setFontSize(7.5);
     doc.text('*** THANK YOU FOR YOUR BUSINESS ***', rollWidth / 2, y, { align: 'center' });
     y += 4;
-    doc.text('PLEASE KEEP YOUR RECEIPT', rollWidth / 2, y, { align: 'center' });
+    doc.text(isQuotation ? 'QUOTATION FOR YOUR REFERENCE' : 'PLEASE KEEP YOUR RECEIPT', rollWidth / 2, y, { align: 'center' });
     y += 4;
 
     // Centered QR Code at bottom
@@ -2028,7 +2066,8 @@ export const PdfGenerator = {
   async downloadPdf(receipt: Receipt): Promise<SaveFileResult> {
     const doc = await this.createPdfDoc(receipt);
     const isInvoice = receipt.documentType === 'invoice';
-    const prefix = isInvoice ? 'Invoice' : 'Receipt';
+    const isQuotation = receipt.documentType === 'quotation';
+    const prefix = isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.pdf`;
     return await saveJsPdf(doc, filename, `${prefix} ${receipt.receiptNumber}`);
@@ -2042,7 +2081,8 @@ export const PdfGenerator = {
   ): Promise<{ shared: boolean; method: string; message: string }> {
     const blob = await this.generatePdfBlob(receipt);
     const isInvoice = receipt.documentType === 'invoice';
-    const docTypeLabel = isInvoice ? 'Invoice' : 'Receipt';
+    const isQuotation = receipt.documentType === 'quotation';
+    const docTypeLabel = isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${docTypeLabel}_${cleanNum}.pdf`;
     const currency = receipt.businessSnapshot.currency || 'UGX';
@@ -2050,7 +2090,10 @@ export const PdfGenerator = {
     const bizName = (receipt.businessSnapshot?.name || '').trim();
     const senderSuffix = (bizName && bizName.toLowerCase() !== 'business name') ? ` from ${bizName}` : '';
     let shareText = '';
-    if (isInvoice) {
+    if (isQuotation) {
+      const validInfo = receipt.dueDate ? ` Valid Until: ${receipt.dueDate}.` : '';
+      shareText = `Quotation ${receipt.receiptNumber}${senderSuffix} for ${formatCurrency(receipt.total, currency)}.${validInfo}`;
+    } else if (isInvoice) {
       const dueInfo = receipt.dueDate ? ` Due: ${receipt.dueDate}.` : '';
       shareText = `Invoice ${receipt.receiptNumber}${senderSuffix} for ${formatCurrency(receipt.total, currency)}.${dueInfo}`;
     } else {

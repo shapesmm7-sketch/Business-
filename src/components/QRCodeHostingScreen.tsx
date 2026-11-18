@@ -45,6 +45,7 @@ import {
   ArrowUpRight,
   Scan,
   RefreshCw,
+  Mail,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -58,13 +59,14 @@ import { PhoneInputField } from './PhoneInputField';
 import { WebsitesAppsQrSection } from './WebsitesAppsQrSection';
 import { SocialsQrSection } from './SocialsQrSection';
 import { EventsQrSection } from './EventsQrSection';
+import { QrQuickSections } from './QrQuickSections';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
   onNavigateHome: () => void;
   onOpenCustomerView: (
     page: QRCodeHostedPage,
-    initialTab?: 'menu' | 'photos' | 'about',
+    initialTab?: 'menu' | 'photos' | 'about' | 'menu-images',
     initialItemId?: string,
     initialPhotoId?: string
   ) => void;
@@ -172,8 +174,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   onOpenCustomerView,
   onOpenQrScanner,
 }) => {
-  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | null (defaults to null so the Quick Actions overview screen shows first)
-  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | null>(null);
+  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | 'menu' | 'wifi' | 'contacts' | 'location' | null
+  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | 'menu' | 'wifi' | 'contacts' | 'location' | null>(null);
 
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
   const [activePageId, setActivePageId] = useState<string>(() => {
@@ -664,13 +666,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleDownloadPng = async () => {
     if (!qrDataUrl || !activePage) return;
     CloudflareService.saveSingleQrPage(activePage, ownerEmail, { immediate: true }).catch(() => {});
-    const qrName = tableNumberForPrint || activePage.title;
-    const bizName = business.name || activePage.title;
+    const customQrName = tableNumberForPrint.trim();
+    const bizName = (business.name || activePage.title || '').trim();
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl,
-      name: qrName,
-      businessName: bizName !== qrName ? bizName : undefined,
+      name: customQrName,
+      businessName: customQrName && bizName && bizName !== customQrName ? bizName : undefined,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -678,12 +680,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       accentColor: activePage.accentColor || '#059669',
     });
 
-    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
+    const fileLabel = customQrName || activePage.title || 'QR';
+    const filename = `${fileLabel.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${qrName} QR Code`,
+      title: customQrName ? `${customQrName} QR Code` : 'QR Code',
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -694,12 +697,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadQuickQrPng = async () => {
     if (!quickQrDataUrl || !activePage) return;
-    const qrName = quickQrTableNumber || activePage.title;
-    const bizName = business.name || activePage.title;
+    const customQrName = quickQrTableNumber.trim();
+    const bizName = (business.name || activePage.title || '').trim();
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: quickQrDataUrl,
-      name: qrName,
-      businessName: bizName !== qrName ? bizName : undefined,
+      name: customQrName,
+      businessName: customQrName && bizName && bizName !== customQrName ? bizName : undefined,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -707,12 +710,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       accentColor: activePage.accentColor || '#059669',
     });
 
-    const filename = `${qrName.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
+    const fileLabel = customQrName || activePage.title || 'QR';
+    const filename = `${fileLabel.replace(/[^a-zA-Z0-9]/g, '_')}_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${qrName} Quick QR Code`,
+      title: customQrName ? `${customQrName} Quick QR Code` : 'Quick QR Code',
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -812,12 +816,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDownloadItemPng = async () => {
     if (!itemQrDataUrl || !itemQrModalItem || !activePage) return;
-    const qrName = itemQrTableNumber
-      ? `${itemQrModalItem.name} (${itemQrTableNumber})`
-      : itemQrModalItem.name;
+    const customQrName = itemQrTableNumber.trim();
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: itemQrDataUrl,
-      name: qrName,
+      name: customQrName,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -825,13 +827,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       accentColor: activePage.accentColor || '#059669',
     });
 
-    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileLabel = customQrName || itemQrModalItem.name || 'Item';
+    const safeName = fileLabel.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Item_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${qrName} QR Code`,
+      title: customQrName ? `${customQrName} QR Code` : `${itemQrModalItem.name} QR Code`,
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -890,12 +893,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleDownloadPhotoPng = async () => {
     if (!photoQrDataUrl || !photoQrModalPhoto || !activePage) return;
     const photoTitle = photoQrModalPhoto.caption || photoQrModalPhoto.title || 'Photo';
-    const qrName = photoQrTableNumber
-      ? `${photoTitle} (${photoQrTableNumber})`
-      : photoTitle;
+    const customQrName = photoQrTableNumber.trim();
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: photoQrDataUrl,
-      name: qrName,
+      name: customQrName,
       boxBgColor: activePage.qrBoxBgColor,
       boxBorderColor: activePage.qrBoxBorderColor,
       darkColor: activePage.qrDarkColor,
@@ -903,13 +904,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       accentColor: activePage.accentColor || '#059669',
     });
 
-    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileLabel = customQrName || photoTitle;
+    const safeName = fileLabel.replace(/[^a-zA-Z0-9]/g, '_');
     const filename = `${safeName}_Photo_QRCode.png`;
     const res = await saveFile({
       data: finalPngUrl,
       filename,
       mimeType: 'image/png',
-      title: `${qrName} QR Code`,
+      title: customQrName ? `${customQrName} QR Code` : 'Photo QR Code',
       destination: 'photos',
       folder: 'qr_codes',
     });
@@ -1681,7 +1683,69 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </button>
           </div>
+
+          {/* Horizontal text-only Quick Sections on the same line from left to right below the 4 boxes */}
+          <div className="pt-3 px-1 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+            <button
+              id="btn-text-qr-menu"
+              type="button"
+              onClick={() => setQrCategory('menu')}
+              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+            >
+              <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                Menu
+                {(activePage?.menuImages?.length || 0) > 0 && (
+                  <span className="ml-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                    ({activePage.menuImages!.length})
+                  </span>
+                )}
+              </span>
+            </button>
+
+            <button
+              id="btn-text-qr-wifi"
+              type="button"
+              onClick={() => setQrCategory('wifi')}
+              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+            >
+              <Wifi className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>WiFi</span>
+            </button>
+
+            <button
+              id="btn-text-qr-contacts"
+              type="button"
+              onClick={() => setQrCategory('contacts')}
+              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+            >
+              <Mail className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span>Email and contacts</span>
+            </button>
+
+            <button
+              id="btn-text-qr-location"
+              type="button"
+              onClick={() => setQrCategory('location')}
+              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+            >
+              <MapPin className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+              <span>Location</span>
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* QUICK TEXT SECTIONS: MENU IMAGE | WIFI | EMAIL & CONTACTS | LOCATION */}
+      {(qrCategory === 'menu' || qrCategory === 'wifi' || qrCategory === 'contacts' || qrCategory === 'location') && activePage && (
+        <QrQuickSections
+          mode={qrCategory}
+          activePage={activePage}
+          business={business}
+          ownerEmail={ownerEmail}
+          onUpdatePage={handleUpdateActivePage}
+          showToast={showToast}
+        />
       )}
 
 

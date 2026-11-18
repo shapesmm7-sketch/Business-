@@ -54,6 +54,7 @@ interface CreateInvoiceScreenProps {
   business: BusinessProfile;
   defaultTemplate: ReceiptTemplateId;
   defaultPaymentMethod?: PaymentMethod;
+  mode?: 'invoice' | 'quotation';
   editingInvoice?: Receipt | null;
   duplicateFromInvoice?: Receipt | null;
   onCancel: () => void;
@@ -83,6 +84,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
   business,
   defaultTemplate,
   defaultPaymentMethod = 'Bank',
+  mode = 'invoice',
   editingInvoice,
   duplicateFromInvoice,
   onCancel,
@@ -91,6 +93,10 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
   onQuickDownload,
   onQuickShare,
 }) => {
+  const isQuotation =
+    mode === 'quotation' ||
+    editingInvoice?.documentType === 'quotation' ||
+    duplicateFromInvoice?.documentType === 'quotation';
   const currency = business.currency || 'UGX';
   const settings = StorageService.getSettings();
 
@@ -159,7 +165,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     isOpen: boolean;
     fileName?: string;
     folderName?: string;
-    documentType?: 'receipt' | 'invoice';
+    documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
 
@@ -217,7 +223,11 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       );
       setAmountPaidValue(editingInvoice.amountPaid ?? 0);
     } else if (duplicateFromInvoice) {
-      setInvoiceNumber(StorageService.generateInvoiceNumber());
+      setInvoiceNumber(
+        isQuotation
+          ? StorageService.generateQuotationNumber()
+          : StorageService.generateInvoiceNumber()
+      );
       setIssueDate(getTodayDateString());
       setDueDate(getFutureDateString(settings.defaultDueDateDays || 14));
       setPaymentTerms(duplicateFromInvoice.paymentTerms || 'Net 14');
@@ -242,7 +252,11 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       setPaymentStatus(duplicateFromInvoice.paymentStatus || 'unpaid');
       setAmountPaidValue(duplicateFromInvoice.amountPaid ?? 0);
     } else {
-      setInvoiceNumber(StorageService.generateInvoiceNumber());
+      setInvoiceNumber(
+        isQuotation
+          ? StorageService.generateQuotationNumber()
+          : StorageService.generateInvoiceNumber()
+      );
       setIssueDate(getTodayDateString());
       setDueDate(getFutureDateString(settings.defaultDueDateDays || 14));
       setPaymentTerms(settings.defaultPaymentTerms || 'Net 14');
@@ -250,7 +264,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       setPaymentStatus('unpaid');
       setAmountPaidValue(0);
     }
-  }, [editingInvoice, duplicateFromInvoice]);
+  }, [editingInvoice, duplicateFromInvoice, isQuotation]);
 
   // Handle Terms Presets
   const handleSelectTerms = (term: string) => {
@@ -430,10 +444,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Build the Invoice record
+  // Build the Invoice / Quotation record
   const buildInvoiceData = (): Receipt | null => {
     if (!invoiceNumber.trim()) {
-      setErrorMessage('Please provide an invoice number.');
+      setErrorMessage(
+        isQuotation
+          ? 'Please provide a quotation number.'
+          : 'Please provide an invoice number.'
+      );
       return null;
     }
 
@@ -443,7 +461,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity)) || 1;
         const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
         return {
-          id: item.id || `inv-item-${Date.now()}-${idx}`,
+          id: item.id || `${isQuotation ? 'qtn' : 'inv'}-item-${Date.now()}-${idx}`,
           name: item.name.trim() || `Item #${idx + 1}`,
           quantity: qty > 0 ? qty : 1,
           unitPrice: price,
@@ -452,7 +470,11 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       });
 
     if (validItems.length === 0) {
-      setErrorMessage('Please add at least one line item to the invoice.');
+      setErrorMessage(
+        isQuotation
+          ? 'Please add at least one line item to the quotation.'
+          : 'Please add at least one line item to the invoice.'
+      );
       return null;
     }
 
@@ -460,13 +482,13 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     const invoiceId = editingInvoice
       ? editingInvoice.id
-      : `inv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      : `${isQuotation ? 'qtn' : 'inv'}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const effectiveCreatedAt = issueDate ? `${issueDate}T12:00:00` : new Date().toISOString();
 
     const invoice: Receipt = {
       id: invoiceId,
-      documentType: 'invoice',
+      documentType: isQuotation ? 'quotation' : 'invoice',
       receiptNumber: invoiceNumber.trim(),
       createdAt: effectiveCreatedAt,
       dueDate: dueDate || undefined,
@@ -507,12 +529,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     setIsProcessing(true);
     await StorageService.saveReceiptAsync(invoice);
-    if (!editingInvoice) {
+    if (!editingInvoice && !isQuotation) {
       StorageService.advanceInvoiceSequence();
     }
     setIsProcessing(false);
     showToast(
-      `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
+      isQuotation
+        ? `Quotation ${invoice.receiptNumber} has been saved successfully!`
+        : `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
     );
     AdMobService.showInterstitial('invoice_saved');
     if (onSaveOnly) {
@@ -528,12 +552,14 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     setIsProcessing(true);
     await StorageService.saveReceiptAsync(invoice);
-    if (!editingInvoice) {
+    if (!editingInvoice && !isQuotation) {
       StorageService.advanceInvoiceSequence();
     }
     setIsProcessing(false);
     showToast(
-      `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
+      isQuotation
+        ? `Quotation ${invoice.receiptNumber} has been saved successfully!`
+        : `Invoice ${invoice.receiptNumber} has been saved successfully! You can find it anytime in Receipts & Invoices.`
     );
     AdMobService.showInterstitial('invoice_saved');
     onSaveAndPreview(invoice);
@@ -545,7 +571,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     setIsProcessing(true);
     await StorageService.saveReceiptAsync(invoice);
-    if (!editingInvoice) {
+    if (!editingInvoice && !isQuotation) {
       StorageService.advanceInvoiceSequence();
     }
     try {
@@ -556,7 +582,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Documents/Brivu',
-        documentType: 'invoice',
+        documentType: isQuotation ? 'quotation' : 'invoice',
         documentNumber: invoice.receiptNumber,
       });
       if (onQuickDownload) {
@@ -576,7 +602,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     setIsProcessing(true);
     await StorageService.saveReceiptAsync(invoice);
-    if (!editingInvoice) {
+    if (!editingInvoice && !isQuotation) {
       StorageService.advanceInvoiceSequence();
     }
     try {
@@ -588,7 +614,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Pictures/Brivu',
-        documentType: 'invoice',
+        documentType: isQuotation ? 'quotation' : 'invoice',
         documentNumber: invoice.receiptNumber,
       });
       if (onSaveOnly) {
@@ -596,7 +622,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       }
     } catch (err) {
       console.error(err);
-      showToast('Error saving invoice photo');
+      showToast(isQuotation ? 'Error saving quotation photo' : 'Error saving invoice photo');
     } finally {
       setIsProcessing(false);
     }
@@ -608,7 +634,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
     setIsProcessing(true);
     await StorageService.saveReceiptAsync(invoice);
-    if (!editingInvoice) {
+    if (!editingInvoice && !isQuotation) {
       StorageService.advanceInvoiceSequence();
     }
     try {
@@ -644,14 +670,22 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                {editingInvoice ? t('edit_invoice', business?.language) : t('new_invoice', business?.language)}
+                {isQuotation
+                  ? editingInvoice
+                    ? 'Edit Quotation'
+                    : 'New Quotation'
+                  : editingInvoice
+                  ? t('edit_invoice', business?.language)
+                  : t('new_invoice', business?.language)}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                {t('new_invoice', business?.language).toUpperCase()}
+                {isQuotation ? 'QUOTATION' : t('new_invoice', business?.language).toUpperCase()}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {t('professional_billing_desc', business?.language)}
+              {isQuotation
+                ? 'Prepare and download a price quotation with your business details'
+                : t('professional_billing_desc', business?.language)}
             </p>
           </div>
         </div>
@@ -675,19 +709,19 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         </div>
       )}
 
-      {/* Section 1: Invoice Header & Terms */}
+      {/* Section 1: Invoice / Quotation Header & Terms */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
         <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <FileText className="w-4 h-4" />
-            <span>{t('invoice_no', business?.language)}</span>
+            <span>{isQuotation ? 'Quotation No.' : t('invoice_no', business?.language)}</span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              {t('invoice_no', business?.language)} <span className="text-rose-500">*</span>
+              {isQuotation ? 'Quotation No.' : t('invoice_no', business?.language)} <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -695,7 +729,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
                 type="text"
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(e.target.value)}
-                placeholder="e.g. INV-01"
+                placeholder={isQuotation ? 'e.g. QTN-01' : 'e.g. INV-01'}
                 className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
               />
             </div>
@@ -731,7 +765,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-              {t('due_date', business?.language)}
+              {isQuotation ? 'Valid Until' : t('due_date', business?.language)}
             </label>
             <div className="relative">
               <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1433,7 +1467,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
           <div className="pt-2 border-t border-indigo-200/60 dark:border-indigo-900/60 flex justify-between items-center">
             <span className="text-sm font-extrabold text-slate-900 dark:text-white">
-              {t('total_invoice_amount', business?.language)}
+              {isQuotation ? 'Total Quotation Amount' : t('total_invoice_amount', business?.language)}
             </span>
             <span className="text-base font-black text-indigo-700 dark:text-indigo-300 font-mono">
               {formatCurrency(grandTotal, currency)}
@@ -1478,10 +1512,10 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               onClick={handleSaveOnly}
               disabled={isProcessing}
               className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm shadow-md shadow-indigo-600/20 active:scale-95 flex items-center justify-center gap-2 transition disabled:opacity-50"
-              title="Save Invoice Draft"
+              title={isQuotation ? 'Save Quotation Draft' : 'Save Invoice Draft'}
             >
               <Save className="w-4 h-4 shrink-0" />
-              <span>{t('save_invoice', business?.language)}</span>
+              <span>{isQuotation ? 'Save Quotation' : t('save_invoice', business?.language)}</span>
             </button>
           </div>
 
@@ -1494,7 +1528,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               onClick={handleQuickDownload}
               disabled={isProcessing}
               className="py-2.5 px-1 sm:px-2 rounded-xl bg-slate-800 dark:bg-slate-700 text-white font-bold text-xs hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-              title="Download Invoice PDF"
+              title={isQuotation ? 'Download Quotation PDF' : 'Download Invoice PDF'}
             >
               <Download className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
               <span className="whitespace-nowrap">{t('pdf_format', business?.language)}</span>
@@ -1507,7 +1541,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               onClick={handleQuickSavePhoto}
               disabled={isProcessing}
               className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-              title="Save Invoice Photo (PNG)"
+              title={isQuotation ? 'Save Quotation Photo (PNG)' : 'Save Invoice Photo (PNG)'}
             >
               <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="whitespace-nowrap">{t('photo', business?.language)}</span>
@@ -1520,7 +1554,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               onClick={handleQuickShare}
               disabled={isProcessing}
               className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs"
-              title="Share Invoice"
+              title={isQuotation ? 'Share Quotation' : 'Share Invoice'}
             >
               <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span className="whitespace-nowrap">{t('share', business?.language)}</span>
@@ -1533,7 +1567,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               onClick={handleSaveAndPreview}
               disabled={isProcessing}
               className="py-2.5 px-1 sm:px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1 disabled:opacity-50 shadow-xs"
-              title="Preview Invoice"
+              title={isQuotation ? 'Preview Quotation' : 'Preview Invoice'}
             >
               <Eye className="w-3.5 h-3.5 shrink-0" />
               <span className="whitespace-nowrap">{t('preview', business?.language)}</span>
@@ -1546,7 +1580,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       <StockProductPickerModal
         isOpen={isStockPickerOpen}
         currency={currency}
-        documentType="invoice"
+        documentType={isQuotation ? 'quotation' : 'invoice'}
         onClose={() => setIsStockPickerOpen(false)}
         onSelectProduct={handleSelectStockProduct}
         onSelectMultipleProducts={handleSelectMultipleStockProducts}

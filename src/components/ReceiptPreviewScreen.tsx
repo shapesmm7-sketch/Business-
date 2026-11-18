@@ -50,7 +50,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
     isOpen: boolean;
     fileName?: string;
     folderName?: string;
-    documentType?: 'receipt' | 'invoice';
+    documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
 
@@ -59,6 +59,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   const business = resolveEffectiveBusinessProfile(receipt);
   const currency = business?.currency || receipt.currency || 'UGX';
   const currentTheme = getTemplateConfig(receipt.template || 'modern');
+  const isQuotation = receipt.documentType === 'quotation';
   const isInvoice = receipt.documentType === 'invoice';
 
   const showToast = (msg: string) => {
@@ -102,7 +103,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Documents/Brivu',
-        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentType: isQuotation ? 'quotation' : isInvoice ? 'invoice' : 'receipt',
         documentNumber: receipt.receiptNumber,
       });
     } catch (err) {
@@ -124,7 +125,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Pictures/Brivu',
-        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentType: isQuotation ? 'quotation' : isInvoice ? 'invoice' : 'receipt',
         documentNumber: receipt.receiptNumber,
       });
     } catch (err) {
@@ -388,7 +389,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             customerPhone: receipt.customerPhone,
             customerEmail: receipt.customerEmail,
             customerAddress: receipt.customerAddress,
-            documentType: receipt.documentType || (isInvoice ? 'invoice' : 'receipt'),
+            documentType: receipt.documentType || (isQuotation ? 'quotation' : isInvoice ? 'invoice' : 'receipt'),
             dueDate: receipt.dueDate,
             paymentTerms: receipt.paymentTerms,
             paymentMethod: receipt.paymentMethod,
@@ -408,6 +409,14 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             accentColor: receipt.accentColor,
             customTheme: (() => {
               const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
+              const defaultDocBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
+              const rawBadge = receipt.customTheme?.badgeText || saved?.badgeText;
+              const upperBadge = (rawBadge || '').trim().toUpperCase();
+              const resolvedBadge = isQuotation
+                ? (!rawBadge || upperBadge === 'RECEIPT' || upperBadge === 'INVOICE' ? 'QUOTATION' : rawBadge)
+                : isInvoice
+                  ? (!rawBadge || upperBadge === 'RECEIPT' ? 'INVOICE' : rawBadge)
+                  : rawBadge || defaultDocBadge;
               return {
                 headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
                 headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
@@ -416,7 +425,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
                 paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
                 accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor,
                 fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
-                badgeText: receipt.customTheme?.badgeText || saved?.badgeText || (isInvoice ? 'INVOICE' : 'RECEIPT'),
+                badgeText: resolvedBadge,
               };
             })(),
             isSample: false,
@@ -433,10 +442,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             onClick={handleDownload}
             disabled={isGenerating}
             className="py-2.5 px-1 sm:px-2 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs border border-slate-300 dark:border-slate-700 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-            title={isInvoice ? 'Download PDF Invoice' : 'Download PDF Receipt'}
+            title={isQuotation ? 'Download PDF Quotation' : isInvoice ? 'Download PDF Invoice' : 'Download PDF Receipt'}
           >
-            <Download className={`w-3.5 h-3.5 shrink-0 ${isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
-            <span className="whitespace-nowrap">{isInvoice ? 'Invoice PDF' : 'PDF'}</span>
+            <Download className={`w-3.5 h-3.5 shrink-0 ${isQuotation || isInvoice ? 'text-indigo-600' : 'text-emerald-600'}`} />
+            <span className="whitespace-nowrap">{isQuotation ? 'Quote PDF' : isInvoice ? 'Invoice PDF' : 'PDF'}</span>
           </button>
 
           {/* Save Photo */}
@@ -445,7 +454,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             onClick={handleSavePhoto}
             disabled={isGenerating}
             className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 shadow-sm active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-            title={isInvoice ? 'Save Invoice as Photo (PNG)' : 'Save Receipt as Photo (PNG)'}
+            title={isQuotation ? 'Save Quotation as Photo (PNG)' : isInvoice ? 'Save Invoice as Photo (PNG)' : 'Save Receipt as Photo (PNG)'}
           >
             <Camera className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span className="whitespace-nowrap">Photo</span>

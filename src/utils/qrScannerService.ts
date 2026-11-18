@@ -5,7 +5,22 @@ import { QRHostingService } from '../services/qrHostingService';
 import { CloudflareService } from '../services/cloudflareService';
 import { Receipt, InventoryProduct, QRCodeHostedPage } from '../types';
 
-export type ScannedQrType = 'receipt' | 'customer_page' | 'inventory_item' | 'url' | 'text';
+export type ScannedQrType = 'receipt' | 'customer_page' | 'inventory_item' | 'wifi' | 'contact' | 'url' | 'text';
+
+export interface ScannedWifiData {
+  ssid: string;
+  password?: string;
+  security: string;
+}
+
+export interface ScannedContactData {
+  name: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  address?: string;
+  website?: string;
+}
 
 export interface ScannedQrResult {
   type: ScannedQrType;
@@ -15,6 +30,8 @@ export interface ScannedQrResult {
   receipt?: Receipt;
   product?: InventoryProduct;
   customerPage?: QRCodeHostedPage;
+  wifiData?: ScannedWifiData;
+  contactData?: ScannedContactData;
   targetTab?: 'menu' | 'photos' | 'about';
   targetItemId?: string;
   targetPhotoId?: string;
@@ -162,9 +179,9 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
     }
   }
 
-  // 2. Check for Receipt URL or Receipt ID (e.g. /api/receipts/..., REC-..., INV-...)
+  // 2. Check for Receipt URL or Receipt ID (e.g. /api/receipts/..., REC-..., INV-..., QTN-...)
   const isReceiptUrl = text.includes('/api/receipts/') || text.includes('receiptId=');
-  const isReceiptNumber = /^(REC|INV)-/i.test(text);
+  const isReceiptNumber = /^(REC|INV|QTN)-/i.test(text);
 
   if (isReceiptUrl || isReceiptNumber) {
     let receiptIdOrNum = text;
@@ -188,7 +205,7 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
       return {
         type: 'receipt',
         rawText: text,
-        title: `${matched.documentType === 'invoice' ? 'Invoice' : 'Receipt'} #${matched.receiptNumber}`,
+        title: `${matched.documentType === 'quotation' ? 'Quotation' : matched.documentType === 'invoice' ? 'Invoice' : 'Receipt'} #${matched.receiptNumber}`,
         subtitle: `${matched.customerName || 'Customer'} • ${matched.items.length} items • ${matched.businessSnapshot?.currency || matched.currency || 'UGX'} ${matched.total.toLocaleString()}`,
         receipt: matched,
       };
@@ -235,7 +252,101 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
     };
   }
 
-  // 5. Standard Web URL
+  // 5. Wi-Fi QR Code (WIFI:T:WPA;S:Name;P:Pass;;)
+  if (/^WIFI:/i.test(text)) {
+    const unescapeWifi = (s: string) => s.replace(/\\([\\;,:"])/g, '$1');
+    const body = text.slice(5);
+    const parts: string[] = [];
+    let current = '';
+    for (let i = 0; i < body.length; i++) {
+      if (body[i] === '\\' && i + 1 < body.length) {
+        current += body[i] + body[i + 1];
+        i++;
+      } else if (body[i] === ';') {
+        parts.push(current);
+        current = '';
+      } else {
+        current += body[i];
+      }
+    }
+    if (current) parts.push(current);
+
+    let ssid = '';
+    let password = '';
+    let security = 'WPA';
+    for (const part of parts) {
+      if (part.startsWith('S:')) ssid = unescapeWifi(part.slice(2));
+      else if (part.startsWith('P:')) password = unescapeWifi(part.slice(2));
+      else if (part.startsWith('T:')) security = part.slice(2) || 'WPA';
+    }
+    return {
+      type: 'wifi',
+      rawText: text,
+      title: ssid || 'Guest Wi-Fi',
+      subtitle: password ? `Password: ${password}` : 'Open Network (No Password)',
+      wifiData: {
+        ssid: ssid || 'Guest Wi-Fi',
+        password,
+        security,
+      },
+    };
+  }
+
+  // 6. Contact Card QR Code (BEGIN:VCARD...END:VCARD)
+  if (/^BEGIN:VCARD/i.test(text)) {
+    const unescapeVCard = (s: string) =>
+      s.replace(/\\n/gi, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',');
+    const lines = text.split(/\r?\n/);
+    let name = '';
+    let phone = '';
+    let whatsapp = '';
+    let email = '';
+    let address = '';
+    let website = '';
+
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).toUpperCase();
+      const val = unescapeVCard(line.slice(colonIdx + 1).trim());
+      if (!val) continue;
+      if (key === 'FN' || (key === 'ORG' && !name)) {
+        name = val;
+      } else if (key.startsWith('TEL')) {
+        if (key.includes('MSG') || key.includes('WHATSAPP')) {
+          whatsapp = val;
+        } else if (!phone) {
+          phone = val;
+        } else if (!whatsapp) {
+          whatsapp = val;
+        }
+      } else if (key.startsWith('EMAIL') && !email) {
+        email = val;
+      } else if (key.startsWith('ADR') && !address) {
+        address = val.split(';').filter(Boolean).join(', ');
+      } else if (key.startsWith('URL') && !website) {
+        website = val;
+      }
+    }
+
+    const summaryParts = [email, phone || whatsapp].filter(Boolean);
+    return {
+      type: 'contact',
+      rawText: text,
+      title: name || 'Contact Card',
+      subtitle: summaryParts.join(' • ') || 'Contact details',
+      contactData: {
+        name: name || 'Contact',
+        phone: phone || undefined,
+        whatsapp: whatsapp || undefined,
+        email: email || undefined,
+        address: address || undefined,
+        website: website || undefined,
+      },
+    };
+  }
+
+  // 7. Standard Web URL
   if (/^https?:\/\//i.test(text)) {
     return {
       type: 'url',
@@ -246,7 +357,7 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
     };
   }
 
-  // 6. Plain Text / Barcode
+  // 8. Plain Text / Barcode
   return {
     type: 'text',
     rawText: text,

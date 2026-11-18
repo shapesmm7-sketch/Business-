@@ -439,6 +439,12 @@ export function hasRealQrPageContent(page: any): boolean {
   ) {
     return true;
   }
+  if (
+    Array.isArray(page.menuImages) &&
+    page.menuImages.some((p: any) => (typeof p === 'string' ? p.trim() !== '' : Boolean(p && p.url)))
+  ) {
+    return true;
+  }
   if (Array.isArray(page.customSocialLinks) && page.customSocialLinks.length > 0) return true;
   if (Array.isArray(page.socialLinks) && page.socialLinks.length > 0) return true;
   if (
@@ -999,6 +1005,22 @@ export function sanitizePublicQrPage(rawPage: any): any {
       };
     });
 
+  const rawMenuImages = Array.isArray(rawPage.menuImages) ? rawPage.menuImages : [];
+  const cleanMenuImages = rawMenuImages
+    .filter((p: any) => (typeof p === 'string' ? p.trim() !== '' : Boolean(p && p.url)))
+    .map((p: any, idx: number) => {
+      if (typeof p === 'string') return { id: `menu-img-${idx}`, url: p, title: `Menu Page ${idx + 1}` };
+      return {
+        id: p?.id || `menu-img-${idx}`,
+        url: p?.url || '',
+        title: p?.title || `Menu Page ${idx + 1}`,
+        description: p?.description || undefined,
+        category: p?.category || undefined,
+        badge: p?.badge || undefined,
+        caption: p?.caption || undefined,
+      };
+    });
+
   const cleanCustomSocials = Array.isArray(rawPage.customSocialLinks)
     ? rawPage.customSocialLinks
         .filter((s: any) => s && (typeof s === 'string' || s.url || s.name || s.label))
@@ -1124,11 +1146,13 @@ export function sanitizePublicQrPage(rawPage: any): any {
     openingHours: rawPage.openingHours || '',
     wifiName: rawPage.wifiName || undefined,
     wifiPassword: rawPage.wifiPassword || undefined,
+    wifiSecurity: rawPage.wifiSecurity || undefined,
     allowWhatsAppOrdering: rawPage.allowWhatsAppOrdering !== false,
     announcement: isEvtType ? '' : (rawPage.announcement || ''),
     customSocialLinks: cleanCustomSocials,
     socialLinks: rawPage.socialLinks || undefined,
     photos: cleanPhotos,
+    menuImages: cleanMenuImages,
     menuCategories: (() => {
       const baseCats = Array.isArray(rawPage.menuCategories) && rawPage.menuCategories.length > 0 ? rawPage.menuCategories : ['All'];
       const cleaned = hadStockItemsStripped
@@ -1270,6 +1294,9 @@ export async function saveCanonicalQrPage(
         if (Array.isArray(existingParsed?.photos) && existingParsed.photos.length > 0 && (!Array.isArray(pageToSave.photos) || pageToSave.photos.length === 0)) {
           pageToSave.photos = existingParsed.photos;
         }
+        if (Array.isArray(existingParsed?.menuImages) && existingParsed.menuImages.length > 0 && (!Array.isArray(pageToSave.menuImages) || pageToSave.menuImages.length === 0)) {
+          pageToSave.menuImages = existingParsed.menuImages;
+        }
         if (!pageToSave.coverImage && existingParsed?.coverImage) {
           pageToSave.coverImage = existingParsed.coverImage;
         }
@@ -1288,6 +1315,7 @@ export async function saveCanonicalQrPage(
         if (!pageToSave.wifiName && existingParsed?.wifiName) {
           pageToSave.wifiName = existingParsed.wifiName;
           pageToSave.wifiPassword = existingParsed.wifiPassword;
+          pageToSave.wifiSecurity = existingParsed.wifiSecurity;
         }
         if (!pageToSave.openingHours && existingParsed?.openingHours) {
           pageToSave.openingHours = existingParsed.openingHours;
@@ -2950,7 +2978,15 @@ export default {
         const bucket = getR2Bucket(env);
         const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
-        const { filename, data, mimeType = 'application/octet-stream', folder = 'receipts' } = body;
+        const {
+          filename,
+          data,
+          mimeType = 'application/octet-stream',
+          folder = 'receipts',
+          customKey,
+          slotId,
+          ownerKey,
+        } = body;
 
         const userEmail = (
           request.headers.get('X-User-Email') ||
@@ -2961,7 +2997,12 @@ export default {
           ''
         ).toLowerCase().trim();
 
-        if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
+        const lowerFolder = (folder || '').toLowerCase();
+        const lowerFilename = (filename || '').toLowerCase();
+        const hasValidEmail = Boolean(userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-'));
+        const cleanOwnerKey = String(ownerKey || '').replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 64);
+
+        if (!hasValidEmail && !(lowerFolder === 'menu' && cleanOwnerKey)) {
           return new Response(
             JSON.stringify({
               ok: false,
@@ -2972,10 +3013,7 @@ export default {
           );
         }
 
-        const lowerFolder = (folder || '').toLowerCase();
-        const lowerFilename = (filename || '').toLowerCase();
-
-        // Fixed key for logo and signature to prevent duplicate files
+        // Fixed key for logo, signature, and replaceable menu photos to preserve a single permanent link
         const isSignature = lowerFolder === 'signatures' || lowerFilename.includes('signature');
         const isLogo = lowerFolder === 'photos' && (lowerFilename.includes('logo') || lowerFilename === 'logo.webp');
 
@@ -2983,16 +3021,41 @@ export default {
         let fileType = 'file';
         let key = '';
 
-        if (isSignature && userEmail) {
+        if (isSignature && hasValidEmail) {
           cleanFilename = 'signature.webp';
           fileType = 'signature';
           key = `users/${encodeURIComponent(userEmail)}/signature.webp`;
-        } else if (isLogo && userEmail) {
+        } else if (isLogo && hasValidEmail) {
           cleanFilename = 'logo.webp';
           fileType = 'logo';
           key = `users/${encodeURIComponent(userEmail)}/logo.webp`;
+        } else if (lowerFolder === 'menu') {
+          fileType = 'menu_image';
+          const allowedUserPrefix = hasValidEmail ? `users/${encodeURIComponent(userEmail)}/menu/` : '';
+          const allowedPublicPrefix = cleanOwnerKey ? `menu-public/${cleanOwnerKey}/` : '';
+          const rawCustomKey = typeof customKey === 'string' ? decodeURIComponent(customKey).trim() : '';
+          const isAllowedCustom =
+            rawCustomKey &&
+            !rawCustomKey.includes('..') &&
+            ((allowedUserPrefix && rawCustomKey.startsWith(allowedUserPrefix)) ||
+              (allowedPublicPrefix && rawCustomKey.startsWith(allowedPublicPrefix)));
+
+          if (isAllowedCustom) {
+            key = rawCustomKey;
+            cleanFilename = key.split('/').pop() || cleanFilename;
+          } else {
+            const extMatch = cleanFilename.match(/\.(webp|png|jpe?g|gif)$/i);
+            const ext = extMatch ? extMatch[1].toLowerCase() : 'webp';
+            const cleanSlot = String(slotId || `menu_${Date.now()}`)
+              .replace(/[^a-zA-Z0-9_-]/g, '_')
+              .slice(0, 64);
+            cleanFilename = `${cleanSlot}.${ext}`;
+            key = hasValidEmail
+              ? `users/${encodeURIComponent(userEmail)}/menu/${cleanFilename}`
+              : `menu-public/${cleanOwnerKey}/${cleanFilename}`;
+          }
         } else {
-          const userPrefix = userEmail ? `users/${encodeURIComponent(userEmail)}/` : '';
+          const userPrefix = hasValidEmail ? `users/${encodeURIComponent(userEmail)}/` : '';
           key = `${userPrefix}${lowerFolder}/${Date.now()}_${cleanFilename}`;
         }
 
@@ -3403,6 +3466,8 @@ export default {
         )
       );
 
+      const isMenuAsset = candidateKeys.some((ck) => ck.includes('/menu/') || ck.startsWith('menu-public/'));
+
       if (bucket && candidateKeys.length > 0) {
         for (const k of candidateKeys) {
           try {
@@ -3411,6 +3476,9 @@ export default {
               const headers = new Headers(CORS_HEADERS);
               object.writeHttpMetadata(headers);
               headers.set('etag', object.httpEtag);
+              if (isMenuAsset) {
+                headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+              }
               return new Response(object.body, { headers });
             }
           } catch {}
@@ -3431,6 +3499,7 @@ export default {
                 headers: {
                   ...CORS_HEADERS,
                   'Content-Type': row.mime_type || 'application/octet-stream',
+                  ...(isMenuAsset ? { 'Cache-Control': 'no-cache, no-store, must-revalidate' } : {}),
                 },
               });
             }
@@ -3534,10 +3603,12 @@ export default {
             openingHours: pageToSanitize.openingHours || existingParsedPage.openingHours || '',
             wifiName: pageToSanitize.wifiName || existingParsedPage.wifiName,
             wifiPassword: pageToSanitize.wifiPassword || existingParsedPage.wifiPassword,
+            wifiSecurity: pageToSanitize.wifiSecurity || existingParsedPage.wifiSecurity,
             announcement: pageToSanitize.announcement || existingParsedPage.announcement || '',
             coverImage: pageToSanitize.coverImage || existingParsedPage.coverImage,
             logo: pageToSanitize.logo || existingParsedPage.logo,
             photos: Array.isArray(pageToSanitize.photos) && pageToSanitize.photos.length > 0 ? pageToSanitize.photos : (existingParsedPage.photos || []),
+            menuImages: Array.isArray(pageToSanitize.menuImages) && pageToSanitize.menuImages.length > 0 ? pageToSanitize.menuImages : (existingParsedPage.menuImages || []),
             menuCategories: Array.isArray(pageToSanitize.menuCategories) && pageToSanitize.menuCategories.length > 1 ? pageToSanitize.menuCategories : (existingParsedPage.menuCategories || ['All']),
             menuItems: Array.isArray(pageToSanitize.menuItems) && pageToSanitize.menuItems.length > 0
               ? pageToSanitize.menuItems
@@ -4265,6 +4336,7 @@ export default {
                 googleMapsUrl: newer.googleMapsUrl || older.googleMapsUrl,
                 wifiName: newer.wifiName || older.wifiName,
                 wifiPassword: newer.wifiPassword || older.wifiPassword,
+                wifiSecurity: newer.wifiSecurity || older.wifiSecurity,
                 openingHours: newer.openingHours || older.openingHours || '',
                 announcement: newer.announcement || older.announcement || '',
                 coverImage: newer.coverImage || older.coverImage,
@@ -4272,6 +4344,7 @@ export default {
                 socialLinks: mergedSocialLinks,
                 customSocialLinks: pickNonEmptyArr(newer.customSocialLinks, older.customSocialLinks),
                 photos: pickNonEmptyArr(newer.photos, older.photos),
+                menuImages: pickNonEmptyArr(newer.menuImages, older.menuImages),
                 menuCategories: pickCats(older.menuCategories, newer.menuCategories),
                 menuItems: pickNonEmptyArr(newer.menuItems, older.menuItems),
                 websitesQrItems: pickNonEmptyArr(newer.websitesQrItems, older.websitesQrItems),

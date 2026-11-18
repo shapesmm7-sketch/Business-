@@ -145,6 +145,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
           </button>
         </div>
+
+        {/* Text-only Quotation link below the 3 boxes */}
+        <div className="pt-1 px-1 flex items-center gap-4">
+          <button
+            id="btn-home-quotation"
+            type="button"
+            onClick={() => onNavigate('create-quotation')}
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap cursor-pointer active:opacity-70 transition"
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span>Quotation</span>
+          </button>
+        </div>
       </div>
 
       {/* Bottom Native Advanced Ad */}

@@ -135,6 +135,7 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
       coverImage: page.coverImage,
       logo: page.logo,
       photos: (page.photos || []).filter((photo) => Boolean(photo && photo.url)),
+      menuImages: (page.menuImages || []).filter((photo) => Boolean(photo && photo.url)),
       menuItems: (page.menuItems || []).filter((item: any) => item && !String(item.id || '').startsWith('prod-')),
       websitesQrItems: page.websitesQrItems || [],
       socialsQrItems: page.socialsQrItems || [],
@@ -438,6 +439,9 @@ export const CloudflareService = {
     mimeType?: string;
     folder?: string;
     force?: boolean;
+    customKey?: string;
+    slotId?: string;
+    ownerKey?: string;
   }): Promise<{
     success: boolean;
     storageLimitExceeded?: boolean;
@@ -460,10 +464,12 @@ export const CloudflareService = {
     }
 
     const userEmail = this.getUserEmail();
-    if (!userEmail) {
+    const isMenuUpload = (options.folder || '').toLowerCase() === 'menu' && Boolean(options.force);
+    const fallbackOwnerKey = (options.ownerKey || '').trim();
+    if (!userEmail && !(isMenuUpload && fallbackOwnerKey)) {
       return {
         success: false,
-        message: 'Visitor is not logged in: File upload skipped',
+        message: 'Please sign in with Google to host your menu photo online.',
       };
     }
 
@@ -531,8 +537,7 @@ export const CloudflareService = {
           headers: {
             ...headers,
             'Content-Type': 'application/json',
-            'X-User-Email': userEmail,
-            'X-User-Id': userEmail,
+            ...(userEmail ? { 'X-User-Email': userEmail, 'X-User-Id': userEmail } : {}),
           },
           body: JSON.stringify({
             filename,
@@ -540,6 +545,9 @@ export const CloudflareService = {
             mimeType,
             folder,
             userEmail,
+            ...(options.customKey ? { customKey: options.customKey } : {}),
+            ...(options.slotId ? { slotId: options.slotId } : {}),
+            ...(fallbackOwnerKey ? { ownerKey: fallbackOwnerKey } : {}),
           }),
           signal: controller.signal,
         });
@@ -1518,6 +1526,7 @@ export const CloudflareService = {
         coverImage: page.coverImage,
         logo: page.logo,
         photos: (page.photos || []).filter((photo: any) => Boolean(photo && photo.url)),
+        menuImages: (page.menuImages || []).filter((photo: any) => Boolean(photo && photo.url)),
         menuItems: (page.menuItems || []).filter((item: any) => item && !String(item.id || '').startsWith('prod-')),
         websitesQrItems: page.websitesQrItems || [],
         socialsQrItems: page.socialsQrItems || [],

@@ -638,13 +638,13 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     const defaultTitle = isAllSelected
       ? 'Social Media Hub'
       : (activeItem?.title || 'Social QR');
-    const qrName = tableNumberForPrint || defaultTitle;
-    const bizName = business.name || '';
+    const customQrName = tableNumberForPrint.trim();
+    const bizName = (business.name || '').trim();
 
     const finalPngUrl = await QRHostingService.generateNamedQrPng({
       qrDataUrl: activeQrDataUrl,
-      name: qrName,
-      businessName: bizName && bizName !== qrName ? bizName : undefined,
+      name: customQrName,
+      businessName: customQrName && bizName && bizName !== customQrName ? bizName : undefined,
       boxBgColor: activeBoxBgColor,
       boxBorderColor: activeBoxBorderColor,
       darkColor: activeDarkColor,
@@ -652,16 +652,17 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
       accentColor: activeDarkColor,
     });
 
-    const safeName = qrName.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileLabel = customQrName || defaultTitle;
+    const safeName = fileLabel.replace(/[^a-zA-Z0-9]/g, '_');
     await saveFile({
       data: finalPngUrl,
       filename: `${safeName}_Social_QRCode.png`,
       mimeType: 'image/png',
-      title: `${qrName} QR Code`,
+      title: customQrName ? `${customQrName} QR Code` : 'Social QR Code',
       destination: 'photos',
       folder: 'qr_codes',
     });
-    showToast('Social QR code image with name saved!');
+    showToast(customQrName ? 'Social QR code image with name saved!' : 'Social QR code image saved!');
   };
 
   const handleDownloadTableStandPdf = async () => {

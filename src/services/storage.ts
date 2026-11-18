@@ -575,7 +575,12 @@ export const StorageService = {
           amountPaid: typeof r.amountPaid === 'number' ? r.amountPaid : (parseFloat(r.amountPaid) || 0),
           balance: typeof r.balance === 'number' ? r.balance : 0,
           paymentStatus: r.paymentStatus || 'paid',
-          documentType: r.documentType === 'invoice' ? 'invoice' : 'receipt',
+          documentType:
+            r.documentType === 'quotation'
+              ? 'quotation'
+              : r.documentType === 'invoice'
+                ? 'invoice'
+                : 'receipt',
           createdAt: r.createdAt || new Date().toISOString(),
           businessSnapshot: r.businessSnapshot || {
             name: '',
@@ -621,11 +626,16 @@ export const StorageService = {
     if (success && isNew) {
       const currencySymbol = receipt.businessSnapshot.currency || 'UGX';
       const isInvoiceDoc = receipt.documentType === 'invoice';
+      const isQuotationDoc = receipt.documentType === 'quotation';
 
-      // Trigger new sale / receipt notification
+      // Trigger new sale / receipt / quotation notification
       PushNotificationService.triggerBusinessAlert({
-        title: isInvoiceDoc ? `🧾 New Invoice: ${receipt.receiptNumber}` : `🧾 New Receipt: ${receipt.receiptNumber}`,
-        body: `Issued ${receipt.items.length} item(s) for ${currencySymbol} ${receipt.total.toLocaleString()} to ${receipt.customerName || 'Customer'}`,
+        title: isQuotationDoc
+          ? `📄 New Quotation: ${receipt.receiptNumber}`
+          : isInvoiceDoc
+            ? `🧾 New Invoice: ${receipt.receiptNumber}`
+            : `🧾 New Receipt: ${receipt.receiptNumber}`,
+        body: `${isQuotationDoc ? 'Prepared' : 'Issued'} ${receipt.items.length} item(s) for ${currencySymbol} ${receipt.total.toLocaleString()} to ${receipt.customerName || 'Customer'}`,
         type: 'sale',
       }).catch(() => {});
 
@@ -806,6 +816,28 @@ export const StorageService = {
   },
 
   /**
+   * Generates a new unique quotation number (QTN-01, QTN-02, ...)
+   */
+  generateQuotationNumber(): string {
+    const settings = this.getSettings();
+    const receipts = this.getReceipts();
+    const existingNumbers = new Set(receipts.map((r) => r.receiptNumber.trim()));
+
+    const qtnCount = receipts.filter((r) => r.documentType === 'quotation').length;
+    let currentNum = Math.max(1, qtnCount + 1);
+    const prefix = 'QTN-';
+    const padding = settings.numberPadding === 6 ? 2 : (settings.numberPadding || 2);
+    let candidate = `${prefix}${String(currentNum).padStart(padding, '0')}`;
+
+    while (existingNumbers.has(candidate)) {
+      currentNum++;
+      candidate = `${prefix}${String(currentNum).padStart(padding, '0')}`;
+    }
+
+    return candidate;
+  },
+
+  /**
    * Converts an invoice into a paid receipt
    */
   convertInvoiceToReceipt(invoice: Receipt): Receipt {
@@ -876,6 +908,7 @@ export const StorageService = {
     let totalOutstanding = 0;
 
     for (const r of receipts) {
+      if (r.documentType === 'quotation') continue;
       const isInvoice = r.documentType === 'invoice';
       if (isInvoice) {
         totalInvoicesCount++;

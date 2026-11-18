@@ -69,7 +69,7 @@ interface QRCustomerViewScreenProps {
   page: QRCodeHostedPage;
   onBackToApp?: () => void;
   isMerchantPreview?: boolean;
-  initialTab?: 'menu' | 'photos' | 'about';
+  initialTab?: 'menu' | 'photos' | 'about' | 'menu-images';
   initialItemId?: string;
   initialPhotoId?: string;
 }
@@ -89,7 +89,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'about'>(() => {
+  const [activeTab, setActiveTab] = useState<'menu' | 'photos' | 'about' | 'menu-images'>(() => {
     if (initialPhotoId) return 'photos';
     if (initialItemId) return 'menu';
     if (typeof window !== 'undefined') {
@@ -99,6 +99,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
       const itemIdParam = params.get('item') || params.get('itemId');
       if (itemIdParam) return 'menu';
       const tabParam = params.get('tab');
+      if (tabParam === 'menu-images') return 'menu-images';
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
       if (tabParam === 'menu' || tabParam === 'items') return 'menu';
@@ -134,7 +135,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
   useEffect(() => {
     let targetPhotoId = initialPhotoId;
     let targetItemId = initialItemId;
-    let targetTab: 'menu' | 'photos' | 'about' | undefined = initialTab;
+    let targetTab: 'menu' | 'photos' | 'about' | 'menu-images' | undefined = initialTab;
 
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -151,7 +152,8 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
         targetTab = 'menu';
       }
       if (!photoIdParam && !itemIdParam && tabParam) {
-        if (tabParam === 'photos' || tabParam === 'gallery') targetTab = 'photos';
+        if (tabParam === 'menu-images') targetTab = 'menu-images';
+        else if (tabParam === 'photos' || tabParam === 'gallery') targetTab = 'photos';
         else if (tabParam === 'about' || tabParam === 'info') targetTab = 'about';
         else if (tabParam === 'menu' || tabParam === 'items') targetTab = 'menu';
       }
@@ -344,6 +346,16 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     return [];
   }, [page.photos]);
 
+  // Effective hotel menu images with fallback to pre-injected window.__INITIAL_QR_PAGE__
+  const effectiveMenuImages: QRBusinessPhoto[] = useMemo(() => {
+    if (page.menuImages && page.menuImages.length > 0) return page.menuImages;
+    try {
+      const initial = typeof window !== 'undefined' ? (window as any).__INITIAL_QR_PAGE__ : null;
+      if (initial?.menuImages && initial.menuImages.length > 0) return initial.menuImages;
+    } catch {}
+    return [];
+  }, [page.menuImages]);
+
   // Total in tray
   const trayList = useMemo(() => Object.values(trayItems) as TrayItem[], [trayItems]);
   const totalTrayCount = useMemo(() => trayList.reduce((sum, i) => sum + i.quantity, 0), [trayList]);
@@ -494,6 +506,7 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     pathname.includes('/qr/qr-') ||
     pathname.includes('/qr/business-') ||
     searchParams.get('tab') === 'menu' ||
+    searchParams.get('tab') === 'menu-images' ||
     Boolean(searchParams.get('qr')?.startsWith('qr-')) ||
     Boolean(searchParams.get('qr')?.startsWith('business-'));
 
@@ -2410,6 +2423,23 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               <Info className="w-4 h-4" />
               <span>About & Venue</span>
             </button>
+
+            {effectiveMenuImages.length > 0 && (
+              <button
+                onClick={() => setActiveTab('menu-images')}
+                className={`py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 border-b-2 transition ${
+                  activeTab === 'menu-images'
+                    ? 'border-amber-600 text-amber-600 dark:text-amber-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                }`}
+              >
+                <Utensils className="w-4 h-4" />
+                <span>Menu</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
+                  {effectiveMenuImages.length}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Quick tray trigger */}
@@ -2427,6 +2457,57 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
 
       {/* Tab Content Container */}
       <div className="max-w-2xl mx-auto px-4 pt-4 flex-1 w-full">
+        {/* TAB 0: HOTEL MENU IMAGES */}
+        {activeTab === 'menu-images' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Menu</h2>
+              <span className="text-xs text-slate-400">{effectiveMenuImages.length} Page{effectiveMenuImages.length === 1 ? '' : 's'}</span>
+            </div>
+
+            {effectiveMenuImages.length === 0 ? (
+              <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <Utensils className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No menu image uploaded yet</p>
+                <p className="text-xs text-slate-400 mt-0.5">The hotel or business owner can upload menu images from the Menu section</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {effectiveMenuImages.map((img, idx) => (
+                  <div
+                    key={img.id || idx}
+                    onClick={() =>
+                      setLightboxImage({
+                        url: img.url,
+                        title: img.title || `Menu Page ${idx + 1}`,
+                      })
+                    }
+                    className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs cursor-pointer group"
+                  >
+                    {img.title && (
+                      <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                          {img.title}
+                        </span>
+                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <Maximize2 className="w-3 h-3" />
+                          <span>Tap to zoom</span>
+                        </span>
+                      </div>
+                    )}
+                    <img
+                      src={img.url}
+                      alt={img.title || `Menu Page ${idx + 1}`}
+                      className="w-full h-auto object-contain bg-slate-50 dark:bg-slate-950"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TAB 1: DIGITAL MENU */}
         {activeTab === 'menu' && (
           <div className="space-y-4">

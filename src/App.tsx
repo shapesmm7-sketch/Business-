@@ -338,12 +338,13 @@ export function App() {
       updatedAt: new Date().toISOString(),
     } as QRCodeHostedPage);
   });
-  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about'>(() => {
+  const [customerInitialTab, setCustomerInitialTab] = useState<'menu' | 'photos' | 'about' | 'menu-images'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('photo') || params.get('photoId')) return 'photos';
       if (params.get('item') || params.get('itemId')) return 'menu';
       const tabParam = params.get('tab');
+      if (tabParam === 'menu-images') return 'menu-images';
       if (tabParam === 'photos' || tabParam === 'gallery') return 'photos';
       if (tabParam === 'about' || tabParam === 'info') return 'about';
       if (tabParam === 'menu' || tabParam === 'items') return 'menu';
@@ -385,7 +386,7 @@ export function App() {
     isOpen: boolean;
     fileName?: string;
     folderName?: string;
-    documentType?: 'receipt' | 'invoice';
+    documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
 
@@ -1018,6 +1019,8 @@ export function App() {
           [
             'create-receipt',
             'create-invoice',
+            'create-quotation',
+            'quotations',
             'preview-receipt',
             'templates',
             'settings',
@@ -1105,22 +1108,26 @@ export function App() {
     setActiveScreen('preview-receipt');
   };
 
-  // Handler to edit a receipt or invoice
+  // Handler to edit a receipt, invoice, or quotation
   const handleEditReceipt = (receipt: Receipt) => {
     setSelectedReceipt(receipt);
     setDuplicateSeed(null);
-    if (receipt.documentType === 'invoice') {
+    if (receipt.documentType === 'quotation') {
+      setActiveScreen('create-quotation');
+    } else if (receipt.documentType === 'invoice') {
       setActiveScreen('create-invoice');
     } else {
       setActiveScreen('create-receipt');
     }
   };
 
-  // Handler to duplicate a receipt or invoice
+  // Handler to duplicate a receipt, invoice, or quotation
   const handleDuplicateReceipt = (receipt: Receipt) => {
     setDuplicateSeed(receipt);
     setSelectedReceipt(null);
-    if (receipt.documentType === 'invoice') {
+    if (receipt.documentType === 'quotation') {
+      setActiveScreen('create-quotation');
+    } else if (receipt.documentType === 'invoice') {
       setActiveScreen('create-invoice');
     } else {
       setActiveScreen('create-receipt');
@@ -1144,7 +1151,12 @@ export function App() {
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Documents/Brivu',
-        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentType:
+          receipt.documentType === 'quotation'
+            ? 'quotation'
+            : receipt.documentType === 'invoice'
+            ? 'invoice'
+            : 'receipt',
         documentNumber: receipt.receiptNumber,
       });
       // Pop up AdMob Interstitial Ad immediately on download
@@ -1345,13 +1357,55 @@ export function App() {
           />
         )}
 
+        {activeScreen === 'create-quotation' && (
+          <CreateInvoiceScreen
+            mode="quotation"
+            business={business}
+            defaultTemplate={settings.defaultTemplate}
+            defaultPaymentMethod={settings.defaultPaymentMethod}
+            editingInvoice={selectedReceipt}
+            duplicateFromInvoice={duplicateSeed}
+            onCancel={() => handleNavigate('home')}
+            onSaveOnly={() => {
+              refreshData();
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setActiveScreen('quotations');
+            }}
+            onSaveAndPreview={handleReceiptSaved}
+            onQuickDownload={async (qtn) => {
+              handleReceiptSaved(qtn);
+              try {
+                const res = await PdfGenerator.downloadPdf(qtn);
+                setAppDownloadModal({
+                  isOpen: true,
+                  fileName: res.filename,
+                  folderName: res.folder || 'Documents/Brivu',
+                  documentType: 'quotation',
+                  documentNumber: qtn.receiptNumber,
+                });
+              } catch (err) {
+                console.error('Download error:', err);
+              }
+            }}
+            onQuickShare={async (qtn) => {
+              handleReceiptSaved(qtn);
+              await handleShareReceipt(qtn);
+            }}
+          />
+        )}
+
         {activeScreen === 'preview-receipt' && (
           selectedReceipt ? (
             <ReceiptPreviewScreen
               receipt={selectedReceipt}
               onBack={() =>
                 handleNavigate(
-                  selectedReceipt.documentType === 'invoice' ? 'invoices' : 'receipts'
+                  selectedReceipt.documentType === 'quotation'
+                    ? 'quotations'
+                    : selectedReceipt.documentType === 'invoice'
+                    ? 'invoices'
+                    : 'receipts'
                 )
               }
               onEdit={handleEditReceipt}
@@ -1421,6 +1475,32 @@ export function App() {
               setSelectedReceipt(null);
               setDuplicateSeed(null);
               setActiveScreen('create-invoice');
+            }}
+            onEditProfile={() => handleNavigate('profile')}
+          />
+        )}
+
+        {activeScreen === 'quotations' && (
+          <ReceiptsHistoryScreen
+            receipts={receipts}
+            business={business}
+            mode="quotations"
+            onOpenReceipt={handleOpenReceipt}
+            onEditReceipt={handleEditReceipt}
+            onShareReceipt={handleShareReceipt}
+            onDuplicateReceipt={handleDuplicateReceipt}
+            onDownloadReceipt={handleDownloadReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
+            onOpenTemplates={() => handleNavigate('templates')}
+            onCreateNew={() => {
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setActiveScreen('create-quotation');
+            }}
+            onCreateInvoice={() => {
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setActiveScreen('create-quotation');
             }}
             onEditProfile={() => handleNavigate('profile')}
           />
@@ -1619,9 +1699,11 @@ export function App() {
           'receipts-invoices',
           'create-receipt',
           'create-invoice',
+          'create-quotation',
           'preview-receipt',
           'receipts',
           'invoices',
+          'quotations',
           'profile',
           'inventory',
           'templates',
@@ -1656,7 +1738,7 @@ export function App() {
       {activeScreen !== 'qr-customer-view' && <AdMobModalOverlay />}
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
-      {!['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
+      {!['create-receipt', 'create-invoice', 'create-quotation', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}

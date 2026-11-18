@@ -118,12 +118,12 @@ export interface BusinessProfile {
   defaultPaymentInstructions?: string;
 }
 
-export type DocumentType = 'receipt' | 'invoice';
+export type DocumentType = 'receipt' | 'invoice' | 'quotation';
 
 export interface Receipt {
   id: string;
   currency?: string; // Optional document-level currency override
-  documentType?: DocumentType; // 'receipt' | 'invoice' (default: 'receipt')
+  documentType?: DocumentType; // 'receipt' | 'invoice' | 'quotation' (default: 'receipt')
   receiptNumber: string; // or invoice number e.g. INV-01
   createdAt: string; // ISO string
   dueDate?: string; // ISO string or YYYY-MM-DD (for invoices)
@@ -577,6 +577,7 @@ export interface QRCodeHostedPage {
   googleMapsUrl?: string;
   wifiName?: string;
   wifiPassword?: string;
+  wifiSecurity?: 'WPA' | 'WEP' | 'nopass';
   openingHours?: string;
   socialLinks?: {
     instagram?: string;
@@ -586,6 +587,7 @@ export interface QRCodeHostedPage {
   };
   customSocialLinks?: QRBusinessSocialLink[];
   photos: QRBusinessPhoto[];
+  menuImages?: QRBusinessPhoto[];
   menuCategories: string[];
   menuItems: QRMenuItem[];
   websitesQrItems?: WebsiteAppQrItem[];
@@ -611,8 +613,10 @@ export type ActiveScreen =
   | 'receipts-invoices'
   | 'create-receipt'
   | 'create-invoice'
+  | 'create-quotation'
   | 'receipts'
   | 'invoices'
+  | 'quotations'
   | 'inventory'
   | 'preview-receipt'
   | 'profile'

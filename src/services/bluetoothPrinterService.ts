@@ -515,7 +515,7 @@ export class BluetoothPrinterService {
           <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
           
           <div style="display: flex; justify-content: space-between;">
-            <span>${escapeHtml(receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT')}:</span>
+            <span>${escapeHtml(receipt.documentType === 'quotation' ? 'QUOTATION' : receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT')}:</span>
             <span style="font-weight: bold;">${escapeHtml(receipt.receiptNumber)}</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
@@ -637,7 +637,7 @@ export class BluetoothPrinterService {
 
     // Left align
     pushBytes(0x1b, 0x61, 0x00);
-    pushString(`${receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT'}: ${receipt.receiptNumber}\n`);
+    pushString(`${receipt.documentType === 'quotation' ? 'QUOTATION' : receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT'}: ${receipt.receiptNumber}\n`);
     const dateStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleDateString() : '';
     const timeStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     pushString(`Date: ${dateStr}${timeStr ? ' ' + timeStr : ''}\n`);

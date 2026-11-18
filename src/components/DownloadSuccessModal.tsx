@@ -8,7 +8,7 @@ export interface DownloadSuccessModalProps {
   title?: string;
   fileName?: string;
   folderName?: string;
-  documentType?: 'receipt' | 'invoice' | 'file';
+  documentType?: 'receipt' | 'invoice' | 'quotation' | 'file';
   documentNumber?: string;
   customMessage?: string;
 }
@@ -25,12 +25,22 @@ export const DownloadSuccessModal: React.FC<DownloadSuccessModalProps> = ({
 }) => {
   if (!isOpen || typeof document === 'undefined') return null;
 
-  const docLabel = documentType === 'invoice' ? 'invoice' : documentType === 'file' ? 'file' : 'receipt';
-  const defaultTitle = documentType === 'invoice'
-    ? 'Invoice Saved Successfully!'
-    : documentType === 'file'
-    ? 'File Saved Successfully!'
-    : 'Receipt Saved Successfully!';
+  const docLabel =
+    documentType === 'quotation'
+      ? 'quotation'
+      : documentType === 'invoice'
+        ? 'invoice'
+        : documentType === 'file'
+          ? 'file'
+          : 'receipt';
+  const defaultTitle =
+    documentType === 'quotation'
+      ? 'Quotation Saved Successfully!'
+      : documentType === 'invoice'
+        ? 'Invoice Saved Successfully!'
+        : documentType === 'file'
+          ? 'File Saved Successfully!'
+          : 'Receipt Saved Successfully!';
 
   const modalContent = (
     <div

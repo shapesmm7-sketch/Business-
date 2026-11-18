@@ -45,7 +45,7 @@ import { t } from '../utils/i18n';
 interface ReceiptsHistoryScreenProps {
   receipts: Receipt[];
   business: BusinessProfile;
-  mode?: 'receipts' | 'invoices';
+  mode?: 'receipts' | 'invoices' | 'quotations';
   onOpenReceipt: (receipt: Receipt) => void;
   onEditReceipt: (receipt: Receipt) => void;
   onShareReceipt: (receipt: Receipt) => void;
@@ -176,6 +176,8 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   onOpenTemplates,
 }) => {
   const isInvoiceMode = mode === 'invoices';
+  const isQuotationMode = mode === 'quotations';
+  const isBillMode = isInvoiceMode || isQuotationMode;
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<DateFilterOption>('all');
   const [customDate, setCustomDate] = useState<string>(() => {
@@ -196,7 +198,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     isOpen: boolean;
     fileName?: string;
     folderName?: string;
-    documentType?: 'receipt' | 'invoice';
+    documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
 
@@ -251,7 +253,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
           isOpen: true,
           fileName: res.filename,
           folderName: res.folder || 'Documents/Brivu',
-          documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+          documentType:
+            receipt.documentType === 'quotation'
+              ? 'quotation'
+              : receipt.documentType === 'invoice'
+              ? 'invoice'
+              : 'receipt',
           documentNumber: receipt.receiptNumber,
         });
       }
@@ -273,7 +280,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         isOpen: true,
         fileName: res.filename,
         folderName: res.folder || 'Pictures/Brivu',
-        documentType: receipt.documentType === 'invoice' ? 'invoice' : 'receipt',
+        documentType:
+          receipt.documentType === 'quotation'
+            ? 'quotation'
+            : receipt.documentType === 'invoice'
+            ? 'invoice'
+            : 'receipt',
         documentNumber: receipt.receiptNumber,
       });
     } catch (err) {
@@ -301,10 +313,11 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     return (receipts || []).filter((receipt) => {
       if (!receipt || typeof receipt !== 'object') return false;
 
-      // Strictly separate receipts vs invoices
-      const isInvoice = receipt.documentType === 'invoice';
-      if (isInvoiceMode && !isInvoice) return false;
-      if (!isInvoiceMode && isInvoice) return false;
+      // Strictly separate receipts vs invoices vs quotations
+      const docType = receipt.documentType || 'receipt';
+      if (isQuotationMode && docType !== 'quotation') return false;
+      if (isInvoiceMode && docType !== 'invoice') return false;
+      if (!isQuotationMode && !isInvoiceMode && docType !== 'receipt') return false;
 
       // Status filtering
       const pStatus = receipt.paymentStatus || (receipt as any).status || 'paid';
@@ -362,14 +375,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
 
       return true;
     });
-  }, [receipts, searchQuery, dateFilter, customDate, statusFilter, isInvoiceMode]);
+  }, [receipts, searchQuery, dateFilter, customDate, statusFilter, isInvoiceMode, isQuotationMode]);
 
   // Total count of relevant docs
   const totalModeCount = useMemo(() => {
-    return receipts.filter((r) =>
-      isInvoiceMode ? r.documentType === 'invoice' : (r.documentType || 'receipt') === 'receipt'
-    ).length;
-  }, [receipts, isInvoiceMode]);
+    const targetType = isQuotationMode ? 'quotation' : isInvoiceMode ? 'invoice' : 'receipt';
+    return receipts.filter((r) => (r.documentType || 'receipt') === targetType).length;
+  }, [receipts, isInvoiceMode, isQuotationMode]);
 
   // Computed dynamic stats for the dashboard based on active filters
   const periodStats = useMemo(() => {
@@ -400,7 +412,16 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
 
   const getSalesLabel = () => {
     const lang = business?.language;
-    if (isInvoiceMode) {
+    if (isQuotationMode) {
+      switch (dateFilter) {
+        case 'today': return "Today's Quotations";
+        case 'yesterday': return "Yesterday's Quotations";
+        case 'week': return 'This Week Quotations';
+        case 'month': return 'This Month Quotations';
+        case 'year': return 'This Year Quotations';
+        default: return 'Total Quoted Value';
+      }
+    } else if (isInvoiceMode) {
       switch (dateFilter) {
         case 'today': return t('todays_invoiced', lang) || "Today's Invoiced";
         case 'yesterday': return t('yesterdays_invoiced', lang) || "Yesterday's Invoiced";
@@ -448,12 +469,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         {/* Subtle decorative glow */}
         <div
           className={`absolute -right-8 -top-8 w-36 h-36 rounded-full blur-2xl pointer-events-none ${
-            isInvoiceMode ? 'bg-indigo-500/15' : 'bg-emerald-500/15'
+            isBillMode ? 'bg-indigo-500/15' : 'bg-emerald-500/15'
           }`}
         />
         <div
           className={`absolute -left-8 -bottom-8 w-36 h-36 rounded-full blur-2xl pointer-events-none ${
-            isInvoiceMode ? 'bg-indigo-500/10' : 'bg-emerald-500/10'
+            isBillMode ? 'bg-indigo-500/10' : 'bg-emerald-500/10'
           }`}
         />
 
@@ -462,24 +483,29 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
             <div className="flex items-center gap-2">
               <span
                 className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
-                  isInvoiceMode
+                  isBillMode
                     ? 'text-indigo-400 bg-indigo-950/60 border-indigo-500/20'
                     : 'text-emerald-400 bg-emerald-950/60 border-emerald-500/20'
                 }`}
               >
-                <Sparkles className="w-3 h-3" /> {isInvoiceMode ? t('invoices_report', business?.language) : t('sales_report', business?.language)}
+                <Sparkles className="w-3 h-3" />{' '}
+                {isQuotationMode
+                  ? 'Quotations Report'
+                  : isInvoiceMode
+                  ? t('invoices_report', business?.language)
+                  : t('sales_report', business?.language)}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Sales / Invoiced Amount Card */}
+        {/* Sales / Invoiced / Quoted Amount Card */}
         <div className="bg-white/5 rounded-2xl p-4 border border-white/10 backdrop-blur-xs flex flex-col justify-between mt-4">
           <div className="flex items-center justify-between text-slate-400 mb-1.5 gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-300" title={getSalesLabel()}>
               {getSalesLabel()}
             </span>
-            <TrendingUp className={`w-4 h-4 shrink-0 ${isInvoiceMode ? 'text-indigo-400' : 'text-emerald-400'}`} />
+            <TrendingUp className={`w-4 h-4 shrink-0 ${isBillMode ? 'text-indigo-400' : 'text-emerald-400'}`} />
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-white">
             {formatCurrency(periodStats.sales, currency)}
@@ -487,7 +513,18 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
 
           <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/10 text-xs text-slate-400 font-medium">
             <span>
-              {periodStats.count} {isInvoiceMode ? (periodStats.count === 1 ? t('invoice', business?.language) : t('invoices', business?.language)) : (periodStats.count === 1 ? t('receipt', business?.language) : t('receipts', business?.language))}
+              {periodStats.count}{' '}
+              {isQuotationMode
+                ? periodStats.count === 1
+                  ? 'quotation'
+                  : 'quotations'
+                : isInvoiceMode
+                ? periodStats.count === 1
+                  ? t('invoice', business?.language)
+                  : t('invoices', business?.language)
+                : periodStats.count === 1
+                ? t('receipt', business?.language)
+                : t('receipts', business?.language)}
             </span>
             {isInvoiceMode && periodStats.outstanding > 0 && (
               <>
@@ -505,27 +542,48 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       <div className="flex items-center justify-between gap-2.5 pt-1">
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-white">
-            {isInvoiceMode ? t('invoices', business?.language) : t('receipts', business?.language)}
+            {isQuotationMode
+              ? 'Quotations'
+              : isInvoiceMode
+              ? t('invoices', business?.language)
+              : t('receipts', business?.language)}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {filteredReceipts.length} {isInvoiceMode ? t('invoices', business?.language) : t('receipts', business?.language)}
+            {filteredReceipts.length}{' '}
+            {isQuotationMode
+              ? filteredReceipts.length === 1
+                ? 'quotation'
+                : 'quotations'
+              : isInvoiceMode
+              ? t('invoices', business?.language)
+              : t('receipts', business?.language)}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {onOpenTemplates && (
             <button
-              id={isInvoiceMode ? 'btn-history-invoice-themes' : 'btn-history-receipt-themes'}
+              id={isQuotationMode ? 'btn-history-quotation-themes' : isInvoiceMode ? 'btn-history-invoice-themes' : 'btn-history-receipt-themes'}
               type="button"
               onClick={onOpenTemplates}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-bold shadow-2xs active:scale-95 transition"
             >
-              <Palette className={`w-4 h-4 ${isInvoiceMode ? 'text-indigo-500 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
+              <Palette className={`w-4 h-4 ${isBillMode ? 'text-indigo-500 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
               <span>{t('receipt_templates', business?.language)}</span>
             </button>
           )}
 
-          {isInvoiceMode ? (
+          {isQuotationMode ? (
+            <button
+              id="btn-history-create-quotation"
+              type="button"
+              onClick={onCreateInvoice || onCreateNew}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs active:scale-95 transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Quotation</span>
+            </button>
+          ) : isInvoiceMode ? (
             <button
               id="btn-history-create-invoice"
               type="button"
@@ -650,14 +708,20 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
       {filteredReceipts.length === 0 ? (
         <div className="text-center py-12 px-4 bg-white dark:bg-slate-800/80 rounded-3xl border border-slate-200/80 dark:border-slate-800">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto text-slate-400 mb-3">
-            {isInvoiceMode ? <FileText className="w-6 h-6 text-indigo-500" /> : <ReceiptIcon className="w-6 h-6 text-emerald-500" />}
+            {isBillMode ? <FileText className="w-6 h-6 text-indigo-500" /> : <ReceiptIcon className="w-6 h-6 text-emerald-500" />}
           </div>
           <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            {isInvoiceMode ? t('no_invoices_found', business?.language) : t('no_receipts_found', business?.language)}
+            {isQuotationMode
+              ? 'No quotations found'
+              : isInvoiceMode
+              ? t('no_invoices_found', business?.language)
+              : t('no_receipts_found', business?.language)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
             {searchQuery || dateFilter !== 'all' || statusFilter !== 'all'
               ? 'Try adjusting or clearing your search filter.'
+              : isQuotationMode
+              ? 'Start by tapping Create Quotation above.'
               : isInvoiceMode
               ? t('start_tapping_invoice', business?.language)
               : t('start_tapping_receipt', business?.language)}
@@ -670,7 +734,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                 setStatusFilter('all');
               }}
               className={`mt-3 text-xs font-semibold hover:underline ${
-                isInvoiceMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'
+                isBillMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'
               }`}
             >
               Reset all filters
@@ -684,7 +748,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                 onClick={onOpenTemplates}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 shadow-2xs transition active:scale-95"
               >
-                <Palette className={`w-4 h-4 ${isInvoiceMode ? 'text-indigo-500' : 'text-emerald-500'}`} />
+                <Palette className={`w-4 h-4 ${isBillMode ? 'text-indigo-500' : 'text-emerald-500'}`} />
                 <span>Browse Themes & Layouts</span>
               </button>
             </div>
@@ -729,7 +793,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                            {receipt.customerName ? receipt.customerName : (isInvoiceMode ? 'Client' : 'Walk-in Customer')}
+                            {receipt.customerName ? receipt.customerName : (isBillMode ? 'Client' : 'Walk-in Customer')}
                           </h3>
                         </div>
                         <div className="font-mono font-bold text-xs sm:text-sm text-slate-900 dark:text-white shrink-0">
@@ -744,10 +808,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           </span>
                           <span>•</span>
                           <span>{formatDateTime(receipt.createdAt || '')}</span>
-                          {receipt.dueDate && isInvoiceMode && (
+                          {receipt.dueDate && isBillMode && (
                             <>
                               <span>•</span>
-                              <span className="text-indigo-600 dark:text-indigo-400 font-bold">Due {receipt.dueDate}</span>
+                              <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                                {isQuotationMode ? `Valid ${receipt.dueDate}` : `Due ${receipt.dueDate}`}
+                              </span>
                             </>
                           )}
                           <span>•</span>
@@ -780,8 +846,8 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                 {/* EXPANDED DETAIL VIEW (Visible on Click) */}
                 {isExpanded && (
                   <div className="border-t border-black/5 dark:border-white/5 bg-white/70 dark:bg-slate-900/60 p-3.5 sm:p-4 animate-fadeIn space-y-3.5">
-                    {/* Invoice Specific Meta Header */}
-                    {isInvoiceMode && (receipt.poNumber || receipt.paymentTerms || receipt.dueDate) && (
+                    {/* Invoice / Quotation Specific Meta Header */}
+                    {isBillMode && (receipt.poNumber || receipt.paymentTerms || receipt.dueDate) && (
                       <div className="bg-indigo-50/60 dark:bg-indigo-950/30 rounded-xl p-2.5 border border-indigo-100 dark:border-indigo-900/50 flex flex-wrap items-center justify-between gap-2 text-xs">
                         {receipt.poNumber && (
                           <div className="text-slate-600 dark:text-slate-300">
@@ -795,7 +861,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                         )}
                         {receipt.dueDate && (
                           <div className="text-indigo-700 dark:text-indigo-300 font-semibold">
-                            Due Date: <strong>{receipt.dueDate}</strong>
+                            {isQuotationMode ? 'Valid Until:' : 'Due Date:'} <strong>{receipt.dueDate}</strong>
                           </div>
                         )}
                       </div>
@@ -870,8 +936,8 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                       ) : null}
 
                       <div className="flex justify-between text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white pt-1 border-t border-slate-100 dark:border-slate-700">
-                        <span>{isInvoiceMode ? 'Total Invoice Amount' : 'Total Payable'}</span>
-                        <span className={`font-mono ${isInvoiceMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        <span>{isQuotationMode ? 'Total Quotation Amount' : isInvoiceMode ? 'Total Invoice Amount' : 'Total Payable'}</span>
+                        <span className={`font-mono ${isBillMode ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                           {formatCurrency(safeTotal, currency)}
                         </span>
                       </div>
@@ -891,8 +957,8 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                       )}
                     </div>
 
-                    {/* Bank details if invoice */}
-                    {isInvoiceMode && receipt.bankDetails && (
+                    {/* Bank details if invoice or quotation */}
+                    {isBillMode && receipt.bankDetails && (
                       <div className="bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl p-2.5 border border-indigo-100 dark:border-indigo-900/50 text-xs">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 block mb-0.5">
                           Remittance Bank & Payment Details
@@ -935,9 +1001,9 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           id={`btn-open-doc-${receipt.id}`}
                           onClick={() => onOpenReceipt(receipt)}
                           className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold hover:bg-slate-800 dark:hover:bg-slate-100 shadow-xs active:scale-95 transition min-w-0"
-                          title={isInvoiceMode ? 'Preview Invoice' : 'Preview Receipt'}
+                          title={isQuotationMode ? 'Preview Quotation' : isInvoiceMode ? 'Preview Invoice' : 'Preview Receipt'}
                         >
-                          <Eye className={`w-3.5 h-3.5 shrink-0 ${isInvoiceMode ? 'text-indigo-400 dark:text-indigo-600' : 'text-emerald-400 dark:text-emerald-600'}`} />
+                          <Eye className={`w-3.5 h-3.5 shrink-0 ${isBillMode ? 'text-indigo-400 dark:text-indigo-600' : 'text-emerald-400 dark:text-emerald-600'}`} />
                           <span className="truncate">Preview</span>
                         </button>
 
@@ -946,7 +1012,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           onClick={() => handlePrintReceipt(receipt)}
                           disabled={printingId === receipt.id}
                           className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200/70 dark:border-purple-800/70 text-xs font-bold transition active:scale-95 disabled:opacity-50 min-w-0"
-                          title={isInvoiceMode ? 'Print Invoice (Bluetooth Thermal / Printer)' : 'Print Receipt (Bluetooth Thermal / Printer)'}
+                          title={isQuotationMode ? 'Print Quotation' : isInvoiceMode ? 'Print Invoice (Bluetooth Thermal / Printer)' : 'Print Receipt (Bluetooth Thermal / Printer)'}
                         >
                           {printingId === receipt.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
@@ -960,7 +1026,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           id={`btn-share-doc-${receipt.id}`}
                           onClick={() => onShareReceipt(receipt)}
                           className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition active:scale-95 border min-w-0 ${
-                            isInvoiceMode
+                            isBillMode
                               ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border-indigo-200/70 dark:border-indigo-800/70'
                               : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border-emerald-200/70 dark:border-emerald-800/70'
                           }`}
@@ -977,7 +1043,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           id={`btn-edit-doc-${receipt.id}`}
                           onClick={() => onEditReceipt(receipt)}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200/60 dark:border-amber-800/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
-                          title={isInvoiceMode ? 'Edit invoice details' : 'Edit receipt details'}
+                          title={isQuotationMode ? 'Edit quotation details' : isInvoiceMode ? 'Edit invoice details' : 'Edit receipt details'}
                         >
                           <Pencil className="w-3 h-3 shrink-0" />
                           <span className="truncate">Edit</span>
@@ -988,7 +1054,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           onClick={() => handleDownload(receipt)}
                           disabled={downloadingId === receipt.id}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0"
-                          title={isInvoiceMode ? 'Download PDF Invoice' : 'Download PDF Receipt'}
+                          title={isQuotationMode ? 'Download PDF Quotation' : isInvoiceMode ? 'Download PDF Invoice' : 'Download PDF Receipt'}
                         >
                           {downloadingId === receipt.id ? (
                             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
@@ -1003,7 +1069,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           onClick={() => handleSavePhoto(receipt)}
                           disabled={savingPhotoId === receipt.id}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200/60 dark:border-emerald-800/60 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0"
-                          title={isInvoiceMode ? 'Save Invoice Photo (PNG)' : 'Save Receipt Photo (PNG)'}
+                          title={isQuotationMode ? 'Save Quotation Photo (PNG)' : isInvoiceMode ? 'Save Invoice Photo (PNG)' : 'Save Receipt Photo (PNG)'}
                         >
                           {savingPhotoId === receipt.id ? (
                             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
@@ -1017,7 +1083,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           id={`btn-duplicate-doc-${receipt.id}`}
                           onClick={() => onDuplicateReceipt(receipt)}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200/60 dark:border-blue-800/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
-                          title={isInvoiceMode ? 'Duplicate as new invoice' : 'Duplicate as new receipt'}
+                          title={isQuotationMode ? 'Duplicate as new quotation' : isInvoiceMode ? 'Duplicate as new invoice' : 'Duplicate as new receipt'}
                         >
                           <Copy className="w-3 h-3 shrink-0" />
                           <span className="truncate">Duplicate</span>
@@ -1027,7 +1093,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           id={`btn-delete-doc-${receipt.id}`}
                           onClick={() => setDeletingReceipt(receipt)}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200/60 dark:border-rose-900/60 text-[11px] font-semibold transition active:scale-95 min-w-0"
-                          title={isInvoiceMode ? 'Delete Invoice' : 'Delete Receipt'}
+                          title={isQuotationMode ? 'Delete Quotation' : isInvoiceMode ? 'Delete Invoice' : 'Delete Receipt'}
                         >
                           <Trash2 className="w-3 h-3 shrink-0" />
                           <span className="truncate">Delete</span>
@@ -1070,11 +1136,11 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
             </div>
 
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Delete {isInvoiceMode ? 'Invoice' : 'Receipt'} {deletingReceipt.receiptNumber}?
+              Delete {isQuotationMode ? 'Quotation' : isInvoiceMode ? 'Invoice' : 'Receipt'} {deletingReceipt.receiptNumber}?
             </h3>
 
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Are you sure you want to permanently delete {isInvoiceMode ? 'invoice' : 'receipt'} for{' '}
+              Are you sure you want to permanently delete {isQuotationMode ? 'quotation' : isInvoiceMode ? 'invoice' : 'receipt'} for{' '}
               <strong className="text-slate-800 dark:text-slate-200">
                 {formatCurrency(deletingReceipt.total, currency)}
               </strong>

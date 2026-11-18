@@ -30,7 +30,7 @@ export interface SelectedStockItem {
 interface StockProductPickerModalProps {
   isOpen: boolean;
   currency: string;
-  documentType?: 'receipt' | 'invoice';
+  documentType?: 'receipt' | 'invoice' | 'quotation';
   onClose: () => void;
   onSelectProduct: (item: SelectedStockItem) => void;
   onSelectMultipleProducts?: (items: SelectedStockItem[]) => void;
