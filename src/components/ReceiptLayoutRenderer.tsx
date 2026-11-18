@@ -176,6 +176,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
   const isQuotation = documentType === 'quotation';
   const isInvoice = documentType === 'invoice';
+  const isBillStyle = isQuotation || isInvoice;
   const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
   let effectiveBadgeText = defaultBadge;
   if (customTheme?.badgeText && customTheme.badgeText.trim()) {
@@ -472,7 +473,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <span className="font-mono">{formatCurrency(total, currency)}</span>
             </div>
             <div className="flex justify-between text-slate-500 pt-0.5">
-              <span>Amount Paid ({paymentMethod}):</span>
+              <span>{isBillStyle ? 'Amount Paid:' : `Amount Paid (${paymentMethod || 'Cash'}):`}</span>
               <span>{formatCurrency(amountPaid, currency)}</span>
             </div>
           </div>
@@ -567,7 +568,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </span>
           </div>
           <div className="flex justify-between text-[11px] text-slate-400 pt-1">
-            <span>Paid via {paymentMethod}</span>
+            <span>{isBillStyle ? `Amount Paid: ${formatCurrency(amountPaid, currency)}` : `Paid via ${paymentMethod || 'Cash'}`}</span>
             <span>Balance: {formatCurrency(Math.max(0, total - amountPaid), currency)}</span>
           </div>
         </div>
@@ -870,7 +871,9 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <ShieldCheck className="w-4 h-4" />
               <span>Cryptographically Verified Transaction</span>
             </div>
-            <span className="uppercase tracking-wider">{paymentMethod}</span>
+            {!isBillStyle && paymentMethod ? (
+              <span className="uppercase tracking-wider">{paymentMethod}</span>
+            ) : null}
           </div>
           <div className="mt-3 pt-2 flex flex-col items-center justify-center">
             <ReceiptQrCodeSection data={data} darkBg={true} size={44} />
@@ -953,7 +956,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </span>
           </div>
           <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-1">
-            <span>Method: {paymentMethod}</span>
+            <span>{isBillStyle ? (isQuotation ? 'Quotation' : 'Invoice') : `Method: ${paymentMethod || 'Cash'}`}</span>
             <span>Thank you for preserving nature!</span>
           </div>
           <div className="pt-2.5 flex flex-col items-center justify-center">
@@ -1090,8 +1093,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             <span className="font-bold text-emerald-400">100% VALID</span>
           </div>
           <div>
-            <span className="text-slate-400 block text-[8px]">GATEWAY</span>
-            <span className="font-bold text-white">{paymentMethod}</span>
+            <span className="text-slate-400 block text-[8px]">{isBillStyle ? 'STATUS' : 'GATEWAY'}</span>
+            <span className="font-bold text-white">
+              {isQuotation
+                ? 'QUOTED'
+                : isInvoice
+                  ? (paymentStatus ? paymentStatus.toUpperCase() : 'DUE')
+                  : (paymentMethod || 'Cash')}
+            </span>
           </div>
         </div>
 
@@ -1350,7 +1359,13 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         {/* Swiss Barcode Block */}
         <div className="flex justify-between items-center text-[10px] font-mono pt-1">
-          <span>PAID VIA {paymentMethod.toUpperCase()}</span>
+          <span>
+            {isQuotation
+              ? 'OFFICIAL QUOTATION'
+              : isInvoice
+                ? 'OFFICIAL INVOICE'
+                : `PAID VIA ${(paymentMethod || 'CASH').toUpperCase()}`}
+          </span>
           <div className="tracking-[3px] font-bold select-none text-xs">
             ||| | || |||| | ||| |
           </div>
@@ -1667,8 +1682,8 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               </span>
             </div>
             <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-2 px-1">
-              <span>Payment: {paymentMethod}</span>
-              <span>Balance: {formatCurrency(0, currency)}</span>
+              <span>{isBillStyle ? `Amount Paid: ${formatCurrency(amountPaid, currency)}` : `Payment: ${paymentMethod || 'Cash'}`}</span>
+              <span>Balance: {formatCurrency(isBillStyle ? Math.max(0, total - amountPaid) : 0, currency)}</span>
             </div>
           </div>
         </div>

@@ -559,7 +559,7 @@ export class BluetoothPrinterService {
             <span>${receipt.businessSnapshot.currency || 'UGX'} ${receipt.total.toLocaleString()}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-            <span>Payment: ${escapeHtml(receipt.paymentMethod)}</span>
+            ${receipt.documentType === 'invoice' || receipt.documentType === 'quotation' ? '<span></span>' : `<span>Payment: ${escapeHtml(receipt.paymentMethod)}</span>`}
             <span style="text-transform: uppercase;">STATUS: ${escapeHtml(receipt.paymentStatus)}</span>
           </div>
           
@@ -683,7 +683,11 @@ export class BluetoothPrinterService {
 
     // Center align footer
     pushBytes(0x1b, 0x61, 0x01);
-    pushString(`Payment: ${receipt.paymentMethod} (${receipt.paymentStatus.toUpperCase()})\n`);
+    if (receipt.documentType === 'invoice' || receipt.documentType === 'quotation') {
+      pushString(`Status: ${receipt.paymentStatus.toUpperCase()}\n`);
+    } else {
+      pushString(`Payment: ${receipt.paymentMethod} (${receipt.paymentStatus.toUpperCase()})\n`);
+    }
     if (receipt.notes) {
       pushString(`${receipt.notes}\n`);
     }

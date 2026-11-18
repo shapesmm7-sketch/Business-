@@ -943,7 +943,7 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                       </div>
 
                       <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                        <span>Amount Paid ({receipt.paymentMethod || 'Cash'})</span>
+                        <span>{isBillMode ? 'Amount Paid' : `Amount Paid (${receipt.paymentMethod || 'Cash'})`}</span>
                         <span className="font-mono">{formatCurrency(safeAmountPaid, currency)}</span>
                       </div>
 

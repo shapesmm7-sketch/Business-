@@ -1018,6 +1018,7 @@ export function sanitizePublicQrPage(rawPage: any): any {
         category: p?.category || undefined,
         badge: p?.badge || undefined,
         caption: p?.caption || undefined,
+        version: typeof p?.version === 'number' ? p.version : undefined,
       };
     });
 
@@ -3031,17 +3032,31 @@ export default {
           key = `users/${encodeURIComponent(userEmail)}/logo.webp`;
         } else if (lowerFolder === 'menu') {
           fileType = 'menu_image';
-          const allowedUserPrefix = hasValidEmail ? `users/${encodeURIComponent(userEmail)}/menu/` : '';
+          const allowedUserPrefixes = hasValidEmail
+            ? [
+                `users/${encodeURIComponent(userEmail)}/menu/`,
+                `users/${userEmail}/menu/`,
+              ]
+            : [];
           const allowedPublicPrefix = cleanOwnerKey ? `menu-public/${cleanOwnerKey}/` : '';
-          const rawCustomKey = typeof customKey === 'string' ? decodeURIComponent(customKey).trim() : '';
-          const isAllowedCustom =
-            rawCustomKey &&
-            !rawCustomKey.includes('..') &&
-            ((allowedUserPrefix && rawCustomKey.startsWith(allowedUserPrefix)) ||
-              (allowedPublicPrefix && rawCustomKey.startsWith(allowedPublicPrefix)));
+          const rawCustomKey = typeof customKey === 'string' ? customKey.trim() : '';
+          let decodedCustomKey = rawCustomKey;
+          try {
+            decodedCustomKey = decodeURIComponent(rawCustomKey).trim();
+          } catch {}
+          const customCandidates = Array.from(new Set([rawCustomKey, decodedCustomKey].filter(Boolean)));
+          const matchedCustomKey = customCandidates.find(
+            (cand) =>
+              !cand.includes('..') &&
+              (allowedUserPrefixes.some((p) => cand.startsWith(p)) ||
+                (allowedPublicPrefix && cand.startsWith(allowedPublicPrefix)))
+          );
 
-          if (isAllowedCustom) {
-            key = rawCustomKey;
+          if (matchedCustomKey) {
+            key =
+              hasValidEmail && matchedCustomKey.startsWith(`users/${userEmail}/`)
+                ? `users/${encodeURIComponent(userEmail)}/${matchedCustomKey.slice(`users/${userEmail}/`.length)}`
+                : matchedCustomKey;
             cleanFilename = key.split('/').pop() || cleanFilename;
           } else {
             const extMatch = cleanFilename.match(/\.(webp|png|jpe?g|gif)$/i);
@@ -3106,6 +3121,13 @@ export default {
           await bucket.put(key, buffer, {
             httpMetadata: { contentType: mimeType },
           });
+
+          if (lowerFolder === 'menu') {
+            const altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
+            if (altKey && altKey !== key) {
+              await bucket.delete(altKey).catch(() => {});
+            }
+          }
         }
 
         // In D1: Store METADATA ONLY, NEVER store data_base64
@@ -3408,13 +3430,19 @@ export default {
       if (request.method === 'DELETE') {
         let deletedR2 = false;
         let deletedD1 = false;
-        const decodedKey = decodeURIComponent(key);
-        const encodedKey = encodeURIComponent(decodedKey);
+        let decodedKey = key;
+        try {
+          decodedKey = decodeURIComponent(key);
+        } catch {}
 
         if (bucket && key) {
           try {
             await bucket.delete(key);
             if (decodedKey !== key) await bucket.delete(decodedKey).catch(() => {});
+            const altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
+            if (altKey && altKey !== key && altKey !== decodedKey) {
+              await bucket.delete(altKey).catch(() => {});
+            }
             deletedR2 = true;
           } catch {}
         }
@@ -3478,6 +3506,8 @@ export default {
               headers.set('etag', object.httpEtag);
               if (isMenuAsset) {
                 headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+                headers.set('Pragma', 'no-cache');
+                headers.set('Expires', '0');
               }
               return new Response(object.body, { headers });
             }

@@ -551,6 +551,7 @@ export interface QRBusinessPhoto {
   caption?: string; // Alias for description / title
   category?: string;
   badge?: string;
+  version?: number;
 }
 
 export interface QRBusinessSocialLink {

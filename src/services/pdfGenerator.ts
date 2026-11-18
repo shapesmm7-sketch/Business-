@@ -1077,7 +1077,11 @@ export const PdfGenerator = {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
       doc.setTextColor(100, 116, 139);
-      doc.text(`Amount Paid (${receipt.paymentMethod || 'Bank'}):`, totalsX, y);
+      doc.text(
+        isBillStyle ? 'Amount Paid:' : `Amount Paid (${receipt.paymentMethod || 'Cash'}):`,
+        totalsX,
+        y
+      );
       doc.setTextColor(15, 23, 42);
       doc.text(formatCurrency(receipt.amountPaid, currency), pageWidth - margin - 4, y, { align: 'right' });
       y += 6;
@@ -1316,7 +1320,11 @@ export const PdfGenerator = {
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
-      doc.text(`Amount Paid (${receipt.paymentMethod || 'Bank'}):`, tX, y);
+      doc.text(
+        isBillStyle ? 'Amount Paid:' : `Amount Paid (${receipt.paymentMethod || 'Cash'}):`,
+        tX,
+        y
+      );
       doc.text(formatCurrency(receipt.amountPaid, currency), pageWidth - margin, y, { align: 'right' });
       y += 6;
     }
@@ -1530,7 +1538,11 @@ export const PdfGenerator = {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
       doc.setTextColor(107, 114, 128);
-      doc.text(`Paid via ${receipt.paymentMethod || 'Bank'}`, sumX, y);
+      doc.text(
+        isBillStyle ? 'Amount Paid' : `Paid via ${receipt.paymentMethod || 'Cash'}`,
+        sumX,
+        y
+      );
       doc.text(formatCurrency(receipt.amountPaid, currency), pageWidth - margin, y, { align: 'right' });
       y += 8;
     }

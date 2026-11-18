@@ -134,7 +134,11 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       const found = menuImages.find((img) => img.id === selectedMenuImgId);
       if (found) return found;
     }
-    return menuImages.find((img) => /^https?:\/\//i.test(img.url)) || menuImages[0];
+    return (
+      menuImages.find((img) => img.badge === 'active') ||
+      menuImages.find((img) => /^https?:\/\//i.test(img.url)) ||
+      menuImages[0]
+    );
   }, [menuImages, selectedMenuImgId]);
 
   const resolvePublicImageUrl = (rawUrl?: string): string => {
@@ -270,10 +274,38 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     }
   };
 
+  const normalizeR2KeyForCompare = (raw?: string): string => {
+    if (!raw) return '';
+    let decoded = raw.trim();
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {}
+    return decoded.replace(/%40/gi, '@').toLowerCase().trim();
+  };
+
+  const extractMenuSlotIdFromKey = (key?: string): string | undefined => {
+    if (!key) return undefined;
+    if (!key.includes('/menu/') && !key.startsWith('menu-public/')) return undefined;
+    const lastPart = key.split('/').pop() || '';
+    const cleanSlot = lastPart.replace(/\.(webp|png|jpe?g|gif)$/i, '').trim();
+    return cleanSlot || undefined;
+  };
+
   const getMenuPreviewSrc = (img: QRBusinessPhoto): string => {
-    const bust = previewCacheBust[img.id];
+    const bust = previewCacheBust[img.id] || img.version;
     if (!bust || !/^https?:\/\//i.test(img.url)) return img.url;
     return `${img.url}${img.url.includes('?') ? '&' : '?'}v=${bust}`;
+  };
+
+  const handleSelectActiveMenuImage = (imgId: string) => {
+    setSelectedMenuImgId(imgId);
+    if (menuImages.length > 1) {
+      const updated = menuImages.map((m) => ({
+        ...m,
+        badge: m.id === imgId ? 'active' : undefined,
+      }));
+      onUpdatePage({ menuImages: updated }, true);
+    }
   };
 
   // Upload one or more Hotel Menu Images directly to online image hosting so QR encodes the image URL itself
@@ -284,6 +316,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     setIsUploadingMenu(true);
     const newlyUploaded: QRBusinessPhoto[] = [];
     let lastUploadError = '';
+    const uploadTs = Date.now();
 
     try {
       for (let i = 0; i < files.length; i++) {
@@ -292,7 +325,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         const slotId =
           menuImages.length === 0 && i === 0
             ? 'menu_main'
-            : `menu_${Date.now()}_${i}`;
+            : `menu_${uploadTs}_${i}`;
 
         try {
           const uploadRes = await CloudflareService.uploadFile({
@@ -324,17 +357,26 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         if (imageUrl) {
           const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
           newlyUploaded.push({
-            id: `menu-img-${Date.now()}-${i}`,
+            id: `menu-img-${uploadTs}-${i}`,
             url: imageUrl,
             title: cleanName || `Menu Page ${menuImages.length + newlyUploaded.length + 1}`,
+            version: uploadTs,
           });
         }
       }
 
       if (newlyUploaded.length > 0) {
-        const updatedList = [...menuImages, ...newlyUploaded];
-        onUpdatePage({ menuImages: updatedList }, false);
-        setSelectedMenuImgId(newlyUploaded[newlyUploaded.length - 1].id);
+        const lastUploadedId = newlyUploaded[newlyUploaded.length - 1].id;
+        const updatedList = [...menuImages, ...newlyUploaded].map((m) => ({
+          ...m,
+          badge: m.id === lastUploadedId ? 'active' : undefined,
+        }));
+        onUpdatePage({ menuImages: updatedList }, true);
+        setSelectedMenuImgId(lastUploadedId);
+        setPreviewCacheBust((prev) => ({
+          ...prev,
+          ...Object.fromEntries(newlyUploaded.map((img) => [img.id, uploadTs])),
+        }));
         const hasPublicLink = newlyUploaded.some((img) => /^https?:\/\//i.test(img.url));
         if (hasPublicLink) {
           showToast(
@@ -360,7 +402,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     }
   };
 
-  // Replace an existing menu photo while keeping the EXACT same hosted link & QR code
+  // Replace an existing menu photo: deletes old photo (or overwrites exact slot) & shows new photo immediately
   const handleReplaceMenuImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const targetImg = replacingTargetRef.current;
@@ -370,11 +412,11 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     setReuploadingId(targetImg.id);
     try {
       const existingKey = extractR2KeyFromUrl(targetImg.url);
-      const slotId = existingKey ? undefined : targetImg.id || 'menu_main';
+      const slotId = extractMenuSlotIdFromKey(existingKey) || 'menu_main';
 
       const uploadRes = await CloudflareService.uploadFile({
         data: file,
-        filename: `${(targetImg.title || 'menu').replace(/[^a-zA-Z0-9]/g, '_')}.webp`,
+        filename: `${slotId}.webp`,
         mimeType: file.type || 'image/jpeg',
         folder: 'menu',
         force: true,
@@ -384,20 +426,40 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       });
 
       if (uploadRes.success && uploadRes.url) {
-        const newPublicUrl = existingKey
-          ? targetImg.url
-          : resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
+        const returnedUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
+        const returnedKey = uploadRes.key || extractR2KeyFromUrl(returnedUrl);
+        const sameKey =
+          Boolean(existingKey && returnedKey) &&
+          normalizeR2KeyForCompare(existingKey) === normalizeR2KeyForCompare(returnedKey);
 
+        // If the replacement landed on a different R2 key (or legacy path), delete the old photo from R2/D1 immediately
+        if (!sameKey && targetImg.url && (/^https?:\/\//i.test(targetImg.url) || targetImg.url.includes('/api/files/'))) {
+          await CloudflareService.deleteFile(targetImg.url).catch(() => {});
+        }
+
+        const newPublicUrl = sameKey ? targetImg.url : returnedUrl;
+        const replaceTs = Date.now();
         const updated = menuImages.map((m) =>
-          m.id === targetImg.id ? { ...m, url: newPublicUrl } : m
+          m.id === targetImg.id
+            ? {
+                ...m,
+                url: newPublicUrl,
+                version: replaceTs,
+                badge: 'active',
+              }
+            : {
+                ...m,
+                badge: undefined,
+              }
         );
-        onUpdatePage({ menuImages: updated }, false);
+
+        onUpdatePage({ menuImages: updated }, true);
         setSelectedMenuImgId(targetImg.id);
-        setPreviewCacheBust((prev) => ({ ...prev, [targetImg.id]: Date.now() }));
+        setPreviewCacheBust((prev) => ({ ...prev, [targetImg.id]: replaceTs }));
         showToast(
-          existingKey
+          sameKey
             ? 'Menu photo replaced! Your QR code & link stayed the same.'
-            : 'Menu photo replaced & image link QR is ready!'
+            : 'Menu photo replaced & old photo deleted!'
         );
       } else {
         const isAuthErr = /auth|sign in|logged/i.test(uploadRes.message || '');
@@ -430,10 +492,13 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       });
       if (uploadRes.success && uploadRes.url) {
         const publicUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
-        const updated = menuImages.map((m) => (m.id === img.id ? { ...m, url: publicUrl } : m));
-        onUpdatePage({ menuImages: updated }, false);
+        const hostTs = Date.now();
+        const updated = menuImages.map((m) =>
+          m.id === img.id ? { ...m, url: publicUrl, version: hostTs, badge: 'active' } : { ...m, badge: undefined }
+        );
+        onUpdatePage({ menuImages: updated }, true);
         setSelectedMenuImgId(img.id);
-        setPreviewCacheBust((prev) => ({ ...prev, [img.id]: Date.now() }));
+        setPreviewCacheBust((prev) => ({ ...prev, [img.id]: hostTs }));
         showToast('Menu photo hosted online! Direct image QR is ready.');
       } else {
         const isAuthErr = /auth|sign in|logged/i.test(uploadRes.message || '');
@@ -456,21 +521,25 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   };
 
   const handleSaveMenuImageTitle = () => {
-    onUpdatePage({ menuImages }, false);
+    onUpdatePage({ menuImages }, true);
     showToast('Menu saved!');
   };
 
   const handleDeleteMenuImage = (id: string) => {
     const target = menuImages.find((img) => img.id === id);
-    if (target?.url && target.url.startsWith('http')) {
+    if (target?.url && (/^https?:\/\//i.test(target.url) || target.url.includes('/api/files/'))) {
       CloudflareService.deleteFile(target.url).catch(() => {});
     }
-    const updated = menuImages.filter((img) => img.id !== id);
-    onUpdatePage({ menuImages: updated }, false);
+    const remaining = menuImages.filter((img) => img.id !== id);
+    const updated = remaining.map((m, idx) => ({
+      ...m,
+      badge: idx === 0 ? 'active' : m.badge === 'active' ? undefined : m.badge,
+    }));
+    onUpdatePage({ menuImages: updated }, true);
     if (selectedMenuImgId === id) {
       setSelectedMenuImgId(updated[0]?.id || null);
     }
-    showToast('Menu image removed');
+    showToast('Menu image deleted');
   };
 
   const handleSaveWifi = () => {
@@ -779,7 +848,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
                   return (
                     <div
                       key={img.id}
-                      onClick={() => setSelectedMenuImgId(img.id)}
+                      onClick={() => handleSelectActiveMenuImage(img.id)}
                       className={`p-2.5 rounded-2xl border space-y-2 transition cursor-pointer ${
                         isSelectedForQr
                           ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-400 dark:border-amber-600 ring-2 ring-amber-400/30'
