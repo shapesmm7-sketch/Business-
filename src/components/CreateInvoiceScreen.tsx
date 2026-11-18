@@ -55,6 +55,7 @@ interface CreateInvoiceScreenProps {
   defaultTemplate: ReceiptTemplateId;
   defaultPaymentMethod?: PaymentMethod;
   mode?: 'invoice' | 'quotation';
+  hideBackButton?: boolean;
   editingInvoice?: Receipt | null;
   duplicateFromInvoice?: Receipt | null;
   onCancel: () => void;
@@ -85,6 +86,7 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
   defaultTemplate,
   defaultPaymentMethod = 'Bank',
   mode = 'invoice',
+  hideBackButton = false,
   editingInvoice,
   duplicateFromInvoice,
   onCancel,
@@ -659,14 +661,16 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
       {/* Top Header Card */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-            title="Go Back"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+          {!hideBackButton && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              title="Go Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">

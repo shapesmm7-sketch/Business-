@@ -4,6 +4,7 @@ import { BottomNav } from './components/BottomNav';
 import { HomeScreen } from './components/HomeScreen';
 import { CreateReceiptScreen } from './components/CreateReceiptScreen';
 import { CreateInvoiceScreen } from './components/CreateInvoiceScreen';
+import { QuotationScreen, QuotationTab } from './components/QuotationScreen';
 import { ReceiptPreviewScreen } from './components/ReceiptPreviewScreen';
 import { ReceiptsHistoryScreen } from './components/ReceiptsHistoryScreen';
 import { BusinessProfileScreen } from './components/BusinessProfileScreen';
@@ -381,6 +382,7 @@ export function App() {
   // Current receipt or invoice for preview or editing
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
+  const [quotationTab, setQuotationTab] = useState<QuotationTab>('create');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
@@ -1070,6 +1072,11 @@ export function App() {
       setInventoryShowAddInline(false);
       setInventoryCategory(null);
     }
+    if (screen === 'create-quotation') {
+      setQuotationTab('create');
+    } else if (screen === 'quotations') {
+      setQuotationTab('list');
+    }
     setActiveScreen(screen);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1113,6 +1120,7 @@ export function App() {
     setSelectedReceipt(receipt);
     setDuplicateSeed(null);
     if (receipt.documentType === 'quotation') {
+      setQuotationTab('create');
       setActiveScreen('create-quotation');
     } else if (receipt.documentType === 'invoice') {
       setActiveScreen('create-invoice');
@@ -1126,6 +1134,7 @@ export function App() {
     setDuplicateSeed(receipt);
     setSelectedReceipt(null);
     if (receipt.documentType === 'quotation') {
+      setQuotationTab('create');
       setActiveScreen('create-quotation');
     } else if (receipt.documentType === 'invoice') {
       setActiveScreen('create-invoice');
@@ -1357,20 +1366,30 @@ export function App() {
           />
         )}
 
-        {activeScreen === 'create-quotation' && (
-          <CreateInvoiceScreen
-            mode="quotation"
+        {(activeScreen === 'create-quotation' || activeScreen === 'quotations') && (
+          <QuotationScreen
+            activeTab={quotationTab}
+            onTabChange={(tab) => {
+              if (tab === 'list') {
+                setSelectedReceipt(null);
+                setDuplicateSeed(null);
+              }
+              setQuotationTab(tab);
+              setActiveScreen('create-quotation');
+            }}
             business={business}
             defaultTemplate={settings.defaultTemplate}
             defaultPaymentMethod={settings.defaultPaymentMethod}
-            editingInvoice={selectedReceipt}
-            duplicateFromInvoice={duplicateSeed}
+            receipts={receipts}
+            editingQuotation={selectedReceipt}
+            duplicateFromQuotation={duplicateSeed}
             onCancel={() => handleNavigate('home')}
             onSaveOnly={() => {
               refreshData();
               setSelectedReceipt(null);
               setDuplicateSeed(null);
-              setActiveScreen('quotations');
+              setQuotationTab('list');
+              setActiveScreen('create-quotation');
             }}
             onSaveAndPreview={handleReceiptSaved}
             onQuickDownload={async (qtn) => {
@@ -1392,6 +1411,20 @@ export function App() {
               handleReceiptSaved(qtn);
               await handleShareReceipt(qtn);
             }}
+            onOpenReceipt={handleOpenReceipt}
+            onEditReceipt={handleEditReceipt}
+            onShareReceipt={handleShareReceipt}
+            onDuplicateReceipt={handleDuplicateReceipt}
+            onDownloadReceipt={handleDownloadReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
+            onCreateNewFromList={() => {
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setQuotationTab('create');
+              setActiveScreen('create-quotation');
+            }}
+            onOpenTemplates={() => handleNavigate('templates')}
+            onEditProfile={() => handleNavigate('profile')}
           />
         )}
 
@@ -1475,32 +1508,6 @@ export function App() {
               setSelectedReceipt(null);
               setDuplicateSeed(null);
               setActiveScreen('create-invoice');
-            }}
-            onEditProfile={() => handleNavigate('profile')}
-          />
-        )}
-
-        {activeScreen === 'quotations' && (
-          <ReceiptsHistoryScreen
-            receipts={receipts}
-            business={business}
-            mode="quotations"
-            onOpenReceipt={handleOpenReceipt}
-            onEditReceipt={handleEditReceipt}
-            onShareReceipt={handleShareReceipt}
-            onDuplicateReceipt={handleDuplicateReceipt}
-            onDownloadReceipt={handleDownloadReceipt}
-            onDeleteReceipt={handleDeleteReceipt}
-            onOpenTemplates={() => handleNavigate('templates')}
-            onCreateNew={() => {
-              setSelectedReceipt(null);
-              setDuplicateSeed(null);
-              setActiveScreen('create-quotation');
-            }}
-            onCreateInvoice={() => {
-              setSelectedReceipt(null);
-              setDuplicateSeed(null);
-              setActiveScreen('create-quotation');
             }}
             onEditProfile={() => handleNavigate('profile')}
           />
@@ -1738,7 +1745,10 @@ export function App() {
       {activeScreen !== 'qr-customer-view' && <AdMobModalOverlay />}
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
-      {!['create-receipt', 'create-invoice', 'create-quotation', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) && (
+      {!(
+        ['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) ||
+        (activeScreen === 'create-quotation' && quotationTab === 'create')
+      ) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}
