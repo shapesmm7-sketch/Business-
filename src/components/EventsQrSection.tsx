@@ -40,6 +40,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t } from '../utils/i18n';
 
 export type { EventQrItem };
@@ -88,6 +89,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
+  const [pendingDelete, setPendingDelete] = useState<
+    | { type: 'event'; item: EventQrItem }
+    | { type: 'photo'; index: number }
+    | null
+  >(null);
 
   const [selectedItemId, setSelectedItemId] = useState<string>(() => {
     const stored = StorageService.getEventsQrItems();
@@ -321,11 +327,16 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   };
 
   const handleRemovePhoto = (index: number) => {
+    setPendingDelete({ type: 'photo', index });
+  };
+
+  const confirmPendingPhotoRemove = (index: number) => {
     const photoToRemove = formPhotos[index];
     if (photoToRemove) {
       CloudflareService.deleteFile(photoToRemove).catch(() => {});
     }
     setFormPhotos((prev) => prev.filter((_, i) => i !== index));
+    showToast('Event photo removed.');
   };
 
   const handleSaveForm = (e: React.FormEvent) => {
@@ -427,7 +438,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const itemToDelete = items.find((i) => i.id === id);
-    if (itemToDelete?.photos && Array.isArray(itemToDelete.photos)) {
+    if (!itemToDelete) return;
+    setPendingDelete({ type: 'event', item: itemToDelete });
+  };
+
+  const confirmPendingEventDelete = (itemToDelete: EventQrItem) => {
+    const id = itemToDelete.id;
+    if (itemToDelete.photos && Array.isArray(itemToDelete.photos)) {
       for (const ph of itemToDelete.photos) {
         if (ph) CloudflareService.deleteFile(ph).catch(() => {});
       }
@@ -523,7 +540,6 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'Event QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     showToast(customQrName ? 'Event QR code image with name saved!' : 'Event QR code image saved!');
   };
@@ -1436,6 +1452,33 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         </div>,
         document.body
       )}
+
+      {/* Delete Event / Event Photo Confirmation Modal */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(pendingDelete)}
+        title={pendingDelete?.type === 'photo' ? 'Delete Event Photo?' : 'Delete Event QR Code?'}
+        description={
+          pendingDelete?.type === 'photo'
+            ? 'Are you sure you want to delete this event photo from cloud storage?'
+            : `Are you sure you want to permanently delete "${pendingDelete?.type === 'event' ? pendingDelete.item.title : ''}"?`
+        }
+        warningText={
+          pendingDelete?.type === 'photo'
+            ? 'Warning: Deleting this photo will remove it from your live Event QR code page and may affect guests scanning your Event QR.'
+            : 'Warning: Deleting this Event QR will stop your live QR code from working. Guests scanning printed invitations, posters, or shared links will no longer be able to open it.'
+        }
+        confirmLabel={pendingDelete?.type === 'photo' ? 'Delete Photo' : 'Delete Event QR'}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          if (pendingDelete.type === 'event') {
+            confirmPendingEventDelete(pendingDelete.item);
+          } else {
+            confirmPendingPhotoRemove(pendingDelete.index);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 };

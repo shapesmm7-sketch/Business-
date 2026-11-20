@@ -24,8 +24,14 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.util.Base64;
 import android.util.Log;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
@@ -90,6 +96,7 @@ public class BluetoothPrinterPlugin extends Plugin {
     private ScanCallback activeLeCallback = null;
     private BluetoothLeScanner activeLeScanner = null;
     private Runnable activeScanTimeoutRunnable = null;
+    private WebView activePrintWebView = null;
 
     private BluetoothAdapter getBluetoothAdapter() {
         Context ctx = getContext();
@@ -601,6 +608,109 @@ public class BluetoothPrinterPlugin extends Plugin {
         });
     }
 
+    @PluginMethod
+    public void systemPrint(PluginCall call) {
+        final String html = call.getString("html");
+        final String rawJobName = call.getString("jobName", "Brivu Document");
+        final String safeJobName = (rawJobName != null && !rawJobName.trim().isEmpty())
+            ? rawJobName.trim()
+            : "Brivu Document";
+
+        if (html == null || html.trim().isEmpty()) {
+            JSObject res = new JSObject();
+            res.put("success", false);
+            res.put("message", "No document content was provided to print.");
+            call.resolve(res);
+            return;
+        }
+
+        mainHandler.post(() -> {
+            Activity activity = getActivity();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                JSObject res = new JSObject();
+                res.put("success", false);
+                res.put("message", "Unable to open Android Print right now. Please try again.");
+                call.resolve(res);
+                return;
+            }
+
+            PrintManager printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
+            if (printManager == null) {
+                JSObject res = new JSObject();
+                res.put("success", false);
+                res.put("message", "Android Print Service is not available on this device.");
+                call.resolve(res);
+                return;
+            }
+
+            try {
+                if (activePrintWebView != null) {
+                    try {
+                        activePrintWebView.stopLoading();
+                        activePrintWebView.destroy();
+                    } catch (Exception ignored) {}
+                    activePrintWebView = null;
+                }
+
+                final WebView printWebView = new WebView(activity);
+                activePrintWebView = printWebView;
+
+                WebSettings webSettings = printWebView.getSettings();
+                webSettings.setJavaScriptEnabled(false);
+                webSettings.setAllowFileAccess(false);
+                webSettings.setLoadsImagesAutomatically(true);
+                webSettings.setDefaultTextEncodingName("utf-8");
+
+                final AtomicBoolean printStarted = new AtomicBoolean(false);
+                final Runnable launchPrintJob = () -> {
+                    if (!printStarted.compareAndSet(false, true)) {
+                        return;
+                    }
+                    try {
+                        Activity act = getActivity();
+                        if (act == null || act.isFinishing() || act.isDestroyed()) {
+                            JSObject res = new JSObject();
+                            res.put("success", false);
+                            res.put("message", "Print cancelled because screen was closed.");
+                            call.resolve(res);
+                            return;
+                        }
+                        PrintDocumentAdapter printAdapter = printWebView.createPrintDocumentAdapter(safeJobName);
+                        printManager.print(safeJobName, printAdapter, new PrintAttributes.Builder().build());
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        res.put("opened", true);
+                        res.put("message", "Android Print preview opened.");
+                        call.resolve(res);
+                    } catch (Exception printErr) {
+                        Log.e(TAG, "systemPrint launch error: " + printErr.getMessage(), printErr);
+                        JSObject res = new JSObject();
+                        res.put("success", false);
+                        res.put("message", "Could not open Android Print dialog: " + (printErr.getMessage() != null ? printErr.getMessage() : "Unknown error"));
+                        call.resolve(res);
+                    }
+                };
+
+                printWebView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        mainHandler.post(launchPrintJob);
+                    }
+                });
+
+                printWebView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+                // Safety fallback if external asset delays onPageFinished
+                mainHandler.postDelayed(launchPrintJob, 2500L);
+            } catch (Exception e) {
+                Log.e(TAG, "systemPrint setup error: " + e.getMessage(), e);
+                JSObject res = new JSObject();
+                res.put("success", false);
+                res.put("message", "Could not prepare document for Android Print.");
+                call.resolve(res);
+            }
+        });
+    }
+
     @SuppressLint("MissingPermission")
     private synchronized BluetoothSocket openRfcommSocket(BluetoothDevice device, String address) {
         if (activeSocket != null && address.equalsIgnoreCase(activeSocketAddress) && activeSocket.isConnected()) {
@@ -948,6 +1058,13 @@ public class BluetoothPrinterPlugin extends Plugin {
     protected void handleOnDestroy() {
         stopOngoingDiscovery(getBluetoothAdapter());
         closeActiveSocket();
+        if (activePrintWebView != null) {
+            try {
+                activePrintWebView.stopLoading();
+                activePrintWebView.destroy();
+            } catch (Exception ignored) {}
+            activePrintWebView = null;
+        }
         executor.shutdownNow();
         super.handleOnDestroy();
     }

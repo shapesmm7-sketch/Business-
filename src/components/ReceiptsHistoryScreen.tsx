@@ -31,6 +31,7 @@ import {
   Camera,
   CheckCircle2,
   Printer,
+  AlertCircle,
 } from 'lucide-react';
 import { BusinessProfile, Receipt } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
@@ -193,7 +194,12 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [savingPhotoId, setSavingPhotoId] = useState<string | null>(null);
   const [printingId, setPrintingId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastState, setToastState] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [printerFallbackModal, setPrinterFallbackModal] = useState<{
+    receipt: Receipt;
+    printerName: string;
+    errorMessage: string;
+  } | null>(null);
   const [downloadModalData, setDownloadModalData] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -202,42 +208,65 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
     documentNumber?: string;
   }>({ isOpen: false });
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
+  const showToast = (msg: string, isError = false) => {
+    setToastState({ text: msg, isError });
     setTimeout(() => {
-      setToastMessage((current) => (current === msg ? null : current));
+      setToastState((current) => (current?.text === msg ? null : current));
     }, 3800);
   };
 
   const currency = business?.currency || 'UGX';
 
-  const handlePrintReceipt = async (receipt: Receipt) => {
+  const handleOpenSystemPrint = async (receipt: Receipt) => {
+    setPrinterFallbackModal(null);
     setPrintingId(receipt.id);
     try {
-      const savedPrinter = StorageService.getSavedThermalPrinter();
-      if (savedPrinter) {
-        showToast(`Printing to ${savedPrinter.name}...`);
-        const res = await BluetoothPrinterService.printReceipt(savedPrinter, receipt);
-        showToast(res.message);
-      } else {
-        showToast('Spooling print document...');
-        const tempPrinter: any = {
-          id: 'system-default',
-          name: 'Thermal / System Printer',
-          paperWidth: '80mm',
-          autoPrintOnSave: false,
-          connectedAt: new Date().toISOString(),
-        };
-        const res = await BluetoothPrinterService.printReceipt(tempPrinter, receipt);
-        if (res?.message) {
-          showToast(res.message);
-        }
+      const res = await BluetoothPrinterService.printWithSystemDialog(receipt);
+      if (!res.success) {
+        showToast(res.message || 'Unable to open Android Print dialog.', true);
       }
     } catch (err: any) {
-      console.error('Print error:', err);
-      showToast(`Print note: ${err.message || 'Check printer connection'}`);
+      showToast(err?.message || 'Unable to open print dialog.', true);
     } finally {
       setPrintingId(null);
+    }
+  };
+
+  const handlePrintReceipt = async (receipt: Receipt) => {
+    const rawPrinter = StorageService.getSavedThermalPrinter();
+    const savedPrinter =
+      rawPrinter && rawPrinter.id && rawPrinter.id !== 'system-default' ? rawPrinter : undefined;
+
+    if (savedPrinter) {
+      setPrintingId(receipt.id);
+      try {
+        showToast(`Sending to ${savedPrinter.name}...`);
+        const res = await BluetoothPrinterService.printReceipt(savedPrinter, receipt);
+        if (res.success) {
+          showToast(res.message || `Printed successfully to ${savedPrinter.name}!`, false);
+        } else {
+          const msg = res.message || `Could not reach printer "${savedPrinter.name}".`;
+          showToast(msg, true);
+          setPrinterFallbackModal({
+            receipt,
+            printerName: savedPrinter.name,
+            errorMessage: msg,
+          });
+        }
+      } catch (err: any) {
+        console.error('Print error:', err);
+        const msg = `Print error: ${err?.message || 'Check printer connection'}`;
+        showToast(msg, true);
+        setPrinterFallbackModal({
+          receipt,
+          printerName: savedPrinter.name,
+          errorMessage: msg,
+        });
+      } finally {
+        setPrintingId(null);
+      }
+    } else {
+      await handleOpenSystemPrint(receipt);
     }
   };
 
@@ -452,13 +481,27 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
   return (
     <div className="space-y-4 pb-28 animate-fadeIn max-w-2xl mx-auto">
       {/* Toast Notification (Centered prominently so user sees it without scrolling) */}
-      {toastMessage && typeof document !== 'undefined' && createPortal(
+      {toastState && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
-          <div className="pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border border-emerald-500/40 flex items-center gap-3 backdrop-blur-md animate-bounce">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-              <CheckCircle2 className="w-5 h-5" />
+          <div
+            className={`pointer-events-auto max-w-sm sm:max-w-md w-auto px-5 py-3.5 rounded-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white text-xs sm:text-sm font-bold shadow-2xl border flex items-center gap-3 backdrop-blur-md ${
+              toastState.isError ? 'border-amber-500/50' : 'border-emerald-500/40'
+            }`}
+          >
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                toastState.isError
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+              }`}
+            >
+              {toastState.isError ? (
+                <AlertCircle className="w-5 h-5" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5" />
+              )}
             </div>
-            <span className="leading-snug">{toastMessage}</span>
+            <span className="leading-snug">{toastState.text}</span>
           </div>
         </div>,
         document.body
@@ -1176,6 +1219,42 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         documentType={downloadModalData.documentType}
         documentNumber={downloadModalData.documentNumber}
       />
+
+      {printerFallbackModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                Thermal Printer Not Connected
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {printerFallbackModal.errorMessage}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleOpenSystemPrint(printerFallbackModal.receipt)}
+                className="w-full py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print with Android Print Dialog</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrinterFallbackModal(null)}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

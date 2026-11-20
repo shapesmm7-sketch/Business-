@@ -34,6 +34,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t, formatNumber } from '../utils/i18n';
 
 export type SocialPlatformType = SocialPlatform;
@@ -364,6 +365,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<SocialQrItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<SocialQrItem | null>(null);
 
   // Colors for ALL Socials Hub QR
   const [allQrColors, setAllQrColors] = useState({
@@ -590,6 +592,14 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
 
   const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+    setItemToDelete(target);
+  };
+
+  const handleConfirmDeleteItem = () => {
+    if (!itemToDelete) return;
+    const id = itemToDelete.id;
     const remaining = items.filter((i) => i.id !== id);
     shouldPersistRef.current = true;
     setItems(remaining);
@@ -600,6 +610,7 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         setSelectedItemId('');
       }
     }
+    setItemToDelete(null);
     showToast('Social QR deleted.');
   };
 
@@ -660,7 +671,6 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'Social QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     showToast(customQrName ? 'Social QR code image with name saved!' : 'Social QR code image saved!');
   };
@@ -1432,6 +1442,17 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
         </div>,
         document.body
       )}
+
+      {/* Delete Social QR Confirmation Modal */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(itemToDelete)}
+        title="Delete Social QR Code?"
+        description={`Are you sure you want to permanently delete "${itemToDelete?.title || 'this social QR channel'}"?`}
+        warningText="Warning: Deleting this Social QR will stop your live QR code from working and remove it from your All Socials QR hub. Anyone scanning printed posters or shared links for this channel will no longer reach it."
+        confirmLabel="Delete Social QR"
+        onConfirm={handleConfirmDeleteItem}
+        onCancel={() => setItemToDelete(null)}
+      />
     </div>
   );
 };

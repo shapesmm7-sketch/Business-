@@ -36,6 +36,7 @@ import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t } from '../utils/i18n';
 
 export type { WebsiteAppQrItem };
@@ -82,6 +83,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   const [activeQrDataUrl, setActiveQrDataUrl] = useState<string>('');
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<WebsiteAppQrItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<WebsiteAppQrItem | null>(null);
 
   // Colors for ALL Hub QR
   const [allQrColors, setAllQrColors] = useState({
@@ -323,6 +325,14 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
 
   const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+    setItemToDelete(target);
+  };
+
+  const handleConfirmDeleteItem = () => {
+    if (!itemToDelete) return;
+    const id = itemToDelete.id;
     const remaining = items.filter((i) => i.id !== id);
     shouldPersistRef.current = true;
     setItems(remaining);
@@ -333,6 +343,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         setSelectedItemId('');
       }
     }
+    setItemToDelete(null);
     showToast('QR Code deleted.');
   };
 
@@ -393,7 +404,6 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     showToast(customQrName ? 'High-resolution QR code with name saved!' : 'High-resolution QR code saved!');
   };
@@ -1092,6 +1102,17 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         </div>,
         document.body
       )}
+
+      {/* Delete Website/App QR Confirmation Modal */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(itemToDelete)}
+        title="Delete Website / App QR Code?"
+        description={`Are you sure you want to permanently delete "${itemToDelete?.title || 'this QR link'}"?`}
+        warningText="Warning: Deleting this Website / App QR will stop your live QR code from working and remove it from your All Websites & Apps hub. Printed or shared QR codes for this link will no longer work."
+        confirmLabel="Delete QR Code"
+        onConfirm={handleConfirmDeleteItem}
+        onCancel={() => setItemToDelete(null)}
+      />
     </div>
   );
 };

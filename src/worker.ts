@@ -912,7 +912,9 @@ export async function getUserStorageUsageBytes(userEmail: string, env: Env): Pro
           AND id NOT LIKE '%/invoices/%'
           AND id NOT LIKE '%/quotations/%'
           AND id NOT LIKE '%/reports/%'
-          AND (LOWER(filename) NOT LIKE '%.pdf' OR id LIKE '%/qr_stands/%')
+          AND id NOT LIKE '%/qr_codes/%'
+          AND id NOT LIKE '%/qr_stands/%'
+          AND LOWER(filename) NOT LIKE '%.pdf'
       `).bind(cleanEmail, `users/${encodeURIComponent(cleanEmail)}/%`, `users/${cleanEmail}/%`).first();
       if (agg && Number(agg.cnt) > 0) {
         return Number(agg.total_bytes) || 0;
@@ -943,7 +945,9 @@ export async function getUserStorageUsageBytes(userEmail: string, env: Env): Pro
               lk.includes('/invoices/') ||
               lk.includes('/quotations/') ||
               lk.includes('/reports/') ||
-              (lk.endsWith('.pdf') && !lk.includes('/qr_stands/'))
+              lk.includes('/qr_codes/') ||
+              lk.includes('/qr_stands/') ||
+              lk.endsWith('.pdf')
             ) {
               continue;
             }
@@ -3041,8 +3045,6 @@ export default {
         }
 
         const ALLOWED_R2_FOLDERS = new Set([
-          'qr_codes',
-          'qr_stands',
           'photos',
           'menu',
           'events',
@@ -3056,15 +3058,14 @@ export default {
           /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(lowerFilename) ||
           (typeof data === 'string' && data.startsWith('data:image/'));
         const isDisallowedExt =
+          isPdfUpload ||
           lowerFilename.endsWith('.json') ||
           lowerFilename.endsWith('.csv') ||
           lowerFilename.endsWith('.txt');
         const isAllowedR2Upload =
           !isDisallowedExt &&
           ALLOWED_R2_FOLDERS.has(lowerFolder) &&
-          (lowerFolder === 'manual_uploads'
-            ? isImageUpload && !isPdfUpload
-            : isImageUpload || (isPdfUpload && lowerFolder === 'qr_stands') || lowerFolder === 'qr_codes');
+          isImageUpload;
 
         if (!isAllowedR2Upload) {
           return new Response(
@@ -3072,7 +3073,7 @@ export default {
               ok: false,
               success: false,
               error:
-                'Only QR code files and photos can be stored in Cloudflare R2. Receipts, invoices, quotations, and reports are generated on demand locally.',
+                'Only photos can be stored in Cloudflare R2. Receipts, invoices, quotations, reports, and generated QR PNG/PDF files are generated on demand locally.',
             }),
             { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
@@ -3301,7 +3302,12 @@ export default {
           lower.startsWith('quotations/') ||
           lower.includes('/reports/') ||
           lower.startsWith('reports/') ||
-          ((lower.endsWith('.pdf') || lowerMime === 'application/pdf') && !lower.includes('/qr_stands/'))
+          lower.includes('/qr_codes/') ||
+          lower.startsWith('qr_codes/') ||
+          lower.includes('/qr_stands/') ||
+          lower.startsWith('qr_stands/') ||
+          lower.endsWith('.pdf') ||
+          lowerMime === 'application/pdf'
         );
       };
 
@@ -4756,7 +4762,7 @@ export default {
         // 1. Clean R2 Bucket
         if (bucket && typeof bucket.list === 'function') {
           try {
-            const targetPrefixes = ['documents/', 'receipts/', 'invoices/', 'quotations/', 'reports/', 'qr_pages/'];
+            const targetPrefixes = ['documents/', 'receipts/', 'invoices/', 'quotations/', 'reports/', 'qr_codes/', 'qr_stands/', 'qr_pages/'];
             for (const pfx of targetPrefixes) {
               let cursor: string | undefined = undefined;
               let hasMore = true;
@@ -4804,7 +4810,9 @@ export default {
                     lowerKey.includes('/invoices/') ||
                     lowerKey.includes('/quotations/') ||
                     lowerKey.includes('/reports/') ||
-                    (lowerKey.endsWith('.pdf') && !lowerKey.includes('/qr_stands/')) ||
+                    lowerKey.includes('/qr_codes/') ||
+                    lowerKey.includes('/qr_stands/') ||
+                    lowerKey.endsWith('.pdf') ||
                     lowerKey.endsWith('.csv') ||
                     lowerKey.endsWith('.json') ||
                     (lowerKey.includes('/signatures/signature_') && !lowerKey.endsWith('signature.webp')) ||
@@ -4872,7 +4880,11 @@ export default {
                  OR id LIKE 'quotations/%'
                  OR id LIKE '%/reports/%'
                  OR id LIKE 'reports/%'
-                 OR (LOWER(filename) LIKE '%.pdf' AND id NOT LIKE '%/qr_stands/%')
+                 OR id LIKE '%/qr_codes/%'
+                 OR id LIKE 'qr_codes/%'
+                 OR id LIKE '%/qr_stands/%'
+                 OR id LIKE 'qr_stands/%'
+                 OR LOWER(filename) LIKE '%.pdf'
                  OR LOWER(filename) LIKE '%.csv'
                  OR LOWER(filename) LIKE '%.json'
             `).run();

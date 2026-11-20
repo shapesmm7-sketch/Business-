@@ -186,6 +186,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [showAddProductInline, setShowAddProductInline] = useState<boolean>(initialShowAddInline);
   const [isAddProductBarcodeScannerOpen, setIsAddProductBarcodeScannerOpen] = useState<boolean>(false);
   const [isSaleBarcodeScannerOpen, setIsSaleBarcodeScannerOpen] = useState<boolean>(false);
+  const [isDebtBarcodeScannerOpen, setIsDebtBarcodeScannerOpen] = useState<boolean>(false);
 
   // Edit Sale States
   const [editingSale, setEditingSale] = useState<InventorySale | null>(null);
@@ -7335,26 +7336,38 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                   {/* 3. Product Taken */}
                   <div>
-                    <div className="flex items-center justify-between mb-0.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                       <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Product Taken *
                       </label>
-                      <button
-                        id="btn-debt-pick-stock"
-                        type="button"
-                        onClick={() => {
-                          if (products.length === 0) {
-                            showToast('No products in stock yet. Please add products in the Stock tab first.');
-                          } else {
-                            setDebtStockSearchQuery('');
-                            setDebtStockPickerOpen(true);
-                          }
-                        }}
-                        className="text-[10px] font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1 transition py-0.5 px-2 rounded-lg bg-sky-50 dark:bg-slate-800 border border-sky-100 dark:border-slate-700 hover:bg-sky-100"
-                      >
-                        <Package className="w-3 h-3" />
-                        <span>Pick from stock</span>
-                      </button>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          id="btn-scan-barcode-debt"
+                          type="button"
+                          onClick={() => setIsDebtBarcodeScannerOpen(true)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-[10px] font-bold transition active:scale-95 shadow-2xs"
+                          title="Scan product barcode with camera"
+                        >
+                          <Scan className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          <span>{t('scan_item', business?.language) || 'Scan Barcode'}</span>
+                        </button>
+                        <button
+                          id="btn-debt-pick-stock"
+                          type="button"
+                          onClick={() => {
+                            if (products.length === 0) {
+                              showToast('No products in stock yet. Please add products in the Stock tab first.');
+                            } else {
+                              setDebtStockSearchQuery('');
+                              setDebtStockPickerOpen(true);
+                            }
+                          }}
+                          className="text-[10px] font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1 transition py-0.5 px-2 rounded-lg bg-sky-50 dark:bg-slate-800 border border-sky-100 dark:border-slate-700 hover:bg-sky-100"
+                        >
+                          <Package className="w-3 h-3" />
+                          <span>Pick from stock</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="relative">
                       <Package className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -7363,10 +7376,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         required
                         value={debtProductTaken}
                         onChange={(e) => setDebtProductTaken(e.target.value)}
-                        placeholder="Type product name or click 'Pick from stock'"
-                        className="w-full pl-8 pr-24 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
+                        placeholder="Type product name, scan barcode or pick from stock"
+                        className="w-full pl-8 pr-28 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-semibold focus:outline-none focus:ring-1.5 focus:ring-sky-500"
                       />
-                      <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                      <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsDebtBarcodeScannerOpen(true)}
+                          className="p-1 rounded-md text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition"
+                          title="Scan Barcode"
+                        >
+                          <Scan className="w-3.5 h-3.5" />
+                        </button>
                         {products.length > 0 ? (
                           <select
                             aria-label="Quick pick product from stock"
@@ -11363,6 +11384,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   const q = debtStockSearchQuery.toLowerCase();
                   return (
                     p.name.toLowerCase().includes(q) ||
+                    (p.itemId && p.itemId.toLowerCase().includes(q)) ||
+                    (p.barcode && p.barcode.toLowerCase().includes(q)) ||
                     (p.category && p.category.toLowerCase().includes(q))
                   );
                 })
@@ -11560,6 +11583,36 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             setSaleSearchQuery((prev) => (prev.trim() ? prev : `Barcode Item #${scannedCode}`));
             setShowSaleForm(true);
             setToastMessage(`Scanned barcode #${scannedCode} for sale`);
+          }
+        }}
+      />
+
+      {/* Barcode Scanner Modal for Add Debt */}
+      <BarcodeScannerModal
+        isOpen={isDebtBarcodeScannerOpen}
+        currency={currency}
+        onClose={() => setIsDebtBarcodeScannerOpen(false)}
+        onScanResult={({ scannedCode, matchedProduct }) => {
+          setShowDebtForm(true);
+          if (matchedProduct) {
+            const qty = debtQuantity > 0 ? debtQuantity : 1;
+            setDebtProductTaken(matchedProduct.name);
+            if (matchedProduct.sellingPrice > 0) {
+              setDebtAmount(String(matchedProduct.sellingPrice * qty));
+            }
+            if (matchedProduct.categoryId) {
+              setDebtCategoryId(matchedProduct.categoryId);
+            }
+            if (matchedProduct.sizes?.length && !debtSize) {
+              setDebtSize(matchedProduct.sizes[0]);
+            }
+            if (matchedProduct.color && !debtColor) {
+              setDebtColor(matchedProduct.color);
+            }
+            setToastMessage(`Scanned "${matchedProduct.name}" (#${matchedProduct.itemId}) for debt record`);
+          } else if (scannedCode) {
+            setDebtProductTaken((prev) => (prev.trim() ? prev : `Barcode Item #${scannedCode}`));
+            setToastMessage(`Scanned barcode #${scannedCode} added to debt`);
           }
         }}
       />

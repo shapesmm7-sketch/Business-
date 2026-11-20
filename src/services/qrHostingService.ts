@@ -1019,7 +1019,7 @@ export class QRHostingService {
     const tabSuffix = targetTab && targetTab !== 'all' ? `_${targetTab}` : '';
     const safeTitle = (page.title || 'QR_Poster').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeTitle}${tabSuffix}_QR_Poster.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'QR Code Poster', { folder: 'qr_stands' });
+    return await saveJsPdf(doc, pdfFilename, 'QR Code Poster');
   }
 
   /**
@@ -1180,7 +1180,7 @@ export class QRHostingService {
     doc.setTextColor(148, 163, 184);
     doc.text(`Powered by Brivu app • ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: 'center' });
 
-    return await saveJsPdf(doc, options.filename, options.documentTitle, { folder: 'qr_stands' });
+    return await saveJsPdf(doc, options.filename, options.documentTitle);
   }
 
   /**
@@ -1404,7 +1404,7 @@ export class QRHostingService {
 
     const safeItemName = item.name.replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safeItemName}_Item_QR_Poster.pdf`;
-    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Poster`, { folder: 'qr_stands' });
+    return await saveJsPdf(doc, pdfFilename, `${item.name} QR Poster`);
   }
 
   /**
@@ -1577,7 +1577,7 @@ export class QRHostingService {
 
     const safePhotoName = (photo.title || photo.description || 'Photo').replace(/[^a-zA-Z0-9]/g, '_');
     const pdfFilename = `${safePhotoName}_Photo_QR_Poster.pdf`;
-    return await saveJsPdf(doc, pdfFilename, 'Photo QR Poster', { folder: 'qr_stands' });
+    return await saveJsPdf(doc, pdfFilename, 'Photo QR Poster');
   }
 
   /**

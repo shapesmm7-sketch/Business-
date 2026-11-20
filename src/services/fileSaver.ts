@@ -79,7 +79,7 @@ export interface SaveFileOptions {
   openShareSheet?: boolean;
   /** Destination folder type in phone storage ('documents' -> Download/Brivu, 'photos' -> Pictures/Brivu) */
   destination?: 'documents' | 'photos';
-  /** Target Cloudflare R2 folder — ONLY QR code files and photos ('qr_codes', 'qr_stands', 'photos', 'menu', 'events', 'signatures', 'avatars'). Omit to save strictly on local device only. */
+  /** Target Cloudflare R2 folder — ONLY uploaded photos ('photos', 'menu', 'events', 'signatures', 'avatars'). Omit to save strictly on local device only. */
   folder?: string;
 }
 
@@ -141,7 +141,7 @@ export async function saveFileToCloudflare(options: {
     return {
       success: false,
       message:
-        'Only QR code files and photos can be saved to Cloudflare. Receipts, invoices, quotations, and reports are generated on demand locally.',
+        'Only photos can be saved to Cloudflare R2. Generated QR files, receipts, invoices, quotations, and reports are saved locally on demand.',
     };
   }
   const config = CloudflareService.getConfig();

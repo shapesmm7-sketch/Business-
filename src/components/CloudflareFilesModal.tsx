@@ -19,6 +19,7 @@ import {
 import { CloudflareService, StorageQuotaInfo } from '../services/cloudflareService';
 import { StorageService } from '../services/storage';
 import { CloudflareFileRecord } from '../types';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t } from '../utils/i18n';
 
 interface CloudflareFilesModalProps {
@@ -33,6 +34,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
   const [uploading, setUploading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<CloudflareFileRecord | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const currentLang = StorageService.getProfile()?.language || 'en';
 
@@ -74,8 +76,14 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
     }
   };
 
-  const handleDelete = async (key: string) => {
-    if (!confirm('Are you sure you want to delete this file from cloud storage?')) return;
+  const handleDelete = (file: CloudflareFileRecord) => {
+    setFileToDelete(file);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!fileToDelete) return;
+    const key = fileToDelete.key;
+    setFileToDelete(null);
     try {
       const success = await CloudflareService.deleteFile(key);
       if (success) {
@@ -99,7 +107,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       file.type.startsWith('image/') ||
       /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(file.name);
     if (!isImageFile) {
-      showToast('Only QR code files and photos can be uploaded to cloud storage.');
+      showToast('Only photos can be uploaded to cloud storage.');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -185,7 +193,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                QR code files and photos saved in cloud storage
+                Photos saved in cloud storage (logos, menu, event &amp; QR gallery)
               </p>
             </div>
           </div>
@@ -253,7 +261,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         {/* Action Bar (Upload & Filter) */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-            Saved Cloud QR &amp; Photos
+            Saved Cloud Photos
           </span>
 
           <input
@@ -310,9 +318,9 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 <Cloud className="w-7 h-7" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No QR files or photos in cloud storage yet</h4>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No photos in cloud storage yet</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  Only QR code files and photos are stored here. Receipts, invoices, quotations, and inventory PDFs are generated on demand from your saved records.
+                  Only uploaded photos (menu images, business logo, signatures, event &amp; QR photos) are stored here. Receipts, invoices, quotations, reports, and QR PNG/PDF downloads are generated on demand locally.
                 </p>
               </div>
               <button
@@ -320,7 +328,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 onClick={() => fileInputRef.current?.click()}
                 className="mt-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition"
               >
-                Upload Photo or QR
+                Upload Photo
               </button>
             </div>
           ) : (
@@ -384,7 +392,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                   {/* Delete */}
                   <button
                     type="button"
-                    onClick={() => handleDelete(file.key)}
+                    onClick={() => handleDelete(file)}
                     title="Delete File"
                     className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                   >
@@ -410,6 +418,17 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
           </button>
         </div>
       </div>
+
+      {/* Delete Cloud Photo Warning Modal */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(fileToDelete)}
+        title="Delete Cloud Photo?"
+        description={`Are you sure you want to permanently delete "${fileToDelete?.filename || 'this file'}" from cloud storage?`}
+        warningText="Warning: Deleting this photo will stop any live QR code (such as Menu, Business Gallery, or Event QR codes) using this image from working."
+        confirmLabel="Delete Photo"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setFileToDelete(null)}
+      />
     </div>,
     document.body
   );

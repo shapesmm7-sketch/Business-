@@ -46,6 +46,7 @@ import {
   Scan,
   RefreshCw,
   Mail,
+  AlertTriangle,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -60,6 +61,7 @@ import { WebsitesAppsQrSection } from './WebsitesAppsQrSection';
 import { SocialsQrSection } from './SocialsQrSection';
 import { EventsQrSection } from './EventsQrSection';
 import { QrQuickSections } from './QrQuickSections';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
@@ -271,6 +273,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   // QR Page deletion state (for custom in-app confirmation modal)
   const [pageToDelete, setPageToDelete] = useState<QRCodeHostedPage | null>(null);
+  const [pendingAssetDelete, setPendingAssetDelete] = useState<
+    | { type: 'logo' }
+    | { type: 'cover' }
+    | { type: 'photo'; id: string; title?: string }
+    | { type: 'item'; id: string; name?: string }
+    | { type: 'item_photo' }
+    | { type: 'social'; id: string; name?: string }
+    | { type: 'category'; name: string }
+    | null
+  >(null);
 
   // Business Socials Modal state
   const [showSocialModal, setShowSocialModal] = useState<boolean>(false);
@@ -601,6 +613,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleRemoveLogo = () => {
     if (!activePage) return;
+    setPendingAssetDelete({ type: 'logo' });
+  };
+
+  const confirmRemoveLogo = () => {
+    if (!activePage) return;
     if (activePage.logo) {
       CloudflareService.deleteFile(activePage.logo).catch(() => {});
     }
@@ -624,6 +641,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleRemoveCoverImage = () => {
+    if (!activePage) return;
+    setPendingAssetDelete({ type: 'cover' });
+  };
+
+  const confirmRemoveCoverImage = () => {
     if (!activePage) return;
     if (activePage.coverImage) {
       CloudflareService.deleteFile(activePage.coverImage).catch(() => {});
@@ -688,7 +710,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -718,7 +739,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} Quick QR Code` : 'Quick QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -836,7 +856,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : `${itemQrModalItem.name} QR Code`,
       destination: 'photos',
-      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -913,7 +932,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'Photo QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     if (res.success) {
       showToast(res.message);
@@ -1114,12 +1132,20 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const handleDeletePhoto = (photoId: string) => {
     if (!activePage) return;
     const photoToDelete = activePage.photos.find((p) => p.id === photoId);
+    if (!photoToDelete) return;
+    setPendingAssetDelete({ type: 'photo', id: photoId, title: photoToDelete.title });
+  };
+
+  const confirmDeletePhoto = (photoId: string) => {
+    if (!activePage) return;
+    const photoToDelete = activePage.photos.find((p) => p.id === photoId);
     if (photoToDelete?.url) {
       CloudflareService.deleteFile(photoToDelete.url).catch(() => {});
     }
     handleUpdateActivePage({
       photos: activePage.photos.filter((p) => p.id !== photoId),
     }, true);
+    showToast('Photo deleted');
   };
 
   // Menu Item Management
@@ -1265,9 +1291,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDeleteMenuItem = (id: string) => {
     if (!activePage) return;
+    const targetItem = activePage.menuItems.find((i) => i.id === id);
+    if (!targetItem) return;
+    setPendingAssetDelete({ type: 'item', id, name: targetItem.name });
+  };
+
+  const confirmDeleteMenuItem = (id: string) => {
+    if (!activePage) return;
     handleUpdateActivePage({
       menuItems: activePage.menuItems.filter((i) => i.id !== id),
     }, true);
+    showToast('Item deleted');
   };
 
   const handleToggleItemAvailability = (id: string) => {
@@ -1333,6 +1367,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleDeleteSocial = (id: string) => {
     const existingSocials = activePage.customSocialLinks || [];
+    const target = existingSocials.find((s) => s.id === id);
+    if (!target) return;
+    setPendingAssetDelete({ type: 'social', id, name: target.name });
+  };
+
+  const confirmDeleteSocial = (id: string) => {
+    const existingSocials = activePage.customSocialLinks || [];
     const updatedSocials = existingSocials.filter((s) => s.id !== id);
     handleUpdateActivePage({ customSocialLinks: updatedSocials }, true);
     showToast('Social link removed');
@@ -1374,6 +1415,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleDeleteCategory = (categoryToDelete: string) => {
+    if (!activePage) return;
+    setPendingAssetDelete({ type: 'category', name: categoryToDelete });
+  };
+
+  const confirmDeleteCategory = (categoryToDelete: string) => {
     if (!activePage) return;
     const updatedCats = (activePage.menuCategories || []).filter((c) => c !== categoryToDelete);
     handleUpdateActivePage({
@@ -3249,7 +3295,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   {itemPhotoUrl && !isUploadingToCloudflare && (
                     <button
                       type="button"
-                      onClick={() => setItemPhotoUrl('')}
+                      onClick={() => setPendingAssetDelete({ type: 'item_photo' })}
                       className="text-xs text-red-500 font-semibold hover:underline"
                     >
                       Remove
@@ -4358,7 +4404,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 Are you sure you want to permanently delete <strong className="text-slate-800 dark:text-slate-200">&quot;{pageToDelete.title}&quot;</strong>?
               </p>
 
-              <div className="mt-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 text-left space-y-1">
+              <div className="mt-3 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/70 text-left flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-snug">
+                  Warning: Deleting this QR page will stop your live QR codes (Business, Menu, Items &amp; Photos QRs) from working for anyone who scans them.
+                </p>
+              </div>
+
+              <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 text-left space-y-1">
                 <div className="flex items-center justify-between">
                   <span>Items attached:</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">{pageToDelete.menuItems?.length || 0}</span>
@@ -4392,6 +4445,65 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </div>,
         document.body
       )}
+
+      {/* Confirm Delete Modal for QR Photos, Logo, Cover, Items, Socials & Categories */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(pendingAssetDelete)}
+        title={
+          pendingAssetDelete?.type === 'logo'
+            ? 'Delete Business Logo?'
+            : pendingAssetDelete?.type === 'cover'
+            ? 'Delete Cover Banner?'
+            : pendingAssetDelete?.type === 'photo'
+            ? 'Delete QR Gallery Photo?'
+            : pendingAssetDelete?.type === 'item'
+            ? 'Delete Digital Item?'
+            : pendingAssetDelete?.type === 'item_photo'
+            ? 'Remove Item Photo?'
+            : pendingAssetDelete?.type === 'social'
+            ? 'Delete Social Link?'
+            : pendingAssetDelete?.type === 'category'
+            ? 'Delete Category?'
+            : 'Confirm Delete?'
+        }
+        description={
+          pendingAssetDelete?.type === 'logo'
+            ? 'Are you sure you want to delete your business logo from cloud storage and your hosted QR page?'
+            : pendingAssetDelete?.type === 'cover'
+            ? 'Are you sure you want to delete your cover banner from cloud storage and your hosted QR page?'
+            : pendingAssetDelete?.type === 'photo'
+            ? `Are you sure you want to delete "${pendingAssetDelete.title || 'this photo'}"?`
+            : pendingAssetDelete?.type === 'item'
+            ? `Are you sure you want to delete "${pendingAssetDelete.name || 'this item'}" from your live QR menu/catalog?`
+            : pendingAssetDelete?.type === 'item_photo'
+            ? 'Are you sure you want to remove this photo from the item?'
+            : pendingAssetDelete?.type === 'social'
+            ? `Are you sure you want to remove "${pendingAssetDelete.name || 'this social link'}" from your Business QR page?`
+            : pendingAssetDelete?.type === 'category'
+            ? `Are you sure you want to remove the "${pendingAssetDelete.name}" category from your QR menu?`
+            : 'Are you sure you want to delete this item?'
+        }
+        warningText={
+          pendingAssetDelete?.type === 'photo'
+            ? 'Warning: Deleting this photo will remove it from your live Photos QR page and stop any individual Photo QR code printed or shared for it from working.'
+            : pendingAssetDelete?.type === 'item'
+            ? 'Warning: Deleting this item will remove it from your live QR page and stop any QR code generated specifically for this item from working.'
+            : 'Warning: Deleting this will update or stop your live QR code content from displaying properly when customers scan it.'
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (!pendingAssetDelete) return;
+          if (pendingAssetDelete.type === 'logo') confirmRemoveLogo();
+          else if (pendingAssetDelete.type === 'cover') confirmRemoveCoverImage();
+          else if (pendingAssetDelete.type === 'photo') confirmDeletePhoto(pendingAssetDelete.id);
+          else if (pendingAssetDelete.type === 'item') confirmDeleteMenuItem(pendingAssetDelete.id);
+          else if (pendingAssetDelete.type === 'item_photo') setItemPhotoUrl('');
+          else if (pendingAssetDelete.type === 'social') confirmDeleteSocial(pendingAssetDelete.id);
+          else if (pendingAssetDelete.type === 'category') confirmDeleteCategory(pendingAssetDelete.name);
+          setPendingAssetDelete(null);
+        }}
+        onCancel={() => setPendingAssetDelete(null)}
+      />
         </>
       )}
 

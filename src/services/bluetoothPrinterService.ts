@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Receipt, ThermalPrinterDevice, BusinessProfile } from '../types';
+import { resolveEffectiveBusinessProfile } from './pdfGenerator';
 
 export interface AndroidBluetoothPrinter {
   name: string;
@@ -38,6 +39,11 @@ interface BluetoothPrinterPluginInterface {
     bluetoothDisabled?: boolean;
   }>;
   disconnectPrinter(): Promise<{ success: boolean }>;
+  systemPrint(options: { html: string; jobName: string }): Promise<{
+    success: boolean;
+    opened?: boolean;
+    message?: string;
+  }>;
 }
 
 const BluetoothPrinterNative = registerPlugin<BluetoothPrinterPluginInterface>('BluetoothPrinter');
@@ -290,8 +296,11 @@ export class BluetoothPrinterService {
     printer: ThermalPrinterDevice,
     receipt: Receipt
   ): Promise<{ success: boolean; message: string }> {
-    if (printer.id === 'system-default') {
-      return this.triggerThermalSystemPrint(receipt, printer);
+    if (!printer || !printer.id || printer.id === 'system-default') {
+      return {
+        success: false,
+        message: 'No Bluetooth thermal printer is connected. Use Android Print or connect a printer in Settings.',
+      };
     }
 
     // Native Android thermal printer (Classic RFCOMM SPP or BLE GATT via BluetoothPrinterPlugin)
@@ -459,137 +468,307 @@ export class BluetoothPrinterService {
   }
 
   /**
-   * System Thermal Spooler fallback with 58mm/80mm roll CSS
+   * Print using Android's native PrintManager dialog (on Android APK) or browser print dialog (on Web)
    */
-  private static triggerThermalSystemPrint(
-    receipt: Receipt,
-    printer: ThermalPrinterDevice
-  ): Promise<{ success: boolean; message: string }> {
-    return new Promise((resolve) => {
-      const is80 = printer.paperWidth === '80mm';
-      const widthCss = is80 ? '78mm' : '56mm';
+  static async printWithSystemDialog(
+    receipt: Receipt
+  ): Promise<{ success: boolean; opened?: boolean; unimplemented?: boolean; message: string }> {
+    const docLabel =
+      receipt.documentType === 'quotation'
+        ? 'Quotation'
+        : receipt.documentType === 'invoice'
+        ? 'Invoice'
+        : 'Receipt';
+    const jobName = `${docLabel}_${receipt.receiptNumber || receipt.id}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-      const dateStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
-      const timeStr = receipt.createdAt ? new Date(receipt.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    // 1. Native Android PrintManager via Capacitor plugin
+    if (this.isAndroidNative()) {
+      try {
+        const html = this.buildPrintableHtml(receipt, false);
+        const res = await BluetoothPrinterNative.systemPrint({ html, jobName });
+        if (res && res.success) {
+          return {
+            success: true,
+            opened: Boolean(res.opened ?? true),
+            message: res.message || 'Android Print preview opened.',
+          };
+        }
+        return {
+          success: false,
+          message: res?.message || 'Unable to open Android Print dialog.',
+        };
+      } catch (err: any) {
+        const msg = String(err?.message || err || '');
+        const isUnimplemented =
+          msg.toLowerCase().includes('not implemented') ||
+          msg.toLowerCase().includes('unimplemented');
+        return {
+          success: false,
+          unimplemented: isUnimplemented,
+          message: isUnimplemented
+            ? 'No Bluetooth thermal printer connected. Please rebuild/update the Brivu Android app to enable the Android Print dialog, or pair a Bluetooth printer in Settings.'
+            : msg || 'Could not open Android Print dialog.',
+        };
+      }
+    }
 
-      const printContainer = document.createElement('div');
-      printContainer.id = 'thermal-print-spooler';
-      printContainer.innerHTML = `
-        <style>
-          @media print {
-            body * { visibility: hidden; }
-            #thermal-print-spooler, #thermal-print-spooler * {
-              visibility: visible;
-            }
-            #thermal-print-spooler {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: ${widthCss};
-              margin: 0;
-              padding: 4px;
-              font-family: 'Courier New', Courier, monospace;
-              font-size: 11px;
-              line-height: 1.3;
-              color: #000;
-              background: #fff;
-            }
-            @page {
-              size: ${widthCss} auto;
-              margin: 0;
-            }
-          }
-        </style>
-        <div style="width: ${widthCss}; margin: 0 auto; padding: 4px; font-family: monospace; font-size: 11px;">
-          ${(() => {
-            const bName = (receipt.businessSnapshot?.name || '').trim();
-            if (bName && bName.toLowerCase() !== 'business name' && bName.toLowerCase() !== 'quickreceipt') {
-              return `<div style="text-align: center; font-weight: bold; font-size: 14px; text-transform: uppercase;">${escapeHtml(bName)}</div>`;
-            }
-            return '';
-          })()}
-          ${receipt.businessSnapshot.description ? `<div style="text-align: center; font-size: 10px;">${escapeHtml(receipt.businessSnapshot.description)}</div>` : ''}
-          ${receipt.businessSnapshot.phone ? `<div style="text-align: center; font-size: 10px;">Tel: ${escapeHtml(receipt.businessSnapshot.phone)}</div>` : ''}
-          ${receipt.businessSnapshot.address ? `<div style="text-align: center; font-size: 10px;">${escapeHtml(receipt.businessSnapshot.address)}</div>` : ''}
-          
-          <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-          
-          <div style="display: flex; justify-content: space-between;">
-            <span>${escapeHtml(receipt.documentType === 'quotation' ? 'QUOTATION' : receipt.documentType === 'invoice' ? 'INVOICE' : 'RECEIPT')}:</span>
-            <span style="font-weight: bold;">${escapeHtml(receipt.receiptNumber)}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between;">
-            <span>Date: ${escapeHtml(dateStr)}</span>
-            <span>${escapeHtml(timeStr)}</span>
-          </div>
-          ${receipt.customerName ? `<div>Client: <strong>${escapeHtml(receipt.customerName)}</strong></div>` : ''}
-          
-          <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-          
-          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-            <thead>
-              <tr style="border-bottom: 1px solid #000; text-align: left;">
-                <th style="padding-bottom: 2px;">Qty & Item</th>
-                <th style="text-align: right; padding-bottom: 2px;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${receipt.items
-                .map(
-                  (item) => `
-                <tr>
-                  <td style="padding: 3px 0;">
-                    ${item.quantity}x ${escapeHtml(item.name)}
-                    ${item.unitPrice ? `<br><span style="font-size: 9px; color: #555;">@ ${receipt.businessSnapshot.currency || 'UGX'} ${item.unitPrice.toLocaleString()}</span>` : ''}
-                  </td>
-                  <td style="text-align: right; vertical-align: top; padding: 3px 0; font-weight: bold;">
-                    ${receipt.businessSnapshot.currency || 'UGX'} ${item.subtotal.toLocaleString()}
-                  </td>
-                </tr>
-              `
-                )
-                .join('')}
-            </tbody>
-          </table>
-          
-          <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-          
-          <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: bold;">
-            <span>TOTAL:</span>
-            <span>${receipt.businessSnapshot.currency || 'UGX'} ${receipt.total.toLocaleString()}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-            ${receipt.documentType === 'invoice' || receipt.documentType === 'quotation' ? '<span></span>' : `<span>Payment: ${escapeHtml(receipt.paymentMethod)}</span>`}
-            <span style="text-transform: uppercase;">STATUS: ${escapeHtml(receipt.paymentStatus)}</span>
-          </div>
-          
-          ${receipt.notes ? `<div style="margin-top: 6px; font-size: 10px; font-style: italic;">Notes: ${escapeHtml(receipt.notes)}</div>` : ''}
-          
-          <div style="border-bottom: 1px dashed #000; margin: 6px 0;"></div>
-          <div style="text-align: center; font-size: 10px; font-weight: bold; margin-top: 4px;">
-            Thank you for your business!
-          </div>
-          <div style="text-align: center; font-size: 9px; color: #666; margin-top: 2px;">
-            Printed via ${escapeHtml(printer.name)}
-          </div>
-        </div>
-      `;
+    // 2. Desktop / Mobile Web Browser print dialog
+    if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.print === 'function') {
+      return new Promise((resolve) => {
+        const bodyFragment = this.buildPrintableHtml(receipt, true);
+        const existing = document.getElementById('brivu-system-print-spooler');
+        if (existing && existing.parentNode) {
+          existing.parentNode.removeChild(existing);
+        }
 
-      document.body.appendChild(printContainer);
+        const printContainer = document.createElement('div');
+        printContainer.id = 'brivu-system-print-spooler';
+        printContainer.innerHTML = `
+          <style>
+            #brivu-system-print-spooler { display: none; }
+            @media print {
+              body > *:not(#brivu-system-print-spooler) { display: none !important; }
+              #brivu-system-print-spooler {
+                display: block !important;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                background: #fff;
+                color: #0f172a;
+              }
+              @page {
+                size: auto;
+                margin: 12mm;
+              }
+            }
+          </style>
+          ${bodyFragment}
+        `;
 
-      setTimeout(() => {
-        window.print();
-        setTimeout(() => {
-          if (document.body.contains(printContainer)) {
-            document.body.removeChild(printContainer);
+        document.body.appendChild(printContainer);
+
+        let cleanedUp = false;
+        const cleanup = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
+          window.removeEventListener('afterprint', cleanup);
+          if (printContainer.parentNode) {
+            printContainer.parentNode.removeChild(printContainer);
           }
           resolve({
             success: true,
-            message: `One-tap print sent to ${printer.name}!`,
+            opened: true,
+            message: 'Print dialog opened.',
           });
-        }, 500);
-      }, 150);
-    });
+        };
+
+        window.addEventListener('afterprint', cleanup);
+        setTimeout(() => {
+          try {
+            window.print();
+          } catch (printErr: any) {
+            if (!cleanedUp) {
+              cleanedUp = true;
+              window.removeEventListener('afterprint', cleanup);
+              if (printContainer.parentNode) {
+                printContainer.parentNode.removeChild(printContainer);
+              }
+              resolve({
+                success: false,
+                message: printErr?.message || 'Unable to open browser print dialog.',
+              });
+            }
+            return;
+          }
+          setTimeout(cleanup, 1200);
+        }, 120);
+      });
+    }
+
+    return {
+      success: false,
+      message: 'No thermal printer is connected and system printing is unavailable.',
+    };
+  }
+
+  /**
+   * Build clean vector HTML for Android PrintManager / System Print
+   */
+  private static buildPrintableHtml(receipt: Receipt, fragmentOnly: boolean): string {
+    const biz = resolveEffectiveBusinessProfile(receipt);
+    const currency = receipt.currency || biz.currency || 'UGX';
+    const docTitle =
+      receipt.documentType === 'quotation'
+        ? 'QUOTATION'
+        : receipt.documentType === 'invoice'
+        ? 'INVOICE'
+        : 'RECEIPT';
+
+    const created = receipt.createdAt ? new Date(receipt.createdAt) : new Date();
+    const dateStr = !isNaN(created.getTime()) ? created.toLocaleDateString() : new Date().toLocaleDateString();
+    const timeStr = !isNaN(created.getTime())
+      ? created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '';
+
+    const accent =
+      receipt.accentColor ||
+      biz.accentColor ||
+      (receipt.documentType === 'invoice' || receipt.documentType === 'quotation' ? '#4f46e5' : '#059669');
+
+    const bName = (biz.name || '').trim();
+    const validBusinessName =
+      bName && bName.toLowerCase() !== 'business name' && bName.toLowerCase() !== 'quickreceipt'
+        ? bName
+        : '';
+
+    const subtotalVal = Number(receipt.subtotal ?? 0);
+    const discountVal = Number(receipt.discountAmount ?? 0);
+    const taxVal = Number(receipt.taxAmount ?? 0);
+    const shippingVal = Number(receipt.shippingFee ?? 0);
+    const totalVal = Number(receipt.total ?? 0);
+    const paidVal = Number(receipt.amountPaid ?? 0);
+    const balanceDueVal = Math.max(0, totalVal - paidVal);
+
+    const logoHtml =
+      biz.logo && (biz.logo.startsWith('data:image/') || biz.logo.startsWith('https://'))
+        ? `<img src="${escapeHtml(biz.logo)}" alt="Logo" style="max-height: 54px; max-width: 140px; object-fit: contain; margin-bottom: 8px;" />`
+        : '';
+
+    const bodyContent = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; max-width: 720px; margin: 0 auto; padding: 16px; line-height: 1.45; font-size: 13px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid ${escapeHtml(accent)}; padding-bottom: 14px; margin-bottom: 16px;">
+          <div style="flex: 1; min-width: 0;">
+            ${logoHtml}
+            ${validBusinessName ? `<div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.01em;">${escapeHtml(validBusinessName)}</div>` : ''}
+            ${biz.description ? `<div style="font-size: 12px; color: #475569; margin-top: 2px;">${escapeHtml(biz.description)}</div>` : ''}
+            <div style="font-size: 11px; color: #475569; margin-top: 6px; line-height: 1.5;">
+              ${biz.address ? `<div>${escapeHtml(biz.address)}</div>` : ''}
+              ${biz.phone ? `<div>Tel: ${escapeHtml(biz.phone)}</div>` : ''}
+              ${biz.email ? `<div>Email: ${escapeHtml(biz.email)}</div>` : ''}
+              ${biz.taxNumber ? `<div>TIN / Tax ID: ${escapeHtml(biz.taxNumber)}</div>` : ''}
+            </div>
+          </div>
+          <div style="text-align: right; flex-shrink: 0;">
+            <div style="display: inline-block; background: ${escapeHtml(accent)}; color: #ffffff; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 12px; border-radius: 6px;">${docTitle}</div>
+            <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 8px;">#${escapeHtml(receipt.receiptNumber || '')}</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 3px;">Date: ${escapeHtml(dateStr)}${timeStr ? ` • ${escapeHtml(timeStr)}` : ''}</div>
+            ${receipt.dueDate ? `<div style="font-size: 11px; color: #64748b;">Due: ${escapeHtml(receipt.dueDate)}</div>` : ''}
+            ${receipt.paymentTerms ? `<div style="font-size: 11px; color: #64748b;">Terms: ${escapeHtml(receipt.paymentTerms)}</div>` : ''}
+          </div>
+        </div>
+
+        ${(receipt.customerName || receipt.customerPhone || receipt.customerEmail || receipt.customerAddress) ? `
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px;">
+            <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 4px;">Billed To</div>
+            ${receipt.customerName ? `<div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(receipt.customerName)}</div>` : ''}
+            <div style="font-size: 11px; color: #475569;">
+              ${receipt.customerPhone ? `<span>Tel: ${escapeHtml(receipt.customerPhone)}</span>` : ''}
+              ${receipt.customerEmail ? `<span style="margin-left: 10px;">Email: ${escapeHtml(receipt.customerEmail)}</span>` : ''}
+              ${receipt.customerAddress ? `<div>${escapeHtml(receipt.customerAddress)}</div>` : ''}
+            </div>
+          </div>
+        ` : ''}
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+          <thead>
+            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+              <th style="text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; color: #475569;">Item</th>
+              <th style="text-align: center; padding: 8px 6px; font-size: 11px; text-transform: uppercase; color: #475569;">Qty</th>
+              <th style="text-align: right; padding: 8px 6px; font-size: 11px; text-transform: uppercase; color: #475569;">Unit Price</th>
+              <th style="text-align: right; padding: 8px 10px; font-size: 11px; text-transform: uppercase; color: #475569;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(receipt.items || [])
+              .map(
+                (item) => `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">${escapeHtml(item.name || '')}</td>
+                <td style="padding: 8px 6px; text-align: center; color: #334155;">${Number(item.quantity || 0)}</td>
+                <td style="padding: 8px 6px; text-align: right; color: #334155;">${escapeHtml(currency)} ${Number(item.unitPrice || 0).toLocaleString()}</td>
+                <td style="padding: 8px 10px; text-align: right; font-weight: 700; color: #0f172a;">${escapeHtml(currency)} ${Number(item.subtotal || 0).toLocaleString()}</td>
+              </tr>
+            `
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+          <div style="width: 260px; max-width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #f8fafc;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #475569; margin-bottom: 4px;">
+              <span>Subtotal</span>
+              <span>${escapeHtml(currency)} ${subtotalVal.toLocaleString()}</span>
+            </div>
+            ${discountVal > 0 ? `
+              <div style="display: flex; justify-content: space-between; font-size: 12px; color: #059669; margin-bottom: 4px;">
+                <span>Discount</span>
+                <span>-${escapeHtml(currency)} ${discountVal.toLocaleString()}</span>
+              </div>
+            ` : ''}
+            ${taxVal > 0 ? `
+              <div style="display: flex; justify-content: space-between; font-size: 12px; color: #475569; margin-bottom: 4px;">
+                <span>Tax / VAT${receipt.taxRate ? ` (${receipt.taxRate}%)` : ''}</span>
+                <span>+${escapeHtml(currency)} ${taxVal.toLocaleString()}</span>
+              </div>
+            ` : ''}
+            ${shippingVal > 0 ? `
+              <div style="display: flex; justify-content: space-between; font-size: 12px; color: #475569; margin-bottom: 4px;">
+                <span>Shipping</span>
+                <span>+${escapeHtml(currency)} ${shippingVal.toLocaleString()}</span>
+              </div>
+            ` : ''}
+            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #0f172a; border-top: 2px solid #cbd5e1; padding-top: 6px; margin-top: 6px;">
+              <span>TOTAL</span>
+              <span style="color: ${escapeHtml(accent)};">${escapeHtml(currency)} ${totalVal.toLocaleString()}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #475569; margin-top: 6px;">
+              <span>Amount Paid</span>
+              <span>${escapeHtml(currency)} ${paidVal.toLocaleString()}</span>
+            </div>
+            ${balanceDueVal > 0 ? `
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #dc2626; margin-top: 3px;">
+                <span>Balance Due</span>
+                <span>${escapeHtml(currency)} ${balanceDueVal.toLocaleString()}</span>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>${receipt.documentType === 'invoice' || receipt.documentType === 'quotation' ? '' : `Payment Method: <strong>${escapeHtml(receipt.paymentMethod || 'Cash')}</strong>`}</span>
+            <span>Status: <strong style="text-transform: uppercase;">${escapeHtml(receipt.paymentStatus || 'paid')}</strong></span>
+          </div>
+          ${receipt.amountInWords ? `<div style="margin-top: 4px;"><strong>Amount in Words:</strong> ${escapeHtml(receipt.amountInWords)}</div>` : ''}
+          ${receipt.bankDetails ? `<div style="margin-top: 6px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 6px 8px; color: #312e81;"><strong>Payment / Bank Details:</strong> ${escapeHtml(receipt.bankDetails)}</div>` : ''}
+          ${receipt.notes ? `<div style="margin-top: 6px;"><strong>Notes:</strong> ${escapeHtml(receipt.notes)}</div>` : ''}
+          ${biz.customFooter ? `<div style="margin-top: 10px; text-align: center; color: #64748b;">${escapeHtml(biz.customFooter)}</div>` : ''}
+          <div style="margin-top: 12px; text-align: center; font-weight: 700; color: #0f172a;">Thank you for your business!</div>
+        </div>
+      </div>
+    `;
+
+    if (fragmentOnly) {
+      return bodyContent;
+    }
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(docTitle)} ${escapeHtml(receipt.receiptNumber || '')}</title>
+  <style>
+    @page { size: auto; margin: 12mm; }
+    html, body { margin: 0; padding: 0; background: #ffffff; color: #0f172a; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+</body>
+</html>`;
   }
 
   /**
@@ -607,8 +786,9 @@ export class BluetoothPrinterService {
       }
     };
 
+    const biz = resolveEffectiveBusinessProfile(receipt);
     const cols = paperWidth === '80mm' ? 48 : 32;
-    const currency = receipt.businessSnapshot?.currency || 'UGX';
+    const currency = receipt.currency || biz.currency || 'UGX';
 
     // ESC @ (Initialize)
     pushBytes(0x1b, 0x40);
@@ -617,7 +797,7 @@ export class BluetoothPrinterService {
     pushBytes(0x1b, 0x61, 0x01);
 
     // Header Business Name
-    const bName = (receipt.businessSnapshot?.name || '').trim();
+    const bName = (biz.name || '').trim();
     if (bName && bName.toLowerCase() !== 'business name' && bName.toLowerCase() !== 'quickreceipt') {
       // Double height & width for header
       pushBytes(0x1d, 0x21, 0x11);
@@ -626,11 +806,11 @@ export class BluetoothPrinterService {
 
     // Normal text size
     pushBytes(0x1d, 0x21, 0x00);
-    if (receipt.businessSnapshot?.phone) {
-      pushString(`Tel: ${receipt.businessSnapshot.phone}\n`);
+    if (biz.phone) {
+      pushString(`Tel: ${biz.phone}\n`);
     }
-    if (receipt.businessSnapshot?.address) {
-      pushString(`${receipt.businessSnapshot.address}\n`);
+    if (biz.address) {
+      pushString(`${biz.address}\n`);
     }
 
     pushString('-'.repeat(cols) + '\n');

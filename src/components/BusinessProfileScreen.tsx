@@ -1448,11 +1448,6 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                       <div className="min-w-0 truncate">
                         <div className="truncate text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <span>{getLocalizedCountryName(c, profile.language)}</span>
-                          {c.popular && (
-                            <span className="px-1 py-0.2 rounded text-[9px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold">
-                              Popular
-                            </span>
-                          )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
                           {formatNumber(c.dialCode, profile.language)} • Auto Currency: {matchedCurrency || 'UGX'}

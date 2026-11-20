@@ -39,11 +39,17 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
 
   const effectiveName = cleanName(latest.name) || cleanName(snapshot.name) || '';
 
+  const hasLatestProfile = Boolean(latest && (latest.name || latest.phone || latest.email || latest.address));
+  const resolvedSignature =
+    latest.signature && latest.signature.trim() !== ''
+      ? latest.signature
+      : (hasLatestProfile ? undefined : snapshot.signature);
+
   return {
     name: effectiveName,
     description: (latest.description !== undefined && latest.description !== null && latest.description.trim() !== '') ? latest.description : (snapshot.description || ''),
     logo: latest.logo || snapshot.logo,
-    signature: latest.signature || snapshot.signature,
+    signature: resolvedSignature,
     phone: (latest.phone && latest.phone.trim() !== '') ? latest.phone : (snapshot.phone || ''),
     whatsapp: (latest.whatsapp && latest.whatsapp.trim() !== '') ? latest.whatsapp : (snapshot.whatsapp || ''),
     email: (latest.email && latest.email.trim() !== '') ? latest.email : (snapshot.email || ''),
@@ -178,9 +184,9 @@ export function calculateReceiptPageHeight(receipt: Receipt, template: ReceiptTe
   if (receipt.bankDetails) h += 10;
   if (receipt.notes) h += 10;
 
-  // 30-50px gap (~9mm) + Signature + Thank You
+  // 30-50px gap (~9mm) + Signature (if added) + Thank You
   h += 9;
-  const sigH = (biz.signature && biz.signature.startsWith('data:image')) ? 24 : 16;
+  const sigH = (biz.signature && biz.signature.trim().length > 0) ? 24 : 0;
   const thankH = (receipt.nonReturnable || receipt.nonRefundable) ? 18 : 12;
   h += Math.max(sigH, thankH);
 
@@ -307,29 +313,27 @@ export const PdfGenerator = {
     pageWidth: number,
     align: 'right' | 'center' = 'right'
   ): number {
-    let y = startY;
     const business = receipt.businessSnapshot;
     const hasSigImage = Boolean(business.signature && business.signature.startsWith('data:image'));
+    if (!hasSigImage) {
+      return startY;
+    }
 
-    y += 3;
+    let y = startY + 3;
     const sigW = 44;
     const sigH = 14;
     const lineW = 54;
     const sigX = align === 'center' ? (pageWidth - sigW) / 2 : pageWidth - margin - sigW;
     const lineX = align === 'center' ? (pageWidth - lineW) / 2 : pageWidth - margin - lineW;
 
-    if (hasSigImage) {
-      try {
-        let sigFormat = 'PNG';
-        if (business.signature!.includes('image/jpeg') || business.signature!.includes('image/jpg')) sigFormat = 'JPEG';
-        doc.addImage(business.signature!, sigFormat, sigX, y, sigW, sigH);
-        y += sigH + 1;
-      } catch (e) {
-        console.warn('Could not add signature image to PDF:', e);
-        y += 6;
-      }
-    } else {
-      y += 6;
+    try {
+      let sigFormat = 'PNG';
+      if (business.signature!.includes('image/jpeg') || business.signature!.includes('image/jpg')) sigFormat = 'JPEG';
+      doc.addImage(business.signature!, sigFormat, sigX, y, sigW, sigH);
+      y += sigH + 1;
+    } catch (e) {
+      console.warn('Could not add signature image to PDF:', e);
+      return startY;
     }
 
     // Signature line
@@ -1089,8 +1093,8 @@ export const PdfGenerator = {
     // 1. Financial info & Amount in Words
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Authorized Signature block BELOW Amount Paid in Words
-    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
 
     // 3. Thank You message and return policies BELOW Signature block
     y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
@@ -1331,8 +1335,8 @@ export const PdfGenerator = {
     // 1. Financial info
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Authorized Signature block BELOW Amount Paid in Words
-    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
 
     // 3. Thank You message BELOW Signature block
     y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
@@ -1549,8 +1553,8 @@ export const PdfGenerator = {
     // 1. Financial info
     y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
 
-    // 2. Authorized Signature block BELOW Amount Paid in Words
-    y = this.appendSignatureBlock(doc, receipt, y + 6, margin, pageWidth, 'right');
+    // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
 
     // 3. Thank You message BELOW Signature block
     y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
@@ -1778,11 +1782,11 @@ export const PdfGenerator = {
     doc.text(isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL PAYABLE:' : 'FINAL TOTAL:', boxX + 4, y + 25.5);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin - 4, y + 25.5, { align: 'right' });
 
-    // Official Stamp & Signature Area (on top of thank you message)
+    // Official Stamp & Signature Area (only rendered if user has added a signature)
     const stampY = y;
-    doc.setDrawColor(203, 213, 225);
-    doc.rect(margin, stampY, 70, 30, 'S');
     if (business.signature && business.signature.startsWith('data:image')) {
+      doc.setDrawColor(203, 213, 225);
+      doc.rect(margin, stampY, 70, 30, 'S');
       try {
         let sigFormat = 'PNG';
         if (business.signature.includes('image/jpeg') || business.signature.includes('image/jpg')) sigFormat = 'JPEG';
@@ -1794,11 +1798,6 @@ export const PdfGenerator = {
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
       doc.text('Official Stamp & Authorized Sign', margin + 35, stampY + 26, { align: 'center' });
-    } else {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Official Business Stamp & Sign', margin + 35, stampY + 16, { align: 'center' });
     }
 
     y = Math.max(y + 34, stampY + 34);

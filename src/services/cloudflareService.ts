@@ -13,8 +13,6 @@ export interface StorageQuotaInfo {
 }
 
 export const ALLOWED_CLOUDFLARE_R2_FOLDERS = new Set([
-  'qr_codes',
-  'qr_stands',
   'photos',
   'menu',
   'events',
@@ -40,19 +38,16 @@ export function isAllowedCloudflareR2Upload(
     lowerMime.startsWith('image/') ||
     /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(lowerName);
 
-  if (lowerName.endsWith('.json') || lowerName.endsWith('.csv') || lowerName.endsWith('.txt')) {
+  if (
+    isPdf ||
+    lowerName.endsWith('.json') ||
+    lowerName.endsWith('.csv') ||
+    lowerName.endsWith('.txt')
+  ) {
     return false;
   }
 
-  if (lowerFolder === 'manual_uploads') {
-    return isImage && !isPdf;
-  }
-
-  if (isPdf) {
-    return lowerFolder === 'qr_stands';
-  }
-
-  return isImage || lowerFolder === 'qr_codes';
+  return isImage;
 }
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
@@ -540,7 +535,7 @@ export const CloudflareService = {
       return {
         success: false,
         message:
-          'Cloudflare R2 only stores QR code files and photos. Receipts, invoices, quotations, and reports are generated on demand from local storage.',
+          'Cloudflare R2 only stores photos. Receipts, invoices, quotations, reports, and generated QR PNG/PDF files are created on demand locally.',
       };
     }
 

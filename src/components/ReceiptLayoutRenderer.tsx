@@ -63,16 +63,16 @@ const renderSupplementaryInfo = (
         </div>
       )}
 
-      {/* 1. Signature section: Placed ABOVE Thank You message and BELOW Amount Paid in Words */}
-      <div className="pt-2 pb-1 flex justify-end">
-        <div className="flex flex-col items-center">
-          {signature && (
+      {/* 1. Signature section: Only rendered if the user has added a signature in Business Profile */}
+      {signature && signature.trim() !== '' && (
+        <div className="pt-2 pb-1 flex justify-end">
+          <div className="flex flex-col items-center">
             <img src={signature} alt="Authorized Signature" className="max-h-9 w-auto max-w-[110px] object-contain mb-0.5" />
-          )}
-          <div className="w-28 border-b border-slate-300 dark:border-slate-600" />
-          <span className="text-[9px] text-slate-400 mt-0.5">Authorized Signature</span>
+            <div className="w-28 border-b border-slate-300 dark:border-slate-600" />
+            <span className="text-[9px] text-slate-400 mt-0.5">Authorized Signature</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Thank You message and Policies: Placed BELOW the Signature section */}
       {thankYouText && (
@@ -646,24 +646,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           ))}
         </div>
 
-        <div className="pt-3 grid grid-cols-2 gap-3 items-center text-xs">
-          <div className="w-full min-h-14 rounded-md border-2 border-dashed border-amber-600/40 dark:border-amber-400/40 flex flex-col items-center justify-center p-1.5 text-center bg-amber-50/40 dark:bg-amber-950/20">
-            {signature ? (
+        <div className={`pt-3 ${signature && signature.trim() !== '' ? 'grid grid-cols-2 gap-3 items-center' : 'flex justify-end'} text-xs`}>
+          {signature && signature.trim() !== '' && (
+            <div className="w-full min-h-14 rounded-md border-2 border-dashed border-amber-600/40 dark:border-amber-400/40 flex flex-col items-center justify-center p-1.5 text-center bg-amber-50/40 dark:bg-amber-950/20">
               <div className="flex flex-col items-center py-0.5">
                 <img src={signature} alt="Authorized Signature" className="max-h-8 w-auto max-w-[110px] object-contain mb-0.5" />
                 <span className="text-[7px] text-amber-700 dark:text-amber-400 font-bold uppercase tracking-wider">
                   OFFICIAL STAMP & SIGN
                 </span>
               </div>
-            ) : (
-              <>
-                <span className="text-[8px] font-bold uppercase text-amber-700 dark:text-amber-400 leading-tight">
-                  OFFICIAL BUSINESS STAMP
-                </span>
-                <span className="text-[7px] text-slate-400">& AUTHORIZED SIGNATURE</span>
-              </>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="space-y-1 text-right">
             <div className="text-slate-500 text-[11px]">Subtotal: {formatCurrency(subtotal, currency)}</div>

@@ -32,6 +32,7 @@ import { saveFile, shareContent } from '../services/fileSaver';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { TouchZoomLightbox } from './TouchZoomLightbox';
+import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t } from '../utils/i18n';
 
 export type QuickSectionMode = 'menu' | 'wifi' | 'contacts' | 'location';
@@ -73,6 +74,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   const [isEditingColors, setIsEditingColors] = useState<boolean>(false);
   const [isGettingGps, setIsGettingGps] = useState<boolean>(false);
   const [lightboxImg, setLightboxImg] = useState<{ url: string; title: string } | null>(null);
+  const [menuImageToDelete, setMenuImageToDelete] = useState<QRBusinessPhoto | null>(null);
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
@@ -533,8 +535,15 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
 
   const handleDeleteMenuImage = (id: string) => {
     const target = menuImages.find((img) => img.id === id);
-    if (target?.url && (/^https?:\/\//i.test(target.url) || target.url.includes('/api/files/'))) {
-      CloudflareService.deleteFile(target.url).catch(() => {});
+    if (!target) return;
+    setMenuImageToDelete(target);
+  };
+
+  const handleConfirmDeleteMenuImage = () => {
+    if (!menuImageToDelete) return;
+    const id = menuImageToDelete.id;
+    if (menuImageToDelete.url && (/^https?:\/\//i.test(menuImageToDelete.url) || menuImageToDelete.url.includes('/api/files/'))) {
+      CloudflareService.deleteFile(menuImageToDelete.url).catch(() => {});
     }
     const remaining = menuImages.filter((img) => img.id !== id);
     const updated = remaining.map((m, idx) => ({
@@ -545,6 +554,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     if (selectedMenuImgId === id) {
       setSelectedMenuImgId(updated[0]?.id || null);
     }
+    setMenuImageToDelete(null);
     showToast('Menu image deleted');
   };
 
@@ -633,7 +643,6 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       mimeType: 'image/png',
       title: customQrName ? `${customQrName} QR Code` : 'QR Code',
       destination: 'photos',
-      folder: 'qr_codes',
     });
     if (res.success) {
       if (mode === 'menu' && !hasHostedMenuImage) {
@@ -1458,6 +1467,17 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
           onClose={() => setLightboxImg(null)}
         />
       )}
+
+      {/* Delete Menu Photo Warning Modal */}
+      <QrDeleteConfirmModal
+        isOpen={Boolean(menuImageToDelete)}
+        title="Delete Menu Photo?"
+        description={`Are you sure you want to delete "${menuImageToDelete?.title || 'this menu photo'}"?`}
+        warningText="Warning: Deleting this menu photo will stop your live QR code from working. Customers scanning your printed or shared Menu QR code will no longer be able to view this menu."
+        confirmLabel="Delete Menu Photo"
+        onConfirm={handleConfirmDeleteMenuImage}
+        onCancel={() => setMenuImageToDelete(null)}
+      />
     </div>
   );
 };

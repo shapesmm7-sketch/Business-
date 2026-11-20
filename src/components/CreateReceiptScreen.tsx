@@ -485,7 +485,12 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
 
       // Check if default thermal printer has auto-print enabled
       const defaultPrinter = StorageService.getSavedThermalPrinter();
-      if (defaultPrinter && defaultPrinter.autoPrintOnSave) {
+      if (
+        defaultPrinter &&
+        defaultPrinter.id &&
+        defaultPrinter.id !== 'system-default' &&
+        defaultPrinter.autoPrintOnSave
+      ) {
         BluetoothPrinterService.printReceipt(defaultPrinter, receipt).catch((err) => {
           console.warn('Auto thermal print note:', err);
         });
