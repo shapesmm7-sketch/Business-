@@ -38,6 +38,7 @@ import {
   BarChart3,
   Boxes,
   Package,
+  Scan,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
@@ -55,6 +56,7 @@ import {
 import { StorageService } from '../services/storage';
 import { AdMobService } from '../services/admobService';
 import { StockProductPickerModal, SelectedStockItem } from './StockProductPickerModal';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 interface StaffManageModalProps {
   worker: BusinessWorker;
@@ -396,6 +398,7 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
   const [saleNotes, setSaleNotes] = useState<string>('');
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [isStockPickerOpen, setIsStockPickerOpen] = useState<boolean>(false);
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState<boolean>(false);
 
   // --- LOSSES FORM STATE ---
   const [showAddLoss, setShowAddLoss] = useState(false);
@@ -1584,7 +1587,6 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
         mimeType: 'image/png',
         title: `Staff Report - ${worker.name}`,
         destination: 'photos',
-        folder: 'reports',
       });
 
       if (res.success) {
@@ -2845,19 +2847,31 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
                           Item / Goods Sold *
                         </label>
-                        <button
-                          type="button"
-                          id="btn-pick-stock-staff-sale"
-                          onClick={() => setIsStockPickerOpen(true)}
-                          className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 flex items-center gap-1 transition hover:underline cursor-pointer"
-                        >
-                          <Boxes className="w-3.5 h-3.5 text-sky-500" />
-                          <span>Pick from Stock</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            id="btn-scan-barcode-staff-sale"
+                            onClick={() => setIsBarcodeScannerOpen(true)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-[11px] font-bold transition cursor-pointer"
+                            title="Scan product barcode with camera"
+                          >
+                            <Scan className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>Scan Barcode</span>
+                          </button>
+                          <button
+                            type="button"
+                            id="btn-pick-stock-staff-sale"
+                            onClick={() => setIsStockPickerOpen(true)}
+                            className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 flex items-center gap-1 transition hover:underline cursor-pointer"
+                          >
+                            <Boxes className="w-3.5 h-3.5 text-sky-500" />
+                            <span>Pick from Stock</span>
+                          </button>
+                        </div>
                       </div>
                       <input
                         type="text"
@@ -4279,6 +4293,24 @@ export const StaffManageModal: React.FC<StaffManageModalProps> = ({
           }
           setIsStockPickerOpen(false);
           showToast(`Selected "${item.name}" from stock`);
+        }}
+      />
+      {/* BARCODE SCANNER MODAL */}
+      <BarcodeScannerModal
+        isOpen={isBarcodeScannerOpen}
+        currency={currency}
+        onClose={() => setIsBarcodeScannerOpen(false)}
+        onScanResult={({ scannedCode, matchedProduct }) => {
+          if (matchedProduct) {
+            setSaleItem(matchedProduct.name);
+            if ((matchedProduct.sellingPrice || 0) > 0) {
+              setSaleAmount(String(matchedProduct.sellingPrice));
+            }
+            showToast(`Selected "${matchedProduct.name}" from scanned barcode`);
+          } else if (scannedCode) {
+            setSaleItem(`Barcode Item #${scannedCode}`);
+            showToast(`Added scanned barcode #${scannedCode}`);
+          }
         }}
       />
     </div>

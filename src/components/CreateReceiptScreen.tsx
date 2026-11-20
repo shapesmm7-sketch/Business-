@@ -737,7 +737,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               title="Scan product barcode with camera"
             >
               <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>{t('scan_item', business?.language)}</span>
+              <span>{t('scan_item', business?.language) || 'Scan Barcode'}</span>
             </button>
 
             <button

@@ -906,7 +906,13 @@ export async function getUserStorageUsageBytes(userEmail: string, env: Env): Pro
       const agg: any = await db.prepare(`
         SELECT COALESCE(SUM(size), 0) as total_bytes, COUNT(*) as cnt
         FROM files
-        WHERE user_email = ? OR id LIKE ? OR id LIKE ?
+        WHERE (user_email = ? OR id LIKE ? OR id LIKE ?)
+          AND id NOT LIKE '%/documents/%'
+          AND id NOT LIKE '%/receipts/%'
+          AND id NOT LIKE '%/invoices/%'
+          AND id NOT LIKE '%/quotations/%'
+          AND id NOT LIKE '%/reports/%'
+          AND (LOWER(filename) NOT LIKE '%.pdf' OR id LIKE '%/qr_stands/%')
       `).bind(cleanEmail, `users/${encodeURIComponent(cleanEmail)}/%`, `users/${cleanEmail}/%`).first();
       if (agg && Number(agg.cnt) > 0) {
         return Number(agg.total_bytes) || 0;
@@ -930,6 +936,17 @@ export async function getUserStorageUsageBytes(userEmail: string, env: Env): Pro
         const listed: any = await bucket.list({ prefix: pfx, limit: 1000, cursor });
         if (listed && Array.isArray(listed.objects)) {
           for (const obj of listed.objects) {
+            const lk = String(obj.key || '').toLowerCase();
+            if (
+              lk.includes('/documents/') ||
+              lk.includes('/receipts/') ||
+              lk.includes('/invoices/') ||
+              lk.includes('/quotations/') ||
+              lk.includes('/reports/') ||
+              (lk.endsWith('.pdf') && !lk.includes('/qr_stands/'))
+            ) {
+              continue;
+            }
             if (!seenKeys.has(obj.key)) {
               seenKeys.add(obj.key);
               totalBytes += (Number(obj.size) || 0);
@@ -2612,8 +2629,14 @@ export default {
           });
         }
 
+        const isQuotation = receipt?.documentType === 'quotation';
         const isInvoice = receipt?.documentType === 'invoice';
-        const docTitle = isInvoice ? `Invoice #${receipt?.receiptNumber || receiptId}` : `Receipt #${receipt?.receiptNumber || receiptId}`;
+        const isBillStyle = isQuotation || isInvoice;
+        const docTitle = isQuotation
+          ? `Quotation #${receipt?.receiptNumber || receiptId}`
+          : isInvoice
+          ? `Invoice #${receipt?.receiptNumber || receiptId}`
+          : `Receipt #${receipt?.receiptNumber || receiptId}`;
         const bizName = receipt?.businessSnapshot?.name || 'Brivu Business';
         const currency = receipt?.businessSnapshot?.currency || 'UGX';
         const total = receipt?.total || 0;
@@ -2717,12 +2740,12 @@ export default {
           ${receipt.businessSnapshot?.phone ? `Tel: ${receipt.businessSnapshot.phone}` : ''}
           ${receipt.businessSnapshot?.taxNumber ? `<br>TIN/VAT: ${receipt.businessSnapshot.taxNumber}` : ''}
         </div>
-        <div class="badge ${isInvoice ? 'invoice' : ''}">${isInvoice ? 'Official Invoice' : 'Verified Receipt'}</div>
+        <div class="badge ${isBillStyle ? 'invoice' : ''}">${isQuotation ? 'Official Quotation' : isInvoice ? 'Official Invoice' : 'Verified Receipt'}</div>
       </div>
 
       <div class="meta-box">
         <div class="meta-row">
-          <span class="label">${isInvoice ? 'Invoice No' : 'Receipt No'}</span>
+          <span class="label">${isQuotation ? 'Quotation No' : isInvoice ? 'Invoice No' : 'Receipt No'}</span>
           <span class="value">${receipt.receiptNumber || 'N/A'}</span>
         </div>
         <div class="meta-row">
@@ -2741,13 +2764,15 @@ export default {
             <span class="value">${receipt.customerPhone}</span>
           </div>
         ` : ''}
-        <div class="meta-row">
-          <span class="label">Payment Method</span>
-          <span class="value">${receipt.paymentMethod || 'Cash'}</span>
-        </div>
+        ${!isBillStyle ? `
+          <div class="meta-row">
+            <span class="label">Payment Method</span>
+            <span class="value">${receipt.paymentMethod || 'Cash'}</span>
+          </div>
+        ` : ''}
         ${receipt.dueDate ? `
           <div class="meta-row">
-            <span class="label">Due Date</span>
+            <span class="label">${isQuotation ? 'Valid Until' : 'Due Date'}</span>
             <span class="value">${receipt.dueDate}</span>
           </div>
         ` : ''}
@@ -2983,7 +3008,7 @@ export default {
           filename,
           data,
           mimeType = 'application/octet-stream',
-          folder = 'receipts',
+          folder = 'photos',
           customKey,
           slotId,
           ownerKey,
@@ -2998,8 +3023,9 @@ export default {
           ''
         ).toLowerCase().trim();
 
-        const lowerFolder = (folder || '').toLowerCase();
-        const lowerFilename = (filename || '').toLowerCase();
+        const lowerFolder = (folder || '').toLowerCase().trim();
+        const lowerFilename = (filename || '').toLowerCase().trim();
+        const lowerMime = String(mimeType || '').toLowerCase().trim();
         const hasValidEmail = Boolean(userEmail && userEmail.includes('@') && !userEmail.startsWith('brivu-usr-'));
         const cleanOwnerKey = String(ownerKey || '').replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 64);
 
@@ -3011,6 +3037,44 @@ export default {
               error: 'Authentication required. File uploads are restricted to logged-in users with a valid email address.',
             }),
             { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const ALLOWED_R2_FOLDERS = new Set([
+          'qr_codes',
+          'qr_stands',
+          'photos',
+          'menu',
+          'events',
+          'signatures',
+          'avatars',
+          'manual_uploads',
+        ]);
+        const isPdfUpload = lowerMime === 'application/pdf' || lowerFilename.endsWith('.pdf');
+        const isImageUpload =
+          lowerMime.startsWith('image/') ||
+          /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(lowerFilename) ||
+          (typeof data === 'string' && data.startsWith('data:image/'));
+        const isDisallowedExt =
+          lowerFilename.endsWith('.json') ||
+          lowerFilename.endsWith('.csv') ||
+          lowerFilename.endsWith('.txt');
+        const isAllowedR2Upload =
+          !isDisallowedExt &&
+          ALLOWED_R2_FOLDERS.has(lowerFolder) &&
+          (lowerFolder === 'manual_uploads'
+            ? isImageUpload && !isPdfUpload
+            : isImageUpload || (isPdfUpload && lowerFolder === 'qr_stands') || lowerFolder === 'qr_codes');
+
+        if (!isAllowedR2Upload) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              error:
+                'Only QR code files and photos can be stored in Cloudflare R2. Receipts, invoices, quotations, and reports are generated on demand locally.',
+            }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
 
@@ -3218,14 +3282,26 @@ export default {
       const files: any[] = [];
       const seenKeys = new Set<string>();
 
-      const isSystemBackupFile = (k: string) => {
+      const isSystemBackupFile = (k: string, mimeType = '') => {
         const lower = k.toLowerCase();
+        const lowerMime = mimeType.toLowerCase();
         return (
           lower.endsWith('backup.json') ||
           lower.endsWith('latest_backup.json') ||
           lower.endsWith('data.json') ||
           lower.endsWith('profile.json') ||
-          lower.endsWith('all_users.json')
+          lower.endsWith('all_users.json') ||
+          lower.includes('/documents/') ||
+          lower.startsWith('documents/') ||
+          lower.includes('/receipts/') ||
+          lower.startsWith('receipts/') ||
+          lower.includes('/invoices/') ||
+          lower.startsWith('invoices/') ||
+          lower.includes('/quotations/') ||
+          lower.startsWith('quotations/') ||
+          lower.includes('/reports/') ||
+          lower.startsWith('reports/') ||
+          ((lower.endsWith('.pdf') || lowerMime === 'application/pdf') && !lower.includes('/qr_stands/'))
         );
       };
 
@@ -3280,14 +3356,15 @@ export default {
             const listed = await bucket.list({ prefix: pfx, limit });
             if (listed && Array.isArray(listed.objects)) {
               for (const obj of listed.objects) {
-                if (isSystemBackupFile(obj.key)) continue;
+                const mime = obj.httpMetadata?.contentType || 'application/octet-stream';
+                if (isSystemBackupFile(obj.key, mime)) continue;
                 if (!seenKeys.has(obj.key)) {
                   seenKeys.add(obj.key);
                   files.push(
                     parseFileRecord(
                       obj.key,
                       obj.size || 0,
-                      obj.httpMetadata?.contentType || 'application/octet-stream',
+                      mime,
                       obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString()
                     )
                   );
@@ -3322,7 +3399,7 @@ export default {
           const rows: any = await db.prepare(query).bind(...params).all();
           if (rows && Array.isArray(rows.results)) {
             for (const row of rows.results) {
-              if (isSystemBackupFile(row.id)) continue;
+              if (isSystemBackupFile(row.id, row.mime_type || '')) continue;
               if (!seenKeys.has(row.id)) {
                 seenKeys.add(row.id);
                 files.push(
@@ -3449,10 +3526,11 @@ export default {
         if (db && key) {
           try {
             await ensureD1Tables(db);
+            const altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
             await db.prepare(`
               DELETE FROM files 
-              WHERE id = ? OR r2_key = ? OR id = ? OR r2_key = ? OR id LIKE ? OR r2_key LIKE ?
-            `).bind(key, key, decodedKey, decodedKey, `%${decodedKey.split('/').pop() || decodedKey}%`, `%${decodedKey.split('/').pop() || decodedKey}%`).run();
+              WHERE id IN (?, ?, ?) OR r2_key IN (?, ?, ?)
+            `).bind(key, decodedKey, altKey, key, decodedKey, altKey).run();
             deletedD1 = true;
           } catch {}
         }
@@ -4678,7 +4756,7 @@ export default {
         // 1. Clean R2 Bucket
         if (bucket && typeof bucket.list === 'function') {
           try {
-            const targetPrefixes = ['documents/', 'reports/', 'qr_pages/'];
+            const targetPrefixes = ['documents/', 'receipts/', 'invoices/', 'quotations/', 'reports/', 'qr_pages/'];
             for (const pfx of targetPrefixes) {
               let cursor: string | undefined = undefined;
               let hasMore = true;
@@ -4714,14 +4792,23 @@ export default {
               if (listed?.objects && Array.isArray(listed.objects)) {
                 for (const obj of listed.objects) {
                   const key = obj.key;
+                  const lowerKey = key.toLowerCase();
                   const isDeprecatedUserFile =
-                    key.endsWith('/backup.json') ||
-                    key.endsWith('/latest_backup.json') ||
-                    key.endsWith('/profile.json') ||
-                    key.endsWith('/data.json') ||
-                    key.includes('/qr_pages/') ||
-                    (key.includes('/signatures/signature_') && !key.endsWith('signature.webp')) ||
-                    (key.includes('/photos/logo_') && !key.endsWith('logo.webp'));
+                    lowerKey.endsWith('/backup.json') ||
+                    lowerKey.endsWith('/latest_backup.json') ||
+                    lowerKey.endsWith('/profile.json') ||
+                    lowerKey.endsWith('/data.json') ||
+                    lowerKey.includes('/qr_pages/') ||
+                    lowerKey.includes('/documents/') ||
+                    lowerKey.includes('/receipts/') ||
+                    lowerKey.includes('/invoices/') ||
+                    lowerKey.includes('/quotations/') ||
+                    lowerKey.includes('/reports/') ||
+                    (lowerKey.endsWith('.pdf') && !lowerKey.includes('/qr_stands/')) ||
+                    lowerKey.endsWith('.csv') ||
+                    lowerKey.endsWith('.json') ||
+                    (lowerKey.includes('/signatures/signature_') && !lowerKey.endsWith('signature.webp')) ||
+                    (lowerKey.includes('/photos/logo_') && !lowerKey.endsWith('logo.webp'));
 
                   if (isDeprecatedUserFile) {
                     try {
@@ -4772,6 +4859,24 @@ export default {
                 AND id NOT LIKE '%logo.webp'
             `).run();
             report.d1Cleaned.duplicateSignaturesRemoved = d1Dups?.meta?.changes || 0;
+
+            const d1DocsRemoved = await db.prepare(`
+              DELETE FROM files
+              WHERE id LIKE '%/documents/%'
+                 OR id LIKE 'documents/%'
+                 OR id LIKE '%/receipts/%'
+                 OR id LIKE 'receipts/%'
+                 OR id LIKE '%/invoices/%'
+                 OR id LIKE 'invoices/%'
+                 OR id LIKE '%/quotations/%'
+                 OR id LIKE 'quotations/%'
+                 OR id LIKE '%/reports/%'
+                 OR id LIKE 'reports/%'
+                 OR (LOWER(filename) LIKE '%.pdf' AND id NOT LIKE '%/qr_stands/%')
+                 OR LOWER(filename) LIKE '%.csv'
+                 OR LOWER(filename) LIKE '%.json'
+            `).run();
+            report.d1Cleaned.documentFilesRemoved = d1DocsRemoved?.meta?.changes || 0;
           } catch (d1Err: any) {
             report.errors.push(`D1 cleanup error: ${d1Err.message}`);
           }

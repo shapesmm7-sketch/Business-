@@ -75,9 +75,51 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  const processBarcodeResult = (cleanCode: string) => {
+    if (!cleanCode || hasScannedRef.current) return;
+    hasScannedRef.current = true;
+    setShowLightWarning(false);
+
+    if (scannerRef.current) {
+      try {
+        scannerRef.current.pause(true);
+      } catch {
+        // ignore pause error
+      }
+    }
+
+    setScannedCode(cleanCode);
+    playBeep();
+
+    // Look up in inventory by itemId, barcode, id, or name
+    const products = StorageService.getInventoryProducts();
+    const target = cleanCode.toLowerCase();
+    const match = products.find((p) => {
+      const pCode = (p.itemId || '').toLowerCase();
+      const pBarcode = (p.barcode || '').toLowerCase();
+      return (
+        pCode === target ||
+        (pBarcode && pBarcode === target) ||
+        p.id.toLowerCase() === target ||
+        p.name.toLowerCase() === target
+      );
+    });
+
+    if (instantScan) {
+      onScanResult({ scannedCode: cleanCode, matchedProduct: match || undefined });
+      return;
+    }
+
+    if (match) {
+      setMatchedProduct(match);
+    } else {
+      setMatchedProduct(null);
+    }
+  };
+
   const handleBarcodeFound = (code: string) => {
     if (!code || hasScannedRef.current) return;
-    
+
     const now = Date.now();
     const cleanCode = code.trim();
 
@@ -100,38 +142,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       return; // Need one more matching frame to confirm
     }
 
-    hasScannedRef.current = true;
-    setShowLightWarning(false);
-    
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.pause(true);
-      } catch {
-        // ignore pause error
-      }
-    }
-
-    setScannedCode(cleanCode);
-    playBeep();
-
-    // Look up in inventory by itemId or barcode or name
-    const products = StorageService.getInventoryProducts();
-    const match = products.find((p) => {
-      const pCode = (p.itemId || '').toLowerCase();
-      const target = cleanCode.toLowerCase();
-      return pCode === target || p.id.toLowerCase() === target || p.name.toLowerCase() === target;
-    });
-
-    if (instantScan) {
-      onScanResult({ scannedCode: cleanCode, matchedProduct: match || undefined });
-      return;
-    }
-
-    if (match) {
-      setMatchedProduct(match);
-    } else {
-      setMatchedProduct(null);
-    }
+    processBarcodeResult(cleanCode);
   };
 
   // Start Scanner
@@ -266,7 +277,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
-    handleBarcodeFound(manualCode.trim());
+    processBarcodeResult(manualCode.trim());
   };
 
   const handleConfirmAdd = () => {

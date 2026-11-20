@@ -2473,36 +2473,42 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
               </div>
             ) : (
               <div className="space-y-4">
-                {effectiveMenuImages.map((img, idx) => (
-                  <div
-                    key={img.id || idx}
-                    onClick={() =>
-                      setLightboxImage({
-                        url: img.url,
-                        title: img.title || `Menu Page ${idx + 1}`,
-                      })
-                    }
-                    className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs cursor-pointer group"
-                  >
-                    {img.title && (
-                      <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                          {img.title}
-                        </span>
-                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                          <Maximize2 className="w-3 h-3" />
-                          <span>Tap to zoom</span>
-                        </span>
-                      </div>
-                    )}
-                    <img
-                      src={img.url}
-                      alt={img.title || `Menu Page ${idx + 1}`}
-                      className="w-full h-auto object-contain bg-slate-50 dark:bg-slate-950"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                ))}
+                {effectiveMenuImages.map((img, idx) => {
+                  const displayUrl =
+                    img.version && /^https?:\/\//i.test(img.url || '')
+                      ? `${img.url}${img.url.includes('?') ? '&' : '?'}v=${img.version}`
+                      : img.url;
+                  return (
+                    <div
+                      key={img.id || idx}
+                      onClick={() =>
+                        setLightboxImage({
+                          url: displayUrl,
+                          title: img.title || `Menu Page ${idx + 1}`,
+                        })
+                      }
+                      className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs cursor-pointer group"
+                    >
+                      {img.title && (
+                        <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                            {img.title}
+                          </span>
+                          <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <Maximize2 className="w-3 h-3" />
+                            <span>Tap to zoom</span>
+                          </span>
+                        </div>
+                      )}
+                      <img
+                        src={displayUrl}
+                        alt={img.title || `Menu Page ${idx + 1}`}
+                        className="w-full h-auto object-contain bg-slate-50 dark:bg-slate-950"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

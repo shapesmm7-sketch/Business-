@@ -425,14 +425,24 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
         itemId: matchedProduct.itemId,
       });
     } else if (scannedCode) {
-      handleAddItem();
       setItems((prev) => {
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        if (last) {
-          last.name = `Barcode Item #${scannedCode}`;
+        if (
+          prev.length === 1 &&
+          prev[0].name.trim() === '' &&
+          (!prev[0].unitPrice || prev[0].unitPrice === 0)
+        ) {
+          return [{ ...prev[0], name: `Barcode Item #${scannedCode}`, quantity: 1, unitPrice: 0, subtotal: 0 }];
         }
-        return copy;
+        return [
+          ...prev,
+          {
+            id: Math.random().toString(36).substring(2, 9),
+            name: `Barcode Item #${scannedCode}`,
+            quantity: 1,
+            unitPrice: 0,
+            subtotal: 0,
+          },
+        ];
       });
       showToast(`Added item with barcode #${scannedCode}`);
     }
@@ -881,21 +891,22 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
 
       {/* Section 3: Line Items */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
             <DollarSign className="w-4 h-4" />
             <span>{t('items_services', business?.language)}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               id="btn-scan-barcode-invoice-top"
               type="button"
               onClick={() => setIsBarcodeScannerOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-2xs"
+              title="Scan product barcode with camera"
             >
               <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>{t('scan_qr', business?.language)}</span>
+              <span>{t('scan_item', business?.language) || 'Scan Barcode'}</span>
             </button>
 
             <button
@@ -903,9 +914,10 @@ export const CreateInvoiceScreen: React.FC<CreateInvoiceScreenProps> = ({
               type="button"
               onClick={() => setIsStockPickerOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800 text-xs font-bold transition active:scale-95 shadow-2xs"
+              title="Pick products from your Stock Inventory"
             >
               <Boxes className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-              <span>{t('inventory_and_stock', business?.language)}</span>
+              <span>{t('from_stock', business?.language) || t('inventory_and_stock', business?.language)}</span>
             </button>
             <span className="text-xs font-mono font-bold text-slate-400 hidden sm:inline">
               {t('step_3_of_4', business?.language)}

@@ -79,7 +79,7 @@ export interface SaveFileOptions {
   openShareSheet?: boolean;
   /** Destination folder type in phone storage ('documents' -> Download/Brivu, 'photos' -> Pictures/Brivu) */
   destination?: 'documents' | 'photos';
-  /** Target Cloudflare R2 folder (e.g. 'qr_codes', 'qr_stands', 'photos', 'inventory', 'sales', 'expenses', 'debts', 'shopping', 'customers', 'agents', 'workers', 'reports') */
+  /** Target Cloudflare R2 folder — ONLY QR code files and photos ('qr_codes', 'qr_stands', 'photos', 'menu', 'events', 'signatures', 'avatars'). Omit to save strictly on local device only. */
   folder?: string;
 }
 
@@ -93,21 +93,25 @@ export interface SaveFileResult {
   cloudflareSaved?: boolean;
 }
 
-import { CloudflareService } from './cloudflareService';
+import { CloudflareService, isAllowedCloudflareR2Upload } from './cloudflareService';
 
 /**
- * Asynchronously uploads a file to Cloudflare R2 if the worker is configured in settings.
+ * Asynchronously uploads a file to Cloudflare R2 ONLY if it is an allowed QR code file or photo.
+ * Receipts, invoices, quotations, inventory reports, and backup JSONs are never uploaded to R2.
  */
 export async function tryUploadToCloudflare(
   data: Blob | ArrayBuffer | string,
   filename: string,
   mimeType = 'application/octet-stream',
-  folder = 'receipts'
+  folder = ''
 ): Promise<{ url?: string; key?: string } | null> {
   try {
+    const lowerFolder = (folder || '').toLowerCase().trim();
+    if (!isAllowedCloudflareR2Upload(lowerFolder, mimeType, filename)) {
+      return null;
+    }
     const config = CloudflareService.getConfig();
     if (!config.workerUrl || config.autoSaveFiles === false) return null;
-    const lowerFolder = (folder || 'receipts').toLowerCase();
     const uploadRes = await CloudflareService.uploadFile({
       data,
       filename,
@@ -124,7 +128,7 @@ export async function tryUploadToCloudflare(
 }
 
 /**
- * Explicit helper to save any file directly to Cloudflare R2
+ * Explicit helper to save an allowed QR code file or photo directly to Cloudflare R2
  */
 export async function saveFileToCloudflare(options: {
   data: Blob | ArrayBuffer | string;
@@ -132,7 +136,14 @@ export async function saveFileToCloudflare(options: {
   mimeType?: string;
   folder?: string;
 }): Promise<{ success: boolean; url?: string; key?: string; message: string }> {
-  const { data, filename, mimeType = 'application/octet-stream', folder = 'receipts' } = options;
+  const { data, filename, mimeType = 'application/octet-stream', folder = '' } = options;
+  if (!isAllowedCloudflareR2Upload(folder, mimeType, filename)) {
+    return {
+      success: false,
+      message:
+        'Only QR code files and photos can be saved to Cloudflare. Receipts, invoices, quotations, and reports are generated on demand locally.',
+    };
+  }
   const config = CloudflareService.getConfig();
   if (!config.workerUrl) {
     return {
@@ -169,6 +180,10 @@ async function attachCloudflareUpload(
   mimeType: string,
   folder?: string
 ): Promise<SaveFileResult> {
+  if (!folder || !isAllowedCloudflareR2Upload(folder, mimeType, filename)) {
+    return result;
+  }
+
   tryUploadToCloudflare(data, filename, mimeType, folder)
     .then((cf) => {
       if (cf && cf.url) {
@@ -224,7 +239,7 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
         mimeType.startsWith('image/') ||
         /\.(png|jpg|jpeg|webp|svg)$/i.test(filename);
       const destType: 'documents' | 'photos' = isPhoto ? 'photos' : 'documents';
-      const targetR2Folder = folder || (isPhoto ? 'photos' : 'documents');
+      const targetR2Folder = folder;
 
       // 2. Primary native storage route: Save directly to Android phone storage via MediaStore API
       try {
@@ -337,16 +352,16 @@ export async function saveFile(options: SaveFileOptions): Promise<SaveFileResult
             filename,
             folder: 'Pictures/Brivu',
             message: 'Saved via Share sheet!',
-          }, data, filename, mimeType, folder || 'photos');
+          }, data, filename, mimeType, folder);
         }
       } catch (_) {}
       const webRes = fallbackWebDownload(data, filename, mimeType);
-      return attachCloudflareUpload(webRes, data, filename, mimeType, folder || 'documents');
+      return attachCloudflareUpload(webRes, data, filename, mimeType, folder);
     }
   } else {
     // Web Browser fallback (direct file download without opening any share sheet)
     const webRes = fallbackWebDownload(data, filename, mimeType);
-    return attachCloudflareUpload(webRes, data, filename, mimeType, folder || (destination === 'photos' ? 'photos' : 'documents'));
+    return attachCloudflareUpload(webRes, data, filename, mimeType, folder);
   }
 }
 
@@ -360,7 +375,7 @@ export async function saveJsPdf(
   options?: { openShareSheet?: boolean; folder?: string }
 ): Promise<SaveFileResult> {
   const arrayBuffer = doc.output('arraybuffer');
-  const targetFolder = options?.folder || 'documents';
+  const targetFolder = options?.folder;
   if (Capacitor.isNativePlatform()) {
     return saveFile({
       data: arrayBuffer,

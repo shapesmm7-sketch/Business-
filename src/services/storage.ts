@@ -653,10 +653,13 @@ export const StorageService = {
   },
 
   /**
-   * Cloud-First Receipt Save: Awaits saving to Cloudflare D1 first before persisting locally.
+   * Local-First Receipt Save: Saves receipt/invoice/quotation data to localStorage immediately
+   * so documents can always be generated on demand, then syncs JSON record in background when enabled.
    */
   async saveReceiptAsync(receipt: Receipt): Promise<{ success: boolean; cloudSynced: boolean; message: string }> {
+    const localSuccess = this.saveReceipt(receipt);
     let cloudSynced = false;
+
     try {
       const config = this.getCloudflareConfig();
       if (config.workerUrl && config.autoSyncData !== false) {
@@ -666,18 +669,8 @@ export const StorageService = {
         }
       }
     } catch (cfErr) {
-      console.warn('Cloud-first receipt save note:', cfErr);
+      console.warn('Background receipt JSON sync note:', cfErr);
     }
-
-    const localSuccess = this.saveReceipt(receipt);
-
-    // Also trigger full cloud backup sync so D1 backups table is immediately updated with this receipt
-    try {
-      const config = this.getCloudflareConfig();
-      if (config.workerUrl && config.autoSyncData !== false) {
-        CloudflareService.syncAllToCloudflare().catch(() => {});
-      }
-    } catch (_) {}
 
     return {
       success: localSuccess,
@@ -3145,16 +3138,25 @@ export const StorageService = {
       autoSaveFiles: true,
       autoSyncData: true,
       lastStatus: 'untested',
-      filesFolder: 'receipts',
+      filesFolder: 'photos',
     };
     const loaded = readFromStorage<CloudflareConfig>(STORAGE_KEYS.CLOUDFLARE, defaultVal);
+    let dirty = false;
     if (!loaded.workerUrl || loaded.workerUrl.trim() === '' || loaded.workerUrl.includes('localhost') || loaded.workerUrl.includes('127.0.0.1')) {
       loaded.workerUrl = defaultVal.workerUrl;
-      writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
+      dirty = true;
+    }
+    const lowerFolder = String(loaded.filesFolder || '').toLowerCase().trim();
+    if (!lowerFolder || ['receipts', 'documents', 'invoices', 'quotations', 'reports'].includes(lowerFolder)) {
+      loaded.filesFolder = 'photos';
+      dirty = true;
     }
     const authEmail = this.getAuthenticatedEmail();
     if (authEmail && (!loaded.apiKey || loaded.apiKey.trim() === '')) {
       loaded.apiKey = authEmail;
+      dirty = true;
+    }
+    if (dirty) {
       writeToStorage(STORAGE_KEYS.CLOUDFLARE, loaded);
     }
     return loaded;

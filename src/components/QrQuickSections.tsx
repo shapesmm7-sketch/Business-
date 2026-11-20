@@ -184,7 +184,12 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   // Compute the QR payload based on active mode (never opening Cloudflare hosted HTML pages)
   const qrPayload = useMemo(() => {
     if (mode === 'menu') {
-      return hostedMenuImageUrl || defaultMenuImageUrl;
+      const baseMenuUrl = hostedMenuImageUrl || defaultMenuImageUrl;
+      const ver = activeMenuImage?.version;
+      if (ver && hostedMenuImageUrl) {
+        return `${baseMenuUrl}${baseMenuUrl.includes('?') ? '&' : '?'}v=${ver}`;
+      }
+      return baseMenuUrl;
     }
 
     if (mode === 'wifi') {
@@ -224,6 +229,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     mode,
     hostedMenuImageUrl,
     defaultMenuImageUrl,
+    activeMenuImage?.version,
     effectiveWifiSsid,
     activePage.title,
     wifiPassword,

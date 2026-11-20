@@ -681,7 +681,6 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
         mimeType: 'image/png',
         title: `Agent Ledger - ${agent.agentName}`,
         destination: 'photos',
-        folder: 'reports',
       });
 
       if (res.success) {

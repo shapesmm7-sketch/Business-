@@ -699,7 +699,6 @@ export const PdfGenerator = {
       mimeType: 'image/png',
       title: `${prefix} ${receipt.receiptNumber}`,
       destination: 'photos',
-      folder: isQuotation ? 'quotations' : isInvoice ? 'invoices' : 'receipts',
     });
   },
 

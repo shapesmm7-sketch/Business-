@@ -12,13 +12,56 @@ export interface StorageQuotaInfo {
   warning?: string | null;
 }
 
+export const ALLOWED_CLOUDFLARE_R2_FOLDERS = new Set([
+  'qr_codes',
+  'qr_stands',
+  'photos',
+  'menu',
+  'events',
+  'signatures',
+  'avatars',
+  'manual_uploads',
+]);
+
+export function isAllowedCloudflareR2Upload(
+  folder?: string,
+  mimeType = '',
+  filename = ''
+): boolean {
+  const lowerFolder = String(folder || '').toLowerCase().trim();
+  if (!lowerFolder || !ALLOWED_CLOUDFLARE_R2_FOLDERS.has(lowerFolder)) {
+    return false;
+  }
+
+  const lowerMime = String(mimeType || '').toLowerCase().trim();
+  const lowerName = String(filename || '').toLowerCase().trim();
+  const isPdf = lowerMime === 'application/pdf' || lowerName.endsWith('.pdf');
+  const isImage =
+    lowerMime.startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(lowerName);
+
+  if (lowerName.endsWith('.json') || lowerName.endsWith('.csv') || lowerName.endsWith('.txt')) {
+    return false;
+  }
+
+  if (lowerFolder === 'manual_uploads') {
+    return isImage && !isPdf;
+  }
+
+  if (isPdf) {
+    return lowerFolder === 'qr_stands';
+  }
+
+  return isImage || lowerFolder === 'qr_codes';
+}
+
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
   workerUrl: 'https://brivu.shapesmm7.workers.dev',
   apiKey: '',
   autoSaveFiles: true,
   autoSyncData: true,
   lastStatus: 'connected',
-  filesFolder: 'receipts',
+  filesFolder: 'photos',
 };
 
 function normalizeUrl(url: string): string {
@@ -232,14 +275,24 @@ export const CloudflareService = {
     if (!config.workerUrl || config.workerUrl.trim() === '') {
       config.workerUrl = DEFAULT_CLOUDFLARE_CONFIG.workerUrl;
     }
+    const lowerFolder = String(config.filesFolder || '').toLowerCase().trim();
+    if (!lowerFolder || !ALLOWED_CLOUDFLARE_R2_FOLDERS.has(lowerFolder)) {
+      config.filesFolder = 'photos';
+    }
     return config;
   },
 
   saveConfig(partial: Partial<CloudflareConfig>): CloudflareConfig {
     const current = this.getConfig();
+    const rawFolder = partial.filesFolder !== undefined ? partial.filesFolder : current.filesFolder;
+    const normalizedFolder =
+      rawFolder && ALLOWED_CLOUDFLARE_R2_FOLDERS.has(rawFolder.toLowerCase().trim())
+        ? rawFolder.toLowerCase().trim()
+        : 'photos';
     const updated: CloudflareConfig = {
       ...current,
       ...partial,
+      filesFolder: normalizedFolder,
       workerUrl: partial.workerUrl !== undefined ? normalizeUrl(partial.workerUrl) : current.workerUrl,
     };
     return StorageService.saveCloudflareConfig(updated);
@@ -453,7 +506,6 @@ export const CloudflareService = {
   }> {
     const isManualOrDiagnostic = Boolean(
       options.force ||
-      options.folder === 'diagnostics' ||
       options.folder === 'manual_uploads'
     );
     if (!isManualOrDiagnostic && !this.shouldAutoSaveFiles()) {
@@ -481,15 +533,23 @@ export const CloudflareService = {
       };
     }
 
+    let { filename, mimeType = 'application/octet-stream', folder = config.filesFolder || 'photos' } = options;
+    let { data } = options;
+
+    if (!isAllowedCloudflareR2Upload(folder, mimeType, filename)) {
+      return {
+        success: false,
+        message:
+          'Cloudflare R2 only stores QR code files and photos. Receipts, invoices, quotations, and reports are generated on demand from local storage.',
+      };
+    }
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return {
         success: false,
         message: 'Device is offline. File saved locally.',
       };
     }
-
-    let { filename, mimeType = 'application/octet-stream', folder = config.filesFolder || 'receipts' } = options;
-    let { data } = options;
 
     const isImage =
       mimeType.startsWith('image/') ||

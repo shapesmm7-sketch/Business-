@@ -95,6 +95,15 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isImageFile =
+      file.type.startsWith('image/') ||
+      /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(file.name);
+    if (!isImageFile) {
+      showToast('Only QR code files and photos can be uploaded to cloud storage.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     if (quota?.isExceeded) {
       showToast(
         t('storage_limit_warning', currentLang) ||
@@ -108,7 +117,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       const res = await CloudflareService.uploadFile({
         data: file,
         filename: file.name,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || 'image/png',
         folder: 'manual_uploads',
         force: true,
       });
@@ -176,7 +185,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Receipts, invoices, images & backups saved in cloud storage
+                QR code files and photos saved in cloud storage
               </p>
             </div>
           </div>
@@ -244,12 +253,13 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
         {/* Action Bar (Upload & Filter) */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-            Saved Cloud Documents
+            Saved Cloud QR &amp; Photos
           </span>
 
           <input
             ref={fileInputRef}
             type="file"
+            accept="image/*"
             onChange={handleDirectUpload}
             className="hidden"
             id="input-cf-upload-file"
@@ -300,9 +310,9 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 <Cloud className="w-7 h-7" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No files in cloud storage yet</h4>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No QR files or photos in cloud storage yet</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  When you download receipts, invoices, or export backups, they will automatically be stored here.
+                  Only QR code files and photos are stored here. Receipts, invoices, quotations, and inventory PDFs are generated on demand from your saved records.
                 </p>
               </div>
               <button
@@ -310,7 +320,7 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
                 onClick={() => fileInputRef.current?.click()}
                 className="mt-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition"
               >
-                Upload your first file
+                Upload Photo or QR
               </button>
             </div>
           ) : (

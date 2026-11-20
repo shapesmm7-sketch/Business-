@@ -185,6 +185,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [newProductCategoryColor, setNewProductCategoryColor] = useState<string>('#64748b');
   const [showAddProductInline, setShowAddProductInline] = useState<boolean>(initialShowAddInline);
   const [isAddProductBarcodeScannerOpen, setIsAddProductBarcodeScannerOpen] = useState<boolean>(false);
+  const [isSaleBarcodeScannerOpen, setIsSaleBarcodeScannerOpen] = useState<boolean>(false);
 
   // Edit Sale States
   const [editingSale, setEditingSale] = useState<InventorySale | null>(null);
@@ -875,6 +876,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     const product: InventoryProduct = {
       id: editingProductId || `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       itemId: targetItemId,
+      barcode: targetItemId,
       name: name.trim(),
       description: productDescription.trim() || undefined,
       image,
@@ -1168,7 +1170,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       return;
     }
     const match = products.find(
-      (p) => p.itemId.toLowerCase() === trimmed.toLowerCase()
+      (p) =>
+        p.itemId.toLowerCase() === trimmed.toLowerCase() ||
+        (p.barcode && p.barcode.toLowerCase() === trimmed.toLowerCase())
     );
     if (match) {
       setSelectedProductForSale(match);
@@ -2783,7 +2787,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         mimeType: 'image/png',
         title: 'Shopping List Photo',
         destination: 'photos',
-        folder: 'reports',
       });
 
       if (res.success) {
@@ -3130,7 +3133,6 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         mimeType: 'image/png',
         title: reportTitle,
         destination: 'photos',
-        folder: 'reports',
       });
 
       if (res.success) {
@@ -3259,7 +3261,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Staff_Directory_${dateStr}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Staff Directory');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3347,7 +3349,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Agents_Directory_${dateStr}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Agents Directory');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3435,7 +3437,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         const dateStr = new Date().toISOString().split('T')[0];
         const pdfFilename = `Client_Directory_${dateStr}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Client Directory', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Client Directory');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3727,7 +3729,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const pdfFilename = `Shopping_List_${timestamp}.pdf`;
-        const res = await saveJsPdf(doc, pdfFilename, 'Shopping List', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Shopping List');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3833,7 +3835,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const pdfFilename = `Sales_Report_${saleDateFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Sales Report', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Sales Report');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -3945,7 +3947,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const pdfFilename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Stock Report', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Stock Report');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -4047,7 +4049,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const pdfFilename = `Expenses_Report_${expenseFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Expenses Report');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -4151,7 +4153,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
         const pdfFilename = `Debts_Report_${debtTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
         applyReportFooter(doc);
-        const res = await saveJsPdf(doc, pdfFilename, 'Debts Report', { folder: 'reports' });
+        const res = await saveJsPdf(doc, pdfFilename, 'Debts Report');
         if (res.success) {
           showToast(res.message);
         } else {
@@ -4403,7 +4405,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
       const pdfFilename = `Business_Report_${reportTimeFilter}_${new Date().toISOString().split('T')[0]}.pdf`;
       applyReportFooter(doc);
-      const res = await saveJsPdf(doc, pdfFilename, 'Business Report', { folder: 'reports' });
+      const res = await saveJsPdf(doc, pdfFilename, 'Business Report');
       if (res.success) {
         showToast(res.message);
       } else {
@@ -4495,9 +4497,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
             return (
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                  ITEM ID
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    ITEM ID / BARCODE
+                  </label>
+                  <button
+                    id="btn-scan-barcode-add-product"
+                    type="button"
+                    onClick={() => setIsAddProductBarcodeScannerOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-2xs"
+                    title="Scan product barcode with camera"
+                  >
+                    <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Scan Barcode</span>
+                  </button>
+                </div>
                 <div className="relative flex items-center">
                   <input
                     id="input-product-item-id"
@@ -5334,11 +5348,22 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                   {/* SECTION 1: PRODUCT NAME / STOCK SEARCH */}
                   <div className="space-y-1 relative">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                         {t('product_name', business?.language)}
                       </label>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          id="btn-scan-barcode-sale-top"
+                          type="button"
+                          onClick={() => setIsSaleBarcodeScannerOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold transition active:scale-95 shadow-2xs"
+                          title="Scan product barcode with camera"
+                        >
+                          <Scan className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>{t('scan_item', business?.language) || 'Scan Barcode'}</span>
+                        </button>
+
                         {products.length > 0 ? (
                           <select
                             aria-label="Pick Product from Stock"
@@ -5349,7 +5374,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 handleSelectProductForSale(found);
                               }
                             }}
-                            className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-sky-50 dark:bg-slate-700 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-slate-600 cursor-pointer focus:outline-none"
+                            className="text-[10px] font-bold py-1 px-2 rounded-xl bg-sky-50 dark:bg-slate-700 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-slate-600 cursor-pointer focus:outline-none"
                           >
                             <option value="">{t('pick_from_stock', business?.language)}</option>
                             {products.map((p) => (
@@ -5364,7 +5389,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                             onClick={() => {
                               showToast('No products in stock yet. Please add products in the Stock tab first.');
                             }}
-                            className="text-[10px] font-bold py-0.5 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition"
+                            className="text-[10px] font-bold py-1 px-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition"
                           >
                             {t('pick_from_stock', business?.language)}
                           </button>
@@ -5460,7 +5485,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="space-y-1 relative">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                        PRODUCT ID
+                        PRODUCT ID / BARCODE
                       </label>
                       {selectedProductForSale && (
                         <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
@@ -5477,9 +5502,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         value={saleItemId}
                         onChange={(e) => handleSaleItemIdChange(e.target.value)}
                         placeholder="e.g. 1"
-                        className="w-full pl-10 pr-24 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                        className="w-full pl-10 pr-32 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none"
                       />
-                      <div className="absolute right-2">
+                      <div className="absolute right-2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsSaleBarcodeScannerOpen(true)}
+                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-slate-700 rounded-lg transition"
+                          title="Scan Product Barcode"
+                        >
+                          <Scan className="w-4 h-4" />
+                        </button>
                         {products.length > 0 ? (
                           <select
                             aria-label="Pick Product ID"
@@ -11501,7 +11534,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         instantScan={true}
         onClose={() => setIsAddProductBarcodeScannerOpen(false)}
         onScanResult={(result) => {
-          if (result.matchedProduct) {
+          if (result.matchedProduct && !editingProductId) {
             startEditProduct(result.matchedProduct);
             setToastMessage(`Product "${result.matchedProduct.name}" found. Loaded for editing.`);
           } else {
@@ -11509,6 +11542,25 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             setToastMessage(`Barcode ${result.scannedCode} copied to Item ID.`);
           }
           setIsAddProductBarcodeScannerOpen(false);
+        }}
+      />
+
+      {/* Barcode Scanner Modal for New Sale */}
+      <BarcodeScannerModal
+        isOpen={isSaleBarcodeScannerOpen}
+        currency={currency}
+        onClose={() => setIsSaleBarcodeScannerOpen(false)}
+        onScanResult={({ scannedCode, matchedProduct }) => {
+          if (matchedProduct) {
+            handleSelectProductForSale(matchedProduct);
+            setToastMessage(`Selected "${matchedProduct.name}" (#${matchedProduct.itemId}) for sale`);
+          } else if (scannedCode) {
+            setSelectedProductForSale(null);
+            setSaleItemId(scannedCode);
+            setSaleSearchQuery((prev) => (prev.trim() ? prev : `Barcode Item #${scannedCode}`));
+            setShowSaleForm(true);
+            setToastMessage(`Scanned barcode #${scannedCode} for sale`);
+          }
         }}
       />
 
