@@ -6494,6 +6494,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       />
                     </div>
 
+                    <button
+                      id="btn-scan-barcode-stock-tab"
+                      type="button"
+                      onClick={() => setIsAddProductBarcodeScannerOpen(true)}
+                      className="p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800 flex items-center gap-1 text-[11px] font-bold transition shrink-0 cursor-pointer"
+                      title="Scan Barcode to check or add stock"
+                    >
+                      <Scan className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline">Scan</span>
+                    </button>
+
                     {/* View Mode Toggle: Grid vs List */}
                     <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg shrink-0 border border-slate-200/80 dark:border-slate-700">
                       <button
@@ -11550,19 +11561,29 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         </div>
       )}
 
-      {/* Barcode Scanner Modal for Add Product */}
+      {/* Barcode Scanner Modal for Stock & Add Product */}
       <BarcodeScannerModal
         isOpen={isAddProductBarcodeScannerOpen}
         currency={currency}
-        instantScan={true}
+        stockMode={true}
+        instantScan={showAddProductInline && !editingProductId}
         onClose={() => setIsAddProductBarcodeScannerOpen(false)}
+        onAddToStock={(product, qtyToAdd) => {
+          StorageService.adjustInventoryProductStock(product.id, qtyToAdd);
+          refreshData();
+          showToast(`Added +${qtyToAdd} units to "${product.name}" (Stock: ${product.quantity + qtyToAdd})`);
+        }}
         onScanResult={(result) => {
-          if (result.matchedProduct && !editingProductId) {
+          if (result.matchedProduct) {
             startEditProduct(result.matchedProduct);
-            setToastMessage(`Product "${result.matchedProduct.name}" found. Loaded for editing.`);
+            showToast(`Product "${result.matchedProduct.name}" loaded for editing.`);
           } else {
+            if (!showAddProductInline) {
+              setEditingProductId(null);
+              setShowAddProductInline(true);
+            }
             setItemId(result.scannedCode);
-            setToastMessage(`Barcode ${result.scannedCode} copied to Item ID.`);
+            showToast(`Barcode ${result.scannedCode} added to Item ID.`);
           }
           setIsAddProductBarcodeScannerOpen(false);
         }}

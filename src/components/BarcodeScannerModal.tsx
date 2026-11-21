@@ -10,8 +10,8 @@ import {
   CheckCircle2,
   Package,
   Plus,
+  Minus,
   RefreshCw,
-  Search,
   Flashlight,
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
@@ -29,6 +29,8 @@ interface BarcodeScannerModalProps {
     matchedProduct?: InventoryProduct;
   }) => void;
   instantScan?: boolean;
+  stockMode?: boolean;
+  onAddToStock?: (product: InventoryProduct, qtyToAdd: number) => void;
 }
 
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
@@ -37,11 +39,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   onClose,
   onScanResult,
   instantScan = false,
+  stockMode = false,
+  onAddToStock,
 }) => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scannedCode, setScannedCode] = useState<string>('');
   const [matchedProduct, setMatchedProduct] = useState<InventoryProduct | null>(null);
+  const [addStockQty, setAddStockQty] = useState<number>(1);
   const [manualCode, setManualCode] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
@@ -106,13 +111,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       );
     });
 
-    if (instantScan) {
+    if (stockMode && !match && instantScan) {
+      onScanResult({ scannedCode: cleanCode, matchedProduct: undefined });
+      return;
+    }
+
+    if (instantScan && !stockMode) {
       onScanResult({ scannedCode: cleanCode, matchedProduct: match || undefined });
       return;
     }
 
     if (match) {
       setMatchedProduct(match);
+      setAddStockQty(1);
     } else {
       setMatchedProduct(null);
     }
@@ -246,6 +257,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (isOpen) {
       setScannedCode('');
       setMatchedProduct(null);
+      setAddStockQty(1);
       setManualCode('');
       setCameraError(null);
       // Give DOM time to mount viewport container
@@ -289,6 +301,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       scannedCode,
       matchedProduct: matchedProduct || undefined,
     });
+    stopScanner();
+    onClose();
+  };
+
+  const handleConfirmAddToStock = () => {
+    if (!matchedProduct || addStockQty <= 0) return;
+    if (onAddToStock) {
+      onAddToStock(matchedProduct, addStockQty);
+    } else {
+      StorageService.adjustInventoryProductStock(matchedProduct.id, addStockQty);
+    }
     stopScanner();
     onClose();
   };
@@ -471,58 +494,153 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
               {/* Matched Product Preview Card */}
               {matchedProduct ? (
-                <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
-                      {matchedProduct.image ? (
-                        <img
-                          src={matchedProduct.image}
-                          alt={matchedProduct.name}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <Package className="w-5 h-5 text-emerald-400" />
-                      )}
+                stockMode ? (
+                  <div className="p-3.5 rounded-xl bg-slate-900/95 border border-emerald-500/40 space-y-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                        {matchedProduct.image ? (
+                          <img
+                            src={matchedProduct.image}
+                            alt={matchedProduct.name}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <Package className="w-5 h-5 text-emerald-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                          Already exists in stock
+                        </div>
+                        <div className="text-xs font-extrabold text-white truncate">
+                          {matchedProduct.name}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-xs">
+                          <span className="font-mono font-bold text-emerald-400">
+                            {formatCurrency(matchedProduct.sellingPrice || 0, currency)}
+                          </span>
+                          <span className="text-slate-500">•</span>
+                          <span className="font-bold text-sky-300">
+                            {matchedProduct.quantity} in stock
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">
-                        {matchedProduct.name}
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Add Quantity to Stock
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAddStockQty((q) => Math.max(1, q - 1))}
+                          className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold flex items-center justify-center cursor-pointer"
+                          aria-label="Decrease quantity"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                        <input
+                          id="input-add-stock-qty"
+                          type="number"
+                          min={1}
+                          value={addStockQty}
+                          onChange={(e) => setAddStockQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          className="w-20 text-center h-10 rounded-xl bg-slate-800 border border-slate-700 font-mono font-extrabold text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setAddStockQty((q) => q + 1)}
+                          className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold flex items-center justify-center cursor-pointer"
+                          aria-label="Increase quantity"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                        <button
+                          id="btn-confirm-add-existing-stock"
+                          type="button"
+                          onClick={handleConfirmAddToStock}
+                          className="flex-1 h-10 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-md transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add +{addStockQty} Stock</span>
+                        </button>
                       </div>
-                      <div className="text-xs font-mono font-extrabold text-emerald-400">
-                        {formatCurrency(matchedProduct.sellingPrice || 0, currency)}
-                        <span className="text-[10px] text-slate-400 font-sans ml-1 font-normal">
-                          ({matchedProduct.quantity} in stock)
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-800">
+                      <span className="text-[11px] text-slate-400">
+                        New stock will be{' '}
+                        <span className="font-bold text-emerald-300">
+                          {matchedProduct.quantity + addStockQty} units
                         </span>
-                      </div>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleConfirmAdd}
+                        className="text-[11px] font-bold text-sky-400 hover:text-sky-300 underline cursor-pointer"
+                      >
+                        Edit details
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-emerald-500/30 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+                        {matchedProduct.image ? (
+                          <img
+                            src={matchedProduct.image}
+                            alt={matchedProduct.name}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <Package className="w-5 h-5 text-emerald-400" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {matchedProduct.name}
+                        </div>
+                        <div className="text-xs font-mono font-extrabold text-emerald-400">
+                          {formatCurrency(matchedProduct.sellingPrice || 0, currency)}
+                          <span className="text-[10px] text-slate-400 font-sans ml-1 font-normal">
+                            ({matchedProduct.quantity} in stock)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-                  <button
-                    id="btn-confirm-add-scanned-product"
-                    type="button"
-                    onClick={handleConfirmAdd}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-md transition active:scale-95 flex items-center gap-1 shrink-0"
-                  >
-                    <span>Add Item</span>
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <button
+                      id="btn-confirm-add-scanned-product"
+                      type="button"
+                      onClick={handleConfirmAdd}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-md transition active:scale-95 flex items-center gap-1 shrink-0"
+                    >
+                      <span>Add Item</span>
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
               ) : (
                 <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2">
                   <div className="text-xs text-slate-300 space-y-0.5">
                     <span className="font-bold text-slate-200">Product not in stock inventory yet</span>
                     <p className="text-[11px] text-slate-400">
-                      You can add barcode #{scannedCode} directly as item name.
+                      {stockMode
+                        ? `Use barcode #${scannedCode} to add this new product to stock.`
+                        : `You can add barcode #${scannedCode} directly as item name.`}
                     </p>
                   </div>
                   <button
                     id="btn-confirm-add-unmatched-code"
                     type="button"
                     onClick={handleConfirmAdd}
-                    className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition active:scale-95 shrink-0"
+                    className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition active:scale-95 shrink-0 cursor-pointer"
                   >
-                    Add #{scannedCode}
+                    {stockMode ? 'New Product' : `Add #${scannedCode}`}
                   </button>
                 </div>
               )}
@@ -549,9 +667,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                   id="btn-submit-manual-barcode"
                   type="submit"
                   disabled={!manualCode.trim()}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-emerald-400 font-bold text-xs border border-slate-700 transition"
+                  className={`px-4 py-2 min-h-[40px] rounded-xl disabled:opacity-60 font-bold text-xs border transition flex items-center gap-1 shrink-0 cursor-pointer ${
+                    stockMode || instantScan
+                      ? 'bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white border-emerald-500/40 disabled:border-slate-700'
+                      : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-slate-700'
+                  }`}
                 >
-                  Search
+                  <span>{stockMode || instantScan ? 'Add' : 'Search'}</span>
                 </button>
               </div>
             </form>
