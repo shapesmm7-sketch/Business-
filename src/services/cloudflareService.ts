@@ -1825,6 +1825,202 @@ export const CloudflareService = {
   },
 
   /**
+   * Create a new email/password account OR add a password to an existing Google-created account (unified by email)
+   */
+  async registerWithEmailPassword(
+    email: string,
+    password: string,
+    name?: string
+  ): Promise<{
+    success: boolean;
+    user?: BrivuUser;
+    sessionToken?: string;
+    expiresAt?: number;
+    linkedExistingGoogleAccount?: boolean;
+    alreadyExists?: boolean;
+    message?: string;
+  }> {
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ email, password, name }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok && parsed.data?.user && parsed.data?.sessionToken) {
+        return {
+          success: true,
+          user: parsed.data.user as BrivuUser,
+          sessionToken: String(parsed.data.sessionToken),
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          linkedExistingGoogleAccount: Boolean(parsed.data.linkedExistingGoogleAccount),
+          message: parsed.data.message || 'Account created and signed into Brivu.',
+        };
+      }
+
+      return {
+        success: false,
+        alreadyExists: Boolean(parsed.data?.alreadyExists || res.status === 409),
+        message: parsed.data?.error || parsed.error || `Could not create account (HTTP ${res.status}).`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message:
+          err?.name === 'AbortError'
+            ? 'Account request timed out. Check your internet connection and try again.'
+            : err?.message || 'Unable to reach Brivu server.',
+      };
+    }
+  },
+
+  /**
+   * Sign in using email and password
+   */
+  async loginWithEmailPassword(
+    email: string,
+    password: string
+  ): Promise<{
+    success: boolean;
+    user?: BrivuUser;
+    sessionToken?: string;
+    expiresAt?: number;
+    needsPasswordSetup?: boolean;
+    message?: string;
+  }> {
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ email, password }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok && parsed.data?.user && parsed.data?.sessionToken) {
+        return {
+          success: true,
+          user: parsed.data.user as BrivuUser,
+          sessionToken: String(parsed.data.sessionToken),
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          message: parsed.data.message || 'Signed into Brivu.',
+        };
+      }
+
+      return {
+        success: false,
+        needsPasswordSetup: Boolean(parsed.data?.needsPasswordSetup),
+        message: parsed.data?.error || parsed.error || `Sign-in failed (HTTP ${res.status}).`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message:
+          err?.name === 'AbortError'
+            ? 'Login timed out. Check your internet connection and try again.'
+            : err?.message || 'Unable to sign in with Brivu server.',
+      };
+    }
+  },
+
+  /**
+   * Allow an already signed-in user (e.g. Google login) to set or update a backup password
+   */
+  async setAccountPassword(
+    password: string,
+    sessionToken: string
+  ): Promise<{
+    success: boolean;
+    user?: BrivuUser;
+    message?: string;
+  }> {
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      currentOrigin && currentOrigin.includes('workers.dev')
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/set-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Brivu-Session': sessionToken,
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({ password }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const text = await res.text();
+      const parsed = parseWorkerResponse(text);
+
+      if (res.ok && parsed.ok) {
+        return {
+          success: true,
+          user: parsed.data?.user as BrivuUser | undefined,
+          message: parsed.data?.message || 'Backup password saved.',
+        };
+      }
+
+      return {
+        success: false,
+        message: parsed.data?.error || parsed.error || `Could not save password (HTTP ${res.status}).`,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message:
+          err?.name === 'AbortError'
+            ? 'Request timed out. Check your internet connection and try again.'
+            : err?.message || 'Unable to save password.',
+      };
+    }
+  },
+
+  /**
    * Validate and refresh an active Brivu session on Cloudflare Worker
    */
   async validateBrivuSession(sessionToken: string): Promise<{
@@ -1910,14 +2106,21 @@ export const CloudflareService = {
         : normalizeUrl(config.workerUrl);
 
     try {
-      await fetch(`${cleanUrl}/api/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Brivu-Session': sessionToken,
-        },
-        body: JSON.stringify({ sessionToken }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      try {
+        await fetch(`${cleanUrl}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Brivu-Session': sessionToken,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({ sessionToken }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch {
       // Best-effort remote revocation; local session is always cleared
     }

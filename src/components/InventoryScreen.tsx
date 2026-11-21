@@ -6078,10 +6078,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     type="button"
                     onClick={() => handleSaveReportPhoto('sales')}
                     className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
-                    title="Save Sales Report as Photo"
+                    title="Save Sales Report as Image"
                   >
-                    <Camera className="w-3 h-3" />
-                    <span>Photo</span>
+                    <Download className="w-3 h-3" />
+                    <span>Image</span>
                   </button>
                 </div>
               </div>
@@ -6318,9 +6318,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     type="button"
                     onClick={() => handleSaveReportPhoto('stock')}
                     className="px-2.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 shadow-sm transition bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 border border-slate-200 dark:border-slate-700"
-                    title="Save Stock Report as Photo"
+                    title="Save Stock Report as Image"
                   >
-                    <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>{t('photo', business?.language)}</span>
                   </button>
                 </div>
@@ -7148,10 +7148,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         type="button"
                         onClick={() => handleSaveReportPhoto('expense')}
                         className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
-                        title="Save Expenses Report as Photo"
+                        title="Save Expenses Report as Image"
                       >
-                        <Camera className="w-3 h-3" />
-                        <span>Photo</span>
+                        <Download className="w-3 h-3" />
+                        <span>Image</span>
                       </button>
                     </div>
                   </div>
@@ -7717,10 +7717,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     type="button"
                     onClick={() => handleSaveReportPhoto('debts')}
                     className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
-                    title="Save Debts Report as Photo"
+                    title="Save Debts Report as Image"
                   >
-                    <Camera className="w-3 h-3" />
-                    <span>Photo</span>
+                    <Download className="w-3 h-3" />
+                    <span>Image</span>
                   </button>
                 </div>
               </div>
@@ -8124,9 +8124,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={handleSaveShoppingListPhoto}
                   className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center gap-1 transition border border-emerald-100 dark:border-emerald-800 shadow-2xs"
-                  title="Save Shopping List as Photo"
+                  title="Save Shopping List as Image"
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>{t('save_photo', business?.language)}</span>
                 </button>
                 <button
@@ -9109,10 +9109,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={() => handleSaveReportPhoto('report')}
                   className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold text-xs shadow-md hover:bg-slate-50 flex items-center gap-1.5 border border-sky-100 dark:border-slate-800 transition"
-                  title="Save Report as Photo"
+                  title="Save Report as Image"
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Photo</span>
+                  <Download className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Image</span>
                 </button>
               </div>
             </div>
@@ -9557,10 +9557,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={() => handleSaveReportPhoto('agents')}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition"
-                  title="Save Agents List as Photo"
+                  title="Save Agents List as Image"
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Photo</span>
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Image</span>
                 </button>
               </div>
             </div>
@@ -10007,9 +10007,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={() => handleSaveReportPhoto('workers')}
                   className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition shadow-sm border border-slate-200/60 dark:border-slate-700"
-                  title="Save Staff Directory as Photo"
+                  title="Save Staff Directory as Image"
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span className="hidden sm:inline">{t('save_photo', business?.language)}</span>
                 </button>
 
@@ -10771,9 +10771,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   type="button"
                   onClick={() => handleSaveReportPhoto('customers')}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition"
-                  title="Save Clients List as Photo"
+                  title="Save Clients List as Image"
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>{t('photo', business?.language)}</span>
                 </button>
               </div>

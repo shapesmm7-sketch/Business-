@@ -462,7 +462,7 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
       nonReturnable,
       nonRefundable,
       template: editingReceipt ? editingReceipt.template : defaultTemplate,
-      accentColor: editingReceipt?.accentColor || business.accentColor,
+      accentColor: editingReceipt?.accentColor,
       businessSnapshot: StorageService.getProfile() || business,
     };
 
@@ -1128,16 +1128,16 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
               <span className="whitespace-nowrap">{t('pdf_format', business?.language)}</span>
             </button>
 
-            {/* Save Photo */}
+            {/* Save Image */}
             <button
               id="btn-action-photo"
               type="button"
               onClick={() => handleSubmit('photo')}
               disabled={isProcessing}
               className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-              title="Save Receipt Photo (PNG)"
+              title="Save Receipt Image (PNG)"
             >
-              <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="whitespace-nowrap">{t('photo', business?.language)}</span>
             </button>
 

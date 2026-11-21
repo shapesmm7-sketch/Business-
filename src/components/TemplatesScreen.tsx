@@ -52,7 +52,16 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
 
   // Render Sample Receipt for each theme using its unique custom layout architecture
   const renderSampleReceipt = (id: ReceiptTemplateId, isModal: boolean = false) => {
-    const customTheme = StorageService.getCustomTemplate(id);
+    const savedCustomTheme = StorageService.getCustomTemplate(id);
+    const customTheme = {
+      ...savedCustomTheme,
+      headerBgColor: business.headerBgColor || savedCustomTheme?.headerBgColor,
+      headerTextColor: business.headerTextColor || savedCustomTheme?.headerTextColor,
+      totalBgColor: business.totalBgColor || savedCustomTheme?.totalBgColor,
+      totalTextColor: business.totalTextColor || savedCustomTheme?.totalTextColor,
+      paperBgColor: business.paperBgColor || savedCustomTheme?.paperBgColor,
+      accentColor: business.accentColor || savedCustomTheme?.accentColor,
+    };
 
     return (
       <ReceiptLayoutRenderer

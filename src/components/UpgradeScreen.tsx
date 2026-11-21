@@ -302,7 +302,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
         )}
       </div>
 
-      {/* Subscription Benefits (3 Concise Points) */}
+      {/* Subscription Benefits */}
       <div className="rounded-3xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
         <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
           What's Included
@@ -319,6 +319,12 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               <Cloud className="w-4 h-4" />
             </div>
             <span>Unlock cloud sync for QR code info, events and business info</span>
+          </li>
+          <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+              <QrCode className="w-4 h-4" />
+            </div>
+            <span>200 MB cloud storage for QR code and business info hosting</span>
           </li>
           <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
             <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">

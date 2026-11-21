@@ -4,7 +4,6 @@ import {
   Camera,
   QrCode,
   Scan,
-  Zap,
   Volume2,
   VolumeX,
   AlertCircle,
@@ -13,11 +12,13 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Flashlight,
 } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { InventoryProduct } from '../types';
 import { StorageService } from '../services/storage';
 import { formatCurrency } from '../utils/currencies';
+import { detectTorchAvailability, setScannerTorch } from '../utils/torchService';
 
 interface BarcodeScannerModalProps {
   isOpen: boolean;
@@ -43,8 +44,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [matchedProduct, setMatchedProduct] = useState<InventoryProduct | null>(null);
   const [manualCode, setManualCode] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  const [hasTorch, setHasTorch] = useState<boolean>(false);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const [torchNotice, setTorchNotice] = useState<string | null>(null);
   const [showLightWarning, setShowLightWarning] = useState<boolean>(false);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -204,14 +205,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }
       }, 1000);
 
-      // Check flashlight/torch availability
+      // Probe flashlight/torch availability on track start
       try {
-        const capabilities = html5QrCode.getRunningTrackCapabilities();
-        if (capabilities && (capabilities as unknown as { torch?: boolean }).torch) {
-          setHasTorch(true);
-        }
+        await detectTorchAvailability(html5QrCode, containerId);
       } catch {
-        setHasTorch(false);
+        // ignore
       }
     } catch (err: unknown) {
       console.warn('Camera barcode scanner error:', err);
@@ -228,6 +226,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (warningIntervalRef.current) {
       window.clearInterval(warningIntervalRef.current);
       warningIntervalRef.current = null;
+    }
+    if (isTorchOn) {
+      await setScannerTorch(false, scannerRef.current, containerId);
+      setIsTorchOn(false);
     }
     if (scannerRef.current && scannerRef.current.isScanning) {
       try {
@@ -262,15 +264,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   if (!isOpen) return null;
 
   const toggleTorch = async () => {
-    if (!scannerRef.current) return;
-    try {
-      const nextState = !isTorchOn;
-      await scannerRef.current.applyVideoConstraints({
-        advanced: [{ torch: nextState } as unknown as MediaTrackConstraintSet],
-      });
+    const nextState = !isTorchOn;
+    const res = await setScannerTorch(nextState, scannerRef.current, containerId);
+    if (res.success) {
       setIsTorchOn(nextState);
-    } catch {
-      // torch failed
+      setTorchNotice(null);
+    } else {
+      setTorchNotice(res.error || 'Torch is unavailable on this camera.');
+      setTimeout(() => {
+        setTorchNotice((prev) => (prev === (res.error || 'Torch is unavailable on this camera.') ? null : prev));
+      }, 3000);
     }
   };
 
@@ -329,21 +332,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
             </button>
 
-            {/* Torch Toggle if available */}
-            {hasTorch && (
-              <button
-                type="button"
-                onClick={toggleTorch}
-                className={`p-2 rounded-xl transition ${
-                  isTorchOn
-                    ? 'bg-amber-500 text-slate-950 shadow-xs'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-                title="Toggle Flashlight"
-              >
-                <Zap className="w-4 h-4" />
-              </button>
-            )}
+            {/* Torch Toggle (always visible for low-light scanning) */}
+            <button
+              id="btn-barcode-scanner-torch"
+              type="button"
+              onClick={toggleTorch}
+              className={`px-2.5 py-2 rounded-xl transition flex items-center gap-1 text-xs font-bold border ${
+                isTorchOn
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-xs'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+              title={isTorchOn ? 'Turn Off Torch' : 'Turn On Torch'}
+            >
+              <Flashlight className="w-4 h-4" />
+              <span>{isTorchOn ? 'On' : 'Torch'}</span>
+            </button>
 
             <button
               id="btn-close-barcode-scanner"
@@ -367,16 +370,42 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             className="w-full h-full min-h-[260px] max-h-[320px] object-cover [&_video]:w-full [&_video]:h-full [&_video]:object-cover"
           />
 
-          {/* Scanning Frame Overlay & Laser Line */}
+          {/* Scanning Frame Overlay & Low Light Notice */}
           {isScanning && !cameraError && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-6">
               {/* Low Light Warning */}
               {showLightWarning && !scannedCode && (
                 <div className="mt-6 px-4 py-2 rounded-xl bg-amber-950/80 border border-amber-500/50 backdrop-blur-md animate-fadeIn max-w-[280px] text-center">
                   <p className="text-[11px] font-bold text-amber-300">Having trouble scanning?</p>
-                  <p className="text-[10px] text-amber-200/80 mt-0.5 leading-tight">Make sure there is enough light and the camera is steady to avoid misreads. {hasTorch ? 'Try turning on the flashlight (⚡).' : ''}</p>
+                  <p className="text-[10px] text-amber-200/80 mt-0.5 leading-tight">
+                    Make sure there is enough light and the camera is steady. Tap the Torch button to turn on your phone&apos;s flashlight.
+                  </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Floating Torch Toggle Overlay inside Viewfinder */}
+          {!cameraError && (
+            <button
+              id="btn-barcode-viewfinder-torch"
+              type="button"
+              onClick={toggleTorch}
+              className={`absolute bottom-3 right-3 px-3 py-2 rounded-full backdrop-blur-md transition flex items-center gap-1.5 text-xs font-bold shadow-lg border z-10 ${
+                isTorchOn
+                  ? 'bg-amber-500 text-slate-950 border-amber-300'
+                  : 'bg-slate-900/80 text-white border-white/20 hover:bg-slate-800'
+              }`}
+              title={isTorchOn ? 'Turn Off Torch' : 'Turn On Torch'}
+            >
+              <Flashlight className="w-4 h-4" />
+              <span>{isTorchOn ? 'Torch On' : 'Torch'}</span>
+            </button>
+          )}
+
+          {torchNotice && (
+            <div className="absolute top-3 left-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-500/40 text-[11px] font-semibold text-amber-300 text-center z-20">
+              {torchNotice}
             </div>
           )}
 

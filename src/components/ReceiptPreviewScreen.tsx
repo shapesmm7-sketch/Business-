@@ -446,7 +446,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             nonRefundable: Boolean(receipt.nonRefundable),
             currency: currency,
             template: receipt.template || 'modern',
-            accentColor: receipt.accentColor,
+            accentColor: business.accentColor || receipt.accentColor,
             customTheme: (() => {
               const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
               const defaultDocBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
@@ -458,14 +458,20 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
                   ? (!rawBadge || upperBadge === 'RECEIPT' ? 'INVOICE' : rawBadge)
                   : rawBadge || defaultDocBadge;
               return {
-                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
-                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
-                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor,
-                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor,
-                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
-                accentColor: receipt.customTheme?.accentColor || saved?.accentColor || receipt.accentColor,
+                headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || saved?.headerBgColor,
+                headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || saved?.headerTextColor,
+                totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || saved?.totalBgColor,
+                totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || saved?.totalTextColor,
+                paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || saved?.paperBgColor,
+                accentColor: receipt.customTheme?.accentColor || business.accentColor || saved?.accentColor || receipt.accentColor,
                 fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
                 badgeText: resolvedBadge,
+                badgeBgColor: receipt.customTheme?.badgeBgColor || saved?.badgeBgColor,
+                badgeTextColor: receipt.customTheme?.badgeTextColor || saved?.badgeTextColor,
+                headerNameColor: receipt.customTheme?.headerNameColor || saved?.headerNameColor,
+                headerDescColor: receipt.customTheme?.headerDescColor || saved?.headerDescColor,
+                headerAddressColor: receipt.customTheme?.headerAddressColor || saved?.headerAddressColor,
+                receiptTextColor: receipt.customTheme?.receiptTextColor || saved?.receiptTextColor,
               };
             })(),
             isSample: false,
@@ -488,16 +494,16 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             <span className="whitespace-nowrap">{isQuotation ? 'Quote PDF' : isInvoice ? 'Invoice PDF' : 'PDF'}</span>
           </button>
 
-          {/* Save Photo */}
+          {/* Save Image */}
           <button
             id="btn-preview-save-photo"
             onClick={handleSavePhoto}
             disabled={isGenerating}
             className="py-2.5 px-1 sm:px-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs border border-emerald-300 dark:border-emerald-700 shadow-sm active:scale-95 flex items-center justify-center gap-1 transition disabled:opacity-50"
-            title={isQuotation ? 'Save Quotation as Photo (PNG)' : isInvoice ? 'Save Invoice as Photo (PNG)' : 'Save Receipt as Photo (PNG)'}
+            title={isQuotation ? 'Save Quotation as Image (PNG)' : isInvoice ? 'Save Invoice as Image (PNG)' : 'Save Receipt as Image (PNG)'}
           >
-            <Camera className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="whitespace-nowrap">Photo</span>
+            <Download className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="whitespace-nowrap">Image</span>
           </button>
 
           {/* Share PDF (WhatsApp / Android Sheet) */}

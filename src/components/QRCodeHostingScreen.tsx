@@ -1543,7 +1543,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          {onOpenQrScanner && (
+          {onOpenQrScanner && qrCategory === null && (
             <button
               type="button"
               onClick={onOpenQrScanner}

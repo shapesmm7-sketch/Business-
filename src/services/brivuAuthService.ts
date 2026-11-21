@@ -90,6 +90,9 @@ export interface BrivuSignInResult {
   success: boolean;
   cancelled?: boolean;
   needsWebButtonFallback?: boolean;
+  needsPasswordSetup?: boolean;
+  alreadyExists?: boolean;
+  linkedExistingGoogleAccount?: boolean;
   user?: BrivuUser;
   message?: string;
 }
@@ -113,36 +116,27 @@ export const BrivuAuthService = {
 
   async getGoogleWebClientId(): Promise<string> {
     const warm = readCachedWebClientId();
-    if (warm) {
-      // Refresh in background so Worker updates propagate without blocking taps
-      CloudflareService.getAuthConfig()
-        .then((cfg) => {
-          if (cfg.googleWebClientId && cfg.googleWebClientId.trim()) {
-            writeCachedWebClientId(cfg.googleWebClientId);
-          }
-        })
-        .catch(() => {});
-      return warm;
-    }
-
     const envClientId =
       typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_WEB_CLIENT_ID
         ? String(import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID).trim()
         : '';
-    if (envClientId) {
-      writeCachedWebClientId(envClientId);
-      return envClientId;
-    }
-
-    const remoteConfig = await CloudflareService.getAuthConfig();
-    if (remoteConfig.googleWebClientId && remoteConfig.googleWebClientId.trim()) {
-      writeCachedWebClientId(remoteConfig.googleWebClientId);
-      return cachedWebClientId;
-    }
-
     const defaultClientId = '97897075021-g672moeae0a7i2834ipcjpot5u7fur8e.apps.googleusercontent.com';
-    writeCachedWebClientId(defaultClientId);
-    return defaultClientId;
+    const immediateClientId = warm || envClientId || defaultClientId;
+
+    if (!warm && immediateClientId) {
+      writeCachedWebClientId(immediateClientId);
+    }
+
+    // Refresh in background so Worker updates propagate without delaying sign-in taps
+    CloudflareService.getAuthConfig()
+      .then((cfg) => {
+        if (cfg.googleWebClientId && cfg.googleWebClientId.trim()) {
+          writeCachedWebClientId(cfg.googleWebClientId);
+        }
+      })
+      .catch(() => {});
+
+    return immediateClientId;
   },
 
   /**
@@ -364,13 +358,125 @@ export const BrivuAuthService = {
     };
   },
 
+  /**
+   * Create a new email/password account OR add password login to an existing Google account under the same email.
+   */
+  async registerWithEmailPassword(
+    email: string,
+    password: string,
+    name?: string
+  ): Promise<BrivuSignInResult> {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return {
+        success: false,
+        message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
+      };
+    }
+
+    const res = await CloudflareService.registerWithEmailPassword(email, password, name);
+    if (!res.success || !res.user || !res.sessionToken) {
+      return {
+        success: false,
+        alreadyExists: res.alreadyExists,
+        message: res.message || 'Could not create account.',
+      };
+    }
+
+    const session: BrivuAuthSession = {
+      sessionToken: res.sessionToken,
+      expiresAt: res.expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+      userEmail: res.user.email,
+    };
+
+    const user = await this.saveAndSyncUser(res.user, session);
+    return {
+      success: true,
+      user,
+      linkedExistingGoogleAccount: res.linkedExistingGoogleAccount,
+      message:
+        res.message ||
+        (res.linkedExistingGoogleAccount
+          ? `Password linked to ${user.email}. All your Google data is ready!`
+          : `Signed in as ${user.name || user.email}`),
+    };
+  },
+
+  /**
+   * Sign in with email and password (shares identical workspace & cloud data with Google login for the same email).
+   */
+  async loginWithEmailPassword(email: string, password: string): Promise<BrivuSignInResult> {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return {
+        success: false,
+        message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
+      };
+    }
+
+    const res = await CloudflareService.loginWithEmailPassword(email, password);
+    if (!res.success || !res.user || !res.sessionToken) {
+      return {
+        success: false,
+        needsPasswordSetup: res.needsPasswordSetup,
+        message: res.message || 'Invalid email or password.',
+      };
+    }
+
+    const session: BrivuAuthSession = {
+      sessionToken: res.sessionToken,
+      expiresAt: res.expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+      userEmail: res.user.email,
+    };
+
+    const user = await this.saveAndSyncUser(res.user, session);
+    return {
+      success: true,
+      user,
+      message: `Signed in as ${user.name || user.email}`,
+    };
+  },
+
+  /**
+   * Allows an already signed-in user to add or change a backup password for their account email.
+   */
+  async setAccountPassword(password: string): Promise<{ success: boolean; user?: BrivuUser; message: string }> {
+    const session = StorageService.getAuthSession();
+    const currentUser = StorageService.getAuthUser();
+    if (!session?.sessionToken || !currentUser) {
+      return { success: false, message: 'Please sign in first to save a backup password.' };
+    }
+
+    const res = await CloudflareService.setAccountPassword(password, session.sessionToken);
+    if (res.success) {
+      const updatedUser: BrivuUser = {
+        ...currentUser,
+        ...res.user,
+        hasPassword: true,
+      };
+      StorageService.saveAuthUser(updatedUser);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brivu_auth_changed', { detail: updatedUser }));
+      }
+      return {
+        success: true,
+        user: updatedUser,
+        message: res.message || 'Backup password saved!',
+      };
+    }
+    return {
+      success: false,
+      message: res.message || 'Could not save backup password.',
+    };
+  },
+
   async saveAndSyncUser(user: BrivuUser, session?: BrivuAuthSession): Promise<BrivuUser> {
     const cleanEmail = (user.email || '').toLowerCase().trim();
     const cleanUser: BrivuUser = {
       ...user,
       email: cleanEmail,
       id: user.id || cleanEmail,
-      provider: 'google',
+      provider: user.provider || 'google',
     };
 
     if (cleanEmail) {
@@ -380,6 +486,7 @@ export const BrivuAuthService = {
     StorageService.saveAuthUser(cleanUser);
     if (session) {
       StorageService.saveAuthSession(session);
+      lastSessionCheckAt = Date.now();
     }
 
     if (cleanEmail) {
@@ -531,23 +638,10 @@ export const BrivuAuthService = {
 
   async signOut(options?: { skipRemote?: boolean; reason?: 'manual' | 'expired' }): Promise<void> {
     const session = StorageService.getAuthSession();
+    const sessionToken = session?.sessionToken;
+    lastSessionCheckAt = 0;
 
-    if (!options?.skipRemote && session?.sessionToken) {
-      await CloudflareService.logoutBrivuSession(session.sessionToken);
-    }
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await BrivuAuthPlugin.signOut();
-      } catch {
-        // Ignore if native credential state is already empty
-      }
-    } else if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
-      try {
-        (window as any).google.accounts.id.disableAutoSelect();
-      } catch {}
-    }
-
+    // Clear local session and update UI immediately so sign-out never waits on network or IPC
     StorageService.clearAuthUser();
 
     if (typeof window !== 'undefined') {
@@ -556,10 +650,23 @@ export const BrivuAuthService = {
       if (options?.reason === 'expired') {
         window.dispatchEvent(
           new CustomEvent('brivu_auth_expired', {
-            detail: { message: 'Your Brivu session expired. Please sign in with Google again.' },
+            detail: { message: 'Your Brivu session expired. Please sign in again.' },
           })
         );
       }
+    }
+
+    // Revoke remote Brivu session and clear native/web Google credential state in background
+    if (!options?.skipRemote && sessionToken) {
+      void CloudflareService.logoutBrivuSession(sessionToken).catch(() => {});
+    }
+
+    if (Capacitor.isNativePlatform()) {
+      void BrivuAuthPlugin.signOut().catch(() => {});
+    } else if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
+      try {
+        (window as any).google.accounts.id.disableAutoSelect();
+      } catch {}
     }
   },
 };

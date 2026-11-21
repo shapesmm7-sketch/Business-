@@ -6,7 +6,6 @@ import {
   Image as ImageIcon,
   QrCode,
   Scan,
-  Zap,
   Volume2,
   VolumeX,
   Receipt as ReceiptIcon,
@@ -25,6 +24,7 @@ import {
   Phone,
   Copy,
   Check,
+  Flashlight,
 } from 'lucide-react';
 import { CameraSource } from '@capacitor/camera';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -33,6 +33,7 @@ import {
   parseScannedQrText,
   ScannedQrResult,
 } from '../utils/qrScannerService';
+import { detectTorchAvailability, setScannerTorch } from '../utils/torchService';
 import { Receipt, InventoryProduct, QRCodeHostedPage } from '../types';
 import { formatCurrency } from '../utils/currencies';
 
@@ -67,7 +68,7 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
-  const [hasTorch, setHasTorch] = useState<boolean>(false);
+  const [torchNotice, setTorchNotice] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const html5ScannerRef = useRef<Html5Qrcode | null>(null);
@@ -147,12 +148,9 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
         }
       );
 
-      // Check for torch capability
+      // Probe torch capability on track start
       try {
-        const capabilities = html5ScannerRef.current.getRunningTrackCapabilities();
-        if (capabilities && (capabilities as any).torch) {
-          setHasTorch(true);
-        }
+        await detectTorchAvailability(html5ScannerRef.current, containerId);
       } catch {}
     } catch (err: any) {
       console.warn('[QR Modal] Live camera start note:', err);
@@ -162,6 +160,10 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
   };
 
   const stopLiveScanner = async () => {
+    if (isTorchOn) {
+      await setScannerTorch(false, html5ScannerRef.current, containerId);
+      setIsTorchOn(false);
+    }
     if (html5ScannerRef.current && html5ScannerRef.current.isScanning) {
       try {
         await html5ScannerRef.current.stop();
@@ -172,14 +174,17 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
   };
 
   const toggleTorch = async () => {
-    if (!html5ScannerRef.current || !hasTorch) return;
-    try {
-      const next = !isTorchOn;
-      await html5ScannerRef.current.applyVideoConstraints({
-        advanced: [{ torch: next } as any],
-      });
+    const next = !isTorchOn;
+    const res = await setScannerTorch(next, html5ScannerRef.current, containerId);
+    if (res.success) {
       setIsTorchOn(next);
-    } catch {}
+      setTorchNotice(null);
+    } else {
+      setTorchNotice(res.error || 'Torch is unavailable on this camera.');
+      setTimeout(() => {
+        setTorchNotice((prev) => (prev === (res.error || 'Torch is unavailable on this camera.') ? null : prev));
+      }, 3000);
+    }
   };
 
   // Capacitor Camera Capture
@@ -246,7 +251,23 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
+            {!scanResult && (
+              <button
+                id="btn-qr-scanner-torch"
+                type="button"
+                onClick={toggleTorch}
+                className={`h-9 px-2.5 rounded-xl flex items-center justify-center gap-1 text-xs font-bold transition border ${
+                  isTorchOn
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+                title={isTorchOn ? 'Turn Off Torch' : 'Turn On Torch'}
+              >
+                <Flashlight className="w-4 h-4" />
+                <span>{isTorchOn ? 'On' : 'Torch'}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSoundEnabled(!soundEnabled)}
@@ -285,17 +306,28 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                   )}
                 </div>
 
-                {/* Torch button overlay */}
-                {hasTorch && isScanning && (
+                {/* Torch button overlay (always accessible in viewfinder) */}
+                {!cameraError && (
                   <button
+                    id="btn-qr-viewfinder-torch"
                     type="button"
                     onClick={toggleTorch}
-                    className={`absolute bottom-3 right-3 p-2.5 rounded-full backdrop-blur-md transition ${
-                      isTorchOn ? 'bg-amber-500 text-white' : 'bg-slate-900/70 text-slate-200'
+                    className={`absolute bottom-3 right-3 px-3 py-2 rounded-full backdrop-blur-md transition flex items-center gap-1.5 text-xs font-bold shadow-lg border z-10 ${
+                      isTorchOn
+                        ? 'bg-amber-500 text-slate-950 border-amber-300'
+                        : 'bg-slate-900/80 text-white border-white/20 hover:bg-slate-800'
                     }`}
+                    title={isTorchOn ? 'Turn Off Torch' : 'Turn On Torch'}
                   >
-                    <Zap className="w-4 h-4" />
+                    <Flashlight className="w-4 h-4" />
+                    <span>{isTorchOn ? 'Torch On' : 'Torch'}</span>
                   </button>
+                )}
+
+                {torchNotice && (
+                  <div className="absolute top-3 left-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-500/40 text-[11px] font-semibold text-amber-300 text-center z-20">
+                    {torchNotice}
+                  </div>
                 )}
 
                 {/* Camera error / instructions message */}

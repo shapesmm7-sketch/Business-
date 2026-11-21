@@ -76,7 +76,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalNotice, setAuthModalNotice] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState(false);
   const [authUser, setAuthUser] = useState<BrivuUser | null>(() =>
     BrivuAuthService.getCurrentUser()
   );
@@ -84,35 +83,13 @@ export const Header: React.FC<HeaderProps> = ({
     StorageService.getAppLockConfig()
   );
 
-  const handleStartGoogleSignIn = async () => {
-    const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
-      setAuthModalNotice(null);
-      setIsAuthModalOpen(true);
-      return;
-    }
-    setIsSigningIn(true);
+  const handleOpenAuthModal = () => {
     setAuthModalNotice(null);
-    try {
-      const res = await BrivuAuthService.signInWithGoogle();
-      if (res.success && res.user) {
-        setAuthUser(res.user);
-      } else if (res.cancelled) {
-        // User closed the native chooser; no error banner needed
-      } else if (res.needsWebButtonFallback || res.message) {
-        setAuthModalNotice(res.message || null);
-        setIsAuthModalOpen(true);
-      }
-    } catch {
-      setIsAuthModalOpen(true);
-    } finally {
-      setIsSigningIn(false);
-    }
+    setIsAuthModalOpen(true);
   };
 
   useEffect(() => {
     const handleUserUpdate = (e: any) => {
-      setIsSigningIn(false);
       if (e.detail) {
         setAuthUser(e.detail);
         setIsAuthModalOpen(false);
@@ -128,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
     };
     const handleAuthExpired = (e: any) => {
       setAuthUser(null);
-      setAuthModalNotice(e?.detail?.message || 'Your Brivu session expired. Please sign in with Google again.');
+      setAuthModalNotice(e?.detail?.message || 'Your Brivu session expired. Please sign in again.');
       setToastMsg('Your session expired. Please sign in again.');
       setTimeout(() => setToastMsg(null), 4000);
     };
@@ -332,50 +309,25 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton />
 
-            {/* Google Sign-In / Account Button in Header Bar */}
+            {/* Sign-In / Account Button in Header Bar */}
             <button
               id="btn-header-google-auth"
               type="button"
-              onClick={() => {
-                if (authUser) {
-                  setAuthModalNotice(null);
-                  setIsAuthModalOpen(true);
-                } else {
-                  handleStartGoogleSignIn();
-                }
-              }}
-              disabled={isSigningIn}
+              onClick={handleOpenAuthModal}
               className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-bold cursor-pointer ${
                 authUser
                   ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                   : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
-              aria-label={authUser ? 'Account & Cloud Sync' : 'Sign In with Google'}
+              aria-label={authUser ? 'Account & Cloud Sync' : 'Sign In or Create Account'}
             >
-              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
+              {authUser ? (
+                <UserIcon className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <LogIn className="w-3.5 h-3.5 shrink-0" />
+              )}
               <span className="hidden xs:inline sm:inline text-[11px]">
-                {authUser
-                  ? 'Account'
-                  : isSigningIn
-                  ? 'Connecting...'
-                  : 'Sign In'}
+                {authUser ? 'Account' : 'Sign In'}
               </span>
             </button>
 
@@ -498,32 +450,15 @@ export const Header: React.FC<HeaderProps> = ({
                   ) : (
                     <div className="flex items-center justify-between gap-2.5 w-full">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-sm p-1.5">
-                          <svg className="w-full h-full" viewBox="0 0 24 24">
-                            <path
-                              fill="#4285F4"
-                              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                            />
-                            <path
-                              fill="#34A853"
-                              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                            />
-                            <path
-                              fill="#FBBC05"
-                              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                            />
-                            <path
-                              fill="#EA4335"
-                              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                            />
-                          </svg>
+                        <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/10 text-emerald-400">
+                          <ShieldCheck className="w-5 h-5" />
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs font-black text-white flex items-center gap-1">
-                            <span>Sign in with Google</span>
+                            <span>Sign in or Create Account</span>
                           </div>
                           <p className="text-[10px] text-indigo-200/90 font-medium truncate">
-                            protect receipts, QR codes & avoid losing data
+                            Use Email &amp; Password or Google to keep all data synced
                           </p>
                         </div>
                       </div>
@@ -533,12 +468,11 @@ export const Header: React.FC<HeaderProps> = ({
                         type="button"
                         onClick={() => {
                           setIsMenuOpen(false);
-                          handleStartGoogleSignIn();
+                          handleOpenAuthModal();
                         }}
-                        disabled={isSigningIn}
-                        className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        className="px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold shadow-md transition active:scale-95 shrink-0 flex items-center gap-1.5 cursor-pointer"
                       >
-                        <span>{isSigningIn ? 'Connecting...' : 'Sign In'}</span>
+                        <span>Sign In</span>
                         <LogIn className="w-3.5 h-3.5 text-slate-700" />
                       </button>
                     </div>

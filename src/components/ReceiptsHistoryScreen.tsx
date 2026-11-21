@@ -1112,14 +1112,14 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                           onClick={() => handleSavePhoto(receipt)}
                           disabled={savingPhotoId === receipt.id}
                           className="flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200/60 dark:border-emerald-800/60 text-[11px] font-semibold transition active:scale-95 disabled:opacity-50 min-w-0"
-                          title={isQuotationMode ? 'Save Quotation Photo (PNG)' : isInvoiceMode ? 'Save Invoice Photo (PNG)' : 'Save Receipt Photo (PNG)'}
+                          title={isQuotationMode ? 'Save Quotation Image (PNG)' : isInvoiceMode ? 'Save Invoice Image (PNG)' : 'Save Receipt Image (PNG)'}
                         >
                           {savingPhotoId === receipt.id ? (
                             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
                           ) : (
-                            <Camera className="w-3 h-3 shrink-0" />
+                            <Download className="w-3 h-3 shrink-0" />
                           )}
-                          <span className="truncate">Photo</span>
+                          <span className="truncate">Image</span>
                         </button>
 
                         <button

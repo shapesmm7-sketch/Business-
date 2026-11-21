@@ -3358,7 +3358,7 @@ export const StorageService = {
           ...user,
           id: user.id || cleanEmail,
           email: cleanEmail,
-          provider: 'google',
+          provider: user.provider || 'google',
         };
         localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updatedUser));
         if (cleanEmail) {

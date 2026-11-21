@@ -266,7 +266,54 @@ public class GoogleDrivePlugin extends Plugin {
         });
     }
 
+    private void saveConnectedDriveEmail(String email) {
+        if (email == null || email.trim().isEmpty()) return;
+        try {
+            getContext()
+                .getSharedPreferences("brivu_google_drive_prefs", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putString("connected_drive_email", email.trim())
+                .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void clearConnectedDriveEmail() {
+        try {
+            getContext()
+                .getSharedPreferences("brivu_google_drive_prefs", android.content.Context.MODE_PRIVATE)
+                .edit()
+                .remove("connected_drive_email")
+                .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private android.accounts.Account resolveDriveAccount() {
+        GoogleSignInAccount gsa = GoogleSignIn.getLastSignedInAccount(getContext());
+        String savedEmail = null;
+        try {
+            savedEmail = getContext()
+                .getSharedPreferences("brivu_google_drive_prefs", android.content.Context.MODE_PRIVATE)
+                .getString("connected_drive_email", null);
+        } catch (Exception ignored) {
+        }
+
+        if (savedEmail != null && !savedEmail.trim().isEmpty()) {
+            if (gsa != null && gsa.getEmail() != null && savedEmail.equalsIgnoreCase(gsa.getEmail()) && gsa.getAccount() != null) {
+                return gsa.getAccount();
+            }
+            return new android.accounts.Account(savedEmail.trim(), "com.google");
+        }
+
+        if (gsa != null && gsa.getAccount() != null) {
+            return gsa.getAccount();
+        }
+        return null;
+    }
+
     private void resolveWithToken(PluginCall call, String email, String displayName, String photoUrl, String accessToken) {
+        saveConnectedDriveEmail(email);
         JSObject ret = new JSObject();
         ret.put("success", true);
         ret.put("connected", true);
@@ -280,23 +327,30 @@ public class GoogleDrivePlugin extends Plugin {
     @PluginMethod
     public void getConnectedAccount(PluginCall call) {
         try {
-            GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(getContext());
-            if (account == null) {
+            android.accounts.Account driveAccount = resolveDriveAccount();
+            if (driveAccount == null) {
                 JSObject ret = new JSObject();
                 ret.put("connected", false);
                 call.resolve(ret);
                 return;
             }
+            GoogleSignInAccount gsa = GoogleSignIn.getLastSignedInAccount(getContext());
+            final String displayName = (gsa != null && gsa.getEmail() != null && gsa.getEmail().equalsIgnoreCase(driveAccount.name) && gsa.getDisplayName() != null)
+                ? gsa.getDisplayName()
+                : driveAccount.name;
+            final String photoUrl = (gsa != null && gsa.getEmail() != null && gsa.getEmail().equalsIgnoreCase(driveAccount.name) && gsa.getPhotoUrl() != null)
+                ? gsa.getPhotoUrl().toString()
+                : "";
 
             executor.execute(() -> {
                 try {
-                    String token = GoogleAuthUtil.getToken(getContext(), account.getAccount(), OAUTH_SCOPES_STRING);
+                    String token = GoogleAuthUtil.getToken(getContext(), driveAccount, OAUTH_SCOPES_STRING);
                     if (token != null && !token.isEmpty()) {
                         JSObject ret = new JSObject();
                         ret.put("connected", true);
-                        ret.put("email", account.getEmail());
-                        ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : account.getEmail());
-                        ret.put("photoUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
+                        ret.put("email", driveAccount.name);
+                        ret.put("displayName", displayName);
+                        ret.put("photoUrl", photoUrl);
                         ret.put("accessToken", token);
                         call.resolve(ret);
                     } else {
@@ -320,15 +374,15 @@ public class GoogleDrivePlugin extends Plugin {
 
     @PluginMethod
     public void getAccessToken(PluginCall call) {
-        GoogleSignInAccount account = GoogleSignIn.getLastSignedInAccount(getContext());
-        if (account == null) {
+        android.accounts.Account driveAccount = resolveDriveAccount();
+        if (driveAccount == null) {
             call.reject("No Google account currently signed in");
             return;
         }
 
         executor.execute(() -> {
             try {
-                String token = GoogleAuthUtil.getToken(getContext(), account.getAccount(), OAUTH_SCOPES_STRING);
+                String token = GoogleAuthUtil.getToken(getContext(), driveAccount, OAUTH_SCOPES_STRING);
                 if (token != null && !token.isEmpty()) {
                     JSObject ret = new JSObject();
                     ret.put("accessToken", token);
@@ -376,6 +430,7 @@ public class GoogleDrivePlugin extends Plugin {
 
     @PluginMethod
     public void disconnectGoogleDrive(PluginCall call) {
+        clearConnectedDriveEmail();
         try {
             GoogleSignInClient client = getClient();
             client.signOut().addOnCompleteListener(task -> {

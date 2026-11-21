@@ -284,18 +284,154 @@ function extractBrivuSessionToken(request: Request): string {
   return '';
 }
 
+const PBKDF2_ITERATIONS = 100000;
+
+function normalizeValidEmail(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const clean = raw.toLowerCase().trim();
+  if (!clean || clean.length > 254) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(clean)) return null;
+  return clean;
+}
+
+function validatePasswordStrength(
+  raw: unknown
+): { ok: true; password: string } | { ok: false; error: string } {
+  if (typeof raw !== 'string' || raw.length === 0) {
+    return { ok: false, error: 'Password is required.' };
+  }
+  if (raw.length < 6) {
+    return { ok: false, error: 'Password must be at least 6 characters.' };
+  }
+  if (raw.length > 128) {
+    return { ok: false, error: 'Password must be 128 characters or fewer.' };
+  }
+  return { ok: true, password: raw };
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = (hex || '').trim();
+  const len = Math.floor(clean.length / 2);
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16) || 0;
+  }
+  return bytes;
+}
+
+function constantTimeEqualHex(a: string, b: string): boolean {
+  const normA = (a || '').toLowerCase();
+  const normB = (b || '').toLowerCase();
+  const len = Math.max(normA.length, normB.length);
+  let diff = normA.length ^ normB.length;
+  for (let i = 0; i < len; i++) {
+    const codeA = i < normA.length ? normA.charCodeAt(i) : 0;
+    const codeB = i < normB.length ? normB.charCodeAt(i) : 0;
+    diff |= codeA ^ codeB;
+  }
+  return diff === 0;
+}
+
+async function hashPasswordPBKDF2(
+  password: string,
+  existingSaltHex?: string
+): Promise<{ hashHex: string; saltHex: string }> {
+  const saltBytes = existingSaltHex
+    ? hexToBytes(existingSaltHex)
+    : crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = existingSaltHex || bytesToHex(saltBytes);
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  return {
+    hashHex: bytesToHex(new Uint8Array(derivedBits)),
+    saltHex,
+  };
+}
+
+async function verifyPasswordPBKDF2(
+  password: string,
+  storedHashHex: string,
+  storedSaltHex: string
+): Promise<boolean> {
+  if (!storedHashHex || !storedSaltHex) return false;
+  try {
+    const { hashHex } = await hashPasswordPBKDF2(password, storedSaltHex);
+    return constantTimeEqualHex(hashHex, storedHashHex);
+  } catch {
+    return false;
+  }
+}
+
+async function issueBrivuSession(
+  db: any,
+  ctx: any,
+  user: { id: string; email: string },
+  googleSub?: string | null
+): Promise<{ rawSessionToken: string; expiresAt: number }> {
+  const rawSessionToken = generateSecureToken(32);
+  const nowMs = Date.now();
+  const expiresAt = nowMs + BRIVU_SESSION_TTL_MS;
+
+  if (db) {
+    try {
+      const tokenHash = await sha256Hex(rawSessionToken);
+      const sessionId = `bsess_${generateSecureToken(12)}`;
+      await db.prepare(`
+        INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, created_at, expires_at, last_seen_at, revoked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).bind(
+        sessionId,
+        tokenHash,
+        user.id,
+        user.email,
+        googleSub || null,
+        nowMs,
+        expiresAt,
+        nowMs
+      ).run();
+      const prunePromise = db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(prunePromise);
+      }
+    } catch (sessErr) {
+      console.warn('D1 brivu_sessions insert note:', sessErr);
+    }
+  }
+
+  return { rawSessionToken, expiresAt };
+}
+
 function mapDbRowToBrivuUser(row: any, nowIso?: string) {
   const cleanEmail = String(row?.email || '').toLowerCase().trim();
+  const rawProvider = String(row?.provider || '').trim().toLowerCase();
+  const provider: 'google' | 'email' = rawProvider === 'email' ? 'email' : 'google';
   return {
     id: row?.id || cleanEmail,
     googleSub: row?.google_sub || undefined,
     email: cleanEmail,
     firstName: row?.first_name || '',
     lastName: row?.last_name || '',
-    name: row?.name || cleanEmail || 'Google User',
+    name: row?.name || (cleanEmail ? cleanEmail.split('@')[0] : 'Brivu User'),
     profilePictureUrl: row?.profile_picture_url || '',
-    emailVerified: true,
-    provider: 'google' as const,
+    emailVerified: Boolean(row?.google_sub) || provider === 'google',
+    hasPassword: Boolean(row?.password_hash),
+    hasGoogleLinked: Boolean(row?.google_sub),
+    provider,
     createdAt: row?.created_at || nowIso,
     updatedAt: row?.updated_at || nowIso,
     lastLogin: row?.last_login || nowIso,
@@ -306,7 +442,7 @@ function mapDbRowToBrivuUser(row: any, nowIso?: string) {
 
 /**
  * Safely creates or retrieves a Brivu user after Google ID token verification.
- * Migrates pre-existing WorkOS/legacy records matched strictly by verified email
+ * Migrates pre-existing WorkOS/legacy/email records matched strictly by verified email
  * by attaching google_sub without creating duplicate accounts or losing data.
  */
 async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
@@ -727,6 +863,8 @@ export async function ensureD1Tables(db: any): Promise<void> {
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
             google_sub TEXT,
+            password_hash TEXT,
+            password_salt TEXT,
             name TEXT,
             first_name TEXT,
             last_name TEXT,
@@ -873,6 +1011,12 @@ export async function ensureD1Tables(db: any): Promise<void> {
       // Safe schema migration for existing live D1 users table
       try {
         await db.prepare(`ALTER TABLE users ADD COLUMN google_sub TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN password_hash TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN password_salt TEXT`).run();
       } catch (_) {}
       try {
         await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)`).run();
@@ -2196,35 +2340,7 @@ export default {
         }
 
         const user = await upsertVerifiedGoogleUser(db, claims);
-        const rawSessionToken = generateSecureToken(32);
-        const nowMs = Date.now();
-        const expiresAt = nowMs + BRIVU_SESSION_TTL_MS;
-
-        if (db) {
-          try {
-            const tokenHash = await sha256Hex(rawSessionToken);
-            const sessionId = `bsess_${generateSecureToken(12)}`;
-            await db.prepare(`
-              INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, created_at, expires_at, last_seen_at, revoked_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
-            `).bind(
-              sessionId,
-              tokenHash,
-              user.id,
-              user.email,
-              claims.sub,
-              nowMs,
-              expiresAt,
-              nowMs
-            ).run();
-            const prunePromise = db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
-            if (ctx?.waitUntil) {
-              ctx.waitUntil(prunePromise);
-            }
-          } catch (sessErr) {
-            console.warn('D1 brivu_sessions insert note:', sessErr);
-          }
-        }
+        const { rawSessionToken, expiresAt } = await issueBrivuSession(db, ctx, user, claims.sub);
 
         return new Response(
           JSON.stringify({
@@ -2361,6 +2477,385 @@ export default {
       }
     }
 
+    // 2c-register. Brivu Email & Password Account Creation or Unified Linking (/api/auth/register)
+    if (url.pathname === '/api/auth/register' && request.method === 'POST') {
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const cleanEmail = normalizeValidEmail(body?.email);
+        if (!cleanEmail) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Please enter a valid email address.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const pwCheck = validatePasswordStrength(body?.password);
+        if (pwCheck.ok === false) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: pwCheck.error }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const cleanName = typeof body?.name === 'string' ? body.name.trim().slice(0, 120) : '';
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Database not bound on server.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        await ensureD1Tables(db);
+        const nowIso = new Date().toISOString();
+
+        const existingRow: any = await db
+          .prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+          .bind(cleanEmail, cleanEmail)
+          .first()
+          .catch(() => null);
+
+        if (existingRow) {
+          if (existingRow.password_hash && existingRow.password_salt) {
+            // If user already has a password and entered the right one, sign them in seamlessly
+            const matches = await verifyPasswordPBKDF2(
+              pwCheck.password,
+              String(existingRow.password_hash),
+              String(existingRow.password_salt)
+            );
+            if (!matches) {
+              return new Response(
+                JSON.stringify({
+                  ok: false,
+                  success: false,
+                  alreadyExists: true,
+                  error: 'An account with this email already exists. Switch to Login with your password or Continue with Google.',
+                }),
+                { status: 409, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+              );
+            }
+
+            await db
+              .prepare('UPDATE users SET updated_at = ?, last_login = ? WHERE id = ?')
+              .bind(nowIso, nowIso, existingRow.id)
+              .run();
+
+            const user = mapDbRowToBrivuUser(
+              { ...existingRow, updated_at: nowIso, last_login: nowIso },
+              nowIso
+            );
+            const { rawSessionToken, expiresAt } = await issueBrivuSession(
+              db,
+              ctx,
+              user,
+              existingRow.google_sub
+            );
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                success: true,
+                user,
+                sessionToken: rawSessionToken,
+                expiresAt,
+                linkedExistingGoogleAccount: Boolean(existingRow.google_sub),
+                message: 'Signed into your existing Brivu account.',
+              }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Account was previously created with Google Login and has no password yet -> attach password to the exact same account!
+          const { hashHex, saltHex } = await hashPasswordPBKDF2(pwCheck.password);
+          await db.prepare(`
+            UPDATE users
+            SET password_hash = ?,
+                password_salt = ?,
+                name = COALESCE(NULLIF(?, ''), name),
+                updated_at = ?,
+                last_login = ?
+            WHERE id = ?
+          `).bind(
+            hashHex,
+            saltHex,
+            cleanName,
+            nowIso,
+            nowIso,
+            existingRow.id
+          ).run();
+
+          const user = mapDbRowToBrivuUser(
+            {
+              ...existingRow,
+              password_hash: hashHex,
+              password_salt: saltHex,
+              name: cleanName || existingRow.name,
+              updated_at: nowIso,
+              last_login: nowIso,
+            },
+            nowIso
+          );
+          const { rawSessionToken, expiresAt } = await issueBrivuSession(
+            db,
+            ctx,
+            user,
+            existingRow.google_sub
+          );
+
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              user,
+              sessionToken: rawSessionToken,
+              expiresAt,
+              linkedExistingGoogleAccount: true,
+              message: 'Password added to your existing Google account. All your data remains linked under this email.',
+            }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Brand new email/password account
+        const { hashHex, saltHex } = await hashPasswordPBKDF2(pwCheck.password);
+        const fallbackName = cleanName || cleanEmail.split('@')[0] || 'Brivu User';
+        const nameParts = fallbackName.split(/\s+/);
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ');
+
+        await db.prepare(`
+          INSERT INTO users (id, email, password_hash, password_salt, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '', 'email', ?, ?, ?)
+        `).bind(
+          cleanEmail,
+          cleanEmail,
+          hashHex,
+          saltHex,
+          fallbackName,
+          firstName,
+          lastName,
+          nowIso,
+          nowIso,
+          nowIso
+        ).run();
+
+        const user = mapDbRowToBrivuUser(
+          {
+            id: cleanEmail,
+            email: cleanEmail,
+            password_hash: hashHex,
+            name: fallbackName,
+            first_name: firstName,
+            last_name: lastName,
+            provider: 'email',
+            created_at: nowIso,
+            updated_at: nowIso,
+            last_login: nowIso,
+          },
+          nowIso
+        );
+        const { rawSessionToken, expiresAt } = await issueBrivuSession(db, ctx, user, null);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            user,
+            sessionToken: rawSessionToken,
+            expiresAt,
+            linkedExistingGoogleAccount: false,
+            message: 'Account created and signed into Brivu.',
+          }),
+          { status: 201, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2c-login. Brivu Email & Password Login (/api/auth/login)
+    if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const cleanEmail = normalizeValidEmail(body?.email);
+        if (!cleanEmail) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Please enter a valid email address.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const rawPassword = typeof body?.password === 'string' ? body.password : '';
+        if (!rawPassword) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Password is required.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Database not bound on server.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        await ensureD1Tables(db);
+        const existingRow: any = await db
+          .prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+          .bind(cleanEmail, cleanEmail)
+          .first()
+          .catch(() => null);
+
+        if (!existingRow) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Invalid email or password.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (!existingRow.password_hash || !existingRow.password_salt) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              needsPasswordSetup: true,
+              error:
+                'This email was created with Google Login and does not have a password yet. Switch to Create Account with this same email to set a password and keep all your existing data, or Continue with Google.',
+            }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const isValid = await verifyPasswordPBKDF2(
+          rawPassword,
+          String(existingRow.password_hash),
+          String(existingRow.password_salt)
+        );
+        if (!isValid) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Invalid email or password.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const nowIso = new Date().toISOString();
+        await db
+          .prepare('UPDATE users SET updated_at = ?, last_login = ? WHERE id = ?')
+          .bind(nowIso, nowIso, existingRow.id)
+          .run()
+          .catch(() => {});
+
+        const user = mapDbRowToBrivuUser(
+          { ...existingRow, updated_at: nowIso, last_login: nowIso },
+          nowIso
+        );
+        const { rawSessionToken, expiresAt } = await issueBrivuSession(
+          db,
+          ctx,
+          user,
+          existingRow.google_sub
+        );
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            user,
+            sessionToken: rawSessionToken,
+            expiresAt,
+            message: 'Signed into Brivu.',
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2c-set-password. Authenticated user can add or update a backup password (/api/auth/set-password)
+    if (url.pathname === '/api/auth/set-password' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        const rawToken = extractBrivuSessionToken(request);
+        if (!rawToken) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Please sign in first to set a password.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Database not bound on server.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        await ensureD1Tables(db);
+        const tokenHash = await sha256Hex(rawToken);
+        const sessionRow: any = await db
+          .prepare('SELECT * FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
+          .bind(tokenHash)
+          .first()
+          .catch(() => null);
+
+        const nowMs = Date.now();
+        if (!sessionRow || sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: 'Your session expired. Please sign in again.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const pwCheck = validatePasswordStrength(body?.password);
+        if (pwCheck.ok === false) {
+          return new Response(
+            JSON.stringify({ ok: false, success: false, error: pwCheck.error }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const targetEmail = String(sessionRow.user_email || sessionRow.user_id || '').toLowerCase().trim();
+        const { hashHex, saltHex } = await hashPasswordPBKDF2(pwCheck.password);
+        const nowIso = new Date().toISOString();
+
+        await db.prepare(`
+          UPDATE users
+          SET password_hash = ?, password_salt = ?, updated_at = ?
+          WHERE id = ? OR LOWER(email) = ?
+        `).bind(hashHex, saltHex, nowIso, sessionRow.user_id, targetEmail).run();
+
+        const updatedRow: any = await db
+          .prepare('SELECT * FROM users WHERE id = ? OR LOWER(email) = ? LIMIT 1')
+          .bind(sessionRow.user_id, targetEmail)
+          .first()
+          .catch(() => null);
+
+        const user = updatedRow ? mapDbRowToBrivuUser(updatedRow, nowIso) : undefined;
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            user,
+            message: 'Backup password saved! You can now sign in with this email and password anytime.',
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, success: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // 2d. Cloudflare User Profile & Emails Storage endpoint (/api/user/profile)
     if (url.pathname === '/api/user/profile' && request.method === 'POST') {
       try {
@@ -2474,18 +2969,7 @@ export default {
           await ensureD1Tables(db);
           const uRow: any = await db.prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ?').bind(targetEmail, targetEmail).first();
           if (uRow) {
-            const userObj = {
-              id: uRow.email,
-              email: uRow.email,
-              name: uRow.name || uRow.email,
-              firstName: uRow.first_name || '',
-              lastName: uRow.last_name || '',
-              profilePictureUrl: uRow.profile_picture_url || '',
-              provider: uRow.provider || 'google',
-              updatedAt: uRow.updated_at,
-              createdAt: uRow.created_at,
-              lastLogin: uRow.last_login,
-            };
+            const userObj = mapDbRowToBrivuUser(uRow);
             return new Response(JSON.stringify({ ok: true, success: true, user: userObj }), {
               status: 200,
               headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
@@ -2509,18 +2993,7 @@ export default {
           await ensureD1Tables(db);
           const rows: any = await db.prepare('SELECT * FROM users ORDER BY last_login DESC').all();
           if (rows && Array.isArray(rows.results)) {
-            users = rows.results.map((u: any) => ({
-              id: u.email,
-              email: u.email,
-              name: u.name || u.email,
-              firstName: u.first_name || '',
-              lastName: u.last_name || '',
-              profilePictureUrl: u.profile_picture_url || '',
-              provider: u.provider || 'google',
-              updatedAt: u.updated_at,
-              createdAt: u.created_at,
-              lastLogin: u.last_login,
-            }));
+            users = rows.results.map((u: any) => mapDbRowToBrivuUser(u));
           }
         } catch (_) {}
       }
@@ -5020,7 +5493,7 @@ export default {
             }
 
             try {
-              const usersRes = await db.prepare('SELECT * FROM users').all();
+              const usersRes = await db.prepare('SELECT id, email, google_sub, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login FROM users').all();
               report.d1Users = (usersRes?.results || []).map((u: any) => ({
                 ...u,
                 is_brivu_usr: String(u.id || '').includes('brivu-usr') || String(u.email || '').includes('brivu-usr'),

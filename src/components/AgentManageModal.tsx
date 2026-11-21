@@ -791,10 +791,10 @@ export const AgentManageModal: React.FC<AgentManageModalProps> = ({
                 id="btn-export-agent-photo"
                 onClick={handleExportAgentPhoto}
                 className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition active:scale-95 cursor-pointer border border-white/30 backdrop-blur-xs"
-                title="Save agent report as Photo (PNG)"
+                title="Save agent report as Image (PNG)"
               >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Photo</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>Image</span>
               </button>
               <button
                 type="button"

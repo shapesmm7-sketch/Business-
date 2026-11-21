@@ -705,7 +705,9 @@ export interface BrivuUser {
   name?: string;
   profilePictureUrl?: string;
   emailVerified?: boolean;
-  provider?: 'google' | string;
+  hasPassword?: boolean;
+  hasGoogleLinked?: boolean;
+  provider?: 'google' | 'email' | string;
   createdAt?: string;
   updatedAt?: string;
   syncedToCloudflare?: boolean;

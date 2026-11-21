@@ -53,13 +53,14 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Register custom NativeAd, PlayBilling, MediaStore, GoogleDrive, BrivuAuth, and BluetoothPrinter plugins with Capacitor Bridge
+        // Register custom NativeAd, PlayBilling, MediaStore, GoogleDrive, BrivuAuth, BluetoothPrinter, and Torch plugins with Capacitor Bridge
         registerPlugin(NativeAdPlugin.class);
         registerPlugin(PlayBillingPlugin.class);
         registerPlugin(MediaStorePlugin.class);
         registerPlugin(GoogleDrivePlugin.class);
         registerPlugin(BrivuAuthPlugin.class);
         registerPlugin(BluetoothPrinterPlugin.class);
+        registerPlugin(TorchPlugin.class);
 
         super.onCreate(savedInstanceState);
 

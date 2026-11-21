@@ -1,9 +1,13 @@
 package com.brivu.myapp;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.os.CancellationSignal;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
+import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.credentials.ClearCredentialStateRequest;
@@ -22,16 +26,28 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes;
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.tasks.Task;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @CapacitorPlugin(name = "BrivuAuthPlugin")
 public class BrivuAuthPlugin extends Plugin {
     private static final String TAG = "BrivuAuthPlugin";
+    private static final long CREDENTIAL_MANAGER_TIMEOUT_MS = 30000L;
 
     private String resolveServerClientId(PluginCall call) {
-        String fromCall = call.getString("serverClientId");
+        String fromCall = call != null ? call.getString("serverClientId") : null;
         if (fromCall != null && !fromCall.trim().isEmpty()) {
             return fromCall.trim();
         }
@@ -43,6 +59,14 @@ public class BrivuAuthPlugin extends Plugin {
         } catch (Exception ignored) {
         }
         return "";
+    }
+
+    private GoogleSignInClient buildGoogleSignInClient(Activity activity, String serverClientId) {
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(serverClientId)
+            .requestEmail()
+            .build();
+        return GoogleSignIn.getClient(activity, gso);
     }
 
     @PluginMethod
@@ -64,6 +88,94 @@ public class BrivuAuthPlugin extends Plugin {
 
         String nonce = call.getString("nonce");
 
+        // Primary fast path: GoogleSignInClient opens the native account chooser and returns
+        // the OpenID ID token directly via Play Services in ~1s without CredentialManager delays.
+        try {
+            GoogleSignInClient signInClient = buildGoogleSignInClient(activity, serverClientId);
+            GoogleSignInAccount lastAccount = GoogleSignIn.getLastSignedInAccount(activity);
+            if (lastAccount != null) {
+                signInClient.signOut().addOnCompleteListener(activity, task -> {
+                    try {
+                        startActivityForResult(call, signInClient.getSignInIntent(), "handleGoogleSignInResult");
+                    } catch (Exception launchErr) {
+                        Log.w(TAG, "GoogleSignInClient launch after signOut failed, falling back to CredentialManager", launchErr);
+                        launchCredentialManagerSignIn(call, serverClientId, nonce);
+                    }
+                });
+            } else {
+                startActivityForResult(call, signInClient.getSignInIntent(), "handleGoogleSignInResult");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "GoogleSignInClient setup failed, falling back to CredentialManager", e);
+            launchCredentialManagerSignIn(call, serverClientId, nonce);
+        }
+    }
+
+    @ActivityCallback
+    private void handleGoogleSignInResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+
+        int resultCode = result.getResultCode();
+        Intent data = result.getData();
+
+        if (data != null) {
+            Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+            try {
+                GoogleSignInAccount account = task.getResult(ApiException.class);
+                if (account != null && account.getIdToken() != null && !account.getIdToken().trim().isEmpty()) {
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("idToken", account.getIdToken());
+                    ret.put("email", account.getEmail() != null ? account.getEmail() : "");
+                    ret.put("displayName", account.getDisplayName() != null ? account.getDisplayName() : "");
+                    ret.put("givenName", account.getGivenName() != null ? account.getGivenName() : "");
+                    ret.put("familyName", account.getFamilyName() != null ? account.getFamilyName() : "");
+                    ret.put("profilePictureUrl", account.getPhotoUrl() != null ? account.getPhotoUrl().toString() : "");
+                    call.resolve(ret);
+                    return;
+                }
+            } catch (ApiException e) {
+                int statusCode = e.getStatusCode();
+                if (resultCode == Activity.RESULT_CANCELED &&
+                    (statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED || statusCode == CommonStatusCodes.CANCELED)) {
+                    Log.i(TAG, "User cancelled Google account chooser.");
+                    JSObject ret = new JSObject();
+                    ret.put("success", false);
+                    ret.put("cancelled", true);
+                    ret.put("message", "Sign-in was cancelled.");
+                    call.resolve(ret);
+                    return;
+                }
+                Log.w(TAG, "GoogleSignInClient returned status " + statusCode + ", falling back to CredentialManager", e);
+                launchCredentialManagerSignIn(call, resolveServerClientId(call), call.getString("nonce"));
+                return;
+            } catch (Exception e) {
+                Log.w(TAG, "GoogleSignInClient unexpected error, falling back to CredentialManager", e);
+                launchCredentialManagerSignIn(call, resolveServerClientId(call), call.getString("nonce"));
+                return;
+            }
+        }
+
+        if (resultCode == Activity.RESULT_CANCELED) {
+            Log.i(TAG, "User cancelled Google account chooser.");
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            ret.put("cancelled", true);
+            ret.put("message", "Sign-in was cancelled.");
+            call.resolve(ret);
+            return;
+        }
+
+        launchCredentialManagerSignIn(call, resolveServerClientId(call), call.getString("nonce"));
+    }
+
+    private void launchCredentialManagerSignIn(PluginCall call, String serverClientId, String nonce) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Android activity is not available for Google Sign-In.", "ACTIVITY_UNAVAILABLE");
+            return;
+        }
+
         try {
             CredentialManager credentialManager = CredentialManager.create(activity);
 
@@ -78,6 +190,22 @@ public class BrivuAuthPlugin extends Plugin {
 
             activity.runOnUiThread(() -> {
                 CancellationSignal cancellationSignal = new CancellationSignal();
+                AtomicBoolean settled = new AtomicBoolean(false);
+                Handler timeoutHandler = new Handler(Looper.getMainLooper());
+                Runnable timeoutRunnable = () -> {
+                    if (settled.compareAndSet(false, true)) {
+                        try {
+                            cancellationSignal.cancel();
+                        } catch (Exception ignored) {
+                        }
+                        call.reject(
+                            "Google Sign-In timed out. Please check your internet connection and try again.",
+                            "SIGN_IN_TIMEOUT"
+                        );
+                    }
+                };
+                timeoutHandler.postDelayed(timeoutRunnable, CREDENTIAL_MANAGER_TIMEOUT_MS);
+
                 credentialManager.getCredentialAsync(
                     activity,
                     request,
@@ -86,12 +214,18 @@ public class BrivuAuthPlugin extends Plugin {
                     new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                         @Override
                         public void onResult(@NonNull GetCredentialResponse result) {
-                            handleCredentialResult(call, result);
+                            timeoutHandler.removeCallbacks(timeoutRunnable);
+                            if (settled.compareAndSet(false, true)) {
+                                handleCredentialResult(call, result);
+                            }
                         }
 
                         @Override
                         public void onError(@NonNull GetCredentialException e) {
-                            handleCredentialError(call, e);
+                            timeoutHandler.removeCallbacks(timeoutRunnable);
+                            if (settled.compareAndSet(false, true)) {
+                                handleCredentialError(call, e);
+                            }
                         }
                     }
                 );
@@ -161,12 +295,23 @@ public class BrivuAuthPlugin extends Plugin {
 
     @PluginMethod
     public void signOut(PluginCall call) {
+        // Resolve immediately so UI sign-out has zero IPC delay
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+
         Activity activity = getActivity();
         if (activity == null) {
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
             return;
+        }
+
+        String serverClientId = resolveServerClientId(null);
+        if (!serverClientId.isEmpty()) {
+            try {
+                buildGoogleSignInClient(activity, serverClientId).signOut();
+            } catch (Exception e) {
+                Log.w(TAG, "GoogleSignInClient background signOut note: " + e.getMessage());
+            }
         }
 
         try {
@@ -179,25 +324,16 @@ public class BrivuAuthPlugin extends Plugin {
                 new CredentialManagerCallback<Void, ClearCredentialException>() {
                     @Override
                     public void onResult(Void unused) {
-                        JSObject ret = new JSObject();
-                        ret.put("success", true);
-                        call.resolve(ret);
                     }
 
                     @Override
                     public void onError(@NonNull ClearCredentialException e) {
                         Log.w(TAG, "clearCredentialStateAsync note: " + e.getMessage());
-                        JSObject ret = new JSObject();
-                        ret.put("success", true);
-                        call.resolve(ret);
                     }
                 }
             );
         } catch (Exception e) {
             Log.w(TAG, "signOut note: " + e.getMessage());
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
         }
     }
 }

@@ -226,14 +226,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
     ? customHeaderBg
     : undefined;
 
-  const headerStyle: React.CSSProperties = headerBgStyle
-    ? {
-        ...formatBgStyle(headerBgStyle),
-        ...(customTheme?.headerTextColor
-          ? formatTextStyle(customTheme.headerTextColor)
-          : { color: (isValidHex(headerBgStyle) ? getContrastTextHex(headerBgStyle) : '#ffffff') }),
-      }
-    : {};
+  const effectiveHeaderTextColor =
+    isCustomHeaderText && customTheme?.headerTextColor
+      ? customTheme.headerTextColor
+      : headerBgStyle
+        ? (isValidHex(headerBgStyle) ? getContrastTextHex(headerBgStyle) : '#ffffff')
+        : undefined;
+
+  const headerStyle: React.CSSProperties = {
+    ...(headerBgStyle ? formatBgStyle(headerBgStyle) : {}),
+    ...(effectiveHeaderTextColor ? formatTextStyle(effectiveHeaderTextColor) : {}),
+  };
 
   // 4. Total Box Background & Text Style
   const customTotalBg = customTheme?.totalBgColor;
@@ -255,7 +258,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
   const receiptTextColorVal = customTheme?.receiptTextColor && isValidColorOrGradient(customTheme.receiptTextColor)
     ? customTheme.receiptTextColor
-    : undefined;
+    : (isCustomPaperBg && paperBgVal && isValidHex(paperBgVal) ? getContrastTextHex(paperBgVal) : undefined);
 
   const paperStyle: React.CSSProperties = {
     ...(paperBgVal ? formatBgStyle(paperBgVal) : {}),
@@ -263,17 +266,26 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   };
 
   // 6. Header Specific Element Styles
-  const headerNameStyle: React.CSSProperties = customTheme?.headerNameColor && isValidColorOrGradient(customTheme.headerNameColor)
-    ? formatTextStyle(customTheme.headerNameColor)
-    : {};
+  const headerNameStyle: React.CSSProperties =
+    customTheme?.headerNameColor && isValidColorOrGradient(customTheme.headerNameColor)
+      ? formatTextStyle(customTheme.headerNameColor)
+      : effectiveHeaderTextColor
+        ? formatTextStyle(effectiveHeaderTextColor)
+        : {};
 
-  const headerDescStyle: React.CSSProperties = customTheme?.headerDescColor && isValidColorOrGradient(customTheme.headerDescColor)
-    ? formatTextStyle(customTheme.headerDescColor)
-    : {};
+  const headerDescStyle: React.CSSProperties =
+    customTheme?.headerDescColor && isValidColorOrGradient(customTheme.headerDescColor)
+      ? formatTextStyle(customTheme.headerDescColor)
+      : effectiveHeaderTextColor
+        ? formatTextStyle(effectiveHeaderTextColor)
+        : {};
 
-  const headerAddressStyle: React.CSSProperties = customTheme?.headerAddressColor && isValidColorOrGradient(customTheme.headerAddressColor)
-    ? formatTextStyle(customTheme.headerAddressColor)
-    : {};
+  const headerAddressStyle: React.CSSProperties =
+    customTheme?.headerAddressColor && isValidColorOrGradient(customTheme.headerAddressColor)
+      ? formatTextStyle(customTheme.headerAddressColor)
+      : effectiveHeaderTextColor
+        ? formatTextStyle(effectiveHeaderTextColor)
+        : {};
 
   // 6. Header Background Resolution for Contrast Checking
   let effectiveHeaderHex = '#ffffff';
@@ -468,7 +480,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 <span>-{formatCurrency(discountAmount, currency)}</span>
               </div>
             )}
-            <div className="flex justify-between text-sm sm:text-base font-bold border-b-4 border-double border-slate-900 dark:border-slate-100 py-1.5" style={(totalStyle.background || totalStyle.backgroundColor) ? totalStyle : undefined}>
+            <div
+              className="flex justify-between text-sm sm:text-base font-bold border-b-4 border-double border-slate-900 dark:border-slate-100 py-1.5"
+              style={(totalStyle.background || totalStyle.backgroundColor) ? { ...totalStyle, paddingLeft: '12px', paddingRight: '12px', borderRadius: '8px' } : undefined}
+            >
               <span>GRAND TOTAL:</span>
               <span className="font-mono">{formatCurrency(total, currency)}</span>
             </div>
@@ -562,8 +577,8 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </div>
           )}
           <div className="flex justify-between items-baseline pt-2 border-t border-slate-100 dark:border-slate-800" style={(totalStyle.background || totalStyle.backgroundColor) ? { ...totalStyle, padding: '8px 12px', borderRadius: '12px' } : undefined}>
-            <span className="text-xs uppercase tracking-wider text-slate-400 font-medium">Total</span>
-            <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white font-mono">
+            <span className="text-xs uppercase tracking-wider text-slate-400 font-medium" style={(totalStyle.background || totalStyle.backgroundColor) ? { color: 'inherit' } : undefined}>Total</span>
+            <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white font-mono" style={(totalStyle.background || totalStyle.backgroundColor) ? { color: 'inherit' } : undefined}>
               {formatCurrency(total, currency)}
             </span>
           </div>
@@ -661,7 +676,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           <div className="space-y-1 text-right">
             <div className="text-slate-500 text-[11px]">Subtotal: {formatCurrency(subtotal, currency)}</div>
             <div className="text-slate-500 text-[11px]">VAT (18% Incl.): {formatCurrency(Math.round(total * 0.1525), currency)}</div>
-            <div className="text-sm font-bold text-slate-900 dark:text-white pt-1 border-t border-slate-200 dark:border-slate-700 font-mono">
+            <div
+              className="text-sm font-bold text-slate-900 dark:text-white pt-1 border-t border-slate-200 dark:border-slate-700 font-mono"
+              style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '6px 10px', borderRadius: '8px' } : undefined}
+            >
               TOTAL: {formatCurrency(total, currency)}
             </div>
           </div>
@@ -1395,7 +1413,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 </h2>
               )}
               {businessDescription && (
-                <p className="text-xs font-sans text-rose-800/80 italic mt-0.5 text-center">{businessDescription}</p>
+                <p className="text-xs font-sans text-rose-800/80 italic mt-0.5 text-center" style={headerDescStyle}>{businessDescription}</p>
               )}
               {phone && (
                 <p className="text-xs font-sans text-slate-500 mt-0.5 text-center" style={headerDescStyle}>
@@ -1426,8 +1444,11 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="mt-3 pt-3 border-t-2 border-rose-900/40 space-y-2">
-          <div className="flex justify-between items-center p-3 rounded-xl bg-rose-950 text-white shadow-md">
-            <span className="text-xs font-sans font-bold uppercase tracking-wider text-rose-200">
+          <div
+            className="flex justify-between items-center p-3 rounded-xl bg-rose-950 text-white shadow-md"
+            style={(isCustomTotalBg || isCustomTotalText) ? totalStyle : undefined}
+          >
+            <span className="text-xs font-sans font-bold uppercase tracking-wider text-rose-200" style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit' } : undefined}>
               MONTANT TOTAL
             </span>
             <span className="text-base sm:text-lg font-black font-mono">
@@ -1478,7 +1499,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 </h3>
               )}
               {businessDescription && (
-                <p className="text-xs text-sky-800/80 italic mt-0.5 text-center">{businessDescription}</p>
+                <p className="text-xs text-sky-800/80 italic mt-0.5 text-center" style={headerDescStyle}>{businessDescription}</p>
               )}
             </div>
           </div>
@@ -1503,7 +1524,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         {/* Floating Fintech Total Banner */}
-        <div className="mt-2 p-3.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 text-white flex justify-between items-center shadow-lg shadow-sky-600/25">
+        <div
+          className="mt-2 p-3.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 text-white flex justify-between items-center shadow-lg shadow-sky-600/25"
+          style={(isCustomTotalBg || isCustomTotalText) ? totalStyle : undefined}
+        >
           <span className="font-bold text-xs uppercase tracking-wider">TOTAL AMOUNT</span>
           <span className="text-base sm:text-lg font-black font-mono">
             {formatCurrency(total, currency)}
@@ -1603,7 +1627,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
     <div className={`w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${theme.fontFamily} text-slate-900 dark:text-slate-100`} style={paperStyle}>
       <div>
         {/* Modern Slate Header Banner */}
-        <div className="bg-slate-900 text-white p-4 sm:p-5" style={isCustomHeader ? headerStyle : undefined}>
+        <div className="bg-slate-900 text-white p-4 sm:p-5" style={headerStyle}>
           <div className="text-center pb-1">
             <span className="text-[10px] uppercase tracking-widest font-extrabold px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
               {effectiveBadgeText}

@@ -14,6 +14,8 @@
 -keep class * extends com.getcapacitor.Plugin { *; }
 -keepclassmembers class * extends com.getcapacitor.Plugin {
     @com.getcapacitor.PluginMethod public *;
+    @com.getcapacitor.annotation.ActivityCallback *;
+    @com.getcapacitor.annotation.PermissionCallback *;
 }
 -keep class * implements com.getcapacitor.PluginMethod { *; }
 -keepclassmembers class * {
