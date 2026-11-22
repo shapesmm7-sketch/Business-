@@ -4059,14 +4059,31 @@ export default {
             const object = await bucket.get(k);
             if (object) {
               const headers = new Headers(CORS_HEADERS);
-              object.writeHttpMetadata(headers);
-              headers.set('etag', object.httpEtag);
+              const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
+              headers.set('Content-Type', contentType);
+              headers.set('Content-Disposition', 'inline');
+              if (object.httpEtag) {
+                headers.set('ETag', object.httpEtag);
+              }
+              headers.set('Accept-Ranges', 'bytes');
+              headers.set('Alt-Svc', 'clear');
               if (isMenuAsset) {
                 headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
                 headers.set('Pragma', 'no-cache');
                 headers.set('Expires', '0');
+              } else {
+                headers.set('Cache-Control', 'public, max-age=3600');
               }
-              return new Response(object.body, { headers });
+              // Buffer files up to 5 MB cleanly so Content-Length matches exact bytes and avoids chunked R2 stream resets on HTTP/3
+              if (typeof object.size === 'number' && object.size <= 5 * 1024 * 1024) {
+                const buf = await object.arrayBuffer();
+                headers.set('Content-Length', String(buf.byteLength));
+                return new Response(buf, { status: 200, headers });
+              }
+              if (typeof object.size === 'number') {
+                headers.set('Content-Length', String(object.size));
+              }
+              return new Response(object.body, { status: 200, headers });
             }
           } catch {}
         }
@@ -4083,10 +4100,14 @@ export default {
             if (row && row.data_base64) {
               const buffer = decodeBase64ToUint8Array(row.data_base64);
               return new Response(buffer, {
+                status: 200,
                 headers: {
                   ...CORS_HEADERS,
                   'Content-Type': row.mime_type || 'application/octet-stream',
-                  ...(isMenuAsset ? { 'Cache-Control': 'no-cache, no-store, must-revalidate' } : {}),
+                  'Content-Length': String(buffer.byteLength),
+                  'Content-Disposition': 'inline',
+                  'Alt-Svc': 'clear',
+                  ...(isMenuAsset ? { 'Cache-Control': 'no-cache, no-store, must-revalidate' } : { 'Cache-Control': 'public, max-age=3600' }),
                 },
               });
             }
@@ -5555,6 +5576,7 @@ export default {
         if (response.status !== 404) {
           const newHeaders = new Headers(response.headers);
           Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+          newHeaders.set('Alt-Svc', 'clear');
           return new Response(response.body, {
             status: response.status,
             statusText: response.statusText,
@@ -5648,11 +5670,15 @@ export default {
         }
       }
 
-      const newHeaders = new Headers(indexResponse.headers);
+      const newHeaders = new Headers();
       Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
       newHeaders.set('Content-Type', 'text/html; charset=utf-8');
+      newHeaders.set('Alt-Svc', 'clear');
       if (isQrRoute) {
         newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        newHeaders.set('Pragma', 'no-cache');
+      } else {
+        newHeaders.set('Cache-Control', 'public, max-age=0, must-revalidate');
       }
       return new Response(html, {
         status: indexResponse.status,
