@@ -719,7 +719,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                                 Replace Mode
                               </span>
                               <span className="text-[11px] text-emerald-100/90 truncate">
-                                Restores all files &amp; photos into place
+                                Restores all files &amp; keeps new local records
                               </span>
                             </div>
                           </div>
@@ -892,7 +892,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                     </span>
                   </div>
                   <div className="text-[9px] mt-0.5 opacity-80 leading-tight">
-                    Fresh restore into all app records &amp; lists
+                    Restores backup items &amp; keeps new local records
                   </div>
                 </button>
 

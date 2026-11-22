@@ -143,19 +143,32 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     );
   }, [menuImages, selectedMenuImgId]);
 
+  const PUBLIC_QR_BASE_URL = 'https://brivu.shapesmm.com';
+
   const resolvePublicImageUrl = (rawUrl?: string): string => {
     const trimmed = (rawUrl || '').trim();
     if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (/^https?:\/\//i.test(trimmed)) {
+      return trimmed.replace(
+        /^https?:\/\/brivu\.shapesmm7\.workers\.dev(?=\/|$)/i,
+        PUBLIC_QR_BASE_URL
+      );
+    }
     if (trimmed.startsWith('/api/files/')) {
-      const workerBase = (CloudflareService.getConfig().workerUrl || '').replace(/\/+$/, '');
-      return workerBase ? `${workerBase}${trimmed}` : '';
+      return `${PUBLIC_QR_BASE_URL}${trimmed}`;
     }
     return '';
   };
 
+  const configuredWorkerUrl = (CloudflareService.getConfig().workerUrl || '').trim();
   const workerBaseUrl = (
-    CloudflareService.getConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev'
+    !configuredWorkerUrl ||
+    configuredWorkerUrl.includes('localhost') ||
+    configuredWorkerUrl.includes('127.0.0.1') ||
+    configuredWorkerUrl.includes('brivu.shapesmm7.workers.dev') ||
+    configuredWorkerUrl.includes('.workers.dev')
+      ? PUBLIC_QR_BASE_URL
+      : configuredWorkerUrl
   ).replace(/\/+$/, '');
   const resolvedAuthEmail = (CloudflareService.getUserEmail() || _ownerEmail || '')
     .toLowerCase()

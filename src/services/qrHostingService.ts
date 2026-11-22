@@ -5,20 +5,32 @@ import { saveJsPdf, SaveFileResult } from './fileSaver';
 import { CloudflareService } from './cloudflareService';
 import { StorageService } from './storage';
 
+const PUBLIC_QR_BASE_URL = 'https://brivu.shapesmm.com';
+
 export class QRHostingService {
   /**
-   * Resolves the public Cloudflare worker base URL for customer links
+   * Resolves the public custom QR domain base URL for customer links
    */
   private static getWorkerBaseUrl(): string {
     try {
       const config = CloudflareService.getConfig();
+      const customPublic = (config.publicDomainUrl || '').trim();
+      if (customPublic && /^https?:\/\//i.test(customPublic) && !customPublic.includes('workers.dev')) {
+        return customPublic.endsWith('/') ? customPublic.slice(0, -1) : customPublic;
+      }
       let url = (config.workerUrl || '').trim();
-      if (!url || url.includes('localhost') || url.includes('127.0.0.1')) {
-        url = 'https://brivu.shapesmm7.workers.dev';
+      if (
+        !url ||
+        url.includes('localhost') ||
+        url.includes('127.0.0.1') ||
+        url.includes('brivu.shapesmm7.workers.dev') ||
+        url.includes('.workers.dev')
+      ) {
+        url = PUBLIC_QR_BASE_URL;
       }
       return url.endsWith('/') ? url.slice(0, -1) : url;
     } catch {
-      return 'https://brivu.shapesmm7.workers.dev';
+      return PUBLIC_QR_BASE_URL;
     }
   }
 

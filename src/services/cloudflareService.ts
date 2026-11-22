@@ -74,6 +74,10 @@ function normalizeUrl(url: string): string {
   return trimmed;
 }
 
+function isWorkerHostOrigin(origin: string): boolean {
+  return Boolean(origin && (origin.includes('workers.dev') || origin.includes('brivu.shapesmm.com')));
+}
+
 function parseWorkerResponse(rawText: string): { ok: boolean; data?: any; isStarter?: boolean; error?: string } {
   if (!rawText) {
     return { ok: false, error: 'Empty response from worker' };
@@ -1269,7 +1273,7 @@ export const CloudflareService = {
   async getHostedQrPage(pageId: string, emailOverride?: string, timeoutMs = 4000): Promise<any | null> {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
-    const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+    const effectiveWorkerUrl = isWorkerHostOrigin(currentOrigin)
       ? currentOrigin
       : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
 
@@ -1324,7 +1328,7 @@ export const CloudflareService = {
 
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
-    const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+    const effectiveWorkerUrl = isWorkerHostOrigin(currentOrigin)
       ? currentOrigin
       : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
 
@@ -1472,7 +1476,7 @@ export const CloudflareService = {
 
       const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
       const currentOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
-      const effectiveWorkerUrl = currentOrigin && currentOrigin.includes('workers.dev')
+      const effectiveWorkerUrl = isWorkerHostOrigin(currentOrigin)
         ? currentOrigin
         : (config.workerUrl || DEFAULT_CLOUDFLARE_CONFIG.workerUrl);
       const targetUrl = `${normalizeUrl(effectiveWorkerUrl)}/api/qr${query}`;
@@ -1624,7 +1628,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
     const envWebClientId =
@@ -1683,7 +1687,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 
@@ -1748,7 +1752,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 
@@ -1814,7 +1818,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 
@@ -1876,7 +1880,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 
@@ -1943,7 +1947,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 
@@ -2006,7 +2010,7 @@ export const CloudflareService = {
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
-      currentOrigin && currentOrigin.includes('workers.dev')
+      isWorkerHostOrigin(currentOrigin)
         ? normalizeUrl(currentOrigin)
         : normalizeUrl(config.workerUrl);
 

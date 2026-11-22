@@ -2003,7 +2003,7 @@ export async function resolveHostedQrPage(
                 .bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`)
                 .all();
               if (fileRows?.results && fileRows.results.length > 0) {
-                const recovered = recoverQrPhotosFromFileRecords(fileRows.results, 'https://brivu.shapesmm7.workers.dev');
+                const recovered = recoverQrPhotosFromFileRecords(fileRows.results, 'https://brivu.shapesmm.com');
                 if (recovered.photos.length > 0) photos = recovered.photos;
                 if (!recoveredCover && recovered.coverImage) recoveredCover = recovered.coverImage;
                 if (!recoveredLogo && recovered.logo) recoveredLogo = recovered.logo;
@@ -2019,7 +2019,7 @@ export async function resolveHostedQrPage(
                   mime_type: obj.httpMetadata?.contentType || 'image/jpeg',
                   created_at: obj.uploaded ? new Date(obj.uploaded).toISOString() : '',
                 }));
-                const recovered = recoverQrPhotosFromFileRecords(r2Records, 'https://brivu.shapesmm7.workers.dev');
+                const recovered = recoverQrPhotosFromFileRecords(r2Records, 'https://brivu.shapesmm.com');
                 if (recovered.photos.length > 0) photos = recovered.photos;
               }
             }

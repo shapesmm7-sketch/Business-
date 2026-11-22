@@ -817,8 +817,32 @@ export const GoogleDriveService = {
 
               if (Array.isArray(data.receipts)) {
                 const map = new Map<string, any>();
-                (consolidatedBackup.receipts || []).forEach((r: any) => { if (r?.id) map.set(r.id, r); });
-                data.receipts.forEach((r: any) => { if (r?.id) map.set(r.id, r); });
+                const sameReceipt = (a: any, b: any): boolean => {
+                  const numA = String(a?.receiptNumber || '').trim().toLowerCase();
+                  const numB = String(b?.receiptNumber || '').trim().toLowerCase();
+                  const typeA = String(a?.documentType || 'receipt').toLowerCase();
+                  const typeB = String(b?.documentType || 'receipt').toLowerCase();
+                  if (numA && numB && numA !== numB) return false;
+                  if (typeA !== typeB) return false;
+                  if (a?.createdAt && b?.createdAt && a.createdAt === b.createdAt) return true;
+                  return (
+                    String(a?.customerName || '').trim().toLowerCase() === String(b?.customerName || '').trim().toLowerCase() &&
+                    Math.abs(Number(a?.total || 0) - Number(b?.total || 0)) < 0.01 &&
+                    (Array.isArray(a?.items) ? a.items.length : 0) === (Array.isArray(b?.items) ? b.items.length : 0)
+                  );
+                };
+                (consolidatedBackup.receipts || []).forEach((r: any) => { if (r?.id) map.set(String(r.id), r); });
+                data.receipts.forEach((r: any, idx: number) => {
+                  if (!r?.id) return;
+                  const rid = String(r.id);
+                  const prev = map.get(rid);
+                  if (!prev || sameReceipt(prev, r)) {
+                    map.set(rid, r);
+                  } else {
+                    const uniqueId = `${rid}-drv-${i}-${idx}`;
+                    map.set(uniqueId, { ...r, id: uniqueId });
+                  }
+                });
                 consolidatedBackup.receipts = Array.from(map.values());
               }
 
@@ -862,32 +886,51 @@ export const GoogleDriveService = {
                 );
               }
 
+              const mergeSimpleById = (prevArr: any[] = [], nextArr: any[] = []) => {
+                const m = new Map<string, any>();
+                prevArr.forEach((item: any) => { if (item?.id) m.set(String(item.id), item); });
+                nextArr.forEach((item: any) => { if (item?.id) m.set(String(item.id), item); });
+                return Array.from(m.values());
+              };
+
               if (Array.isArray(data.inventorySales)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.inventorySales || []).forEach((s: any) => { if (s?.id) map.set(s.id, s); });
-                data.inventorySales.forEach((s: any) => { if (s?.id) map.set(s.id, s); });
-                consolidatedBackup.inventorySales = Array.from(map.values());
+                consolidatedBackup.inventorySales = mergeSimpleById(consolidatedBackup.inventorySales, data.inventorySales);
               }
-
               if (Array.isArray(data.inventoryExpenses)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.inventoryExpenses || []).forEach((e: any) => { if (e?.id) map.set(e.id, e); });
-                data.inventoryExpenses.forEach((e: any) => { if (e?.id) map.set(e.id, e); });
-                consolidatedBackup.inventoryExpenses = Array.from(map.values());
+                consolidatedBackup.inventoryExpenses = mergeSimpleById(consolidatedBackup.inventoryExpenses, data.inventoryExpenses);
               }
-
               if (Array.isArray(data.inventoryDebts)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.inventoryDebts || []).forEach((d: any) => { if (d?.id) map.set(d.id, d); });
-                data.inventoryDebts.forEach((d: any) => { if (d?.id) map.set(d.id, d); });
-                consolidatedBackup.inventoryDebts = Array.from(map.values());
+                consolidatedBackup.inventoryDebts = mergeSimpleById(consolidatedBackup.inventoryDebts, data.inventoryDebts);
               }
-
+              if (Array.isArray(data.shoppingListItems)) {
+                consolidatedBackup.shoppingListItems = mergeSimpleById(consolidatedBackup.shoppingListItems, data.shoppingListItems);
+              }
+              if (Array.isArray(data.shoppingCategories)) {
+                consolidatedBackup.shoppingCategories = mergeSimpleById(consolidatedBackup.shoppingCategories, data.shoppingCategories);
+              }
               if (Array.isArray(data.productCategories)) {
-                const map = new Map<string, any>();
-                (consolidatedBackup.productCategories || []).forEach((c: any) => { if (c?.id) map.set(c.id, c); });
-                data.productCategories.forEach((c: any) => { if (c?.id) map.set(c.id, c); });
-                consolidatedBackup.productCategories = Array.from(map.values());
+                consolidatedBackup.productCategories = mergeSimpleById(consolidatedBackup.productCategories, data.productCategories);
+              }
+              if (Array.isArray(data.staffAttendance)) {
+                consolidatedBackup.staffAttendance = mergeSimpleById(consolidatedBackup.staffAttendance, data.staffAttendance);
+              }
+              if (Array.isArray(data.staffLosses)) {
+                consolidatedBackup.staffLosses = mergeSimpleById(consolidatedBackup.staffLosses, data.staffLosses);
+              }
+              if (Array.isArray(data.staffSales)) {
+                consolidatedBackup.staffSales = mergeSimpleById(consolidatedBackup.staffSales, data.staffSales);
+              }
+              if (Array.isArray(data.staffIncidents)) {
+                consolidatedBackup.staffIncidents = mergeSimpleById(consolidatedBackup.staffIncidents, data.staffIncidents);
+              }
+              if (Array.isArray(data.websitesQrItems)) {
+                consolidatedBackup.websitesQrItems = mergeSimpleById(consolidatedBackup.websitesQrItems, data.websitesQrItems);
+              }
+              if (Array.isArray(data.socialsQrItems)) {
+                consolidatedBackup.socialsQrItems = mergeSimpleById(consolidatedBackup.socialsQrItems, data.socialsQrItems);
+              }
+              if (Array.isArray(data.eventsQrItems)) {
+                consolidatedBackup.eventsQrItems = mergeSimpleById(consolidatedBackup.eventsQrItems, data.eventsQrItems);
               }
 
               if (Array.isArray(data.qrHostedPages)) {

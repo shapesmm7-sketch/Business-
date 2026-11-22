@@ -913,14 +913,19 @@ export const StorageService = {
         } = backupData.profile as any;
         const incomingLogo = rawIncomingProfile.logo || logoBackupData;
         const incomingSig = rawIncomingProfile.signature || signatureBackupData;
+        const currentProfile = this.getProfile();
         if (replaceExisting) {
           this.saveProfile({
+            ...currentProfile,
             ...rawIncomingProfile,
-            logo: incomingLogo,
-            signature: incomingSig,
+            name: rawIncomingProfile.name || currentProfile.name || '',
+            phone: rawIncomingProfile.phone || currentProfile.phone || '',
+            email: rawIncomingProfile.email || currentProfile.email || '',
+            currency: rawIncomingProfile.currency || currentProfile.currency || 'UGX',
+            logo: incomingLogo || currentProfile.logo,
+            signature: incomingSig || currentProfile.signature,
           });
         } else {
-          const currentProfile = this.getProfile();
           this.saveProfile({
             ...rawIncomingProfile,
             ...currentProfile,
@@ -935,66 +940,96 @@ export const StorageService = {
       }
       if (backupData.settings) {
         if (replaceExisting) {
-          this.saveSettings(backupData.settings);
-        }
-      }
-      // Import and merge deleted receipt ids so tombstones survive across devices/APK installs
-      if (Array.isArray(backupData.deletedReceiptIds)) {
-        if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, backupData.deletedReceiptIds);
-        } else if (backupData.deletedReceiptIds.length > 0) {
-          const currentDeleted = this.getDeletedReceiptIds();
-          const mergedSet = new Set([
-            ...currentDeleted.map((s) => String(s).trim().toLowerCase()),
-            ...backupData.deletedReceiptIds.map((s) => String(s).trim().toLowerCase()),
-          ]);
-          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
-        }
-      }
-
-      // 3. Receipts & Invoices
-      if (Array.isArray(backupData.receipts)) {
-        if (replaceExisting) {
-          // Fresh restore: clear all deleted tombstones so all restored items appear immediately
-          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
-          writeToStorage(STORAGE_KEYS.RECEIPTS, backupData.receipts);
-        } else {
-          // Merge Mode: Unmark all incoming backup receipts from deleted list (ID, number, and customer tombstone)
-          const currentDeleted = this.getDeletedReceiptIds();
-          const incomingTombstonesToRemove = new Set<string>();
-          backupData.receipts.forEach((r) => {
-            if (r.id) incomingTombstonesToRemove.add(String(r.id).trim().toLowerCase());
-            if (r.receiptNumber) incomingTombstonesToRemove.add(String(r.receiptNumber).trim().toLowerCase());
-            if (r.customerName) incomingTombstonesToRemove.add(`cust:${String(r.customerName).trim().toLowerCase()}`);
+          this.saveSettings({
+            ...this.getSettings(),
+            ...backupData.settings,
           });
+        }
+      }
 
+      const isSameReceiptRecord = (a: any, b: any): boolean => {
+        if (!a || !b) return false;
+        const numA = String(a.receiptNumber || '').trim().toLowerCase();
+        const numB = String(b.receiptNumber || '').trim().toLowerCase();
+        const typeA = String(a.documentType || 'receipt').toLowerCase();
+        const typeB = String(b.documentType || 'receipt').toLowerCase();
+        if (numA && numB && numA !== numB) return false;
+        if (typeA !== typeB) return false;
+        if (a.createdAt && b.createdAt && a.createdAt === b.createdAt) return true;
+        const custA = String(a.customerName || '').trim().toLowerCase();
+        const custB = String(b.customerName || '').trim().toLowerCase();
+        const totalA = Number(a.total || 0);
+        const totalB = Number(b.total || 0);
+        const itemsLenA = Array.isArray(a.items) ? a.items.length : 0;
+        const itemsLenB = Array.isArray(b.items) ? b.items.length : 0;
+        return custA === custB && Math.abs(totalA - totalB) < 0.01 && itemsLenA === itemsLenB;
+      };
+
+      // 3. Receipts, Invoices & Quotations
+      // Preserve ALL existing local receipts/invoices/quotations created before restoring (in BOTH Replace & Merge modes)
+      if (Array.isArray(backupData.receipts)) {
+        const currentDeleted = this.getDeletedReceiptIds();
+        const incomingTombstonesToRemove = new Set<string>();
+        backupData.receipts.forEach((r) => {
+          if (!r) return;
+          if (r.id) incomingTombstonesToRemove.add(String(r.id).trim().toLowerCase());
+          if (r.receiptNumber) incomingTombstonesToRemove.add(String(r.receiptNumber).trim().toLowerCase());
+          if (r.customerName) incomingTombstonesToRemove.add(`cust:${String(r.customerName).trim().toLowerCase()}`);
+        });
+
+        if (replaceExisting) {
+          // Clear deleted tombstones so all restored receipts appear immediately
+          writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
+        } else {
           const cleanDeleted = currentDeleted.filter((item) => {
             const itemLower = String(item).trim().toLowerCase();
             return !incomingTombstonesToRemove.has(itemLower);
           });
           writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, cleanDeleted);
-
-          // Read raw storage so no items are filtered out by stale memory caches
-          const existing = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
-          const receiptMap = new Map<string, any>();
-          existing.forEach((r) => {
-            if (r && r.id && !String(r.id).startsWith('sample-')) {
-              receiptMap.set(r.id, r);
-            }
-          });
-          backupData.receipts.forEach((r) => {
-            if (r && r.id && !String(r.id).startsWith('sample-')) {
-              receiptMap.set(r.id, r);
-            }
-          });
-
-          writeToStorage(STORAGE_KEYS.RECEIPTS, Array.from(receiptMap.values()));
         }
+
+        // Read raw existing receipts so none are lost, while keeping non-matching local receipts intact
+        const existing = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
+        const receiptMap = new Map<string, any>();
+        existing.forEach((r) => {
+          if (r && r.id && !String(r.id).startsWith('sample-')) {
+            receiptMap.set(String(r.id), r);
+          }
+        });
+
+        backupData.receipts.forEach((r, idx) => {
+          if (!r || !r.id || String(r.id).startsWith('sample-')) return;
+          const rid = String(r.id);
+          const prev = receiptMap.get(rid);
+          if (!prev) {
+            receiptMap.set(rid, r);
+          } else if (!isSameReceiptRecord(prev, r)) {
+            // Same ID but different receipt details: preserve the local receipt AND keep the restored receipt under a unique ID
+            const uniqueRestoredId = `${rid}-restored-${idx}-${Math.random().toString(36).slice(2, 6)}`;
+            receiptMap.set(uniqueRestoredId, { ...r, id: uniqueRestoredId });
+          } else if (replaceExisting) {
+            // Same receipt in Replace Mode: update with backup copy
+            receiptMap.set(rid, r);
+          }
+          // Merge Mode + same receipt: keep existing local copy intact
+        });
+
+        const sortedReceipts = Array.from(receiptMap.values()).sort(
+          (a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime()
+        );
+        writeToStorage(STORAGE_KEYS.RECEIPTS, sortedReceipts);
+      } else if (Array.isArray(backupData.deletedReceiptIds) && backupData.deletedReceiptIds.length > 0 && !replaceExisting) {
+        const currentDeleted = this.getDeletedReceiptIds();
+        const mergedSet = new Set([
+          ...currentDeleted.map((s) => String(s).trim().toLowerCase()),
+          ...backupData.deletedReceiptIds.map((s) => String(s).trim().toLowerCase()),
+        ]);
+        writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
       }
 
-      // 4. Inventory Products (normalize image/photo aliases & never overwrite existing photos with empty values)
+      // 4. Inventory Products (normalize image/photo aliases, preserve existing local products, never lose photos)
       if (Array.isArray(incomingProducts)) {
-        const normalizeProduct = (raw: any, existing?: any): InventoryProduct => {
+        const normalizeProduct = (raw: any, existing?: any, preferExisting = false): InventoryProduct => {
           const {
             imageBackupData,
             photoUrl,
@@ -1002,14 +1037,24 @@ export const StorageService = {
             photo,
             ...rest
           } = raw || {};
-          const resolvedImage =
-            rest.image ||
-            photoUrl ||
-            imageUrl ||
-            photo ||
-            imageBackupData ||
-            existing?.image ||
-            undefined;
+          const incomingImg = rest.image || photoUrl || imageUrl || photo || imageBackupData;
+          const resolvedImage = preferExisting
+            ? (existing?.image || incomingImg || undefined)
+            : (incomingImg || existing?.image || undefined);
+          if (preferExisting && existing) {
+            return {
+              ...rest,
+              ...existing,
+              id: String(existing.id),
+              itemId: String(existing.itemId ?? rest.itemId ?? rest.barcode ?? ''),
+              name: String(existing.name || rest.name || 'Unnamed Product'),
+              quantity: Number(existing.quantity ?? rest.quantity ?? 0),
+              costPrice: Number(existing.costPrice ?? rest.costPrice ?? 0),
+              sellingPrice: Number(existing.sellingPrice ?? rest.sellingPrice ?? 0),
+              unit: existing.unit || rest.unit || 'Pcs',
+              image: resolvedImage,
+            };
+          }
           return {
             ...existing,
             ...rest,
@@ -1024,175 +1069,210 @@ export const StorageService = {
           };
         };
 
-        if (replaceExisting) {
-          const normalized = incomingProducts
-            .filter((p: any) => p && p.id)
-            .map((p: any) => normalizeProduct(p));
-          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, normalized);
-        } else {
-          const existing = this.getInventoryProducts();
-          const productMap = new Map<string, any>();
-          existing.forEach((p) => { if (p && p.id) productMap.set(p.id, p); });
-          incomingProducts.forEach((p: any) => {
-            if (p && p.id) {
-              const prev = productMap.get(p.id);
-              productMap.set(p.id, normalizeProduct(p, prev));
+        const existing = this.getInventoryProducts();
+        const productMap = new Map<string, any>();
+        existing.forEach((p) => { if (p && p.id) productMap.set(String(p.id), p); });
+        incomingProducts.forEach((p: any, idx: number) => {
+          if (!p || !p.id) return;
+          const pid = String(p.id);
+          const prev = productMap.get(pid);
+          if (!prev) {
+            productMap.set(pid, normalizeProduct(p));
+          } else {
+            const prevName = String(prev.name || '').trim().toLowerCase();
+            const incName = String(p.name || '').trim().toLowerCase();
+            const prevCode = String(prev.itemId || prev.barcode || '').trim().toLowerCase();
+            const incCode = String(p.itemId || p.barcode || '').trim().toLowerCase();
+            if (prevName && incName && prevName !== incName && prevCode !== incCode) {
+              const uniqueId = `${pid}-restored-${idx}-${Math.random().toString(36).slice(2, 5)}`;
+              productMap.set(uniqueId, normalizeProduct({ ...p, id: uniqueId }));
+            } else {
+              productMap.set(pid, normalizeProduct(p, prev, !replaceExisting));
             }
-          });
-          writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, Array.from(productMap.values()));
-        }
+          }
+        });
+        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, Array.from(productMap.values()));
       }
+
+      const mergeByIdPreservingLocalNonMatching = <T extends { id?: any }>(
+        existingList: T[],
+        incomingList: T[],
+        replaceMatching: boolean
+      ): T[] => {
+        const map = new Map<string, T>();
+        existingList.forEach((item) => {
+          if (item && item.id) map.set(String(item.id), item);
+        });
+        incomingList.forEach((item) => {
+          if (!item || !item.id) return;
+          const id = String(item.id);
+          if (!map.has(id) || replaceMatching) {
+            map.set(id, item);
+          }
+        });
+        return Array.from(map.values());
+      };
 
       // 5. Inventory Sales
       if (Array.isArray(backupData.inventorySales)) {
-        if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, backupData.inventorySales);
-        } else {
-          const existing = this.getInventorySales();
-          const salesMap = new Map<string, any>();
-          existing.forEach((s) => { if (s && s.id) salesMap.set(s.id, s); });
-          backupData.inventorySales.forEach((s) => { if (s && s.id) salesMap.set(s.id, s); });
-          writeToStorage(STORAGE_KEYS.INVENTORY_SALES, Array.from(salesMap.values()));
-        }
+        writeToStorage(
+          STORAGE_KEYS.INVENTORY_SALES,
+          mergeByIdPreservingLocalNonMatching(this.getInventorySales(), backupData.inventorySales, replaceExisting)
+        );
       }
 
       // 6. Inventory Expenses
       if (Array.isArray(backupData.inventoryExpenses)) {
-        if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, backupData.inventoryExpenses);
-        } else {
-          const existing = this.getInventoryExpenses();
-          const expenseMap = new Map<string, any>();
-          existing.forEach((e) => { if (e && e.id) expenseMap.set(e.id, e); });
-          backupData.inventoryExpenses.forEach((e) => { if (e && e.id) expenseMap.set(e.id, e); });
-          writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, Array.from(expenseMap.values()));
-        }
+        writeToStorage(
+          STORAGE_KEYS.INVENTORY_EXPENSES,
+          mergeByIdPreservingLocalNonMatching(this.getInventoryExpenses(), backupData.inventoryExpenses, replaceExisting)
+        );
       }
 
       // 7. Inventory Debts
       if (Array.isArray(backupData.inventoryDebts)) {
-        if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, backupData.inventoryDebts);
-        } else {
-          const existing = this.getInventoryDebts();
-          const debtMap = new Map<string, any>();
-          existing.forEach((d) => { if (d && d.id) debtMap.set(d.id, d); });
-          backupData.inventoryDebts.forEach((d) => { if (d && d.id) debtMap.set(d.id, d); });
-          writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, Array.from(debtMap.values()));
-        }
+        writeToStorage(
+          STORAGE_KEYS.INVENTORY_DEBTS,
+          mergeByIdPreservingLocalNonMatching(this.getInventoryDebts(), backupData.inventoryDebts, replaceExisting)
+        );
       }
 
       // 8. Shopping List Items
       if (Array.isArray(backupData.shoppingListItems)) {
-        if (replaceExisting) {
-          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, backupData.shoppingListItems);
-        } else {
-          const existing = this.getShoppingListItems();
-          const shopMap = new Map<string, any>();
-          existing.forEach((s) => { if (s && s.id) shopMap.set(s.id, s); });
-          backupData.shoppingListItems.forEach((s) => { if (s && s.id) shopMap.set(s.id, s); });
-          writeToStorage(STORAGE_KEYS.SHOPPING_LIST, Array.from(shopMap.values()));
-        }
+        writeToStorage(
+          STORAGE_KEYS.SHOPPING_LIST,
+          mergeByIdPreservingLocalNonMatching(this.getShoppingListItems(), backupData.shoppingListItems, replaceExisting)
+        );
       }
 
-      // 9. Categories
+      // 9. Categories (preserve existing categories + restore backup categories)
       if (Array.isArray(backupData.shoppingCategories)) {
-        writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, backupData.shoppingCategories);
+        writeToStorage(
+          STORAGE_KEYS.SHOPPING_CATEGORIES,
+          mergeByIdPreservingLocalNonMatching(this.getShoppingCategories(), backupData.shoppingCategories, replaceExisting)
+        );
       }
       if (Array.isArray(backupData.productCategories)) {
-        writeToStorage(STORAGE_KEYS.PRODUCT_CATEGORIES, backupData.productCategories);
+        writeToStorage(
+          STORAGE_KEYS.PRODUCT_CATEGORIES,
+          mergeByIdPreservingLocalNonMatching(this.getProductCategories(), backupData.productCategories, replaceExisting)
+        );
       }
 
       // 10. Customers / Clients
       if (Array.isArray(backupData.customers)) {
-        const normalizeCustomer = (raw: any, existing?: any) => {
+        const normalizeCustomer = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          if (preferExisting && existing) {
+            return {
+              ...rest,
+              ...existing,
+              profilePic: existing.profilePic || incomingPic || undefined,
+            };
+          }
           return {
             ...existing,
             ...rest,
-            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+            profilePic: incomingPic || existing?.profilePic || undefined,
           };
         };
-        if (replaceExisting) {
-          writeToStorage(
-            STORAGE_KEYS.CUSTOMERS,
-            backupData.customers.filter((c: any) => c && c.id).map((c: any) => normalizeCustomer(c))
-          );
-        } else {
-          const existing = this.getCustomers();
-          const customerMap = new Map<string, any>();
-          existing.forEach((c) => { if (c && c.id) customerMap.set(c.id, c); });
-          backupData.customers.forEach((c: any) => {
-            if (c && c.id) customerMap.set(c.id, normalizeCustomer(c, customerMap.get(c.id)));
-          });
-          writeToStorage(STORAGE_KEYS.CUSTOMERS, Array.from(customerMap.values()));
-        }
+        const existing = this.getCustomers();
+        const customerMap = new Map<string, any>();
+        existing.forEach((c) => { if (c && c.id) customerMap.set(String(c.id), c); });
+        backupData.customers.forEach((c: any) => {
+          if (c && c.id) {
+            const prev = customerMap.get(String(c.id));
+            customerMap.set(String(c.id), normalizeCustomer(c, prev, !replaceExisting));
+          }
+        });
+        writeToStorage(STORAGE_KEYS.CUSTOMERS, Array.from(customerMap.values()));
       }
 
       // 11. Agents
       if (Array.isArray(backupData.agents)) {
-        const normalizeAgent = (raw: any, existing?: any) => {
+        const normalizeAgent = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          if (preferExisting && existing) {
+            return {
+              ...rest,
+              ...existing,
+              profilePic: existing.profilePic || incomingPic || undefined,
+            };
+          }
           return {
             ...existing,
             ...rest,
-            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+            profilePic: incomingPic || existing?.profilePic || undefined,
           };
         };
-        if (replaceExisting) {
-          writeToStorage(
-            STORAGE_KEYS.AGENTS,
-            backupData.agents.filter((a: any) => a && a.id).map((a: any) => normalizeAgent(a))
-          );
-        } else {
-          const existing = this.getAgents();
-          const agentMap = new Map<string, any>();
-          existing.forEach((a) => { if (a && a.id) agentMap.set(a.id, a); });
-          backupData.agents.forEach((a: any) => {
-            if (a && a.id) agentMap.set(a.id, normalizeAgent(a, agentMap.get(a.id)));
-          });
-          writeToStorage(STORAGE_KEYS.AGENTS, Array.from(agentMap.values()));
-        }
+        const existing = this.getAgents();
+        const agentMap = new Map<string, any>();
+        existing.forEach((a) => { if (a && a.id) agentMap.set(String(a.id), a); });
+        backupData.agents.forEach((a: any) => {
+          if (a && a.id) {
+            const prev = agentMap.get(String(a.id));
+            agentMap.set(String(a.id), normalizeAgent(a, prev, !replaceExisting));
+          }
+        });
+        writeToStorage(STORAGE_KEYS.AGENTS, Array.from(agentMap.values()));
       }
 
       // 12. Workers / Staff
       if (Array.isArray(backupData.workers)) {
-        const normalizeWorker = (raw: any, existing?: any) => {
+        const normalizeWorker = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
+          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          if (preferExisting && existing) {
+            return {
+              ...rest,
+              ...existing,
+              profilePic: existing.profilePic || incomingPic || undefined,
+            };
+          }
           return {
             ...existing,
             ...rest,
-            profilePic: rest.profilePic || photoUrl || profilePicBackupData || existing?.profilePic || undefined,
+            profilePic: incomingPic || existing?.profilePic || undefined,
           };
         };
-        if (replaceExisting) {
-          writeToStorage(
-            STORAGE_KEYS.WORKERS,
-            backupData.workers.filter((w: any) => w && w.id).map((w: any) => normalizeWorker(w))
-          );
-        } else {
-          const existing = this.getWorkers();
-          const workerMap = new Map<string, any>();
-          existing.forEach((w) => { if (w && w.id) workerMap.set(w.id, w); });
-          backupData.workers.forEach((w: any) => {
-            if (w && w.id) workerMap.set(w.id, normalizeWorker(w, workerMap.get(w.id)));
-          });
-          writeToStorage(STORAGE_KEYS.WORKERS, Array.from(workerMap.values()));
-        }
+        const existing = this.getWorkers();
+        const workerMap = new Map<string, any>();
+        existing.forEach((w) => { if (w && w.id) workerMap.set(String(w.id), w); });
+        backupData.workers.forEach((w: any) => {
+          if (w && w.id) {
+            const prev = workerMap.get(String(w.id));
+            workerMap.set(String(w.id), normalizeWorker(w, prev, !replaceExisting));
+          }
+        });
+        writeToStorage(STORAGE_KEYS.WORKERS, Array.from(workerMap.values()));
       }
 
-      // 13. Staff Records
+      // 13. Staff Records (preserve existing + restore backup records)
       if (Array.isArray(backupData.staffAttendance)) {
-        writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, backupData.staffAttendance);
+        writeToStorage(
+          STORAGE_KEYS.STAFF_ATTENDANCE,
+          mergeByIdPreservingLocalNonMatching(this.getStaffAttendance(), backupData.staffAttendance, replaceExisting)
+        );
       }
       if (Array.isArray(backupData.staffLosses)) {
-        writeToStorage(STORAGE_KEYS.STAFF_LOSSES, backupData.staffLosses);
+        writeToStorage(
+          STORAGE_KEYS.STAFF_LOSSES,
+          mergeByIdPreservingLocalNonMatching(this.getStaffLosses(), backupData.staffLosses, replaceExisting)
+        );
       }
       if (Array.isArray(backupData.staffSales)) {
-        writeToStorage(STORAGE_KEYS.STAFF_SALES, backupData.staffSales);
+        writeToStorage(
+          STORAGE_KEYS.STAFF_SALES,
+          mergeByIdPreservingLocalNonMatching(this.getStaffSales(), backupData.staffSales, replaceExisting)
+        );
       }
       if (Array.isArray(backupData.staffIncidents)) {
-        writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, backupData.staffIncidents);
+        writeToStorage(
+          STORAGE_KEYS.STAFF_INCIDENTS,
+          mergeByIdPreservingLocalNonMatching(this.getStaffIncidents(), backupData.staffIncidents, replaceExisting)
+        );
       }
 
       // 14. QR Hosted Pages & Items (preserve all Business QR info, menus, socials, photos, websites, socials, events)
@@ -1332,11 +1412,7 @@ export const StorageService = {
 
       if (Array.isArray(backupData.qrHostedPages)) {
         const incomingBizPages = backupData.qrHostedPages.filter((p: any) => !isNonBusinessQrPage(p));
-        if (replaceExisting) {
-          if (incomingBizPages.length > 0) {
-            writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, incomingBizPages);
-          }
-        } else if (incomingBizPages.length > 0) {
+        if (incomingBizPages.length > 0) {
           const existing = this.getHostedQRPages();
           // Drop blank auto-created default page if cloud backup has real business pages
           const existingReal = existing.filter((p) => !isBlankDefaultBizPage(p));
@@ -1378,48 +1454,33 @@ export const StorageService = {
         ...(Array.isArray(backupData.websitesQrItems) ? backupData.websitesQrItems : []),
         ...extractedWebFromPages,
       ];
-      if (Array.isArray(backupData.websitesQrItems) || extractedWebFromPages.length > 0) {
-        if (replaceExisting && Array.isArray(backupData.websitesQrItems)) {
-          writeToStorage(STORAGE_KEYS.WEBSITES_QR, backupData.websitesQrItems);
-        } else if (incomingWebItems.length > 0) {
-          const existing = this.getWebsitesQrItems();
-          const webMap = new Map<string, any>();
-          existing.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
-          incomingWebItems.forEach((w) => { if (w && w.id) webMap.set(w.id, w); });
-          writeToStorage(STORAGE_KEYS.WEBSITES_QR, Array.from(webMap.values()));
-        }
+      if (incomingWebItems.length > 0) {
+        writeToStorage(
+          STORAGE_KEYS.WEBSITES_QR,
+          mergeByIdPreservingLocalNonMatching(this.getWebsitesQrItems(), incomingWebItems, replaceExisting)
+        );
       }
 
       const incomingSocItems = [
         ...(Array.isArray(backupData.socialsQrItems) ? backupData.socialsQrItems : []),
         ...extractedSocFromPages,
       ];
-      if (Array.isArray(backupData.socialsQrItems) || extractedSocFromPages.length > 0) {
-        if (replaceExisting && Array.isArray(backupData.socialsQrItems)) {
-          writeToStorage(STORAGE_KEYS.SOCIALS_QR, backupData.socialsQrItems);
-        } else if (incomingSocItems.length > 0) {
-          const existing = this.getSocialsQrItems();
-          const socialMap = new Map<string, any>();
-          existing.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
-          incomingSocItems.forEach((s) => { if (s && s.id) socialMap.set(s.id, s); });
-          writeToStorage(STORAGE_KEYS.SOCIALS_QR, Array.from(socialMap.values()));
-        }
+      if (incomingSocItems.length > 0) {
+        writeToStorage(
+          STORAGE_KEYS.SOCIALS_QR,
+          mergeByIdPreservingLocalNonMatching(this.getSocialsQrItems(), incomingSocItems, replaceExisting)
+        );
       }
 
       const incomingEvtItems = [
         ...(Array.isArray(backupData.eventsQrItems) ? backupData.eventsQrItems : []),
         ...extractedEvtFromPages,
       ];
-      if (Array.isArray(backupData.eventsQrItems) || extractedEvtFromPages.length > 0) {
-        if (replaceExisting && Array.isArray(backupData.eventsQrItems)) {
-          writeToStorage(STORAGE_KEYS.EVENTS_QR, backupData.eventsQrItems);
-        } else if (incomingEvtItems.length > 0) {
-          const existing = this.getEventsQrItems();
-          const evtMap = new Map<string, any>();
-          existing.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
-          incomingEvtItems.forEach((e) => { if (e && e.id) evtMap.set(e.id, e); });
-          writeToStorage(STORAGE_KEYS.EVENTS_QR, Array.from(evtMap.values()));
-        }
+      if (incomingEvtItems.length > 0) {
+        writeToStorage(
+          STORAGE_KEYS.EVENTS_QR,
+          mergeByIdPreservingLocalNonMatching(this.getEventsQrItems(), incomingEvtItems, replaceExisting)
+        );
       }
       const recCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
       return {
