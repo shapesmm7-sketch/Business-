@@ -389,9 +389,6 @@ export const StorageService = {
   saveProfile(profile: BusinessProfile): boolean {
     const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
     if (success) {
-      const current = this.getProfile();
-      let hasUpdates = false;
-
       // Auto-upload compressed logo to Cloudflare R2 (overwritten in place as logo.webp)
       if (profile.logo && profile.logo.startsWith('data:image/')) {
         import('../utils/imageCompressor')
@@ -417,31 +414,7 @@ export const StorageService = {
           });
       }
 
-      // Auto-upload compressed signature to Cloudflare R2 (overwritten in place as signature.webp)
-      if (profile.signature && profile.signature.startsWith('data:image/')) {
-        import('../utils/imageCompressor')
-          .then(({ compressSignature }) => compressSignature(profile.signature!))
-          .then((compressed) => {
-            return CloudflareService.uploadFile({
-              data: compressed.dataUri,
-              filename: 'signature.webp',
-              mimeType: compressed.mimeType,
-              folder: 'signatures',
-            });
-          })
-          .then((res) => {
-            if (res.success && res.url) {
-              const p = this.getProfile();
-              p.signature = res.url;
-              writeToStorage(STORAGE_KEYS.PROFILE, p);
-              CloudflareService.syncAllToCloudflare().catch(() => {});
-            }
-          })
-          .catch((err) => {
-            console.warn('Signature compression/upload note:', err);
-          });
-      }
-
+      // Signature stays purely in localStorage (used for local PDF receipts/invoices/quotations)
       CloudflareService.syncAllToCloudflare().catch(() => {});
     }
     return success;
@@ -464,11 +437,7 @@ export const StorageService = {
   },
 
   saveSettings(settings: AppSettings): boolean {
-    const success = writeToStorage(STORAGE_KEYS.SETTINGS, settings);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.SETTINGS, settings);
   },
 
   getSavedThermalPrinter(): ThermalPrinterDevice | undefined {
@@ -617,12 +586,6 @@ export const StorageService = {
     }
     const success = writeToStorage(STORAGE_KEYS.RECEIPTS, updated);
 
-    if (success) {
-      // Background sync receipt/invoice JSON information to Cloudflare D1
-      this.syncReceiptToCloudflare(receipt);
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
     if (success && isNew) {
       const currencySymbol = receipt.businessSnapshot.currency || 'UGX';
       const isInvoiceDoc = receipt.documentType === 'invoice';
@@ -653,51 +616,24 @@ export const StorageService = {
   },
 
   /**
-   * Local-First Receipt Save: Saves receipt/invoice/quotation data to localStorage immediately
-   * so documents can always be generated on demand, then syncs JSON record in background when enabled.
+   * Local-Only Receipt Save: Saves receipt/invoice/quotation data strictly to localStorage
+   * so documents persist regardless of login state and remain available on-device (plus optional Google Drive backup).
    */
   async saveReceiptAsync(receipt: Receipt): Promise<{ success: boolean; cloudSynced: boolean; message: string }> {
     const localSuccess = this.saveReceipt(receipt);
-    let cloudSynced = false;
-
-    try {
-      const config = this.getCloudflareConfig();
-      if (config.workerUrl && config.autoSyncData !== false) {
-        const res = await CloudflareService.saveReceipt(receipt);
-        if (res.success) {
-          cloudSynced = true;
-        }
-      }
-    } catch (cfErr) {
-      console.warn('Background receipt JSON sync note:', cfErr);
-    }
-
     return {
       success: localSuccess,
-      cloudSynced,
+      cloudSynced: false,
       message: `Receipt saved to device successfully!`,
     };
   },
 
   /**
-   * Cloud-First Business Profile Save: Awaits saving to Cloudflare D1 first.
+   * Saves Business Profile to localStorage (and syncs public QR business info when signed in).
    */
   async saveProfileAsync(profile: BusinessProfile): Promise<{ success: boolean; cloudSynced: boolean }> {
-    let cloudSynced = false;
-    try {
-      const config = this.getCloudflareConfig();
-      if (config.workerUrl && config.autoSyncData !== false) {
-        const res = await CloudflareService.syncAllToCloudflare();
-        if (res.success) {
-          cloudSynced = true;
-        }
-      }
-    } catch (cfErr) {
-      console.warn('Cloud-first profile save note:', cfErr);
-    }
-
     const localSuccess = this.saveProfile(profile);
-    return { success: localSuccess, cloudSynced };
+    return { success: localSuccess, cloudSynced: false };
   },
 
   deleteReceipt(id: string): boolean {
@@ -710,41 +646,15 @@ export const StorageService = {
     this.recordDeletedReceipt(id, receiptNumber, customerName);
 
     const filtered = receipts.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
-
-    if (success) {
-      // Instantly synchronize the updated receipts list to Cloudflare D1 so pull cannot restore it
-      CloudflareService.deleteReceipt(id).catch(() => {});
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
-    return success;
+    return writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
   },
 
   /**
-   * Permanent Async Receipt & Cloud Deletion
+   * Permanent Local Receipt Deletion
    */
   async deleteReceiptAsync(id: string): Promise<{ success: boolean; cloudSynced: boolean }> {
-    const receipts = this.getReceipts();
-    const target = receipts.find((r) => r.id === id);
-    const receiptNumber = target?.receiptNumber;
-    const customerName = target?.customerName;
-
-    this.recordDeletedReceipt(id, receiptNumber, customerName);
-
-    const filtered = receipts.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.RECEIPTS, filtered);
-
-    let cloudSynced = false;
-    try {
-      await CloudflareService.deleteReceipt(id);
-      await CloudflareService.syncAllToCloudflare();
-      cloudSynced = true;
-    } catch (cfErr) {
-      console.warn('Async cloud receipt deletion note:', cfErr);
-    }
-
-    return { success, cloudSynced };
+    const success = this.deleteReceipt(id);
+    return { success, cloudSynced: false };
   },
 
   /**
@@ -1080,11 +990,6 @@ export const StorageService = {
 
           writeToStorage(STORAGE_KEYS.RECEIPTS, Array.from(receiptMap.values()));
         }
-
-        // Background sync state to Cloudflare D1
-        setTimeout(() => {
-          CloudflareService.syncAllToCloudflare().catch(() => {});
-        }, 100);
       }
 
       // 4. Inventory Products (normalize image/photo aliases & never overwrite existing photos with empty values)
@@ -1578,7 +1483,6 @@ export const StorageService = {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
       }
-      CloudflareService.syncAllToCloudflare().catch(() => {});
     }
 
     return success;
@@ -1591,7 +1495,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   getNextInventoryItemId(): string {
@@ -1616,7 +1519,6 @@ export const StorageService = {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
       }
-      CloudflareService.syncAllToCloudflare().catch(() => {});
 
       const threshold = 5;
       if (product.quantity <= threshold) {
@@ -1639,7 +1541,6 @@ export const StorageService = {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
       }
-      CloudflareService.syncAllToCloudflare().catch(() => {});
 
       const threshold = 5;
       if (product.quantity <= threshold) {
@@ -1682,7 +1583,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
 
     return newSale;
   },
@@ -1698,7 +1598,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   updateInventorySale(id: string, updates: Partial<InventorySale>): boolean {
@@ -1725,7 +1624,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return true;
   },
 
@@ -1742,14 +1640,12 @@ export const StorageService = {
     };
     expenses.unshift(newExpense);
     writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, expenses);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newExpense;
   },
 
   deleteInventoryExpense(id: string): void {
     const expenses = this.getInventoryExpenses().filter((e) => e.id !== id);
     writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, expenses);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   updateInventoryExpense(updated: InventoryExpense): boolean {
@@ -1758,7 +1654,6 @@ export const StorageService = {
     if (idx !== -1) {
       expenses[idx] = updated;
       writeToStorage(STORAGE_KEYS.INVENTORY_EXPENSES, expenses);
-      CloudflareService.syncAllToCloudflare().catch(() => {});
       return true;
     }
     return false;
@@ -1784,7 +1679,6 @@ export const StorageService = {
     };
     debts.unshift(newDebt);
     writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
 
     // Trigger Debt Reminder Notification
     if (newDebt.amount > (newDebt.paidAmount || 0)) {
@@ -1803,17 +1697,12 @@ export const StorageService = {
     const idx = debts.findIndex((d) => d.id === id);
     if (idx === -1) return false;
     debts[idx] = { ...debts[idx], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
   },
 
   deleteInventoryDebt(id: string): void {
     const debts = this.getInventoryDebts().filter((d) => d.id !== id);
     writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   markInventoryDebtPaid(id: string, paidAmount?: number): void {
@@ -1829,7 +1718,6 @@ export const StorageService = {
         debt.settledAt = new Date().toISOString();
       }
       writeToStorage(STORAGE_KEYS.INVENTORY_DEBTS, debts);
-      CloudflareService.syncAllToCloudflare().catch(() => {});
     }
   },
 
@@ -1909,7 +1797,6 @@ export const StorageService = {
     };
     items.push(newItem); // Keep normal order (append to end of list)
     writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newItem;
   },
 
@@ -1918,28 +1805,21 @@ export const StorageService = {
     const idx = items.findIndex((item) => item.id === id);
     if (idx === -1) return false;
     items[idx] = { ...items[idx], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
   },
 
   deleteShoppingListItem(id: string): void {
     const items = this.getShoppingListItems().filter((item) => item.id !== id);
     writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   clearCheckedShoppingListItems(): void {
     const items = this.getShoppingListItems().filter((item) => !item.checked);
     writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   clearAllShoppingListItems(): void {
     writeToStorage(STORAGE_KEYS.SHOPPING_LIST, []);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   getShoppingCategories(): ShoppingCategory[] {
@@ -1956,7 +1836,6 @@ export const StorageService = {
     };
     cats.push(newCat);
     writeToStorage(STORAGE_KEYS.SHOPPING_CATEGORIES, cats);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newCat;
   },
 
@@ -1973,7 +1852,6 @@ export const StorageService = {
       return item;
     });
     writeToStorage(STORAGE_KEYS.SHOPPING_LIST, items);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   getProductCategories(): ProductCategory[] {
@@ -1993,7 +1871,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newCat;
   },
 
@@ -2013,7 +1890,6 @@ export const StorageService = {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('brivu_inventory_changed'));
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   },
 
   // Save in-progress draft to recover if user accidentally closes app
@@ -2033,17 +1909,13 @@ export const StorageService = {
     }
   },
 
-  // --- CUSTOMER MANAGEMENT ---
+  // --- CUSTOMER MANAGEMENT (LocalStorage Only) ---
   getCustomers(): Customer[] {
     return readFromStorage<Customer[]>(STORAGE_KEYS.CUSTOMERS, []);
   },
 
   saveCustomers(customers: Customer[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
   },
 
   addCustomer(customer: Omit<Customer, 'id' | 'createdAt'>): Customer {
@@ -2055,32 +1927,6 @@ export const StorageService = {
     };
     customers.unshift(newCustomer);
     writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
-
-    // Auto-upload customer photo to Cloudflare R2 if it is base64
-    if (newCustomer.profilePic && newCustomer.profilePic.startsWith('data:image/')) {
-      const custId = newCustomer.id;
-      const mimeType = newCustomer.profilePic.slice(5, newCustomer.profilePic.indexOf(';')) || 'image/jpeg';
-      const ext = mimeType.split('/')[1] || 'jpeg';
-      CloudflareService.uploadFile({
-        data: newCustomer.profilePic,
-        filename: `customer_${custId}_${Date.now()}.${ext}`,
-        mimeType,
-        folder: 'photos',
-      }).then((res) => {
-        if (res.success && res.url) {
-          const latest = this.getCustomers();
-          const idx = latest.findIndex((c) => c.id === custId);
-          if (idx >= 0) {
-            latest[idx].profilePic = res.url;
-            writeToStorage(STORAGE_KEYS.CUSTOMERS, latest);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }
-        }
-      }).catch(() => {});
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
     return newCustomer;
   },
 
@@ -2089,56 +1935,22 @@ export const StorageService = {
     const index = customers.findIndex((c) => c.id === id);
     if (index === -1) return false;
     customers[index] = { ...customers[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
-
-    if (success) {
-      if (updates.profilePic && updates.profilePic.startsWith('data:image/')) {
-        const mimeType = updates.profilePic.slice(5, updates.profilePic.indexOf(';')) || 'image/jpeg';
-        const ext = mimeType.split('/')[1] || 'jpeg';
-        CloudflareService.uploadFile({
-          data: updates.profilePic,
-          filename: `customer_${id}_${Date.now()}.${ext}`,
-          mimeType,
-          folder: 'photos',
-        }).then((res) => {
-          if (res.success && res.url) {
-            const latest = this.getCustomers();
-            const idx = latest.findIndex((c) => c.id === id);
-            if (idx >= 0) {
-              latest[idx].profilePic = res.url;
-              writeToStorage(STORAGE_KEYS.CUSTOMERS, latest);
-              CloudflareService.syncAllToCloudflare().catch(() => {});
-            }
-          }
-        }).catch(() => {});
-      } else {
-        CloudflareService.syncAllToCloudflare().catch(() => {});
-      }
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.CUSTOMERS, customers);
   },
 
   deleteCustomer(id: string): boolean {
     const customers = this.getCustomers();
     const filtered = customers.filter((c) => c.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.CUSTOMERS, filtered);
   },
 
-  // --- AGENT MANAGEMENT ---
+  // --- AGENT MANAGEMENT (LocalStorage Only) ---
   getAgents(): BusinessAgent[] {
     return readFromStorage<BusinessAgent[]>(STORAGE_KEYS.AGENTS, []);
   },
 
   saveAgents(agents: BusinessAgent[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.AGENTS, agents);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.AGENTS, agents);
   },
 
   addAgent(agent: Omit<BusinessAgent, 'id' | 'createdAt'>): BusinessAgent {
@@ -2150,32 +1962,6 @@ export const StorageService = {
     };
     agents.unshift(newAgent);
     writeToStorage(STORAGE_KEYS.AGENTS, agents);
-
-    // Auto-upload agent photo to Cloudflare R2 if base64
-    if (newAgent.profilePic && newAgent.profilePic.startsWith('data:image/')) {
-      const agentId = newAgent.id;
-      const mimeType = newAgent.profilePic.slice(5, newAgent.profilePic.indexOf(';')) || 'image/jpeg';
-      const ext = mimeType.split('/')[1] || 'jpeg';
-      CloudflareService.uploadFile({
-        data: newAgent.profilePic,
-        filename: `agent_${agentId}_${Date.now()}.${ext}`,
-        mimeType,
-        folder: 'photos',
-      }).then((res) => {
-        if (res.success && res.url) {
-          const latest = this.getAgents();
-          const idx = latest.findIndex((a) => a.id === agentId);
-          if (idx >= 0) {
-            latest[idx].profilePic = res.url;
-            writeToStorage(STORAGE_KEYS.AGENTS, latest);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }
-        }
-      }).catch(() => {});
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
     return newAgent;
   },
 
@@ -2184,43 +1970,13 @@ export const StorageService = {
     const index = agents.findIndex((a) => a.id === id);
     if (index === -1) return false;
     agents[index] = { ...agents[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.AGENTS, agents);
-
-    if (success) {
-      if (updates.profilePic && updates.profilePic.startsWith('data:image/')) {
-        const mimeType = updates.profilePic.slice(5, updates.profilePic.indexOf(';')) || 'image/jpeg';
-        const ext = mimeType.split('/')[1] || 'jpeg';
-        CloudflareService.uploadFile({
-          data: updates.profilePic,
-          filename: `agent_${id}_${Date.now()}.${ext}`,
-          mimeType,
-          folder: 'photos',
-        }).then((res) => {
-          if (res.success && res.url) {
-            const latest = this.getAgents();
-            const idx = latest.findIndex((a) => a.id === id);
-            if (idx >= 0) {
-              latest[idx].profilePic = res.url;
-              writeToStorage(STORAGE_KEYS.AGENTS, latest);
-              CloudflareService.syncAllToCloudflare().catch(() => {});
-            }
-          }
-        }).catch(() => {});
-      } else {
-        CloudflareService.syncAllToCloudflare().catch(() => {});
-      }
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.AGENTS, agents);
   },
 
   deleteAgent(id: string): boolean {
     const agents = this.getAgents();
     const filtered = agents.filter((a) => a.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.AGENTS, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.AGENTS, filtered);
   },
 
   // --- AGENT LEDGER / STOCK & PAYMENT RECORDS ---
@@ -2239,7 +1995,6 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.AGENT_LEDGER, records);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newRecord;
   },
 
@@ -2248,34 +2003,22 @@ export const StorageService = {
     const index = records.findIndex((r) => r.id === id);
     if (index === -1) return false;
     records[index] = { ...records[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.AGENT_LEDGER, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.AGENT_LEDGER, records);
   },
 
   deleteAgentLedgerRecord(id: string): boolean {
     const records = this.getAgentLedger();
     const filtered = records.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.AGENT_LEDGER, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.AGENT_LEDGER, filtered);
   },
 
-  // --- WORKER / STAFF MANAGEMENT ---
+  // --- WORKER / STAFF MANAGEMENT (LocalStorage Only) ---
   getWorkers(): BusinessWorker[] {
     return readFromStorage<BusinessWorker[]>(STORAGE_KEYS.WORKERS, []);
   },
 
   saveWorkers(workers: BusinessWorker[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.WORKERS, workers);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.WORKERS, workers);
   },
 
   addWorker(worker: Omit<BusinessWorker, 'id' | 'createdAt'>): BusinessWorker {
@@ -2287,32 +2030,6 @@ export const StorageService = {
     };
     workers.unshift(newWorker);
     writeToStorage(STORAGE_KEYS.WORKERS, workers);
-
-    // Auto-upload worker photo to Cloudflare R2 if base64
-    if (newWorker.profilePic && newWorker.profilePic.startsWith('data:image/')) {
-      const workerId = newWorker.id;
-      const mimeType = newWorker.profilePic.slice(5, newWorker.profilePic.indexOf(';')) || 'image/jpeg';
-      const ext = mimeType.split('/')[1] || 'jpeg';
-      CloudflareService.uploadFile({
-        data: newWorker.profilePic,
-        filename: `staff_${workerId}_${Date.now()}.${ext}`,
-        mimeType,
-        folder: 'photos',
-      }).then((res) => {
-        if (res.success && res.url) {
-          const latest = this.getWorkers();
-          const idx = latest.findIndex((w) => w.id === workerId);
-          if (idx >= 0) {
-            latest[idx].profilePic = res.url;
-            writeToStorage(STORAGE_KEYS.WORKERS, latest);
-            CloudflareService.syncAllToCloudflare().catch(() => {});
-          }
-        }
-      }).catch(() => {});
-    } else {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-
     return newWorker;
   },
 
@@ -2321,43 +2038,13 @@ export const StorageService = {
     const index = workers.findIndex((w) => w.id === id);
     if (index === -1) return false;
     workers[index] = { ...workers[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.WORKERS, workers);
-
-    if (success) {
-      if (updates.profilePic && updates.profilePic.startsWith('data:image/')) {
-        const mimeType = updates.profilePic.slice(5, updates.profilePic.indexOf(';')) || 'image/jpeg';
-        const ext = mimeType.split('/')[1] || 'jpeg';
-        CloudflareService.uploadFile({
-          data: updates.profilePic,
-          filename: `staff_${id}_${Date.now()}.${ext}`,
-          mimeType,
-          folder: 'photos',
-        }).then((res) => {
-          if (res.success && res.url) {
-            const latest = this.getWorkers();
-            const idx = latest.findIndex((w) => w.id === id);
-            if (idx >= 0) {
-              latest[idx].profilePic = res.url;
-              writeToStorage(STORAGE_KEYS.WORKERS, latest);
-              CloudflareService.syncAllToCloudflare().catch(() => {});
-            }
-          }
-        }).catch(() => {});
-      } else {
-        CloudflareService.syncAllToCloudflare().catch(() => {});
-      }
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.WORKERS, workers);
   },
 
   deleteWorker(id: string): boolean {
     const workers = this.getWorkers();
     const filtered = workers.filter((w) => w.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.WORKERS, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.WORKERS, filtered);
   },
 
   // --- STAFF ATTENDANCE MANAGEMENT ---
@@ -2370,11 +2057,7 @@ export const StorageService = {
   },
 
   saveStaffAttendance(records: StaffAttendanceRecord[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
   },
 
   addStaffAttendance(record: Omit<StaffAttendanceRecord, 'id' | 'createdAt'>): StaffAttendanceRecord {
@@ -2386,7 +2069,6 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
 
     // Trigger notification
     const workerName = this.getWorkers().find((w) => w.id === record.workerId)?.name || 'Staff Member';
@@ -2404,21 +2086,13 @@ export const StorageService = {
     const index = records.findIndex((r) => r.id === id);
     if (index === -1) return false;
     records[index] = { ...records[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, records);
   },
 
   deleteStaffAttendance(id: string): boolean {
     const records = this.getStaffAttendance();
     const filtered = records.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_ATTENDANCE, filtered);
   },
 
   // --- STAFF LOSSES MANAGEMENT ---
@@ -2431,11 +2105,7 @@ export const StorageService = {
   },
 
   saveStaffLosses(records: StaffLossRecord[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.STAFF_LOSSES, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_LOSSES, records);
   },
 
   addStaffLoss(record: Omit<StaffLossRecord, 'id' | 'createdAt'>): StaffLossRecord {
@@ -2447,7 +2117,6 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_LOSSES, records);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newRecord;
   },
 
@@ -2456,21 +2125,13 @@ export const StorageService = {
     const index = records.findIndex((r) => r.id === id);
     if (index === -1) return false;
     records[index] = { ...records[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.STAFF_LOSSES, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_LOSSES, records);
   },
 
   deleteStaffLoss(id: string): boolean {
     const records = this.getStaffLosses();
     const filtered = records.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.STAFF_LOSSES, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_LOSSES, filtered);
   },
 
   // --- STAFF SALES MANAGEMENT ---
@@ -2483,11 +2144,7 @@ export const StorageService = {
   },
 
   saveStaffSales(records: StaffSaleRecord[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.STAFF_SALES, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_SALES, records);
   },
 
   addStaffSale(record: Omit<StaffSaleRecord, 'id' | 'createdAt'>): StaffSaleRecord {
@@ -2499,7 +2156,6 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_SALES, records);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     return newRecord;
   },
 
@@ -2508,21 +2164,13 @@ export const StorageService = {
     const index = records.findIndex((r) => r.id === id);
     if (index === -1) return false;
     records[index] = { ...records[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.STAFF_SALES, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_SALES, records);
   },
 
   deleteStaffSale(id: string): boolean {
     const records = this.getStaffSales();
     const filtered = records.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.STAFF_SALES, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_SALES, filtered);
   },
 
   // --- STAFF INCIDENTS & MISTAKES MANAGEMENT ---
@@ -2535,11 +2183,7 @@ export const StorageService = {
   },
 
   saveStaffIncidents(records: StaffIncidentRecord[]): boolean {
-    const success = writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
   },
 
   addStaffIncident(record: Omit<StaffIncidentRecord, 'id' | 'createdAt'>): StaffIncidentRecord {
@@ -2551,7 +2195,6 @@ export const StorageService = {
     };
     records.unshift(newRecord);
     writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
-    CloudflareService.syncAllToCloudflare().catch(() => {});
 
     // Trigger Staff Incident Notification
     const workerName = this.getWorkers().find((w) => w.id === record.workerId)?.name || 'Staff Member';
@@ -2569,21 +2212,13 @@ export const StorageService = {
     const index = records.findIndex((r) => r.id === id);
     if (index === -1) return false;
     records[index] = { ...records[index], ...updates };
-    const success = writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, records);
   },
 
   deleteStaffIncident(id: string): boolean {
     const records = this.getStaffIncidents();
     const filtered = records.filter((r) => r.id !== id);
-    const success = writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, filtered);
-    if (success) {
-      CloudflareService.syncAllToCloudflare().catch(() => {});
-    }
-    return success;
+    return writeToStorage(STORAGE_KEYS.STAFF_INCIDENTS, filtered);
   },
 
   // ==================== QR CODE HOSTED PAGES (DIGITAL MENUS & BUSINESS SHOWCASES) ====================
@@ -3167,37 +2802,8 @@ export const StorageService = {
     return config;
   },
 
-  syncReceiptToCloudflare(receipt: Receipt): void {
-    try {
-      const user = this.getAuthUser();
-      const status = this.getTrialStatus();
-      if (!user?.email && status.isExpired && !this.isSubscribed()) {
-        console.info('Skip background Cloudflare receipt sync: Trial expired without subscription.');
-        return;
-      }
-
-      const config = this.getCloudflareConfig();
-      if (!config.workerUrl || config.autoSyncData === false) return;
-      const url = config.workerUrl.replace(/\/$/, '');
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (config.apiKey && config.apiKey.trim() !== '') {
-        headers['X-Sync-Key'] = config.apiKey.trim();
-        headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
-      }
-      if (user && user.email) {
-        headers['X-User-Email'] = user.email.toLowerCase().trim();
-        headers['X-User-Id'] = user.email.toLowerCase().trim();
-      }
-      fetch(`${url}/api/receipts`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(receipt),
-      }).catch((err) => {
-        console.warn('Background Cloudflare receipt sync note:', err);
-      });
-    } catch {
-      // Non-blocking
-    }
+  syncReceiptToCloudflare(_receipt: Receipt): void {
+    // Receipts, invoices, and quotations are saved strictly in localStorage (and optional Google Drive backup).
   },
 
   // --- FREE TRIAL, GRACE PERIOD, AND PURGE LIFE CYCLE ---
@@ -3442,30 +3048,15 @@ export const StorageService = {
   },
 
   /**
-   * Switches user session cleanly:
-   * 1. Caches previous user's workspace locally so nothing is lost if they return.
-   * 2. Clears the active workspace so previous user's data never leaks to new account.
-   * 3. If newUserEmail is provided, restores cached data for newUserEmail if available,
-   *    or starts with a clean empty slate.
+   * Switches auth session without clearing localStorage business data:
+   * All receipts, invoices, quotations, inventory records, photos, and local files remain in localStorage
+   * whether the user is logged in or logged out (they only disappear if deleted or app is uninstalled).
    */
   switchUserSession(newUserEmail: string | null): void {
-    const activeWorkspaceUser = (localStorage.getItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER) || '').toLowerCase().trim();
-    const prevUser = this.getAuthUser();
-    const prevEmail = (prevUser?.email || activeWorkspaceUser || '').toLowerCase().trim();
     const cleanNewEmail = (newUserEmail || '').toLowerCase().trim();
 
-    // 1. If previous user had data in active workspace, securely cache it into their private local vault
-    if (prevEmail) {
-      try {
-        const backup = this.exportBackup();
-        localStorage.setItem(`brivu_vault_${prevEmail}`, JSON.stringify(backup));
-      } catch (err) {
-        console.warn('Failed to cache user vault:', err);
-      }
-    }
-
     if (!cleanNewEmail) {
-      // User signed out (preserve separate Google Drive connection keys!)
+      // User signed out: clear ONLY auth session credentials, keep all localStorage records intact!
       try {
         this.clearAuthSession();
         localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
@@ -3475,13 +3066,11 @@ export const StorageService = {
           cf.apiKey = '';
           writeToStorage(STORAGE_KEYS.CLOUDFLARE, cf);
         }
-        // Securely clear the active workspace so previous user's data never leaks to unauthorized viewers
-        this.clearActiveUserData();
       } catch {}
       return;
     }
 
-    // User signed in:
+    // User signed in: update active auth metadata while preserving ALL localStorage receipts/invoices/quotations/inventory
     localStorage.setItem(STORAGE_KEYS.ACTIVE_WORKSPACE_USER, cleanNewEmail);
     writeToStorage(STORAGE_KEYS.BRIVU_USER_ID, cleanNewEmail);
 
@@ -3489,75 +3078,9 @@ export const StorageService = {
     cf.apiKey = cleanNewEmail;
     this.saveCloudflareConfig(cf);
 
-    // If switching between two registered user accounts (User A -> User B):
-    if (prevEmail && prevEmail !== cleanNewEmail) {
-      // Clear active workspace completely to guarantee ZERO data leakage across users
-      this.clearActiveUserData();
-
-      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
-      if (vaultJson) {
-        try {
-          const vaultData = JSON.parse(vaultJson);
-          this.importBackup(vaultData, true);
-        } catch (_) {}
-      } else {
-        // Fresh account on this device: set up fresh slate for cleanNewEmail
-        const cleanName = cleanNewEmail.split('@')[0] || 'My Business';
-        const formattedTitle = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
-        const freshProfile = {
-          ...DEFAULT_BUSINESS_PROFILE,
-          name: formattedTitle,
-          email: cleanNewEmail,
-          currency: 'UGX',
-        };
-        this.saveProfile(freshProfile);
-
-        const initialQr: QRCodeHostedPage = {
-          id: `qr-${Date.now().toString(36)}`,
-          title: formattedTitle,
-          tagline: '',
-          description: '',
-          pageType: 'menu',
-          accentColor: '#059669',
-          theme: 'emerald',
-          email: cleanNewEmail,
-          userEmail: cleanNewEmail,
-          currency: 'UGX',
-          allowWhatsAppOrdering: true,
-          photos: [],
-          menuCategories: ['All'],
-          menuItems: [],
-          qrDarkColor: '#000000',
-          qrEyeColor: '#000000',
-          qrLightColor: '#ffffff',
-          qrBoxBgColor: '#ffffff',
-          qrBoxBorderColor: '#e2e8f0',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [initialQr]);
-      }
-    } else if (!prevEmail) {
-      // User created data locally/offline before logging in:
-      // PRESERVE all existing local receipts, products, shopping lists, and debts!
-      const vaultJson = localStorage.getItem(`brivu_vault_${cleanNewEmail}`);
-      if (vaultJson) {
-        try {
-          const vaultData = JSON.parse(vaultJson);
-          // Restore user's cached local vault records immediately into active workspace
-          this.importBackup(vaultData, true);
-        } catch (_) {}
-      }
-      const prof = this.getProfile();
-      if (!prof.email) {
-        this.saveProfile({
-          ...prof,
-          email: cleanNewEmail,
-        });
-      }
-    } else {
-      const prof = this.getProfile();
-      this.saveProfile({
+    const prof = this.getProfile();
+    if (!prof.email || prof.email !== cleanNewEmail) {
+      writeToStorage(STORAGE_KEYS.PROFILE, {
         ...prof,
         email: cleanNewEmail,
       });
@@ -3742,25 +3265,6 @@ export const StorageService = {
       window.dispatchEvent(new Event('storage'));
     };
 
-    const uploadDataUriToR2 = async (dataUri: string, filenamePrefix: string, folder = 'photos'): Promise<string | null> => {
-      if (!dataUri.startsWith('data:image/')) return null;
-      if (!CloudflareService.isConfigured() || !CloudflareService.getUserEmail()) return null;
-      try {
-        const mimeMatch = dataUri.match(/^data:(image\/[a-zA-Z0-9.+-]+);/);
-        const mimeType = mimeMatch?.[1] || 'image/webp';
-        const ext = (mimeType.split('/')[1] || 'webp').replace('jpeg', 'jpg');
-        const upRes = await CloudflareService.uploadFile({
-          data: dataUri,
-          filename: `${filenamePrefix}_${Date.now()}.${ext}`,
-          mimeType,
-          folder,
-        });
-        return upRes.success && upRes.url ? upRes.url : null;
-      } catch {
-        return null;
-      }
-    };
-
     const rawIncomingProducts = Array.isArray(backupData?.inventoryProducts)
       ? backupData.inventoryProducts
       : (Array.isArray(backupData?.products) ? backupData.products : []);
@@ -3808,8 +3312,7 @@ export const StorageService = {
     const recoverPersonPhotos = async (
       list: any[],
       rawIncoming: any[],
-      storageKey: string,
-      prefix: string
+      storageKey: string
     ) => {
       const bMap = new Map<string, string>();
       for (const item of rawIncoming) {
@@ -3846,39 +3349,22 @@ export const StorageService = {
         writeToStorage(storageKey, list);
         emitRefresh();
       }
-      for (const item of list) {
-        if (item.profilePic && item.profilePic.startsWith('data:image/')) {
-          const url = await uploadDataUriToR2(item.profilePic, `${prefix}_${item.id}`, 'photos');
-          if (url) {
-            const latest = readFromStorage<any[]>(storageKey, []);
-            const idx = latest.findIndex((x) => x.id === item.id);
-            if (idx >= 0 && latest[idx].profilePic?.startsWith('data:image/')) {
-              latest[idx] = { ...latest[idx], profilePic: url };
-              writeToStorage(storageKey, latest);
-              emitRefresh();
-            }
-          }
-        }
-      }
     };
 
     await recoverPersonPhotos(
       this.getCustomers(),
       Array.isArray(backupData?.customers) ? backupData.customers : [],
-      STORAGE_KEYS.CUSTOMERS,
-      'customer'
+      STORAGE_KEYS.CUSTOMERS
     );
     await recoverPersonPhotos(
       this.getAgents(),
       Array.isArray(backupData?.agents) ? backupData.agents : [],
-      STORAGE_KEYS.AGENTS,
-      'agent'
+      STORAGE_KEYS.AGENTS
     );
     await recoverPersonPhotos(
       this.getWorkers(),
       Array.isArray(backupData?.workers) ? backupData.workers : [],
-      STORAGE_KEYS.WORKERS,
-      'staff'
+      STORAGE_KEYS.WORKERS
     );
 
     if (backupData?.profile) {

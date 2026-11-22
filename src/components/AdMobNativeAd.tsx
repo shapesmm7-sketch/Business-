@@ -22,15 +22,27 @@ function isElementVisible(el: Element | null): boolean {
   return r.width > 0 && r.height > 0;
 }
 
+function isFixedOrStickyElement(el: Element | null): boolean {
+  let curr: Element | null = el;
+  while (curr && curr !== document.body && curr !== document.documentElement) {
+    const pos = window.getComputedStyle(curr).position;
+    if (pos === 'fixed' || pos === 'sticky') {
+      return true;
+    }
+    curr = curr.parentElement;
+  }
+  return false;
+}
+
 /**
  * AdMobNativeAd Component
  *
  * 1. ZERO mock HTML ads or sample cards are rendered in DOM / web preview (returns null).
  * 2. On Android native app, requests authentic live Native Advanced ads from Google AdMob SDK
  *    via NativeAdBridge/AdMobService using live AdMob ID ca-app-pub-8582659585800553/6584166086.
- * 3. Measures fixed header & bottom navigation bounds AND hit-tests the slot against all
- *    modals, drawers, popups, and sticky controls so the native ad stays strictly inside
- *    normal page flow and never covers app features or buttons.
+ * 3. Measures fixed header & bottom navigation bounds, ignores non-blocking pointer-events-none toasts,
+ *    and sends document-locked scroll coordinates so each ad slot stays rock-solid in place
+ *    without disappearing or shaking during scroll.
  */
 export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   unitId = ADMOB_UNITS.NATIVE_ADVANCED,
@@ -39,8 +51,9 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
 }) => {
   const slotRef = useRef<HTMLDivElement>(null);
   const slotIdRef = useRef<string>(`native-slot-${++slotSequence}`);
+  const lastPayloadRef = useRef<string>('');
 
-  const syncSlotPosition = useCallback(() => {
+  const syncSlotPosition = useCallback((force = false) => {
     if (!Capacitor.isNativePlatform() || !slotRef.current) return;
     const slotEl = slotRef.current;
     const rect = slotEl.getBoundingClientRect();
@@ -66,37 +79,39 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       }
     }
 
-    // 2. Hide native overlay whenever any modal, drawer, dialog, or backdrop is open in React tree or body
+    // 2. Hide native overlay whenever any interactive blocking modal, drawer, or dialog is open
+    // Ignore pointer-events-none wrappers (such as centered toast notifications)
     const overlayCandidates = document.querySelectorAll('.fixed.inset-0, [role="dialog"], [aria-modal="true"]');
     let hasBlockingOverlay = false;
     for (let i = 0; i < overlayCandidates.length; i++) {
       const overlay = overlayCandidates[i];
       if (!overlay.contains(slotEl) && isElementVisible(overlay)) {
-        hasBlockingOverlay = true;
-        break;
+        const style = window.getComputedStyle(overlay);
+        if (style.pointerEvents !== 'none') {
+          hasBlockingOverlay = true;
+          break;
+        }
       }
     }
 
-    // 3. Hit-test multiple horizontal points along the slot's visible strip to guarantee no UI feature covers it
+    // 3. Only treat fixed/sticky overlays at the slot center as occluding (prevents false hides on scroll)
     const visibleTop = Math.max(rect.top, safeTop);
     const visibleBottom = Math.min(rect.bottom, safeBottom);
     const visibleHeight = visibleBottom - visibleTop;
 
     let isOccludedByFeature = false;
-    if (!hasBlockingOverlay && visibleHeight > 4 && rect.width > 20) {
+    if (!hasBlockingOverlay && visibleHeight > 6 && rect.width > 20) {
       const sampleY = visibleTop + visibleHeight / 2;
-      const sampleXs = [
-        Math.min(window.innerWidth - 2, Math.max(2, rect.left + 16)),
-        Math.min(window.innerWidth - 2, Math.max(2, rect.left + rect.width / 2)),
-        Math.min(window.innerWidth - 2, Math.max(2, rect.right - 16)),
-      ];
-
-      for (const sx of sampleXs) {
-        const hitEl = document.elementFromPoint(sx, sampleY);
-        if (hitEl && hitEl !== slotEl && !slotEl.contains(hitEl)) {
-          isOccludedByFeature = true;
-          break;
-        }
+      const sampleX = Math.min(window.innerWidth - 2, Math.max(2, rect.left + rect.width / 2));
+      const hitEl = document.elementFromPoint(sampleX, sampleY);
+      if (
+        hitEl &&
+        hitEl !== slotEl &&
+        !slotEl.contains(hitEl) &&
+        !hitEl.contains(slotEl) &&
+        isFixedOrStickyElement(hitEl)
+      ) {
+        isOccludedByFeature = true;
       }
     }
 
@@ -104,21 +119,31 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       !hasBlockingOverlay &&
       !isOccludedByFeature &&
       safeBottom > safeTop + 12 &&
-      rect.bottom > safeTop + 4 &&
-      rect.top < safeBottom - 4 &&
+      rect.bottom > safeTop + 2 &&
+      rect.top < safeBottom - 2 &&
       rect.width > 0 &&
       rect.height > 0;
 
-    NativeAdBridge.updatePosition({
+    const payload = {
       x: Math.round(rect.left * dpr),
       y: Math.round(rect.top * dpr),
       width: Math.round(rect.width * dpr),
       height: Math.round(rect.height * dpr),
       clipTop: Math.round(safeTop * dpr),
       clipBottom: Math.round(safeBottom * dpr),
+      scrollX: Math.round(window.scrollX * dpr),
+      scrollY: Math.round(window.scrollY * dpr),
       visible: isVisibleInViewport,
       slotId: slotIdRef.current,
-    }).catch(() => {});
+    };
+
+    const payloadKey = `${payload.x}:${payload.y}:${payload.width}:${payload.height}:${payload.clipTop}:${payload.clipBottom}:${payload.scrollY}:${payload.visible ? 1 : 0}`;
+    if (!force && lastPayloadRef.current === payloadKey) {
+      return;
+    }
+    lastPayloadRef.current = payloadKey;
+
+    NativeAdBridge.updatePosition(payload).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -137,18 +162,17 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     // Request/preload live AdMob native advanced ad
     AdMobService.requestNativeAd(unitId).catch(() => {});
 
-    // Sync position as DOM settles
-    const t1 = setTimeout(syncSlotPosition, 50);
-    const t2 = setTimeout(syncSlotPosition, 160);
-    const t3 = setTimeout(syncSlotPosition, 400);
-    const t4 = setTimeout(syncSlotPosition, 800);
+    // Sync position promptly as DOM settles
+    const initialRaf = window.requestAnimationFrame(() => syncSlotPosition(true));
+    const t1 = setTimeout(() => syncSlotPosition(), 80);
+    const t2 = setTimeout(() => syncSlotPosition(), 240);
+    const t3 = setTimeout(() => syncSlotPosition(), 600);
 
-    // Capture scroll on document as well as window so inner scrollable containers update coordinates
+    // Sync when scroll finishes or DOM resizes (live scroll movement is locked natively on Android UI thread)
     document.addEventListener('scroll', scheduleSync, { passive: true, capture: true });
     window.addEventListener('scroll', scheduleSync, { passive: true });
     window.addEventListener('resize', scheduleSync, { passive: true });
 
-    // Observers for instant detection when screen transitions, modals open anywhere in React, or layout shifts
     let io: IntersectionObserver | null = null;
     let ro: ResizeObserver | null = null;
     let mo: MutationObserver | null = null;
@@ -163,8 +187,16 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       ro = new ResizeObserver(scheduleSync);
       ro.observe(slotRef.current);
     }
+    // Watch only childList mutations on document.body (portals/modals) and main container to avoid scroll jitter
     if (typeof MutationObserver !== 'undefined' && document.body) {
-      mo = new MutationObserver(scheduleSync);
+      mo = new MutationObserver((mutations) => {
+        for (let i = 0; i < mutations.length; i++) {
+          if (mutations[i].addedNodes.length > 0 || mutations[i].removedNodes.length > 0) {
+            scheduleSync();
+            return;
+          }
+        }
+      });
       mo.observe(document.body, {
         childList: true,
         subtree: true,
@@ -172,19 +204,19 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     }
 
     return () => {
+      window.cancelAnimationFrame(initialRaf);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
-      clearTimeout(t4);
       document.removeEventListener('scroll', scheduleSync, { capture: true });
       window.removeEventListener('scroll', scheduleSync);
       window.removeEventListener('resize', scheduleSync);
       if (io) io.disconnect();
       if (ro) ro.disconnect();
       if (mo) mo.disconnect();
-      // Only hide native overlay if this unmounting slot is still the active owner
-      NativeAdBridge.hideNativeAd({ slotId }).catch(() => {});
+      lastPayloadRef.current = '';
+      NativeAdBridge.hideNativeAd({ slotId, remove: true }).catch(() => {});
     };
   }, [unitId, syncSlotPosition]);
 
@@ -198,7 +230,7 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     <div
       ref={slotRef}
       data-admob-slot={context}
-      className={`w-full h-[84px] my-1 rounded-2xl transition-all ${className}`}
+      className={`w-full h-[84px] my-1 rounded-2xl ${className}`}
       aria-hidden="true"
     />
   );

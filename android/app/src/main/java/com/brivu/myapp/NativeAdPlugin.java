@@ -29,11 +29,18 @@ import com.google.android.gms.ads.nativead.MediaView;
 import com.google.android.gms.ads.nativead.NativeAd;
 import com.google.android.gms.ads.nativead.NativeAdOptions;
 import com.google.android.gms.ads.nativead.NativeAdView;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @CapacitorPlugin(name = "NativeAdPlugin")
 public class NativeAdPlugin extends Plugin {
     private static final String TAG = "ADS";
     private static final int MAX_NATIVE_RETRIES = 2;
+    private static final int MAX_AD_POOL_SIZE = 2;
+    private static final int MAX_HOLDER_COUNT = 6;
 
     // Live Google AdMob Native Ad Unit ID
     public static final String LIVE_NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/6584166086";
@@ -53,24 +60,48 @@ public class NativeAdPlugin extends Plugin {
         instance = this;
     }
 
+    private static class AdSlotHolder {
+        final String slotId;
+        FrameLayout container;
+        NativeAd nativeAd;
+        int x;
+        int y;
+        int width;
+        int height;
+        int clipTop;
+        int clipBottom;
+        int jsScrollX;
+        int jsScrollY;
+        int docX;
+        int docY;
+        boolean visible;
+        int appliedWidth = -1;
+        int appliedHeight = -1;
+        long lastActiveAt = System.currentTimeMillis();
+
+        AdSlotHolder(String slotId) {
+            this.slotId = slotId;
+        }
+    }
+
     private FrameLayout viewportClipContainer;
-    private FrameLayout adContainer;
-    private NativeAd currentNativeAd;
+    private final Map<String, AdSlotHolder> slotHolders = new LinkedHashMap<>();
+    private final Deque<NativeAd> preloadedAdPool = new ArrayDeque<>();
+
     private boolean isLoading = false;
-    private boolean isVisible = false;
     private boolean hasPendingNativeRequest = false;
     private String pendingNativeUnitId = LIVE_NATIVE_AD_UNIT_ID;
     private int nativeRetryCount = 0;
 
-    // Last requested slot coordinates, safe viewport clip bounds, and slot ownership token
-    private String activeSlotId = null;
-    private int lastX = 0;
-    private int lastY = 0;
-    private int lastWidth = 0;
-    private int lastHeight = 0;
-    private int lastClipTop = 0;
-    private int lastClipBottom = 0;
-    private boolean targetVisible = false;
+    // Cached clip container geometry to avoid triggering requestLayout on every scroll frame
+    private int appliedClipOffsetX = Integer.MIN_VALUE;
+    private int appliedClipOffsetY = Integer.MIN_VALUE;
+    private int appliedClipWidth = -1;
+    private int appliedClipHeight = -1;
+    private int lastEffectiveClipTop = 0;
+    private int lastEffectiveClipBottom = 0;
+    private boolean scrollListenerAttached = false;
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -81,8 +112,8 @@ public class NativeAdPlugin extends Plugin {
     }
 
     /**
-     * Set up a clipped viewport container on android.R.id.content so the native ad layers above
-     * scrolled page content yet passes cleanly beneath fixed header and bottom navigation bars.
+     * Set up a clipped viewport container on android.R.id.content and lock native scroll tracking
+     * directly to WebView's UI-thread scroll callback so ads never shake or jitter during scroll.
      */
     private void initAdContainer() {
         try {
@@ -111,33 +142,19 @@ public class NativeAdPlugin extends Plugin {
                 viewportClipContainer.setLayoutParams(clipParams);
 
                 rootContent.addView(viewportClipContainer);
-            }
-
-            if (adContainer == null) {
-                adContainer = new FrameLayout(activity);
-                adContainer.setId(View.generateViewId());
-                adContainer.setVisibility(View.GONE);
-                adContainer.setClickable(true);
-                adContainer.setClipChildren(true);
-                adContainer.setOutlineProvider(android.view.ViewOutlineProvider.BOUNDS);
-                adContainer.setClipToOutline(true);
-
-                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                );
-                params.gravity = Gravity.TOP | Gravity.START;
-                params.setMargins(0, 0, 0, 0);
-                adContainer.setLayoutParams(params);
-
-                viewportClipContainer.addView(adContainer);
                 viewportClipContainer.bringToFront();
                 Log.d(TAG, "AdMob Native ad clipped container initialized");
             }
 
-            if (currentNativeAd != null) {
-                displayNativeAd(currentNativeAd);
-            } else if (hasPendingNativeRequest && MainActivity.isInitialized()) {
+            if (!scrollListenerAttached && getBridge() != null && getBridge().getWebView() != null) {
+                View webView = getBridge().getWebView();
+                webView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) ->
+                    syncVisibleSlotsToNativeScroll(scrollX, scrollY)
+                );
+                scrollListenerAttached = true;
+            }
+
+            if (hasPendingNativeRequest && MainActivity.isInitialized()) {
                 hasPendingNativeRequest = false;
                 requestAdMobNativeAd(pendingNativeUnitId, false);
             }
@@ -147,14 +164,14 @@ public class NativeAdPlugin extends Plugin {
     }
 
     /**
-     * Ensures a native ad is loaded if initialized (e.g. from onResume or onInitializationComplete)
+     * Ensures at least one native ad is preloaded in pool when initialized.
      */
     public void ensureNativeAdLoaded() {
         if (!MainActivity.isInitialized()) {
             hasPendingNativeRequest = true;
             return;
         }
-        if (currentNativeAd == null && !isLoading) {
+        if (preloadedAdPool.isEmpty() && !isLoading) {
             String unitId = (pendingNativeUnitId != null && !pendingNativeUnitId.isEmpty())
                 ? pendingNativeUnitId
                 : getNativeAdUnitId();
@@ -185,6 +202,9 @@ public class NativeAdPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             if (activity.isFinishing() || activity.isDestroyed()) return;
             if (isLoading) return;
+            if (preloadedAdPool.size() >= MAX_AD_POOL_SIZE && !hasUnfilledVisibleHolder()) {
+                return;
+            }
             isLoading = true;
             hasPendingNativeRequest = false;
             if (!isRetry) {
@@ -202,12 +222,29 @@ public class NativeAdPlugin extends Plugin {
                         Log.d(TAG, "onAdLoaded: Native Ad loaded successfully (isDebug=false). AdUnitId: "
                             + finalUnitId + ", Headline: " + nativeAd.getHeadline());
 
-                        if (currentNativeAd != null) {
-                            currentNativeAd.destroy();
+                        if (activity.isFinishing() || activity.isDestroyed()) {
+                            nativeAd.destroy();
+                            return;
                         }
-                        currentNativeAd = nativeAd;
 
-                        displayNativeAd(nativeAd);
+                        // Assign immediately to any visible holder waiting for an ad
+                        AdSlotHolder target = findNextUnfilledHolder();
+                        if (target != null) {
+                            bindNativeAdToHolder(target, nativeAd);
+                            applySlotPosition(target);
+                        } else {
+                            // Keep in preloaded pool for instant attachment to upcoming slots
+                            while (preloadedAdPool.size() >= MAX_AD_POOL_SIZE) {
+                                NativeAd oldest = preloadedAdPool.pollFirst();
+                                if (oldest != null) oldest.destroy();
+                            }
+                            preloadedAdPool.offerLast(nativeAd);
+                        }
+
+                        // Warm one extra ad in pool if another unfilled visible slot needs one
+                        if (hasUnfilledVisibleHolder() && preloadedAdPool.isEmpty()) {
+                            requestAdMobNativeAd(finalUnitId, false);
+                        }
                     }
                 })
                 .withAdListener(new AdListener() {
@@ -224,7 +261,8 @@ public class NativeAdPlugin extends Plugin {
                             long delayMs = 2500L * nativeRetryCount;
                             mainHandler.postDelayed(() -> {
                                 Activity act = getActivity();
-                                if (act != null && !act.isFinishing() && !act.isDestroyed() && currentNativeAd == null) {
+                                if (act != null && !act.isFinishing() && !act.isDestroyed()
+                                    && (preloadedAdPool.isEmpty() || hasUnfilledVisibleHolder())) {
                                     requestAdMobNativeAd(finalUnitId, true);
                                 }
                             }, delayMs);
@@ -248,165 +286,241 @@ public class NativeAdPlugin extends Plugin {
         });
     }
 
-    /**
-     * Populate and render real native assets into the NativeAdView
-     */
-    private void displayNativeAd(final NativeAd nativeAd) {
-        final Activity activity = getActivity();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
-
-        activity.runOnUiThread(() -> {
-            if (adContainer == null) {
-                initAdContainer();
+    private boolean hasUnfilledVisibleHolder() {
+        for (AdSlotHolder h : slotHolders.values()) {
+            if (h.visible && h.nativeAd == null) {
+                return true;
             }
-            if (adContainer == null) return;
-
-            try {
-                adContainer.removeAllViews();
-
-                NativeAdView adView = (NativeAdView) LayoutInflater.from(activity).inflate(
-                    R.layout.admob_native_ad_view,
-                    adContainer,
-                    false
-                );
-
-                // 1. Headline
-                TextView headlineView = adView.findViewById(R.id.ad_headline);
-                if (headlineView != null) {
-                    headlineView.setText(nativeAd.getHeadline());
-                    adView.setHeadlineView(headlineView);
-                }
-
-                // 2. Advertiser
-                TextView advertiserView = adView.findViewById(R.id.ad_advertiser);
-                if (advertiserView != null) {
-                    if (nativeAd.getAdvertiser() != null && !nativeAd.getAdvertiser().isEmpty()) {
-                        advertiserView.setText(nativeAd.getAdvertiser());
-                    } else {
-                        advertiserView.setText("Sponsored");
-                    }
-                    advertiserView.setVisibility(View.VISIBLE);
-                    adView.setAdvertiserView(advertiserView);
-                }
-
-                // 3. Body text
-                TextView bodyView = adView.findViewById(R.id.ad_body);
-                if (bodyView != null) {
-                    if (nativeAd.getBody() != null && !nativeAd.getBody().isEmpty()) {
-                        bodyView.setText(nativeAd.getBody());
-                        bodyView.setVisibility(View.VISIBLE);
-                        adView.setBodyView(bodyView);
-                    } else {
-                        bodyView.setVisibility(View.GONE);
-                    }
-                }
-
-                // 4. Call to Action Button
-                Button ctaButton = adView.findViewById(R.id.ad_call_to_action);
-                if (ctaButton != null) {
-                    if (nativeAd.getCallToAction() != null && !nativeAd.getCallToAction().isEmpty()) {
-                        ctaButton.setText(nativeAd.getCallToAction());
-                    } else {
-                        ctaButton.setText("Learn More");
-                    }
-                    ctaButton.setVisibility(View.VISIBLE);
-                    adView.setCallToActionView(ctaButton);
-                }
-
-                // 5. Compact Icon & Media thumbnail
-                ImageView iconView = adView.findViewById(R.id.ad_app_icon);
-                MediaView mediaView = adView.findViewById(R.id.ad_media);
-
-                if (iconView != null && nativeAd.getIcon() != null && nativeAd.getIcon().getDrawable() != null) {
-                    iconView.setImageDrawable(nativeAd.getIcon().getDrawable());
-                    iconView.setVisibility(View.VISIBLE);
-                    adView.setIconView(iconView);
-                    if (mediaView != null) mediaView.setVisibility(View.GONE);
-                } else if (mediaView != null && nativeAd.getMediaContent() != null) {
-                    mediaView.setMediaContent(nativeAd.getMediaContent());
-                    mediaView.setVisibility(View.VISIBLE);
-                    adView.setMediaView(mediaView);
-                    if (iconView != null) iconView.setVisibility(View.GONE);
-                } else if (iconView != null) {
-                    iconView.setVisibility(View.GONE);
-                }
-
-                // 6. Star rating (optional)
-                RatingBar ratingBar = adView.findViewById(R.id.ad_stars);
-                if (ratingBar != null) {
-                    if (nativeAd.getStarRating() != null && nativeAd.getStarRating() > 0) {
-                        ratingBar.setRating(nativeAd.getStarRating().floatValue());
-                        ratingBar.setVisibility(View.VISIBLE);
-                        adView.setStarRatingView(ratingBar);
-                    } else {
-                        ratingBar.setVisibility(View.GONE);
-                    }
-                }
-
-                // 7. Price & Store (optional)
-                TextView priceView = adView.findViewById(R.id.ad_price);
-                if (priceView != null) {
-                    if (nativeAd.getPrice() != null && !nativeAd.getPrice().isEmpty()) {
-                        priceView.setText(nativeAd.getPrice());
-                        priceView.setVisibility(View.VISIBLE);
-                        adView.setPriceView(priceView);
-                    } else {
-                        priceView.setVisibility(View.GONE);
-                    }
-                }
-
-                TextView storeView = adView.findViewById(R.id.ad_store);
-                if (storeView != null) {
-                    if (nativeAd.getStore() != null && !nativeAd.getStore().isEmpty()) {
-                        storeView.setText(nativeAd.getStore());
-                        storeView.setVisibility(View.VISIBLE);
-                        adView.setStoreView(storeView);
-                    } else {
-                        storeView.setVisibility(View.GONE);
-                    }
-                }
-
-                // 8. Close button
-                View closeBtn = adView.findViewById(R.id.ad_close_btn);
-                if (closeBtn != null) {
-                    closeBtn.setOnClickListener(v -> hideAdContainer(null));
-                }
-
-                // CRITICAL: Call setNativeAd to bind all views to AdMob SDK
-                adView.setNativeAd(nativeAd);
-
-                adContainer.addView(adView);
-
-                // Apply target placement if one was already requested
-                if (targetVisible && lastWidth > 0) {
-                    applyAdPosition(lastX, lastY, lastWidth, lastHeight, lastClipTop, lastClipBottom, true);
-                } else {
-                    adContainer.setVisibility(View.GONE);
-                    if (viewportClipContainer != null) viewportClipContainer.setVisibility(View.GONE);
-                    isVisible = false;
-                }
-
-                Log.i(TAG, "AdMob Native Advanced Ad successfully configured in inline view");
-            } catch (Exception e) {
-                Log.e(TAG, "Error displaying Native Ad view", e);
-            }
-        });
+        }
+        return false;
     }
 
-    private void applyAdPosition(int x, int y, int width, int height, int clipTop, int clipBottom, boolean visible) {
-        if (adContainer == null || viewportClipContainer == null) {
+    private AdSlotHolder findNextUnfilledHolder() {
+        for (AdSlotHolder h : slotHolders.values()) {
+            if (h.visible && h.nativeAd == null) {
+                return h;
+            }
+        }
+        return null;
+    }
+
+    private void evictOldestHiddenHolderIfNeeded() {
+        if (slotHolders.size() < MAX_HOLDER_COUNT) return;
+        AdSlotHolder oldestHidden = null;
+        for (AdSlotHolder h : slotHolders.values()) {
+            if (!h.visible) {
+                if (oldestHidden == null || h.lastActiveAt < oldestHidden.lastActiveAt) {
+                    oldestHidden = h;
+                }
+            }
+        }
+        if (oldestHidden != null) {
+            removeAndDestroyHolder(oldestHidden.slotId);
+        }
+    }
+
+    private void removeAndDestroyHolder(String slotId) {
+        AdSlotHolder holder = slotHolders.remove(slotId);
+        if (holder == null) return;
+        if (holder.container != null) {
+            holder.container.removeAllViews();
+            if (viewportClipContainer != null) {
+                viewportClipContainer.removeView(holder.container);
+            }
+        }
+        if (holder.nativeAd != null) {
+            holder.nativeAd.destroy();
+            holder.nativeAd = null;
+        }
+    }
+
+    private AdSlotHolder getOrCreateHolder(String slotId) {
+        AdSlotHolder holder = slotHolders.get(slotId);
+        if (holder != null) {
+            return holder;
+        }
+        evictOldestHiddenHolderIfNeeded();
+
+        Activity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return null;
+
+        if (viewportClipContainer == null) {
             initAdContainer();
         }
-        if (adContainer == null || viewportClipContainer == null) return;
+        if (viewportClipContainer == null) return null;
 
-        if (!visible || currentNativeAd == null || width <= 0 || height <= 0) {
-            adContainer.setVisibility(View.GONE);
-            viewportClipContainer.setVisibility(View.GONE);
-            isVisible = false;
+        holder = new AdSlotHolder(slotId);
+        holder.container = new FrameLayout(activity);
+        holder.container.setId(View.generateViewId());
+        holder.container.setVisibility(View.GONE);
+        holder.container.setClickable(true);
+        holder.container.setClipChildren(true);
+        holder.container.setOutlineProvider(android.view.ViewOutlineProvider.BOUNDS);
+        holder.container.setClipToOutline(true);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.setMargins(0, 0, 0, 0);
+        holder.container.setLayoutParams(params);
+
+        viewportClipContainer.addView(holder.container);
+        slotHolders.put(slotId, holder);
+
+        // Immediately attach a preloaded NativeAd if available in pool
+        NativeAd pooled = preloadedAdPool.pollFirst();
+        if (pooled != null) {
+            bindNativeAdToHolder(holder, pooled);
+            if (preloadedAdPool.isEmpty() && !isLoading) {
+                requestAdMobNativeAd(getNativeAdUnitId(), false);
+            }
+        } else if (!isLoading) {
+            requestAdMobNativeAd(getNativeAdUnitId(), false);
+        }
+
+        return holder;
+    }
+
+    /**
+     * Populate and bind real native assets into a slot holder's NativeAdView
+     */
+    private void bindNativeAdToHolder(final AdSlotHolder holder, final NativeAd nativeAd) {
+        final Activity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed() || holder.container == null) {
+            nativeAd.destroy();
             return;
         }
 
-        // Map WebView DOM coordinates (viewport px) accurately onto android.R.id.content
+        try {
+            holder.container.removeAllViews();
+            if (holder.nativeAd != null && holder.nativeAd != nativeAd) {
+                holder.nativeAd.destroy();
+            }
+            holder.nativeAd = nativeAd;
+
+            NativeAdView adView = (NativeAdView) LayoutInflater.from(activity).inflate(
+                R.layout.admob_native_ad_view,
+                holder.container,
+                false
+            );
+
+            // 1. Headline
+            TextView headlineView = adView.findViewById(R.id.ad_headline);
+            if (headlineView != null) {
+                headlineView.setText(nativeAd.getHeadline());
+                adView.setHeadlineView(headlineView);
+            }
+
+            // 2. Advertiser
+            TextView advertiserView = adView.findViewById(R.id.ad_advertiser);
+            if (advertiserView != null) {
+                if (nativeAd.getAdvertiser() != null && !nativeAd.getAdvertiser().isEmpty()) {
+                    advertiserView.setText(nativeAd.getAdvertiser());
+                } else {
+                    advertiserView.setText("Sponsored");
+                }
+                advertiserView.setVisibility(View.VISIBLE);
+                adView.setAdvertiserView(advertiserView);
+            }
+
+            // 3. Body text
+            TextView bodyView = adView.findViewById(R.id.ad_body);
+            if (bodyView != null) {
+                if (nativeAd.getBody() != null && !nativeAd.getBody().isEmpty()) {
+                    bodyView.setText(nativeAd.getBody());
+                    bodyView.setVisibility(View.VISIBLE);
+                    adView.setBodyView(bodyView);
+                } else {
+                    bodyView.setVisibility(View.GONE);
+                }
+            }
+
+            // 4. Call to Action Button
+            Button ctaButton = adView.findViewById(R.id.ad_call_to_action);
+            if (ctaButton != null) {
+                if (nativeAd.getCallToAction() != null && !nativeAd.getCallToAction().isEmpty()) {
+                    ctaButton.setText(nativeAd.getCallToAction());
+                } else {
+                    ctaButton.setText("Learn More");
+                }
+                ctaButton.setVisibility(View.VISIBLE);
+                adView.setCallToActionView(ctaButton);
+            }
+
+            // 5. Compact Icon & Media thumbnail
+            ImageView iconView = adView.findViewById(R.id.ad_app_icon);
+            MediaView mediaView = adView.findViewById(R.id.ad_media);
+
+            if (iconView != null && nativeAd.getIcon() != null && nativeAd.getIcon().getDrawable() != null) {
+                iconView.setImageDrawable(nativeAd.getIcon().getDrawable());
+                iconView.setVisibility(View.VISIBLE);
+                adView.setIconView(iconView);
+                if (mediaView != null) mediaView.setVisibility(View.GONE);
+            } else if (mediaView != null && nativeAd.getMediaContent() != null) {
+                mediaView.setMediaContent(nativeAd.getMediaContent());
+                mediaView.setVisibility(View.VISIBLE);
+                adView.setMediaView(mediaView);
+                if (iconView != null) iconView.setVisibility(View.GONE);
+            } else if (iconView != null) {
+                iconView.setVisibility(View.GONE);
+            }
+
+            // 6. Star rating (optional)
+            RatingBar ratingBar = adView.findViewById(R.id.ad_stars);
+            if (ratingBar != null) {
+                if (nativeAd.getStarRating() != null && nativeAd.getStarRating() > 0) {
+                    ratingBar.setRating(nativeAd.getStarRating().floatValue());
+                    ratingBar.setVisibility(View.VISIBLE);
+                    adView.setStarRatingView(ratingBar);
+                } else {
+                    ratingBar.setVisibility(View.GONE);
+                }
+            }
+
+            // 7. Price & Store (optional)
+            TextView priceView = adView.findViewById(R.id.ad_price);
+            if (priceView != null) {
+                if (nativeAd.getPrice() != null && !nativeAd.getPrice().isEmpty()) {
+                    priceView.setText(nativeAd.getPrice());
+                    priceView.setVisibility(View.VISIBLE);
+                    adView.setPriceView(priceView);
+                } else {
+                    priceView.setVisibility(View.GONE);
+                }
+            }
+
+            TextView storeView = adView.findViewById(R.id.ad_store);
+            if (storeView != null) {
+                if (nativeAd.getStore() != null && !nativeAd.getStore().isEmpty()) {
+                    storeView.setText(nativeAd.getStore());
+                    storeView.setVisibility(View.VISIBLE);
+                    adView.setStoreView(storeView);
+                } else {
+                    storeView.setVisibility(View.GONE);
+                }
+            }
+
+            // 8. Close button hides only this slot
+            View closeBtn = adView.findViewById(R.id.ad_close_btn);
+            if (closeBtn != null) {
+                closeBtn.setOnClickListener(v -> hideSlot(holder.slotId, false));
+            }
+
+            // CRITICAL: Call setNativeAd to bind all views to AdMob SDK
+            adView.setNativeAd(nativeAd);
+            holder.container.addView(adView);
+
+            Log.i(TAG, "AdMob Native Advanced Ad bound to slot " + holder.slotId);
+        } catch (Exception e) {
+            Log.e(TAG, "Error displaying Native Ad view for slot " + holder.slotId, e);
+        }
+    }
+
+    private void updateClipContainerGeometry(int clipTop, int clipBottom) {
+        if (viewportClipContainer == null) return;
+
         int offsetX = 0;
         int offsetY = 0;
         int webViewWidth = 0;
@@ -431,56 +545,178 @@ public class NativeAdPlugin extends Plugin {
             ? clipBottom
             : (webViewHeight > 0 ? webViewHeight : Integer.MAX_VALUE);
 
-        if (effectiveClipBottom <= effectiveClipTop) {
-            adContainer.setVisibility(View.GONE);
-            viewportClipContainer.setVisibility(View.GONE);
-            isVisible = false;
+        lastEffectiveClipTop = effectiveClipTop;
+        lastEffectiveClipBottom = effectiveClipBottom;
+
+        boolean hasAnyVisibleSlot = false;
+        for (AdSlotHolder h : slotHolders.values()) {
+            if (h.visible && h.nativeAd != null && h.width > 0 && h.height > 0) {
+                hasAnyVisibleSlot = true;
+                break;
+            }
+        }
+
+        if (!hasAnyVisibleSlot || effectiveClipBottom <= effectiveClipTop) {
+            if (viewportClipContainer.getVisibility() != View.GONE) {
+                viewportClipContainer.setVisibility(View.GONE);
+            }
             return;
         }
 
-        ViewGroup.LayoutParams clipLp = viewportClipContainer.getLayoutParams();
-        if (clipLp != null) {
-            clipLp.width = webViewWidth > 0 ? webViewWidth : ViewGroup.LayoutParams.MATCH_PARENT;
-            clipLp.height = effectiveClipBottom - effectiveClipTop;
-            viewportClipContainer.setLayoutParams(clipLp);
-        }
-        viewportClipContainer.setX((float) offsetX);
-        viewportClipContainer.setY((float) (offsetY + effectiveClipTop));
-        viewportClipContainer.bringToFront();
-        viewportClipContainer.setVisibility(View.VISIBLE);
+        int targetClipWidth = webViewWidth > 0 ? webViewWidth : ViewGroup.LayoutParams.MATCH_PARENT;
+        int targetClipHeight = effectiveClipBottom - effectiveClipTop;
 
-        ViewGroup.LayoutParams lp = adContainer.getLayoutParams();
-        if (lp != null) {
-            lp.width = width;
-            lp.height = height;
-            adContainer.setLayoutParams(lp);
+        if (appliedClipWidth != targetClipWidth || appliedClipHeight != targetClipHeight) {
+            ViewGroup.LayoutParams clipLp = viewportClipContainer.getLayoutParams();
+            if (clipLp != null) {
+                clipLp.width = targetClipWidth;
+                clipLp.height = targetClipHeight;
+                viewportClipContainer.setLayoutParams(clipLp);
+            }
+            appliedClipWidth = targetClipWidth;
+            appliedClipHeight = targetClipHeight;
         }
 
-        // Position ad relative to viewportClipContainer top so scrolling past clipTop/clipBottom clips cleanly
-        adContainer.setX((float) x);
-        adContainer.setY((float) (y - effectiveClipTop));
-        adContainer.setVisibility(View.VISIBLE);
-        adContainer.requestLayout();
-        viewportClipContainer.requestLayout();
-        isVisible = true;
+        int targetClipX = offsetX;
+        int targetClipY = offsetY + effectiveClipTop;
+        if (appliedClipOffsetX != targetClipX) {
+            viewportClipContainer.setX((float) targetClipX);
+            appliedClipOffsetX = targetClipX;
+        }
+        if (appliedClipOffsetY != targetClipY) {
+            viewportClipContainer.setY((float) targetClipY);
+            appliedClipOffsetY = targetClipY;
+        }
+
+        if (viewportClipContainer.getVisibility() != View.VISIBLE) {
+            viewportClipContainer.bringToFront();
+            viewportClipContainer.setVisibility(View.VISIBLE);
+        }
     }
 
-    private void hideAdContainer(String slotId) {
+    private float computeRenderY(AdSlotHolder holder, int curWebScrollY) {
+        int rawViewportY;
+        float density = 3.0f;
+        try {
+            if (getContext() != null) {
+                density = getContext().getResources().getDisplayMetrics().density;
+            }
+        } catch (Exception ignored) {}
+
+        // Use real-time WebView UI-thread scroll offset when within normal momentum range
+        int maxDelta = (int) (320 * density);
+        if (Math.abs(curWebScrollY - holder.jsScrollY) <= maxDelta) {
+            rawViewportY = holder.docY - curWebScrollY;
+        } else {
+            rawViewportY = holder.y;
+        }
+        return (float) (rawViewportY - lastEffectiveClipTop);
+    }
+
+    private void applySlotPosition(AdSlotHolder holder) {
+        if (viewportClipContainer == null) {
+            initAdContainer();
+        }
+        if (viewportClipContainer == null || holder == null || holder.container == null) return;
+
+        updateClipContainerGeometry(holder.clipTop, holder.clipBottom);
+
+        if (!holder.visible || holder.nativeAd == null || holder.width <= 0 || holder.height <= 0) {
+            if (holder.container.getVisibility() != View.GONE) {
+                holder.container.setVisibility(View.GONE);
+            }
+            return;
+        }
+
+        // Only call setLayoutParams if width or height actually changed (prevents scroll layout thrash)
+        if (holder.appliedWidth != holder.width || holder.appliedHeight != holder.height) {
+            ViewGroup.LayoutParams lp = holder.container.getLayoutParams();
+            if (lp != null) {
+                lp.width = holder.width;
+                lp.height = holder.height;
+                holder.container.setLayoutParams(lp);
+            }
+            holder.appliedWidth = holder.width;
+            holder.appliedHeight = holder.height;
+        }
+
+        int curWebScrollY = 0;
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                curWebScrollY = getBridge().getWebView().getScrollY();
+            }
+        } catch (Exception ignored) {}
+
+        float renderY = computeRenderY(holder, curWebScrollY);
+        holder.container.setX((float) holder.x);
+        holder.container.setY(renderY);
+
+        int clipHeight = Math.max(0, lastEffectiveClipBottom - lastEffectiveClipTop);
+        boolean withinClip = (renderY + holder.height) > 0 && renderY < clipHeight;
+        int desiredVis = withinClip ? View.VISIBLE : View.INVISIBLE;
+        if (holder.container.getVisibility() != desiredVis) {
+            holder.container.setVisibility(desiredVis);
+        }
+    }
+
+    /**
+     * Synchronous Android UI-thread scroll update: moves every active native ad container in the
+     * exact same vsync frame as the WebView scroll with zero layout passes or bridge lag.
+     */
+    private void syncVisibleSlotsToNativeScroll(int scrollX, int scrollY) {
+        if (viewportClipContainer == null || slotHolders.isEmpty()) return;
+        int clipHeight = Math.max(0, lastEffectiveClipBottom - lastEffectiveClipTop);
+        if (clipHeight <= 0) return;
+
+        for (AdSlotHolder holder : slotHolders.values()) {
+            if (!holder.visible || holder.nativeAd == null || holder.container == null) continue;
+            float renderY = computeRenderY(holder, scrollY);
+            holder.container.setY(renderY);
+
+            boolean withinClip = (renderY + holder.height) > 0 && renderY < clipHeight;
+            int desiredVis = withinClip ? View.VISIBLE : View.INVISIBLE;
+            if (holder.container.getVisibility() != desiredVis) {
+                holder.container.setVisibility(desiredVis);
+            }
+        }
+    }
+
+    private void hideSlot(String slotId, boolean remove) {
         Activity activity = getActivity();
         if (activity == null) return;
         activity.runOnUiThread(() -> {
-            // Only hide if caller didn't specify a slotId or caller owns the currently active slot
-            if (slotId != null && activeSlotId != null && !slotId.equals(activeSlotId)) {
+            if (slotId == null || slotId.isEmpty()) {
+                for (AdSlotHolder h : slotHolders.values()) {
+                    h.visible = false;
+                    if (h.container != null) h.container.setVisibility(View.GONE);
+                }
+                if (viewportClipContainer != null) {
+                    viewportClipContainer.setVisibility(View.GONE);
+                }
                 return;
             }
-            targetVisible = false;
-            if (adContainer != null) {
-                adContainer.setVisibility(View.GONE);
+
+            if (remove) {
+                removeAndDestroyHolder(slotId);
+            } else {
+                AdSlotHolder h = slotHolders.get(slotId);
+                if (h != null) {
+                    h.visible = false;
+                    if (h.container != null) h.container.setVisibility(View.GONE);
+                }
             }
-            if (viewportClipContainer != null) {
+
+            // Keep viewportClipContainer visible only if another slot is still visible
+            boolean anyVisible = false;
+            for (AdSlotHolder h : slotHolders.values()) {
+                if (h.visible && h.nativeAd != null) {
+                    anyVisible = true;
+                    break;
+                }
+            }
+            if (!anyVisible && viewportClipContainer != null) {
                 viewportClipContainer.setVisibility(View.GONE);
             }
-            isVisible = false;
         });
     }
 
@@ -503,28 +739,10 @@ public class NativeAdPlugin extends Plugin {
         final int height = call.getInt("height", 0);
         final int clipTop = call.getInt("clipTop", 0);
         final int clipBottom = call.getInt("clipBottom", 0);
+        final int scrollX = call.getInt("scrollX", 0);
+        final int scrollY = call.getInt("scrollY", 0);
         final boolean visible = call.getBoolean("visible", false);
-        final String slotId = call.getString("slotId");
-
-        if (visible && slotId != null && !slotId.isEmpty()) {
-            activeSlotId = slotId;
-        }
-
-        // Ignore stale visibility=false updates from an inactive slot
-        if (slotId != null && activeSlotId != null && !slotId.equals(activeSlotId)) {
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
-            return;
-        }
-
-        lastX = x;
-        lastY = y;
-        lastWidth = width;
-        lastHeight = height;
-        lastClipTop = clipTop;
-        lastClipBottom = clipBottom;
-        targetVisible = visible;
+        final String slotId = call.getString("slotId", "default-slot");
 
         Activity activity = getActivity();
         if (activity == null) {
@@ -533,10 +751,38 @@ public class NativeAdPlugin extends Plugin {
         }
 
         activity.runOnUiThread(() -> {
-            applyAdPosition(x, y, width, height, clipTop, clipBottom, visible);
-            if (visible && currentNativeAd == null && !isLoading) {
-                requestAdMobNativeAd(getNativeAdUnitId(), false);
+            if (!visible) {
+                AdSlotHolder existing = slotHolders.get(slotId);
+                if (existing != null) {
+                    existing.visible = false;
+                    existing.x = x;
+                    existing.y = y;
+                    existing.jsScrollX = scrollX;
+                    existing.jsScrollY = scrollY;
+                    existing.docX = x + scrollX;
+                    existing.docY = y + scrollY;
+                    applySlotPosition(existing);
+                }
+                return;
             }
+
+            AdSlotHolder holder = getOrCreateHolder(slotId);
+            if (holder == null) return;
+
+            holder.x = x;
+            holder.y = y;
+            holder.width = width;
+            holder.height = height;
+            holder.clipTop = clipTop;
+            holder.clipBottom = clipBottom;
+            holder.jsScrollX = scrollX;
+            holder.jsScrollY = scrollY;
+            holder.docX = x + scrollX;
+            holder.docY = y + scrollY;
+            holder.visible = true;
+            holder.lastActiveAt = System.currentTimeMillis();
+
+            applySlotPosition(holder);
         });
 
         JSObject ret = new JSObject();
@@ -562,9 +808,12 @@ public class NativeAdPlugin extends Plugin {
         }
 
         activity.runOnUiThread(() -> {
-            if (adContainer != null && currentNativeAd != null && targetVisible && lastWidth > 0) {
-                applyAdPosition(lastX, lastY, lastWidth, lastHeight, lastClipTop, lastClipBottom, true);
-            } else if (currentNativeAd == null && !isLoading) {
+            for (AdSlotHolder h : slotHolders.values()) {
+                if (h.visible) {
+                    applySlotPosition(h);
+                }
+            }
+            if (preloadedAdPool.isEmpty() && !isLoading) {
                 requestAdMobNativeAd(getNativeAdUnitId(), false);
             }
             JSObject ret = new JSObject();
@@ -576,7 +825,8 @@ public class NativeAdPlugin extends Plugin {
     @PluginMethod
     public void hideNativeAd(PluginCall call) {
         String slotId = call.getString("slotId");
-        hideAdContainer(slotId);
+        boolean remove = call.getBoolean("remove", false);
+        hideSlot(slotId, remove);
         JSObject ret = new JSObject();
         ret.put("success", true);
         call.resolve(ret);
@@ -584,9 +834,15 @@ public class NativeAdPlugin extends Plugin {
 
     @PluginMethod
     public void isAdLoaded(PluginCall call) {
+        boolean hasLoaded = !preloadedAdPool.isEmpty();
+        boolean anyVisible = false;
+        for (AdSlotHolder h : slotHolders.values()) {
+            if (h.nativeAd != null) hasLoaded = true;
+            if (h.visible && h.nativeAd != null) anyVisible = true;
+        }
         JSObject ret = new JSObject();
-        ret.put("loaded", currentNativeAd != null);
-        ret.put("visible", isVisible);
+        ret.put("loaded", hasLoaded);
+        ret.put("visible", anyVisible);
         call.resolve(ret);
     }
 
@@ -665,9 +921,18 @@ public class NativeAdPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         mainHandler.removeCallbacksAndMessages(null);
-        if (currentNativeAd != null) {
-            currentNativeAd.destroy();
-            currentNativeAd = null;
+        Iterator<AdSlotHolder> it = slotHolders.values().iterator();
+        while (it.hasNext()) {
+            AdSlotHolder h = it.next();
+            if (h.nativeAd != null) {
+                h.nativeAd.destroy();
+                h.nativeAd = null;
+            }
+            it.remove();
+        }
+        while (!preloadedAdPool.isEmpty()) {
+            NativeAd ad = preloadedAdPool.pollFirst();
+            if (ad != null) ad.destroy();
         }
         super.handleOnDestroy();
     }

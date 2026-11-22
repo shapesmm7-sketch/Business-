@@ -1,6 +1,5 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { StorageService } from './storage';
-import { CloudflareService } from './cloudflareService';
 
 export interface GoogleDriveAccount {
   connected: boolean;
@@ -980,12 +979,8 @@ export const GoogleDriveService = {
         restoredAgents.filter((a: any) => a.profilePic).length +
         restoredWorkers.filter((w: any) => w.profilePic).length;
 
-      // Verify remote photo URLs & recover/re-upload any embedded or missing photos asynchronously
-      StorageService.recoverRestoredProductPhotos(backupData)
-        .then(() => CloudflareService.syncAllToCloudflare().catch(() => {}))
-        .catch(() => {
-          CloudflareService.syncAllToCloudflare().catch(() => {});
-        });
+      // Recover any embedded photos directly into localStorage (no Cloudflare sync for inventory/receipts)
+      StorageService.recoverRestoredProductPhotos(backupData).catch(() => {});
 
       // Dispatch global restoration events so all active React screens re-render with restored items
       if (typeof window !== 'undefined') {

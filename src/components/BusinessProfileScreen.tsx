@@ -283,17 +283,6 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           ctx.drawImage(img, 0, 0, w, h);
           const dataUrl = c.toDataURL('image/png');
           handleChange('signature', dataUrl);
-          // Upload to Cloudflare R2 first
-          CloudflareService.uploadFile({
-            data: dataUrl,
-            filename: `signature_${Date.now()}.png`,
-            mimeType: 'image/png',
-            folder: 'signatures',
-          }).then((res) => {
-            if (res.success && res.url) {
-              handleChange('signature', res.url);
-            }
-          }).catch(() => {});
         }
       };
       img.src = event.target?.result as string;
@@ -302,21 +291,11 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   };
 
   const handleRemoveSignature = () => {
-    const prevSig = profile.signature;
     setProfile((prev) => ({ ...prev, signature: undefined }));
     if (sigFileInputRef.current) {
       sigFileInputRef.current.value = '';
     }
-    if (prevSig) {
-      CloudflareService.deleteFile(prevSig).catch(() => {});
-    }
-    const userEmail = StorageService.getAuthenticatedEmail();
-    if (userEmail) {
-      CloudflareService.deleteFile(`users/${userEmail}/photos/signature.webp`).catch(() => {});
-      CloudflareService.deleteFile(`users/${encodeURIComponent(userEmail)}/photos/signature.webp`).catch(() => {});
-    }
     StorageService.saveProfile({ ...profile, signature: undefined });
-    CloudflareService.syncAllToCloudflare().catch(() => {});
   };
 
   // Image upload and client-side compression to avoid storage limits

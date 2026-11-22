@@ -38,8 +38,6 @@ import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
-import { AdMobNativeAd } from './AdMobNativeAd';
-import { ADMOB_UNITS } from '../services/admobService';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 import { t } from '../utils/i18n';
 
@@ -688,11 +686,11 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           </div>
 
           {items.length > 0 ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0 w-full">
               <select
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                className="flex-1 min-w-0 w-full truncate px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
               >
                 {items.map((it) => (
                   <option key={it.id} value={it.id}>
@@ -1098,13 +1096,6 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           </button>
         </div>
       )}
-
-      {/* Native Advanced Ad */}
-      <AdMobNativeAd
-        context="qr"
-        variant="card"
-        unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-      />
 
       {/* CREATE / EDIT MODAL */}
       {showModal && typeof document !== 'undefined' && createPortal(

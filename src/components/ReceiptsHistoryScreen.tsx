@@ -612,7 +612,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 text-xs font-bold shadow-2xs active:scale-95 transition"
             >
               <Palette className={`w-4 h-4 ${isBillMode ? 'text-indigo-500 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
-              <span>{t('receipt_templates', business?.language)}</span>
+              <span>
+                {isQuotationMode
+                  ? 'Quotation Templates'
+                  : isInvoiceMode
+                  ? 'Invoices Templates'
+                  : 'Receipts Templates'}
+              </span>
             </button>
           )}
 
@@ -792,7 +798,13 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700 shadow-2xs transition active:scale-95"
               >
                 <Palette className={`w-4 h-4 ${isBillMode ? 'text-indigo-500' : 'text-emerald-500'}`} />
-                <span>Browse Themes & Layouts</span>
+                <span>
+                  {isQuotationMode
+                    ? 'Browse Quotation Templates'
+                    : isInvoiceMode
+                    ? 'Browse Invoices Templates'
+                    : 'Browse Receipts Templates'}
+                </span>
               </button>
             </div>
           )}
@@ -1161,14 +1173,16 @@ export const ReceiptsHistoryScreen: React.FC<ReceiptsHistoryScreenProps> = ({
         </div>
       )}
 
-      {/* Native Advanced Ad at bottom of Receipts & Invoices */}
-      <div className="pt-3 pb-8">
-        <AdMobNativeAd
-          context={isInvoiceMode ? 'invoices' : 'receipts'}
-          variant="compact"
-          unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-        />
-      </div>
+      {/* Native Advanced Ad at bottom of Receipts & Invoices (skip if inline 6-item ad already sits at the very end) */}
+      {(filteredReceipts.length === 0 || filteredReceipts.length % 6 !== 0) && (
+        <div className="pt-3 pb-8">
+          <AdMobNativeAd
+            context={isInvoiceMode ? 'invoices' : 'receipts'}
+            variant="compact"
+            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
+          />
+        </div>
+      )}
 
       {/* CONFIRMATION MODAL BEFORE PERMANENT DELETION */}
       {deletingReceipt && (

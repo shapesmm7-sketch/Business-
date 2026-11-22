@@ -12,7 +12,6 @@ import {
   FileCheck,
   Sparkles,
   Palette,
-  Cloud,
   Camera,
   AlertCircle,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ import { Receipt, ReceiptTemplateId } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { PdfGenerator, resolveEffectiveBusinessProfile } from '../services/pdfGenerator';
 import { StorageService } from '../services/storage';
-import { CloudflareService } from '../services/cloudflareService';
 import { BluetoothPrinterService } from '../services/bluetoothPrinterService';
 import { AdMobService } from '../services/admobService';
 import { BRAND_COLOR_PRESETS, isValidHex, normalizeHex, getContrastTextHex } from '../utils/colors';
@@ -45,7 +43,6 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 }) => {
   const [receipt, setReceipt] = useState<Receipt>(initialReceipt);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isUploadingCf, setIsUploadingCf] = useState(false);
   const [toastState, setToastState] = useState<{ text: string; isError?: boolean } | null>(null);
   const [printerFallbackModal, setPrinterFallbackModal] = useState<{
     isOpen: boolean;
@@ -59,8 +56,6 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
     documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
-
-  const isCfConfigured = CloudflareService.isConfigured();
 
   const business = resolveEffectiveBusinessProfile(receipt);
   const currency = business?.currency || receipt.currency || 'UGX';
@@ -220,20 +215,6 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   const handleThermalPrint = async () => {
     handleSmartPrint();
-  };
-
-  const handleSaveToCloudflare = async () => {
-    try {
-      setIsUploadingCf(true);
-      // Sync receipt/invoice record (JSON information) to Cloudflare
-      await CloudflareService.saveSingleReceipt(receipt);
-      showToast(`Receipt information synced to Cloud!`);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      showToast(`Cloud save error: ${errMsg}`);
-    } finally {
-      setIsUploadingCf(false);
-    }
   };
 
   return (

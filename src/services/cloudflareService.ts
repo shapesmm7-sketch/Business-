@@ -123,51 +123,34 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
   if (!data || typeof data !== 'object') return data;
   const cleanProfile = data.profile
     ? (() => {
-        const { logoBackupData, signatureBackupData, ...rest } = data.profile as any;
+        const { logoBackupData, signatureBackupData, signature, ...rest } = data.profile as any;
         return rest;
       })()
     : data.profile;
   return {
-    ...data,
+    version: data.version || 1,
+    exportedAt: data.exportedAt || new Date().toISOString(),
+    brivuUserId: (data as any).brivuUserId,
     profile: cleanProfile,
-    receipts: (data.receipts || []).map((r) => ({
-      ...r,
-      businessSnapshot: r.businessSnapshot
-        ? {
-            ...r.businessSnapshot,
-            logo: r.businessSnapshot.logo,
-            signature: r.businessSnapshot.signature,
-          }
-        : r.businessSnapshot,
-    })),
-    inventoryProducts: (data.inventoryProducts || []).map((p: any) => {
-      const { imageBackupData, ...rest } = p || {};
-      return {
-        ...rest,
-        image: rest.image,
-      };
-    }),
-    customers: (data.customers || []).map((c: any) => {
-      const { profilePicBackupData, ...rest } = c || {};
-      return {
-        ...rest,
-        profilePic: rest.profilePic,
-      };
-    }),
-    agents: (data.agents || []).map((a: any) => {
-      const { profilePicBackupData, ...rest } = a || {};
-      return {
-        ...rest,
-        profilePic: rest.profilePic,
-      };
-    }),
-    workers: (data.workers || []).map((w: any) => {
-      const { profilePicBackupData, ...rest } = w || {};
-      return {
-        ...rest,
-        profilePic: rest.profilePic,
-      };
-    }),
+    settings: data.settings,
+    // Inventory, receipts, invoices, and quotations remain strictly in localStorage / Google Drive
+    receipts: [],
+    deletedReceiptIds: [],
+    inventoryProducts: [],
+    inventorySales: [],
+    inventoryExpenses: [],
+    inventoryDebts: [],
+    shoppingListItems: [],
+    shoppingCategories: [],
+    productCategories: [],
+    customers: [],
+    agents: [],
+    workers: [],
+    staffAttendance: [],
+    staffLosses: [],
+    staffSales: [],
+    staffIncidents: [],
+    // Keep QR Code hosted pages, websites, socials, events, and QR gallery/menu photos synced as-is
     qrHostedPages: (data.qrHostedPages || []).map((page) => ({
       ...page,
       coverImage: page.coverImage,
@@ -792,10 +775,6 @@ export const CloudflareService = {
         consecutiveSyncFailures = 0;
         syncCooldownUntil = 0;
 
-        try {
-          localStorage.setItem(`brivu_vault_${userEmail}`, JSON.stringify(rawBackup));
-        } catch (_) {}
-
         if (!parsed.ok) {
           return {
             success: false,
@@ -815,9 +794,9 @@ export const CloudflareService = {
 
         return {
           success: true,
-          message: result.message || 'All records successfully saved to Cloud',
+          message: result.message || 'QR code & business info saved to Cloud',
           timestamp: result.timestamp || now,
-          receiptsSaved: result.receiptsSaved || backupData.receipts.length,
+          receiptsSaved: 0,
         };
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -841,83 +820,20 @@ export const CloudflareService = {
   },
 
   /**
-   * Directly saves a single receipt or invoice to Cloudflare D1
+   * Receipts, invoices, and quotations are saved strictly in localStorage (and optional Google Drive backup).
    */
-  async saveReceipt(receipt: Receipt): Promise<{ success: boolean; message: string }> {
-    if (!this.shouldAutoSyncData()) {
-      return { success: false, message: 'Cloudflare auto-sync is disabled (trial expired or not subscribed)' };
-    }
-
-    const config = this.getConfig();
-    if (!this.isConfigured()) {
-      return { success: false, message: 'Cloudflare Worker is not configured' };
-    }
-    try {
-      const headers = this.getAuthHeaders();
-      const userEmail = this.getUserEmail();
-      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
-      const targetUrl = `${config.workerUrl}/api/receipts${query}`;
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-          ...(userEmail ? { 'X-User-Email': userEmail, 'X-User-Id': userEmail } : {}),
-        },
-        body: JSON.stringify({ ...receipt, userEmail, user_id: userEmail }),
-      });
-
-      const rawText = await response.text().catch(() => '');
-      const parsed = parseWorkerResponse(rawText);
-
-      if (!response.ok) {
-        return {
-          success: false,
-          message: parsed.data?.error || `HTTP ${response.status} saving receipt to Cloudflare`,
-        };
-      }
-
-      this.saveConfig({
-        lastSyncAt: new Date().toISOString(),
-        lastStatus: 'connected',
-      });
-
-      return {
-        success: true,
-        message: parsed.data?.message || `Receipt ${receipt.receiptNumber} saved to Cloudflare D1`,
-      };
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      return {
-        success: false,
-        message: `Cloudflare receipt save error: ${errMsg}`,
-      };
-    }
+  async saveReceipt(_receipt: Receipt): Promise<{ success: boolean; message: string }> {
+    return {
+      success: true,
+      message: 'Saved locally on device storage.',
+    };
   },
 
   /**
-   * Deletes a receipt from Cloudflare D1 and synchronizes latest state
+   * Receipts, invoices, and quotations are deleted strictly from localStorage.
    */
-  async deleteReceipt(id: string): Promise<{ success: boolean; message?: string }> {
-    const config = this.getConfig();
-    if (!this.isConfigured()) {
-      return { success: false, message: 'Cloudflare Worker is not configured' };
-    }
-    try {
-      const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/receipts/${encodeURIComponent(id)}`;
-      const response = await fetch(targetUrl, {
-        method: 'DELETE',
-        headers,
-      });
-      // Also push full updated state to be 100% sure D1 backup tables are in sync
-      await this.syncAllToCloudflare().catch(() => {});
-      return { success: response.ok };
-    } catch (err) {
-      console.warn('Cloudflare delete note:', err);
-      await this.syncAllToCloudflare().catch(() => {});
-      return { success: false };
-    }
+  async deleteReceipt(_id: string): Promise<{ success: boolean; message?: string }> {
+    return { success: true };
   },
 
   /**
@@ -1008,10 +924,45 @@ export const CloudflareService = {
         };
       }
 
-      // Non-destructive merge: preserve local records and combine with user's cloud backup
-      const importResult = StorageService.importBackup(rawBackupData, false);
+      // Non-destructive QR-only merge: restore QR pages, websites, socials, events, and safe business info
+      // without touching local receipts, invoices, quotations, or inventory records.
+      const safeIncomingProfile = rawBackupData.profile
+        ? (() => {
+            const { signature, signatureBackupData, ...rest } = rawBackupData.profile as any;
+            return rest;
+          })()
+        : undefined;
+
+      const qrOnlyBackup: AppBackupData = {
+        version: rawBackupData.version || 1,
+        exportedAt: rawBackupData.exportedAt || new Date().toISOString(),
+        profile: safeIncomingProfile,
+        settings: undefined as any,
+        receipts: undefined as any,
+        deletedReceiptIds: undefined,
+        inventoryProducts: undefined as any,
+        inventorySales: undefined as any,
+        inventoryExpenses: undefined as any,
+        inventoryDebts: undefined as any,
+        shoppingListItems: undefined as any,
+        shoppingCategories: undefined,
+        productCategories: undefined,
+        customers: undefined,
+        agents: undefined,
+        workers: undefined,
+        staffAttendance: undefined,
+        staffLosses: undefined,
+        staffSales: undefined,
+        staffIncidents: undefined,
+        qrHostedPages: rawBackupData.qrHostedPages,
+        websitesQrItems: rawBackupData.websitesQrItems,
+        socialsQrItems: rawBackupData.socialsQrItems,
+        eventsQrItems: rawBackupData.eventsQrItems,
+        ...(Array.isArray((rawBackupData as any).files) ? { files: (rawBackupData as any).files } : {}),
+      };
+
+      const importResult = StorageService.importBackup(qrOnlyBackup, false);
       if (importResult.success) {
-        StorageService.recoverRestoredProductPhotos(rawBackupData).catch(() => {});
         // Recover QR gallery photos from Cloud storage asynchronously if business QR page photos are missing
         const pages = StorageService.getHostedQRPages();
         const needsPhotoRecovery = pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
@@ -1019,21 +970,16 @@ export const CloudflareService = {
           this.recoverQrPhotosFromCloud(email, false).catch(() => {});
         }
 
-        try {
-          const combinedBackup = StorageService.exportBackup();
-          localStorage.setItem(`brivu_vault_${email}`, JSON.stringify(combinedBackup));
-        } catch (_) {}
         this.saveConfig({
           lastSyncAt: new Date().toISOString(),
           lastStatus: 'connected',
         });
-        const receiptsCount = rawBackupData.receipts?.length || 0;
-        const productsCount = rawBackupData.inventoryProducts?.length || 0;
+        const qrCount = Array.isArray(qrOnlyBackup.qrHostedPages) ? qrOnlyBackup.qrHostedPages.length : 0;
         return {
           success: true,
-          message: `Successfully restored ${receiptsCount} receipts & ${productsCount} inventory products from Cloud!`,
-          count: receiptsCount,
-          data: rawBackupData,
+          message: `Successfully restored QR code & business hosting info (${qrCount} page${qrCount === 1 ? '' : 's'}) from Cloud!`,
+          count: qrCount,
+          data: qrOnlyBackup,
         };
       } else {
         return {
@@ -1059,56 +1005,13 @@ export const CloudflareService = {
   },
 
   /**
-   * Saves a single receipt to Cloudflare D1 in the background
+   * Receipts, invoices, and quotations are saved strictly in localStorage.
    */
-  async saveSingleReceipt(receipt: Receipt): Promise<{ success: boolean; message: string }> {
-    if (!this.shouldAutoSyncData()) {
-      return { success: false, message: 'Cloudflare auto-sync is disabled' };
-    }
-
-    const config = this.getConfig();
-    try {
-      const headers = this.getAuthHeaders();
-      const userEmail = this.getUserEmail();
-      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&user_id=${encodeURIComponent(userEmail)}` : '';
-      const targetUrl = `${config.workerUrl}/api/receipts${query}`;
-
-      const cleanReceipt = {
-        ...receipt,
-        userEmail,
-        user_id: userEmail,
-        businessSnapshot: receipt.businessSnapshot
-          ? {
-              ...receipt.businessSnapshot,
-              logo: receipt.businessSnapshot.logo?.startsWith('data:') ? undefined : receipt.businessSnapshot.logo,
-              signature: receipt.businessSnapshot.signature?.startsWith('data:') ? undefined : receipt.businessSnapshot.signature,
-            }
-          : receipt.businessSnapshot,
-      };
-
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-          ...(userEmail ? { 'X-User-Email': userEmail, 'X-User-Id': userEmail } : {}),
-        },
-        body: JSON.stringify(cleanReceipt),
-      });
-
-      if (!response.ok) {
-        return { success: false, message: `HTTP ${response.status}` };
-      }
-
-      const result = await response.json();
-      return {
-        success: true,
-        message: result.message || 'Receipt synced to Cloudflare D1',
-      };
-    } catch (err) {
-      // Quiet fail in background
-      return { success: false, message: String(err) };
-    }
+  async saveSingleReceipt(_receipt: Receipt): Promise<{ success: boolean; message: string }> {
+    return {
+      success: true,
+      message: 'Saved locally on device storage.',
+    };
   },
 
   /**
@@ -1661,15 +1564,17 @@ export const CloudflareService = {
       const headers = this.getAuthHeaders();
       headers['Content-Type'] = 'application/json';
 
+      const rawProf = businessProfile || StorageService.getProfile();
+      const { signature: _sig, ...safeBusinessProfile } = rawProf as any;
+
       const payload = {
         user: {
           ...user,
           syncedToCloudflare: true,
           cloudflareStoredAt: new Date().toISOString(),
         },
-        businessProfile: businessProfile || StorageService.getProfile(),
+        businessProfile: safeBusinessProfile,
         appData: {
-          receiptsCount: StorageService.getReceipts().length,
           lastSync: new Date().toISOString(),
         },
       };

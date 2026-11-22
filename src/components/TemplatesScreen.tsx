@@ -19,6 +19,7 @@ interface TemplatesScreenProps {
   onBack: () => void;
   business?: BusinessProfile;
   onUpdateBusiness?: (business: BusinessProfile) => void;
+  mode?: 'receipts' | 'invoices' | 'quotations';
 }
 
 export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
@@ -26,6 +27,7 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
   onSetDefault,
   onBack,
   business: propBusiness,
+  mode,
 }) => {
   const [business] = useState<BusinessProfile>(
     propBusiness || StorageService.getProfile()
@@ -37,6 +39,22 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
 
   const currency = business.currency || 'UGX';
   const storeName = business.name || 'QuickMart Store';
+  const isInvoiceMode = mode === 'invoices';
+  const isQuotationMode = mode === 'quotations';
+
+  const screenTitle = isQuotationMode
+    ? 'Quotation Templates'
+    : isInvoiceMode
+    ? 'Invoices Templates'
+    : mode === 'receipts'
+    ? 'Receipts Templates'
+    : 'Templates';
+
+  const previewTitle = isQuotationMode
+    ? 'Quotation Preview'
+    : isInvoiceMode
+    ? 'Invoice Preview'
+    : 'Receipt Preview';
 
   const handleSelect = (id: ReceiptTemplateId) => {
     setSelectedDefault(id);
@@ -46,7 +64,8 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
     onSetDefault(id);
 
     const chosen = TEMPLATES_CONFIG.find((t) => t.id === id);
-    setToastMessage(`"${chosen?.name || id}" set as default receipt theme`);
+    const docWord = isQuotationMode ? 'quotation' : isInvoiceMode ? 'invoice' : 'receipt';
+    setToastMessage(`"${chosen?.name || id}" set as default ${docWord} template`);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -72,7 +91,8 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
           email: 'sales@' + storeName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com',
           address: 'Plot 22 Kampala Road, Uganda',
           taxNumber: '104928371',
-          receiptNumber: 'REC-00084',
+          documentType: isQuotationMode ? 'quotation' : isInvoiceMode ? 'invoice' : 'receipt',
+          receiptNumber: isQuotationMode ? 'QUO-00084' : isInvoiceMode ? 'INV-00084' : 'REC-00084',
           createdAt: new Date().toISOString(),
           customerName: 'Sarah Namubiru',
           customerPhone: '+256 772 987 654',
@@ -121,7 +141,7 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
 
         <div className="text-center">
           <h1 className="text-base font-bold text-slate-900 dark:text-white">
-            Receipt & Invoice Themes
+            {screenTitle}
           </h1>
         </div>
 
@@ -214,7 +234,7 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-800 animate-scaleUp max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Receipt Preview
+                {previewTitle}
               </h3>
               <button
                 id="btn-close-preview-modal"

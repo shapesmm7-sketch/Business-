@@ -173,7 +173,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
     }
     if (
       !confirm(
-        'This will download and restore your receipts, products, and settings from cloud storage. Continue?'
+        'This will download and restore your QR code pages, business hosting info, and cloud images from cloud storage. Continue?'
       )
     ) {
       return;
@@ -273,7 +273,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           <div>
             <h2 className="text-lg font-black tracking-tight">Cloud Backup & Storage</h2>
             <p className="text-xs text-orange-100 mt-1 leading-relaxed">
-              Your business records and inventory sync securely to cloud database, and your logo, signature, and product photos save to cloud storage.
+              Your QR code pages, business hosting info, and QR images sync securely to the cloud (200 MB storage). Receipts, invoices, quotations, and inventory are saved locally on your device and can be backed up to Google Drive.
             </p>
           </div>
 
@@ -363,7 +363,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
             <Upload className={`w-5 h-5 ${isSyncing ? 'animate-bounce text-orange-600' : ''}`} />
             <span>{isSyncing ? 'Backing up...' : 'Backup to Cloud'}</span>
             <span className="text-[10px] font-normal text-orange-600/80 dark:text-orange-400">
-              Save all records now
+              Sync QR & business info
             </span>
           </button>
 
@@ -413,7 +413,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
                 Auto-save Photos & Images
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically upload business logos, signatures, and product photos to cloud storage
+                Automatically upload business logos and QR hosting photos to cloud storage
               </span>
             </div>
             <button
@@ -434,10 +434,10 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
           <div className="flex items-center justify-between gap-3">
             <div>
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                Auto-sync Business Records
+                Auto-sync QR & Business Hosting Info
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Automatically sync receipts, customers, and inventory data to cloud database
+                Automatically sync QR code pages and business hosting profile to cloud database
               </span>
             </div>
             <button

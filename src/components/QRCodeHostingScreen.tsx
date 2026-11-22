@@ -2098,13 +2098,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </div>
             </div>
           </div>
-
-          {/* Native Advanced Ad in QR Stand */}
-          <AdMobNativeAd
-            context="qr"
-            variant="card"
-            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-          />
         </div>
       )}
 
@@ -2506,13 +2499,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </div>
 
             </div>
-
-          {/* Native Advanced Ad in Business Info */}
-          <AdMobNativeAd
-            context="qr"
-            variant="card"
-            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-          />
         </div>
       )}
 
@@ -2785,13 +2771,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               ))}
             </div>
           )}
-
-          {/* Native Advanced Ad in Digital Items */}
-          <AdMobNativeAd
-            context="qr"
-            variant="card"
-            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-          />
         </div>
       )}
 
@@ -2947,13 +2926,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               ))}
             </div>
           )}
-
-          {/* Native Advanced Ad in Business Photos */}
-          <AdMobNativeAd
-            context="qr"
-            variant="card"
-            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-          />
         </div>
       )}
 
@@ -3068,13 +3040,6 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </button>
             </div>
           )}
-
-          {/* Native Advanced Ad in Socials */}
-          <AdMobNativeAd
-            context="qr"
-            variant="card"
-            unitId={ADMOB_UNITS.NATIVE_ADVANCED}
-          />
         </div>
       )}
 

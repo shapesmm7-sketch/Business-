@@ -245,7 +245,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <span>Cloud Backup</span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Sync receipts, products & file storage in the cloud
+                Sync QR code & business hosting info in the cloud
               </p>
             </div>
           </div>

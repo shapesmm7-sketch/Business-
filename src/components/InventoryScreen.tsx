@@ -67,7 +67,6 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
-import { CloudflareService } from '../services/cloudflareService';
 import { AdMobService, ADMOB_UNITS } from '../services/admobService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -319,7 +318,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     }));
   };
 
-  // Profile Picture Upload Handlers
+  // Profile Picture Upload Handlers (saved locally in localStorage)
   const handleCustPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -327,21 +326,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingCustPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setCustProfilePic(compressed);
-
-      try {
-        const uploadRes = await CloudflareService.uploadFile({
-          data: compressed,
-          filename: `customer_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-          folder: 'photos',
-        });
-        if (uploadRes.success && uploadRes.url) {
-          setCustProfilePic(uploadRes.url);
-          showToast('Customer photo saved to Cloud Storage!');
-        }
-      } catch (cfErr) {
-        console.warn('Cloudflare customer photo upload note:', cfErr);
-      }
+      showToast('Customer photo saved locally!');
     } catch (err) {
       console.warn('Failed to compress client photo:', err);
       showToast('Could not process photo');
@@ -360,21 +345,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingAgentPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setAgentProfilePic(compressed);
-
-      try {
-        const uploadRes = await CloudflareService.uploadFile({
-          data: compressed,
-          filename: `agent_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-          folder: 'photos',
-        });
-        if (uploadRes.success && uploadRes.url) {
-          setAgentProfilePic(uploadRes.url);
-          showToast('Agent photo saved to Cloud Storage!');
-        }
-      } catch (cfErr) {
-        console.warn('Cloudflare agent photo upload note:', cfErr);
-      }
+      showToast('Agent photo saved locally!');
     } catch (err) {
       console.warn('Failed to compress agent photo:', err);
       showToast('Could not process photo');
@@ -393,21 +364,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setIsUploadingWorkerPic(true);
       const compressed = await compressImageFile(file, { maxDimension: 360, quality: 0.75 });
       setWorkerProfilePic(compressed);
-
-      try {
-        const uploadRes = await CloudflareService.uploadFile({
-          data: compressed,
-          filename: `staff_${Date.now()}.jpg`,
-          mimeType: 'image/jpeg',
-          folder: 'photos',
-        });
-        if (uploadRes.success && uploadRes.url) {
-          setWorkerProfilePic(uploadRes.url);
-          showToast('Staff photo saved to Cloud Storage!');
-        }
-      } catch (cfErr) {
-        console.warn('Cloudflare worker photo upload note:', cfErr);
-      }
+      showToast('Staff photo saved locally!');
     } catch (err) {
       console.warn('Failed to compress worker photo:', err);
       showToast('Could not process photo');
@@ -433,13 +390,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setAgents(StorageService.getAgents());
     setWorkers(StorageService.getWorkers());
     setStats(StorageService.getInventoryStats());
-    CloudflareService.syncAllToCloudflare().catch((err) => console.warn('Inventory Cloudflare auto-sync note:', err));
   };
-
-  // Sync inventory data with Cloudflare on mount
-  useEffect(() => {
-    CloudflareService.syncAllToCloudflare().catch(() => {});
-  }, []);
 
   const handleSaveCustomer = (e: React.FormEvent) => {
     e.preventDefault();

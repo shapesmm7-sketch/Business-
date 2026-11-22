@@ -4,7 +4,7 @@ export interface NativeAdPluginInterface {
   initializeAds(): Promise<{ initialized: boolean }>;
   loadNativeAd(options?: { adUnitId?: string }): Promise<{ success: boolean }>;
   showNativeAd(options?: { marginBottom?: number }): Promise<{ success: boolean }>;
-  hideNativeAd(options?: { slotId?: string }): Promise<{ success: boolean }>;
+  hideNativeAd(options?: { slotId?: string; remove?: boolean }): Promise<{ success: boolean }>;
   isAdLoaded(): Promise<{ loaded: boolean; visible: boolean }>;
   updatePosition(options: {
     x: number;
@@ -13,6 +13,8 @@ export interface NativeAdPluginInterface {
     height: number;
     clipTop?: number;
     clipBottom?: number;
+    scrollX?: number;
+    scrollY?: number;
     visible: boolean;
     slotId?: string;
   }): Promise<{ success: boolean }>;

@@ -1591,9 +1591,18 @@ export function App() {
           <TemplatesScreen
             currentDefault={settings.defaultTemplate}
             onSetDefault={handleSetDefaultTemplate}
-            onBack={() => handleNavigate('home')}
+            onBack={() => handleNavigate(previousScreen && previousScreen !== 'templates' ? previousScreen : 'home')}
             business={business}
             onUpdateBusiness={handleUpdateBusiness}
+            mode={
+              previousScreen === 'invoices' || previousScreen === 'create-invoice'
+                ? 'invoices'
+                : previousScreen === 'quotations' || previousScreen === 'create-quotation'
+                ? 'quotations'
+                : previousScreen === 'receipts' || previousScreen === 'create-receipt'
+                ? 'receipts'
+                : undefined
+            }
           />
         )}
 
