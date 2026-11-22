@@ -201,11 +201,12 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       });
 
       if (res.success) {
+        const productsRestored = res.totalItems?.products || 0;
         const photosCount = res.totalItems?.photos || 0;
         const photoInfo = photosCount > 0 ? ` and ${photosCount} photos` : '';
         showToast(
           'success',
-          `Successfully restored ALL ${res.restoredCount} backups (${res.totalItems?.receipts || 0} receipts${photoInfo}) using Replace Mode!`
+          `Restored ALL ${res.restoredCount} backups (${res.totalItems?.receipts || 0} receipts/invoices, ${productsRestored} inventory items${photoInfo})!`
         );
         setShowBackupsModal(false);
         if (onDataRestored) onDataRestored();
@@ -233,9 +234,13 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       }
 
       if (res.success) {
+        const productsRestored = res.itemCount?.products || 0;
         const photosCount = res.itemCount?.photos || 0;
         const photoInfo = photosCount > 0 ? ` and ${photosCount} photos` : '';
-        showToast('success', `Business data${photoInfo} successfully restored!`);
+        showToast(
+          'success',
+          `Restored ${res.itemCount?.receipts || 0} receipts/invoices, ${productsRestored} inventory items${photoInfo}!`
+        );
         setSelectedBackupForRestore(null);
         setLocalJsonContent(null);
         setShowBackupsModal(false);

@@ -180,19 +180,21 @@ function writeToStorage<T>(key: string, value: T): boolean {
         localStorage.removeItem(STORAGE_KEYS.DRAFT);
       } catch {}
 
-      // 2. Global cleanup: trim heavy snapshots from older receipts
+      // 2. Global cleanup: trim duplicate base64 snapshots from older receipts
       try {
         const rawReceipts = localStorage.getItem(STORAGE_KEYS.RECEIPTS);
-        if (rawReceipts && rawReceipts.length > 300000) {
+        if (rawReceipts && rawReceipts.length > 100000) {
           const parsed = JSON.parse(rawReceipts) as Receipt[];
           const trimmed = parsed.map((r, idx) => {
-            if (idx > 3 && r.businessSnapshot) {
+            if (idx >= 1 && r.businessSnapshot) {
+              const snapLogo = r.businessSnapshot.logo;
+              const snapSig = r.businessSnapshot.signature;
               return {
                 ...r,
                 businessSnapshot: {
                   ...r.businessSnapshot,
-                  logo: undefined,
-                  signature: undefined,
+                  logo: typeof snapLogo === 'string' && snapLogo.startsWith('data:') ? undefined : snapLogo,
+                  signature: typeof snapSig === 'string' && snapSig.startsWith('data:') ? undefined : snapSig,
                 },
               };
             }
@@ -202,14 +204,13 @@ function writeToStorage<T>(key: string, value: T): boolean {
         }
       } catch {}
 
-
-      // 4. Global cleanup: if target is NOT QR_HOSTED_PAGES, sanitize stored QR pages to free up quota
+      // 4. Global cleanup: if target is NOT QR_HOSTED_PAGES, sanitize oversized inline base64 from QR cache
       if (key !== STORAGE_KEYS.QR_HOSTED_PAGES) {
         try {
           const rawQRPages = localStorage.getItem(STORAGE_KEYS.QR_HOSTED_PAGES);
-          if (rawQRPages && rawQRPages.length > 1500000) {
+          if (rawQRPages && rawQRPages.length > 700000) {
             const parsed = JSON.parse(rawQRPages) as QRCodeHostedPage[];
-            const cleaned = sanitizeHostedPagesImages(parsed, true);
+            const cleaned = sanitizeHostedPagesImages(parsed, rawQRPages.length > 1200000);
             localStorage.setItem(STORAGE_KEYS.QR_HOSTED_PAGES, JSON.stringify(cleaned));
           }
         } catch {}
@@ -243,7 +244,7 @@ function writeToStorage<T>(key: string, value: T): boolean {
         }
       }
 
-      // 6. Targeted recovery: INVENTORY_PRODUCTS
+      // 6. Targeted recovery: INVENTORY_PRODUCTS (preserve product texts & photos as much as quota allows)
       if (key === STORAGE_KEYS.INVENTORY_PRODUCTS && Array.isArray(value)) {
         try {
           const strippedTransient = (value as any[]).map((p) => {
@@ -254,34 +255,35 @@ function writeToStorage<T>(key: string, value: T): boolean {
           localStorage.setItem(key, JSON.stringify(strippedTransient));
           return true;
         } catch {
-          try {
-            // Trim only oversized data URIs (> 250KB) first while preserving normal thumbnails
-            const trimmedLarge = (value as any[]).map((p) => {
-              if (!p || typeof p !== 'object') return p;
-              const { imageBackupData, ...rest } = p;
-              if (typeof rest.image === 'string' && rest.image.startsWith('data:') && rest.image.length > 250000) {
-                return { ...rest, image: undefined };
-              }
-              return rest;
-            });
-            localStorage.setItem(key, JSON.stringify(trimmedLarge));
-            return true;
-          } catch {
+          // Trim progressively larger inline images first before ever dropping normal thumbnails
+          for (const maxBytes of [180000, 90000]) {
             try {
-              // Last resort: keep all product text records by stripping remaining inline data URIs
-              const noInlineImages = (value as any[]).map((p) => {
+              const trimmed = (value as any[]).map((p) => {
                 if (!p || typeof p !== 'object') return p;
                 const { imageBackupData, ...rest } = p;
-                if (typeof rest.image === 'string' && rest.image.startsWith('data:')) {
+                if (typeof rest.image === 'string' && rest.image.startsWith('data:') && rest.image.length > maxBytes) {
                   return { ...rest, image: undefined };
                 }
                 return rest;
               });
-              localStorage.setItem(key, JSON.stringify(noInlineImages));
+              localStorage.setItem(key, JSON.stringify(trimmed));
               return true;
-            } catch (lastErr) {
-              console.warn('Could not persist inventory products to localStorage:', lastErr);
-            }
+            } catch {}
+          }
+          try {
+            // Last resort: keep ALL product text records by stripping remaining inline data URIs
+            const noInlineImages = (value as any[]).map((p) => {
+              if (!p || typeof p !== 'object') return p;
+              const { imageBackupData, ...rest } = p;
+              if (typeof rest.image === 'string' && rest.image.startsWith('data:')) {
+                return { ...rest, image: undefined };
+              }
+              return rest;
+            });
+            localStorage.setItem(key, JSON.stringify(noInlineImages));
+            return true;
+          } catch (lastErr) {
+            console.warn('Could not persist inventory products to localStorage:', lastErr);
           }
         }
       }
@@ -864,6 +866,7 @@ export const StorageService = {
       productCategories: this.getProductCategories(),
       customers: this.getCustomers(),
       agents: this.getAgents(),
+      agentLedger: this.getAgentLedger(),
       workers: this.getWorkers(),
       staffAttendance: this.getStaffAttendance(),
       staffLosses: this.getStaffLosses(),
@@ -890,6 +893,13 @@ export const StorageService = {
       (Array.isArray(backupData.inventorySales) && backupData.inventorySales.length > 0) ||
       (Array.isArray(backupData.inventoryExpenses) && backupData.inventoryExpenses.length > 0) ||
       (Array.isArray(backupData.inventoryDebts) && backupData.inventoryDebts.length > 0) ||
+      (Array.isArray(backupData.productCategories) && backupData.productCategories.length > 0) ||
+      (Array.isArray(backupData.shoppingCategories) && backupData.shoppingCategories.length > 0) ||
+      (Array.isArray(backupData.agentLedger) && backupData.agentLedger.length > 0) ||
+      (Array.isArray(backupData.staffAttendance) && backupData.staffAttendance.length > 0) ||
+      (Array.isArray(backupData.staffLosses) && backupData.staffLosses.length > 0) ||
+      (Array.isArray(backupData.staffSales) && backupData.staffSales.length > 0) ||
+      (Array.isArray(backupData.staffIncidents) && backupData.staffIncidents.length > 0) ||
       (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) ||
       (Array.isArray(backupData.customers) && backupData.customers.length > 0) ||
       (Array.isArray(backupData.agents) && backupData.agents.length > 0) ||
@@ -1027,7 +1037,31 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, Array.from(mergedSet));
       }
 
-      // 4. Inventory Products (normalize image/photo aliases, preserve existing local products, never lose photos)
+      // 4. Inventory Products (normalize image/photo aliases, prefer embedded data URIs over broken local/workers.dev URIs, preserve existing local products)
+      const isValidDataImage = (val: any): val is string =>
+        typeof val === 'string' && val.trim().startsWith('data:image/');
+      const isUnreliableNonDataUri = (val: any): boolean => {
+        if (typeof val !== 'string' || !val.trim()) return true;
+        const s = val.trim().toLowerCase();
+        return (
+          s.startsWith('blob:') ||
+          s.startsWith('file:') ||
+          s.startsWith('capacitor:') ||
+          s.startsWith('content:') ||
+          s.startsWith('/api/files/') ||
+          s.includes('workers.dev')
+        );
+      };
+      const pickBestImage = (rawImg: any, backupImg: any): string | undefined => {
+        if (isValidDataImage(rawImg)) return rawImg;
+        if (isValidDataImage(backupImg) && isUnreliableNonDataUri(rawImg)) return backupImg;
+        if (typeof rawImg === 'string' && rawImg.trim()) {
+          return rawImg.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, 'https://brivu.shapesmm.com');
+        }
+        if (isValidDataImage(backupImg)) return backupImg;
+        return undefined;
+      };
+
       if (Array.isArray(incomingProducts)) {
         const normalizeProduct = (raw: any, existing?: any, preferExisting = false): InventoryProduct => {
           const {
@@ -1037,20 +1071,31 @@ export const StorageService = {
             photo,
             ...rest
           } = raw || {};
-          const incomingImg = rest.image || photoUrl || imageUrl || photo || imageBackupData;
+          const rawCandidate = rest.image || photoUrl || imageUrl || photo;
+          const incomingImg = pickBestImage(rawCandidate, imageBackupData);
           const resolvedImage = preferExisting
             ? (existing?.image || incomingImg || undefined)
             : (incomingImg || existing?.image || undefined);
+          const resolvedName = String(
+            (preferExisting ? (existing?.name || rest.name || rest.productName || rest.title) : (rest.name || rest.productName || rest.title || existing?.name)) ||
+              'Unnamed Product'
+          );
+          const resolvedItemId = String(
+            (preferExisting
+              ? (existing?.itemId ?? rest.itemId ?? rest.barcode ?? rest.sku)
+              : (rest.itemId ?? rest.barcode ?? rest.sku ?? existing?.itemId)) ?? ''
+          );
           if (preferExisting && existing) {
             return {
               ...rest,
               ...existing,
               id: String(existing.id),
-              itemId: String(existing.itemId ?? rest.itemId ?? rest.barcode ?? ''),
-              name: String(existing.name || rest.name || 'Unnamed Product'),
-              quantity: Number(existing.quantity ?? rest.quantity ?? 0),
-              costPrice: Number(existing.costPrice ?? rest.costPrice ?? 0),
-              sellingPrice: Number(existing.sellingPrice ?? rest.sellingPrice ?? 0),
+              itemId: resolvedItemId,
+              name: resolvedName,
+              description: existing.description || rest.description,
+              quantity: Number(existing.quantity ?? rest.quantity ?? rest.stockQuantity ?? rest.stock ?? 0),
+              costPrice: Number(existing.costPrice ?? rest.costPrice ?? rest.cost ?? 0),
+              sellingPrice: Number(existing.sellingPrice ?? rest.sellingPrice ?? rest.price ?? 0),
               unit: existing.unit || rest.unit || 'Pcs',
               image: resolvedImage,
             };
@@ -1059,10 +1104,11 @@ export const StorageService = {
             ...existing,
             ...rest,
             id: String(rest.id),
-            itemId: String(rest.itemId ?? rest.barcode ?? existing?.itemId ?? ''),
-            name: String(rest.name || existing?.name || 'Unnamed Product'),
+            itemId: resolvedItemId,
+            name: resolvedName,
+            description: rest.description || existing?.description,
             quantity: Number(rest.quantity ?? rest.stockQuantity ?? rest.stock ?? existing?.quantity ?? 0),
-            costPrice: Number(rest.costPrice ?? existing?.costPrice ?? 0),
+            costPrice: Number(rest.costPrice ?? rest.cost ?? existing?.costPrice ?? 0),
             sellingPrice: Number(rest.sellingPrice ?? rest.price ?? existing?.sellingPrice ?? 0),
             unit: rest.unit || existing?.unit || 'Pcs',
             image: resolvedImage,
@@ -1073,25 +1119,49 @@ export const StorageService = {
         const productMap = new Map<string, any>();
         existing.forEach((p) => { if (p && p.id) productMap.set(String(p.id), p); });
         incomingProducts.forEach((p: any, idx: number) => {
-          if (!p || !p.id) return;
-          const pid = String(p.id);
+          if (!p || typeof p !== 'object') return;
+          const fallbackId = p.id || p.productId || (p.itemId ? `prod-${p.itemId}` : `prod-restored-${idx}`);
+          const pid = String(fallbackId);
           const prev = productMap.get(pid);
           if (!prev) {
-            productMap.set(pid, normalizeProduct(p));
+            productMap.set(pid, normalizeProduct({ ...p, id: pid }));
           } else {
             const prevName = String(prev.name || '').trim().toLowerCase();
-            const incName = String(p.name || '').trim().toLowerCase();
+            const incName = String(p.name || p.productName || p.title || '').trim().toLowerCase();
             const prevCode = String(prev.itemId || prev.barcode || '').trim().toLowerCase();
             const incCode = String(p.itemId || p.barcode || '').trim().toLowerCase();
             if (prevName && incName && prevName !== incName && prevCode !== incCode) {
               const uniqueId = `${pid}-restored-${idx}-${Math.random().toString(36).slice(2, 5)}`;
               productMap.set(uniqueId, normalizeProduct({ ...p, id: uniqueId }));
             } else {
-              productMap.set(pid, normalizeProduct(p, prev, !replaceExisting));
+              productMap.set(pid, normalizeProduct({ ...p, id: pid }, prev, !replaceExisting));
             }
           }
         });
-        writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, Array.from(productMap.values()));
+        const finalProducts = Array.from(productMap.values());
+        let savedProducts = writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, finalProducts);
+        if (!savedProducts && finalProducts.length > 0) {
+          // Compact duplicate base64 snapshots from older receipts if storage quota is tight, then retry
+          try {
+            const curReceipts = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
+            if (curReceipts.length > 0) {
+              const compacted = curReceipts.map((r) =>
+                r.businessSnapshot
+                  ? {
+                      ...r,
+                      businessSnapshot: {
+                        ...r.businessSnapshot,
+                        logo: typeof r.businessSnapshot.logo === 'string' && r.businessSnapshot.logo.startsWith('data:') ? undefined : r.businessSnapshot.logo,
+                        signature: typeof r.businessSnapshot.signature === 'string' && r.businessSnapshot.signature.startsWith('data:') ? undefined : r.businessSnapshot.signature,
+                      },
+                    }
+                  : r
+              );
+              localStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(compacted));
+            }
+          } catch {}
+          savedProducts = writeToStorage(STORAGE_KEYS.INVENTORY_PRODUCTS, finalProducts);
+        }
       }
 
       const mergeByIdPreservingLocalNonMatching = <T extends { id?: any }>(
@@ -1163,7 +1233,7 @@ export const StorageService = {
       if (Array.isArray(backupData.customers)) {
         const normalizeCustomer = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
-          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          const incomingPic = pickBestImage(rest.profilePic || photoUrl, profilePicBackupData);
           if (preferExisting && existing) {
             return {
               ...rest,
@@ -1189,11 +1259,11 @@ export const StorageService = {
         writeToStorage(STORAGE_KEYS.CUSTOMERS, Array.from(customerMap.values()));
       }
 
-      // 11. Agents
+      // 11. Agents & Agent Ledger
       if (Array.isArray(backupData.agents)) {
         const normalizeAgent = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
-          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          const incomingPic = pickBestImage(rest.profilePic || photoUrl, profilePicBackupData);
           if (preferExisting && existing) {
             return {
               ...rest,
@@ -1218,12 +1288,18 @@ export const StorageService = {
         });
         writeToStorage(STORAGE_KEYS.AGENTS, Array.from(agentMap.values()));
       }
+      if (Array.isArray(backupData.agentLedger)) {
+        writeToStorage(
+          STORAGE_KEYS.AGENT_LEDGER,
+          mergeByIdPreservingLocalNonMatching(this.getAgentLedger(), backupData.agentLedger, replaceExisting)
+        );
+      }
 
       // 12. Workers / Staff
       if (Array.isArray(backupData.workers)) {
         const normalizeWorker = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
-          const incomingPic = rest.profilePic || photoUrl || profilePicBackupData;
+          const incomingPic = pickBestImage(rest.profilePic || photoUrl, profilePicBackupData);
           if (preferExisting && existing) {
             return {
               ...rest,
@@ -1483,9 +1559,10 @@ export const StorageService = {
         );
       }
       const recCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
+      const prodCount = Array.isArray(incomingProducts) ? incomingProducts.length : 0;
       return {
         success: true,
-        message: `Successfully restored ${recCount} receipts and settings!`,
+        message: `Successfully restored ${recCount} receipts/invoices, ${prodCount} inventory products, and settings!`,
       };
     } catch (err: unknown) {
       return {
@@ -3159,21 +3236,24 @@ export const StorageService = {
    */
   async exportBackupWithEmbeddedPhotos(): Promise<AppBackupData & { brivuUserId?: string }> {
     const backup = this.exportBackup();
-    const workerBase = (this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev').replace(/\/+$/, '');
+    const rawWorkerUrl = this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm.com';
+    const workerBase = rawWorkerUrl
+      .replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, 'https://brivu.shapesmm.com')
+      .replace(/\/+$/, '');
     const resolveImageUrl = (raw?: string): string => {
       if (!raw) return '';
       const trimmed = raw.trim();
       if (trimmed.startsWith('/api/files/')) return `${workerBase}${trimmed}`;
-      return trimmed;
+      return trimmed.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, workerBase);
     };
 
     const { compressImageToWebP } = await import('../utils/imageCompressor');
 
-    const embedPhotoDataUri = async (rawSrc?: string, maxDim = 360, quality = 0.72): Promise<string | undefined> => {
+    const embedPhotoDataUri = async (rawSrc?: string, maxDim = 320, quality = 0.68): Promise<string | undefined> => {
       if (!rawSrc) return undefined;
       const src = resolveImageUrl(rawSrc);
       if (src.startsWith('data:image/')) {
-        if (src.length <= 140000) return src;
+        if (src.length <= 110000) return src;
         try {
           const compressed = await compressImageToWebP(src, {
             maxWidth: maxDim,
@@ -3241,31 +3321,48 @@ export const StorageService = {
 
     if (Array.isArray(backup.inventoryProducts) && backup.inventoryProducts.length > 0) {
       backup.inventoryProducts = await mapConcurrent(backup.inventoryProducts, 4, async (prod: any) => {
+        // Local product photos are already data:image/ URIs: compact cleanly in-place without duplicating bytes
+        if (typeof prod?.image === 'string' && prod.image.trim().startsWith('data:image/')) {
+          const compacted = await embedPhotoDataUri(prod.image, 320, 0.68);
+          return compacted ? { ...prod, image: compacted } : prod;
+        }
         const existingEmbedded = typeof prod?.imageBackupData === 'string' && prod.imageBackupData.startsWith('data:image/')
           ? prod.imageBackupData
           : undefined;
-        const embedded = existingEmbedded || (await embedPhotoDataUri(prod?.image, 360, 0.72));
+        const embedded = existingEmbedded || (await embedPhotoDataUri(prod?.image, 320, 0.68));
         return embedded ? { ...prod, imageBackupData: embedded } : prod;
       });
     }
 
     if (Array.isArray(backup.customers) && backup.customers.length > 0) {
       backup.customers = await mapConcurrent(backup.customers, 4, async (cust: any) => {
-        const embedded = await embedPhotoDataUri(cust?.profilePic, 300, 0.72);
+        if (typeof cust?.profilePic === 'string' && cust.profilePic.trim().startsWith('data:image/')) {
+          const compacted = await embedPhotoDataUri(cust.profilePic, 300, 0.7);
+          return compacted ? { ...cust, profilePic: compacted } : cust;
+        }
+        const embedded = await embedPhotoDataUri(cust?.profilePic, 300, 0.7);
         return embedded ? { ...cust, profilePicBackupData: embedded } : cust;
       });
     }
 
     if (Array.isArray(backup.agents) && backup.agents.length > 0) {
       backup.agents = await mapConcurrent(backup.agents, 4, async (agent: any) => {
-        const embedded = await embedPhotoDataUri(agent?.profilePic, 300, 0.72);
+        if (typeof agent?.profilePic === 'string' && agent.profilePic.trim().startsWith('data:image/')) {
+          const compacted = await embedPhotoDataUri(agent.profilePic, 300, 0.7);
+          return compacted ? { ...agent, profilePic: compacted } : agent;
+        }
+        const embedded = await embedPhotoDataUri(agent?.profilePic, 300, 0.7);
         return embedded ? { ...agent, profilePicBackupData: embedded } : agent;
       });
     }
 
     if (Array.isArray(backup.workers) && backup.workers.length > 0) {
       backup.workers = await mapConcurrent(backup.workers, 4, async (worker: any) => {
-        const embedded = await embedPhotoDataUri(worker?.profilePic, 300, 0.72);
+        if (typeof worker?.profilePic === 'string' && worker.profilePic.trim().startsWith('data:image/')) {
+          const compacted = await embedPhotoDataUri(worker.profilePic, 300, 0.7);
+          return compacted ? { ...worker, profilePic: compacted } : worker;
+        }
+        const embedded = await embedPhotoDataUri(worker?.profilePic, 300, 0.7);
         return embedded ? { ...worker, profilePicBackupData: embedded } : worker;
       });
     }
@@ -3285,24 +3382,58 @@ export const StorageService = {
 
   /**
    * Verifies restored product, customer, agent, staff, and profile photos.
-   * If a restored remote image URL returns 404 or non-image content (e.g., deleted from R2),
-   * immediately restores its embedded `*BackupData` data URL locally and re-uploads to R2.
-   * Also re-uploads any restored `data:image/` photos to R2 in the background.
+   * If a restored remote image URL fails to load or is offline/broken while an embedded `*BackupData`
+   * data URL exists, immediately restores the embedded data URL locally so photos always render cleanly.
    */
   async recoverRestoredProductPhotos(backupData?: any): Promise<void> {
     if (typeof window === 'undefined') return;
-    const workerBase = (this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm7.workers.dev').replace(/\/+$/, '');
+    const rawWorkerUrl = this.getCloudflareConfig().workerUrl || 'https://brivu.shapesmm.com';
+    const workerBase = rawWorkerUrl
+      .replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, 'https://brivu.shapesmm.com')
+      .replace(/\/+$/, '');
     const normalizeImgUrl = (raw?: string): string => {
       if (!raw) return '';
       const trimmed = raw.trim();
       if (trimmed.startsWith('/api/files/')) return `${workerBase}${trimmed}`;
-      return trimmed;
+      return trimmed.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, workerBase);
     };
 
     const verifyRemoteImage = async (rawUrl?: string): Promise<boolean> => {
       const target = normalizeImgUrl(rawUrl);
       if (!target || (!target.startsWith('http://') && !target.startsWith('https://'))) {
         return false;
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return false;
+      }
+      // Verify actual image decodability using <img> probe (matches UI rendering & catches broken/404/QUIC URLs without CORS false failures)
+      if (typeof Image !== 'undefined') {
+        const imgOk = await new Promise<boolean>((resolve) => {
+          let settled = false;
+          const img = new Image();
+          const timer = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              resolve(false);
+            }
+          }, 3500);
+          img.onload = () => {
+            clearTimeout(timer);
+            if (!settled) {
+              settled = true;
+              resolve((img.naturalWidth || 0) > 0);
+            }
+          };
+          img.onerror = () => {
+            clearTimeout(timer);
+            if (!settled) {
+              settled = true;
+              resolve(false);
+            }
+          };
+          img.src = target;
+        });
+        if (imgOk) return true;
       }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3000);
@@ -3313,8 +3444,7 @@ export const StorageService = {
         if (cType.includes('text/html') || cType.includes('application/json')) return false;
         return cType.startsWith('image/');
       } catch {
-        // Offline or transient network error: do not mark as permanently dead unless HTTP responded non-image
-        return true;
+        return false;
       } finally {
         clearTimeout(timer);
       }
@@ -3330,13 +3460,14 @@ export const StorageService = {
       ? backupData.inventoryProducts
       : (Array.isArray(backupData?.products) ? backupData.products : []);
     const prodBackupMap = new Map<string, string>();
-    for (const rp of rawIncomingProducts) {
-      if (!rp?.id) continue;
+    rawIncomingProducts.forEach((rp: any, idx: number) => {
+      if (!rp || typeof rp !== 'object') return;
+      const pid = String(rp.id || rp.productId || (rp.itemId ? `prod-${rp.itemId}` : `prod-restored-${idx}`));
       const fallback = rp.imageBackupData || (typeof rp.image === 'string' && rp.image.startsWith('data:image/') ? rp.image : '');
       if (fallback && fallback.startsWith('data:image/')) {
-        prodBackupMap.set(String(rp.id), fallback);
+        prodBackupMap.set(pid, fallback);
       }
-    }
+    });
 
     let inventoryChanged = false;
     const products = this.getInventoryProducts();
@@ -3349,6 +3480,9 @@ export const StorageService = {
         inventoryChanged = true;
       } else if (backupImg && prod.image && !prod.image.startsWith('data:image/')) {
         productVerifyIndices.push(i);
+      } else if (typeof prod.image === 'string' && prod.image.includes('brivu.shapesmm7.workers.dev')) {
+        products[i] = { ...prod, image: prod.image.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, workerBase) };
+        inventoryChanged = true;
       }
     }
     for (let b = 0; b < productVerifyIndices.length; b += 4) {

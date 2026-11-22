@@ -142,7 +142,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       setAgents(StorageService.getAgents());
       setWorkers(StorageService.getWorkers());
       setShoppingList(StorageService.getShoppingListItems());
+      setShoppingCategories(StorageService.getShoppingCategories());
       setProductCategories(StorageService.getProductCategories());
+      setStockViewMode(StorageService.getStockViewMode());
+      setBrokenImageKeys({});
     };
     window.addEventListener('brivu_auth_changed', handleSync);
     window.addEventListener('storage_updated', handleSync);

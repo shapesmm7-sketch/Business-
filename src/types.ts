@@ -423,6 +423,7 @@ export interface AppBackupData {
   productCategories?: ProductCategory[];
   customers?: Customer[];
   agents?: BusinessAgent[];
+  agentLedger?: AgentLedgerRecord[];
   workers?: BusinessWorker[];
   staffAttendance?: StaffAttendanceRecord[];
   staffLosses?: StaffLossRecord[];

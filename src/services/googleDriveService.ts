@@ -126,25 +126,61 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mergeItemsPreservingPhotos<T extends Record<string, any>>(existing: T[], incoming: T[], photoField: string, backupPhotoField: string): T[] {
+function mergeItemsPreservingPhotos<T extends Record<string, any>>(
+  existing: T[],
+  incoming: T[],
+  photoField: string,
+  backupPhotoField: string,
+  avoidDifferentProductCollision = false
+): T[] {
+  const isUnusablePhoto = (val: any): boolean => {
+    if (typeof val !== 'string' || !val.trim()) return true;
+    const s = val.trim().toLowerCase();
+    return s.startsWith('blob:') || s.startsWith('file:') || s.startsWith('capacitor:') || s.startsWith('content:');
+  };
+  const mergeFields = (prev: T, item: T): T => {
+    const merged: Record<string, any> = { ...prev };
+    for (const [k, v] of Object.entries(item)) {
+      if (v !== undefined && v !== null && v !== '') {
+        merged[k] = v;
+      }
+    }
+    const prevPhoto = !isUnusablePhoto(prev[photoField]) ? prev[photoField] : undefined;
+    const nextPhoto = !isUnusablePhoto(item[photoField]) ? item[photoField] : undefined;
+    const prevBackupPhoto = !isUnusablePhoto(prev[backupPhotoField]) ? prev[backupPhotoField] : undefined;
+    const nextBackupPhoto = !isUnusablePhoto(item[backupPhotoField]) ? item[backupPhotoField] : undefined;
+
+    merged[photoField] = nextPhoto || prevPhoto;
+    merged[backupPhotoField] = nextBackupPhoto || prevBackupPhoto;
+    return merged as T;
+  };
+
   const map = new Map<string, T>();
   for (const item of existing || []) {
-    if (item && item.id) map.set(item.id, item);
+    if (item && item.id) map.set(String(item.id), item);
   }
-  for (const item of incoming || []) {
-    if (!item || !item.id) continue;
-    const prev = map.get(item.id);
-    if (prev) {
-      map.set(item.id, {
-        ...prev,
-        ...item,
-        [photoField]: item[photoField] || prev[photoField],
-        [backupPhotoField]: item[backupPhotoField] || prev[backupPhotoField],
-      });
-    } else {
-      map.set(item.id, item);
+  (incoming || []).forEach((item, idx) => {
+    if (!item || typeof item !== 'object') return;
+    const rawId = item.id || (item as any).productId || ((item as any).itemId ? `prod-${(item as any).itemId}` : `item-drv-${idx}`);
+    const id = String(rawId);
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, { ...item, id } as T);
+      return;
     }
-  }
+    if (avoidDifferentProductCollision) {
+      const prevName = String(prev.name || prev.productName || '').trim().toLowerCase();
+      const incName = String(item.name || item.productName || '').trim().toLowerCase();
+      const prevCode = String(prev.itemId || prev.barcode || '').trim().toLowerCase();
+      const incCode = String(item.itemId || item.barcode || '').trim().toLowerCase();
+      if (prevName && incName && prevName !== incName && prevCode !== incCode) {
+        const uniqueId = `${id}-drv-${idx}-${Math.random().toString(36).slice(2, 5)}`;
+        map.set(uniqueId, { ...item, id: uniqueId } as T);
+        return;
+      }
+    }
+    map.set(id, mergeFields(prev, { ...item, id } as T));
+  });
   return Array.from(map.values());
 }
 
@@ -676,7 +712,7 @@ export const GoogleDriveService = {
         queryParts.push(`((${parentsClause}) and mimeType != 'application/vnd.google-apps.folder' and trashed = false)`);
       }
       queryParts.push(
-        `((name contains 'brivu_backup' or name contains 'Brivu_Backup') and mimeType != 'application/vnd.google-apps.folder' and trashed = false)`
+        `((name contains 'brivu_backup' or name contains 'Brivu_Backup' or name contains 'brivu_stock' or name contains 'stock_auto_backup') and mimeType != 'application/vnd.google-apps.folder' and trashed = false)`
       );
 
       const combinedQuery = queryParts.join(' or ');
@@ -757,7 +793,7 @@ export const GoogleDriveService = {
         throw new Error('The downloaded backup file is not valid JSON data.');
       }
 
-      return this.applyRestoredData(backupData, mergeStrategy);
+      return await this.applyRestoredData(backupData, mergeStrategy);
     } catch (err: any) {
       console.error('Error during Google Drive restore:', err);
       return { success: false, error: err?.message || 'Failed restoring backup from Google Drive' };
@@ -781,7 +817,7 @@ export const GoogleDriveService = {
     }
 
     const sorted = [...backups].sort(
-      (a, b) => new Date(a.modifiedTime || a.createdTime).getTime() - new Date(b.modifiedTime || b.createdTime).getTime()
+      (a, b) => new Date(a.modifiedTime || a.createdTime || 0).getTime() - new Date(b.modifiedTime || b.createdTime || 0).getTime()
     );
 
     let consolidatedBackup: any = null;
@@ -846,13 +882,19 @@ export const GoogleDriveService = {
                 consolidatedBackup.receipts = Array.from(map.values());
               }
 
-              // Inventory Products: merge by id while NEVER losing an existing image or imageBackupData
-              if (Array.isArray(data.inventoryProducts)) {
+              // Inventory Products: support both inventoryProducts and legacy products keys, merge by id while NEVER losing texts or photos
+              const incomingProds = Array.isArray(data.inventoryProducts)
+                ? data.inventoryProducts
+                : Array.isArray((data as any).products)
+                ? (data as any).products
+                : null;
+              if (incomingProds) {
                 consolidatedBackup.inventoryProducts = mergeItemsPreservingPhotos(
                   consolidatedBackup.inventoryProducts || [],
-                  data.inventoryProducts,
+                  incomingProds,
                   'image',
-                  'imageBackupData'
+                  'imageBackupData',
+                  true
                 );
               }
 
@@ -929,6 +971,9 @@ export const GoogleDriveService = {
               if (Array.isArray(data.socialsQrItems)) {
                 consolidatedBackup.socialsQrItems = mergeSimpleById(consolidatedBackup.socialsQrItems, data.socialsQrItems);
               }
+              if (Array.isArray(data.agentLedger)) {
+                consolidatedBackup.agentLedger = mergeSimpleById(consolidatedBackup.agentLedger, data.agentLedger);
+              }
               if (Array.isArray(data.eventsQrItems)) {
                 consolidatedBackup.eventsQrItems = mergeSimpleById(consolidatedBackup.eventsQrItems, data.eventsQrItems);
               }
@@ -967,7 +1012,7 @@ export const GoogleDriveService = {
       return { success: false, error: 'Failed to restore backup files from Google Drive.' };
     }
 
-    const finalResult = this.applyRestoredData(consolidatedBackup, 'replace');
+    const finalResult = await this.applyRestoredData(consolidatedBackup, 'replace');
     if (!finalResult.success) {
       return { success: false, error: finalResult.error };
     }
@@ -991,26 +1036,28 @@ export const GoogleDriveService = {
       if (!backupData || typeof backupData !== 'object') {
         return { success: false, error: 'Invalid backup file format' };
       }
-      return this.applyRestoredData(backupData, mergeStrategy);
+      return await this.applyRestoredData(backupData, mergeStrategy);
     } catch (err: any) {
       return { success: false, error: err?.message || 'Invalid JSON file' };
     }
   },
 
   /**
-   * Internal helper to apply restored data to storage & sync
+   * Internal helper to apply restored data to storage and recover embedded photos before refreshing UI
    */
-  applyRestoredData(
+  async applyRestoredData(
     backupData: any,
     mergeStrategy: 'merge' | 'replace'
-  ): { success: boolean; itemCount?: any; error?: string } {
+  ): Promise<{ success: boolean; itemCount?: any; error?: string }> {
     try {
       const importResult = StorageService.importBackup(backupData, mergeStrategy === 'replace');
       if (!importResult.success) {
         return { success: false, error: importResult.message };
       }
 
-      // Count restored photos (after importBackup normalized image fields)
+      // Recover any embedded product, client, agent, staff, and profile photos directly into localStorage before reading final counts
+      await StorageService.recoverRestoredProductPhotos(backupData).catch(() => {});
+
       const restoredProducts = StorageService.getInventoryProducts();
       const restoredCustomers = StorageService.getCustomers();
       const restoredAgents = StorageService.getAgents();
@@ -1022,12 +1069,10 @@ export const GoogleDriveService = {
         restoredAgents.filter((a: any) => a.profilePic).length +
         restoredWorkers.filter((w: any) => w.profilePic).length;
 
-      // Recover any embedded photos directly into localStorage (no Cloudflare sync for inventory/receipts)
-      StorageService.recoverRestoredProductPhotos(backupData).catch(() => {});
-
-      // Dispatch global restoration events so all active React screens re-render with restored items
+      // Dispatch global restoration events so all active React screens re-render with restored items & recovered photos
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+        window.dispatchEvent(new Event('storage_updated'));
         window.dispatchEvent(new Event('storage'));
       }
 
@@ -1035,7 +1080,7 @@ export const GoogleDriveService = {
         success: true,
         itemCount: {
           receipts: Array.isArray(backupData.receipts) ? backupData.receipts.length : 0,
-          products: Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts.length : restoredProducts.length,
+          products: restoredProducts.length,
           customers: Array.isArray(backupData.customers) ? backupData.customers.length : restoredCustomers.length,
           agents: Array.isArray(backupData.agents) ? backupData.agents.length : restoredAgents.length,
           staff: Array.isArray(backupData.workers) ? backupData.workers.length : restoredWorkers.length,

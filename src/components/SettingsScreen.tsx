@@ -95,14 +95,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
         const parsed = JSON.parse(text) as AppBackupData;
         const result = StorageService.importBackup(parsed);
 
         if (result.success) {
-          StorageService.recoverRestoredProductPhotos(parsed).catch(() => {});
+          await StorageService.recoverRestoredProductPhotos(parsed).catch(() => {});
           window.dispatchEvent(new CustomEvent('brivu_data_restored'));
           window.dispatchEvent(new Event('storage_updated'));
           showToast(result.message);
