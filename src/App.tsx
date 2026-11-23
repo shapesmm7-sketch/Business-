@@ -23,7 +23,14 @@ import { DownloadSuccessModal } from './components/DownloadSuccessModal';
 import { QrCodeScannerModal } from './components/QrCodeScannerModal';
 import { SyncToGoogleDriveScreen } from './components/SyncToGoogleDriveScreen';
 import { AdMobModalOverlay } from './components/AdMobModalOverlay';
+import { AppUpdatePromptModal } from './components/AppUpdatePromptModal';
 import { AdMobService, ADMOB_UNITS } from './services/admobService';
+import {
+  PlayUpdateService,
+  PlayUpdateInfo,
+  PlayUpdateStateEvent,
+  PLAY_INSTALL_STATUS,
+} from './services/playUpdateService';
 import { StorageService } from './services/storage';
 import { GoogleDriveService } from './services/googleDriveService';
 import { CloudflareService } from './services/cloudflareService';
@@ -384,6 +391,12 @@ export function App() {
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
   const [quotationTab, setQuotationTab] = useState<QuotationTab>('create');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
+  const [playUpdateInfo, setPlayUpdateInfo] = useState<PlayUpdateInfo | null>(null);
+  const [playUpdateState, setPlayUpdateState] = useState<PlayUpdateStateEvent | null>(null);
+  const [isPlayUpdateModalOpen, setIsPlayUpdateModalOpen] = useState<boolean>(false);
+  const [isLaunchingPlayUpdate, setIsLaunchingPlayUpdate] = useState<boolean>(false);
+  const [playUpdateError, setPlayUpdateError] = useState<string | null>(null);
+  const [installedVersionName, setInstalledVersionName] = useState<string>('1.8.0');
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -741,6 +754,120 @@ export function App() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  // Google Play In-App Updates API: check on startup, resume, and manual triggers
+  useEffect(() => {
+    if (isCustomerPathFromUrl()) return;
+
+    let active = true;
+    let lastCheckedAt = 0;
+    let stateListenerHandle: { remove: () => Promise<void> } | null = null;
+    let appResumeHandle: { remove: () => Promise<void> } | null = null;
+
+    const runUpdateCheck = async (forcePrompt: boolean) => {
+      if (!active || !PlayUpdateService.isAndroidNative()) return;
+      const now = Date.now();
+      if (!forcePrompt && now - lastCheckedAt < 15 * 60 * 1000) {
+        return;
+      }
+      lastCheckedAt = now;
+
+      try {
+        const [verInfo, updateInfo] = await Promise.all([
+          PlayUpdateService.getAppVersionInfo(),
+          PlayUpdateService.checkForUpdate(),
+        ]);
+        if (!active) return;
+
+        if (verInfo?.versionName) {
+          setInstalledVersionName(verInfo.versionName);
+        }
+
+        const needsAction = Boolean(
+          updateInfo.downloaded ||
+            updateInfo.installStatus === PLAY_INSTALL_STATUS.DOWNLOADED ||
+            updateInfo.developerTriggeredUpdateInProgress ||
+            updateInfo.updateAvailable
+        );
+
+        if (needsAction) {
+          setPlayUpdateInfo(updateInfo);
+          setPlayUpdateError(null);
+          if (forcePrompt || PlayUpdateService.shouldAutoPrompt(updateInfo)) {
+            setIsPlayUpdateModalOpen(true);
+          }
+        }
+      } catch (err) {
+        console.warn('[PlayUpdate] Update check note:', err);
+      }
+    };
+
+    PlayUpdateService.addStateListener((event) => {
+      if (!active) return;
+      setPlayUpdateState(event);
+      if (event.downloaded || event.installStatus === PLAY_INSTALL_STATUS.DOWNLOADED) {
+        setPlayUpdateInfo((prev) =>
+          prev
+            ? { ...prev, downloaded: true, installStatus: PLAY_INSTALL_STATUS.DOWNLOADED }
+            : {
+                apiAvailable: true,
+                updateAvailable: true,
+                downloaded: true,
+                installStatus: PLAY_INSTALL_STATUS.DOWNLOADED,
+                availableVersionCode: event.availableVersionCode,
+              }
+        );
+        setPlayUpdateError(null);
+        setIsPlayUpdateModalOpen(true);
+      } else if (event.installed) {
+        setIsPlayUpdateModalOpen(false);
+      } else if (event.failed) {
+        setPlayUpdateError('Update download could not be completed. You can update directly from Google Play.');
+      }
+    }).then((handle) => {
+      stateListenerHandle = handle;
+    });
+
+    const handleManualOpenEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ info?: PlayUpdateInfo }>;
+      if (custom.detail?.info) {
+        setPlayUpdateInfo(custom.detail.info);
+        setPlayUpdateError(null);
+        setIsPlayUpdateModalOpen(true);
+      } else {
+        runUpdateCheck(true);
+      }
+    };
+    window.addEventListener('brivu_open_play_update_modal', handleManualOpenEvent);
+
+    try {
+      CapApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          runUpdateCheck(false);
+        }
+      }).then((handle) => {
+        appResumeHandle = handle;
+      }).catch(() => {});
+    } catch {
+      // Ignore on web
+    }
+
+    const startupTimer = setTimeout(() => {
+      runUpdateCheck(false);
+    }, 2500);
+
+    return () => {
+      active = false;
+      clearTimeout(startupTimer);
+      window.removeEventListener('brivu_open_play_update_modal', handleManualOpenEvent);
+      if (stateListenerHandle) {
+        stateListenerHandle.remove().catch(() => {});
+      }
+      if (appResumeHandle) {
+        appResumeHandle.remove().catch(() => {});
+      }
     };
   }, []);
 
@@ -1865,6 +1992,61 @@ export function App() {
         }}
       />
 
+
+      <AppUpdatePromptModal
+        isOpen={isPlayUpdateModalOpen}
+        updateInfo={playUpdateInfo}
+        updateState={playUpdateState}
+        currentVersionName={installedVersionName}
+        isLaunching={isLaunchingPlayUpdate}
+        errorMessage={playUpdateError}
+        onDismiss={() => {
+          if (playUpdateInfo && !PlayUpdateService.isMandatoryOrImmediate(playUpdateInfo)) {
+            PlayUpdateService.snoozeFlexiblePrompt(playUpdateInfo.availableVersionCode);
+          }
+          setIsPlayUpdateModalOpen(false);
+          setPlayUpdateError(null);
+        }}
+        onStartUpdate={async () => {
+          if (!playUpdateInfo) return;
+          setIsLaunchingPlayUpdate(true);
+          setPlayUpdateError(null);
+          try {
+            const preferredType = PlayUpdateService.getPreferredUpdateType(playUpdateInfo);
+            const result = await PlayUpdateService.startUpdate(preferredType);
+            if (!result.started) {
+              setPlayUpdateError(
+                result.error || 'Unable to launch the Google Play update dialog on this device.'
+              );
+            } else if (result.cancelled) {
+              if (!PlayUpdateService.isMandatoryOrImmediate(playUpdateInfo)) {
+                PlayUpdateService.snoozeFlexiblePrompt(playUpdateInfo.availableVersionCode);
+                setIsPlayUpdateModalOpen(false);
+              }
+            } else if (result.failed) {
+              setPlayUpdateError('Google Play update failed to start. Please try updating from the Play Store.');
+            } else if (result.accepted && result.updateType === 'flexible') {
+              // Keep modal open cleanly showing live download progress (user can dismiss to background)
+              setPlayUpdateState((prev) => ({
+                ...prev,
+                downloading: true,
+                installStatus: PLAY_INSTALL_STATUS.PENDING,
+              }));
+            }
+          } finally {
+            setIsLaunchingPlayUpdate(false);
+          }
+        }}
+        onCompleteUpdate={async () => {
+          const res = await PlayUpdateService.completeUpdate();
+          if (!res.success) {
+            setPlayUpdateError(res.error || 'Could not restart to install the update.');
+          }
+        }}
+        onOpenPlayStore={async () => {
+          await PlayUpdateService.openPlayStore();
+        }}
+      />
 
     </div>
   );

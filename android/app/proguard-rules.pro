@@ -51,6 +51,11 @@
 -keep public class com.brivu.myapp.PlayBillingPlugin {
     public *;
 }
+-keep public class com.brivu.myapp.PlayAppUpdatePlugin {
+    public *;
+}
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
 -keep public class com.brivu.myapp.MediaStorePlugin {
     public *;
 }

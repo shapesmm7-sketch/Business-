@@ -15,9 +15,12 @@ import {
   Cloud,
   Shield,
   ExternalLink,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { ActiveScreen, AppBackupData, AppSettings } from '../types';
 import { StorageService } from '../services/storage';
+import { PlayUpdateService, PLAY_INSTALL_STATUS } from '../services/playUpdateService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { BluetoothPrinterSettings } from './BluetoothPrinterSettings';
 
@@ -44,6 +47,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [appVersionLabel, setAppVersionLabel] = useState<string>('1.8.0');
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
+
+  useEffect(() => {
+    PlayUpdateService.getAppVersionInfo().then((info) => {
+      if (info?.versionName) {
+        setAppVersionLabel(info.versionName);
+      }
+    });
+  }, []);
 
   const subscription = StorageService.getSubscription();
   const fileImportRef = useRef<HTMLInputElement>(null);
@@ -339,8 +352,60 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </div>
 
-      {/* 5. About & Privacy links */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      {/* 5. App Updates (Google Play In-App Update API) */}
+      <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-1">
+        <button
+          id="btn-check-app-updates"
+          type="button"
+          disabled={isCheckingUpdate}
+          onClick={async () => {
+            if (!PlayUpdateService.isAndroidNative()) {
+              await PlayUpdateService.openPlayStore();
+              return;
+            }
+            setIsCheckingUpdate(true);
+            try {
+              const info = await PlayUpdateService.checkForUpdate();
+              if (
+                info.downloaded ||
+                info.installStatus === PLAY_INSTALL_STATUS.DOWNLOADED ||
+                info.developerTriggeredUpdateInProgress ||
+                info.updateAvailable
+              ) {
+                window.dispatchEvent(
+                  new CustomEvent('brivu_open_play_update_modal', { detail: { info } })
+                );
+              } else if (!info.apiAvailable) {
+                showToast('Opening Google Play Store to check for updates...');
+                await PlayUpdateService.openPlayStore();
+              } else {
+                showToast(`Brivu v${appVersionLabel} is up to date!`);
+              }
+            } finally {
+              setIsCheckingUpdate(false);
+            }
+          }}
+          className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-xl transition cursor-pointer disabled:opacity-60"
+        >
+          <div className="flex items-center gap-2.5">
+            {isCheckingUpdate ? (
+              <Loader2 className="w-4 h-4 text-emerald-500 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 text-emerald-500" />
+            )}
+            <div>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                {isCheckingUpdate ? 'Checking Google Play...' : 'Check for App Updates'}
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Installed version v{appVersionLabel}
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </button>
+
+        {/* 6. About & Privacy links */}
         <button
           id="btn-show-privacy"
           onClick={() => setShowPrivacyModal(true)}
