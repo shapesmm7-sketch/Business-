@@ -1193,7 +1193,19 @@ export function App() {
   // Business profile updated
   const handleUpdateBusiness = (updated: BusinessProfile) => {
     StorageService.saveProfile(updated);
+    StorageService.syncBrandColorsToExistingDocuments(updated);
     setBusiness(updated);
+    setSelectedReceipt((prev) => {
+      if (!prev) return null;
+      const refreshed = StorageService.getReceipts().find((r) => r.id === prev.id);
+      return (
+        refreshed || {
+          ...prev,
+          accentColor: undefined,
+          businessSnapshot: { ...prev.businessSnapshot, ...updated },
+        }
+      );
+    });
     refreshData();
   };
 
@@ -1205,10 +1217,21 @@ export function App() {
   };
 
   // Template set as default
-  const handleSetDefaultTemplate = (templateId: ReceiptTemplateId) => {
+  const handleSetDefaultTemplate = (
+    templateId: ReceiptTemplateId,
+    docTypeFilter?: 'receipt' | 'invoice' | 'quotation'
+  ) => {
     const updated = { ...settings, defaultTemplate: templateId };
     setSettings(updated);
     StorageService.saveSettings(updated);
+    StorageService.applyTemplateToDocuments(templateId, docTypeFilter);
+    setSelectedReceipt((prev) => {
+      if (!prev) return null;
+      const prevDocType = prev.documentType || 'receipt';
+      if (docTypeFilter && prevDocType !== docTypeFilter) return prev;
+      return { ...prev, template: templateId };
+    });
+    refreshData();
   };
 
   // Dark mode toggle in Header
@@ -1587,24 +1610,34 @@ export function App() {
           />
         )}
 
-        {activeScreen === 'templates' && (
-          <TemplatesScreen
-            currentDefault={settings.defaultTemplate}
-            onSetDefault={handleSetDefaultTemplate}
-            onBack={() => handleNavigate(previousScreen && previousScreen !== 'templates' ? previousScreen : 'home')}
-            business={business}
-            onUpdateBusiness={handleUpdateBusiness}
-            mode={
-              previousScreen === 'invoices' || previousScreen === 'create-invoice'
-                ? 'invoices'
-                : previousScreen === 'quotations' || previousScreen === 'create-quotation'
-                ? 'quotations'
-                : previousScreen === 'receipts' || previousScreen === 'create-receipt'
-                ? 'receipts'
-                : undefined
-            }
-          />
-        )}
+        {activeScreen === 'templates' && (() => {
+          const templatesMode =
+            previousScreen === 'invoices' || previousScreen === 'create-invoice'
+              ? 'invoices'
+              : previousScreen === 'quotations' || previousScreen === 'create-quotation'
+              ? 'quotations'
+              : previousScreen === 'receipts' || previousScreen === 'create-receipt'
+              ? 'receipts'
+              : undefined;
+          const docFilter =
+            templatesMode === 'invoices'
+              ? 'invoice'
+              : templatesMode === 'quotations'
+              ? 'quotation'
+              : templatesMode === 'receipts'
+              ? 'receipt'
+              : undefined;
+          return (
+            <TemplatesScreen
+              currentDefault={settings.defaultTemplate}
+              onSetDefault={(tplId) => handleSetDefaultTemplate(tplId, docFilter)}
+              onBack={() => handleNavigate(previousScreen && previousScreen !== 'templates' ? previousScreen : 'home')}
+              business={business}
+              onUpdateBusiness={handleUpdateBusiness}
+              mode={templatesMode}
+            />
+          );
+        })()}
 
         {activeScreen === 'settings' && (
           <SettingsScreen

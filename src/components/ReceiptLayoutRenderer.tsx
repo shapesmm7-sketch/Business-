@@ -13,7 +13,7 @@ import {
 import { ReceiptTemplateId, TemplateCustomization } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
-import { isValidHex, normalizeHex, getContrastTextHex, resolveEffectiveTheme, rgbToHex, hexToRgb, getLuminance, isValidColorOrGradient, formatBgStyle, formatTextStyle } from '../utils/colors';
+import { isValidHex, normalizeHex, getContrastTextHex, resolveEffectiveTheme, rgbToHex, hexToRgb, getLuminance, isValidColorOrGradient, formatBgStyle, formatTextStyle, extractPrimaryHex } from '../utils/colors';
 import { ReceiptQrCodeSection } from './ReceiptQrCodeSection';
 
 
@@ -195,22 +195,27 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   const formattedDate = isSample ? 'Today, 14:30' : formatDateTime(createdAt);
 
   // 1. Primary Accent Color Resolution
-  const customHex = customTheme?.accentColor || (accentColor && isValidHex(accentColor) ? normalizeHex(accentColor) : null);
+  const customHex =
+    (customTheme?.accentColor && isValidColorOrGradient(customTheme.accentColor)
+      ? (isValidHex(customTheme.accentColor) ? normalizeHex(customTheme.accentColor) : customTheme.accentColor)
+      : null) ||
+    (accentColor && isValidColorOrGradient(accentColor)
+      ? (isValidHex(accentColor) ? normalizeHex(accentColor) : accentColor)
+      : null);
   const effectiveAccent = customHex || (theme.pdf.accentColor ? rgbToHex(theme.pdf.accentColor[0], theme.pdf.accentColor[1], theme.pdf.accentColor[2]) : '#059669');
-  const accentContrastText = getContrastTextHex(effectiveAccent);
+  const effectiveAccentHex = extractPrimaryHex(effectiveAccent) || '#059669';
+  const accentContrastText = getContrastTextHex(effectiveAccentHex);
 
   const accentBadgeStyle: React.CSSProperties = {
-    background: effectiveAccent,
+    ...formatBgStyle(effectiveAccent),
     color: accentContrastText,
-    borderColor: effectiveAccent,
+    borderColor: effectiveAccentHex,
   };
 
-  const accentTextStyle: React.CSSProperties = {
-    color: effectiveAccent,
-  };
+  const accentTextStyle: React.CSSProperties = formatTextStyle(effectiveAccent);
 
   const accentBorderStyle: React.CSSProperties = {
-    borderColor: effectiveAccent,
+    borderColor: effectiveAccentHex,
   };
 
   // 2. Custom Theme Override Flags
@@ -226,11 +231,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
     ? customHeaderBg
     : undefined;
 
+  const headerPrimaryHex = extractPrimaryHex(headerBgStyle);
   const effectiveHeaderTextColor =
     isCustomHeaderText && customTheme?.headerTextColor
       ? customTheme.headerTextColor
       : headerBgStyle
-        ? (isValidHex(headerBgStyle) ? getContrastTextHex(headerBgStyle) : '#ffffff')
+        ? (headerPrimaryHex ? getContrastTextHex(headerPrimaryHex) : '#ffffff')
         : undefined;
 
   const headerStyle: React.CSSProperties = {
@@ -243,22 +249,24 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   const totalBgVal = isCustomTotalBg && isValidColorOrGradient(customTotalBg)
     ? customTotalBg
     : effectiveAccent;
+  const totalPrimaryHex = extractPrimaryHex(totalBgVal);
 
   const totalStyle: React.CSSProperties = {
     ...formatBgStyle(totalBgVal),
     ...(customTheme?.totalTextColor
       ? formatTextStyle(customTheme.totalTextColor)
-      : { color: (isValidHex(totalBgVal) ? getContrastTextHex(totalBgVal) : '#ffffff') }),
+      : { color: (totalPrimaryHex ? getContrastTextHex(totalPrimaryHex) : '#ffffff') }),
   };
 
   // 5. Paper Background & Receipt Text Color Style
   const paperBgVal = isCustomPaperBg && isValidColorOrGradient(customTheme?.paperBgColor)
     ? customTheme!.paperBgColor
     : (theme.pdf.pageBg ? rgbToHex(theme.pdf.pageBg[0], theme.pdf.pageBg[1], theme.pdf.pageBg[2]) : undefined);
+  const paperPrimaryHex = extractPrimaryHex(paperBgVal);
 
   const receiptTextColorVal = customTheme?.receiptTextColor && isValidColorOrGradient(customTheme.receiptTextColor)
     ? customTheme.receiptTextColor
-    : (isCustomPaperBg && paperBgVal && isValidHex(paperBgVal) ? getContrastTextHex(paperBgVal) : undefined);
+    : (isCustomPaperBg && paperPrimaryHex ? getContrastTextHex(paperPrimaryHex) : undefined);
 
   const paperStyle: React.CSSProperties = {
     ...(paperBgVal ? formatBgStyle(paperBgVal) : {}),
@@ -289,8 +297,9 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
   // 6. Header Background Resolution for Contrast Checking
   let effectiveHeaderHex = '#ffffff';
-  if (isCustomHeader && customTheme?.headerBgColor && isValidHex(customTheme.headerBgColor)) {
-    effectiveHeaderHex = normalizeHex(customTheme.headerBgColor);
+  const customHeaderPrimary = isCustomHeader ? extractPrimaryHex(customTheme?.headerBgColor) : null;
+  if (customHeaderPrimary) {
+    effectiveHeaderHex = customHeaderPrimary;
   } else if (theme.pdf.headerBg) {
     effectiveHeaderHex = rgbToHex(theme.pdf.headerBg[0], theme.pdf.headerBg[1], theme.pdf.headerBg[2]);
   } else {
@@ -320,9 +329,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         effectiveHeaderHex = '#fbfaf5';
         break;
       default:
-        effectiveHeaderHex = isCustomPaperBg && customTheme?.paperBgColor && isValidHex(customTheme.paperBgColor)
-          ? normalizeHex(customTheme.paperBgColor)
-          : '#ffffff';
+        effectiveHeaderHex = (isCustomPaperBg && paperPrimaryHex) ? paperPrimaryHex : '#ffffff';
         break;
     }
   }
@@ -337,18 +344,18 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   let finalBadgeBorder: string | undefined = undefined;
 
   // Priority A: Explicit badge background from customTheme
-  if (customTheme?.badgeBgColor && isValidHex(customTheme.badgeBgColor)) {
-    finalBadgeBg = normalizeHex(customTheme.badgeBgColor);
-    finalBadgeText = customTheme.badgeTextColor && isValidHex(customTheme.badgeTextColor)
-      ? normalizeHex(customTheme.badgeTextColor)
-      : getContrastTextHex(finalBadgeBg);
+  const explicitBadgeBgHex = extractPrimaryHex(customTheme?.badgeBgColor);
+  const explicitBadgeTextHex = extractPrimaryHex(customTheme?.badgeTextColor);
+  if (explicitBadgeBgHex) {
+    finalBadgeBg = explicitBadgeBgHex;
+    finalBadgeText = explicitBadgeTextHex || getContrastTextHex(finalBadgeBg);
   } else {
     // Priority B: Theme resolved badge background (which already passed resolveEffectiveTheme contrast checks)
     const resolvedBadgeBg = theme.pdf.badgeBg ? rgbToHex(theme.pdf.badgeBg[0], theme.pdf.badgeBg[1], theme.pdf.badgeBg[2]) : null;
 
-    // Check if customHex provides sufficient contrast against header
-    let candidate = customHex;
-    if (candidate && isValidHex(candidate)) {
+    // Check if custom accent provides sufficient contrast against header
+    let candidate = extractPrimaryHex(customHex || undefined);
+    if (candidate) {
       const cRgb = hexToRgb(candidate);
       const cLum = getLuminance(cRgb[0], cRgb[1], cRgb[2]);
       const lumDiff = Math.abs(cLum - headerLum);
@@ -358,8 +365,8 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
       }
     }
 
-    if (candidate && isValidHex(candidate)) {
-      finalBadgeBg = normalizeHex(candidate);
+    if (candidate) {
+      finalBadgeBg = candidate;
       finalBadgeText = getContrastTextHex(finalBadgeBg);
     } else if (resolvedBadgeBg && isValidHex(resolvedBadgeBg)) {
       finalBadgeBg = normalizeHex(resolvedBadgeBg);
@@ -701,8 +708,8 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   /* -------------------------------------------------------------------------- */
   if (template === 'compact') {
     return (
-      <div className="w-full bg-[#fbfaf5] dark:bg-slate-950 rounded-2xl p-4 sm:p-5 border border-slate-300 dark:border-slate-700 shadow-sm font-mono text-slate-900 dark:text-slate-200 text-xs relative overflow-hidden">
-        <div className="pb-2 border-b border-dashed border-slate-300 dark:border-slate-700">
+      <div className="w-full bg-[#fbfaf5] dark:bg-slate-950 rounded-2xl p-4 sm:p-5 border border-slate-300 dark:border-slate-700 shadow-sm font-mono text-slate-900 dark:text-slate-200 text-xs relative overflow-hidden" style={paperStyle}>
+        <div className={`pb-2 border-b border-dashed border-slate-300 dark:border-slate-700 ${isCustomHeader ? 'p-2.5 rounded-xl mb-2' : ''}`} style={headerStyle}>
           <div className="text-center mb-1">
             <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-sm inline-block shadow-xs" style={receiptBadgeStyle}>
               *** {effectiveBadgeText} ***
@@ -749,7 +756,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="space-y-1 py-2 text-xs">
-          <div className="flex justify-between text-sm font-black">
+          <div
+            className="flex justify-between text-sm font-black"
+            style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '6px 8px', borderRadius: '6px' } : undefined}
+          >
             <span>TOTAL:</span>
             <span>{formatCurrency(total, currency)}</span>
           </div>
@@ -787,10 +797,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   /* -------------------------------------------------------------------------- */
   if (template === 'executive-navy') {
     return (
-      <div className="w-full rounded-2xl p-1 bg-gradient-to-b from-amber-500/40 via-amber-600/20 to-amber-500/40 shadow-lg" style={paperStyle}>
-        <div className={`w-full bg-slate-950 rounded-[14px] p-5 sm:p-7 border border-amber-500/40 ${theme.fontFamily} text-slate-100`}>
+      <div className="w-full rounded-2xl p-1 bg-gradient-to-b from-amber-500/40 via-amber-600/20 to-amber-500/40 shadow-lg">
+        <div className={`w-full bg-slate-950 rounded-[14px] p-5 sm:p-7 border border-amber-500/40 ${theme.fontFamily} text-slate-100`} style={paperStyle}>
           {/* Ornate Header with Crest */}
-          <div className="pb-4 border-b border-amber-500/30" style={headerStyle}>
+          <div className={`pb-4 border-b border-amber-500/30 ${isCustomHeader ? 'p-3.5 rounded-xl mb-2' : ''}`} style={headerStyle}>
             <div className="text-center mb-1">
               <span className="text-[10px] font-bold tracking-widest uppercase px-3 py-0.5 rounded-full inline-block font-sans shadow-xs" style={receiptBadgeStyle}>
                 {effectiveBadgeText}
@@ -931,7 +941,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                   <p className="text-xs text-slate-500 mt-0.5 text-center" style={headerDescStyle}>{address}</p>
                 )}
                 <div className="mt-1 flex justify-center">
-                  <span className="px-2 py-0.5 rounded-full font-bold text-[10px] border" style={{ background: `${effectiveAccent}20`, color: effectiveAccent, borderColor: `${effectiveAccent}40` }}>
+                  <span className="px-2 py-0.5 rounded-full font-bold text-[10px] border" style={{ background: `${effectiveAccentHex}20`, color: effectiveAccentHex, borderColor: `${effectiveAccentHex}40` }}>
                     #{receiptNumber}
                   </span>
                 </div>
@@ -1207,10 +1217,21 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
 
           {/* Amber Total & Artisan Stamp */}
-          <div className="pt-3 border-t-2 border-stone-300 dark:border-stone-700 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-stone-400 block">TOTAL DUE:</span>
-              <span className="text-base sm:text-lg font-black font-mono text-stone-900 dark:text-white">
+          <div className="pt-3 border-t-2 border-stone-300 dark:border-stone-700 flex items-center justify-between gap-2">
+            <div
+              className="flex-1"
+              style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '8px 12px', borderRadius: '10px' } : undefined}
+            >
+              <span
+                className="text-[10px] uppercase font-bold text-stone-400 block"
+                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit', opacity: 0.85 } : undefined}
+              >
+                TOTAL DUE:
+              </span>
+              <span
+                className="text-base sm:text-lg font-black font-mono text-stone-900 dark:text-white"
+                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit' } : undefined}
+              >
                 {formatCurrency(total, currency)}
               </span>
             </div>
@@ -1361,7 +1382,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         {/* Massive Total Block */}
-        <div className="my-4 py-3 border-b-4 border-black dark:border-white flex justify-between items-baseline">
+        <div
+          className="my-4 py-3 border-b-4 border-black dark:border-white flex justify-between items-baseline"
+          style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '10px 12px', borderRadius: '4px' } : undefined}
+        >
           <span className="text-xs font-black uppercase tracking-widest">TOTAL AMOUNT:</span>
           <span className="text-xl sm:text-2xl font-black font-mono">
             {formatCurrency(total, currency)}
@@ -1599,7 +1623,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             <span>SUBTOTAL:</span>
             <span>{formatCurrency(subtotal, currency)}</span>
           </div>
-          <div className="flex justify-between text-base font-bold border-t-2 border-b-2 border-[#8c6d58] py-1.5 text-[#3e2723] dark:text-[#f4ebd0]">
+          <div
+            className="flex justify-between text-base font-bold border-t-2 border-b-2 border-[#8c6d58] py-1.5 text-[#3e2723] dark:text-[#f4ebd0]"
+            style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '8px 12px', borderRadius: '8px' } : undefined}
+          >
             <span>TOTAL AMOUNT:</span>
             <span>{formatCurrency(total, currency)}</span>
           </div>

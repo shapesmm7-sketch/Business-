@@ -47,7 +47,7 @@ export function CloudBackupScreen({ onBack, onDataRestored }: CloudBackupScreenP
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form state for editing credentials
-  const [workerUrlInput, setWorkerUrlInput] = useState(cfConfig.workerUrl || 'https://brivu.shapesmm7.workers.dev');
+  const [workerUrlInput, setWorkerUrlInput] = useState(cfConfig.workerUrl || 'https://brivu.shapesmm.com');
   const [apiKeyInput, setApiKeyInput] = useState(cfConfig.apiKey || '');
   const [s3EndpointInput, setS3EndpointInput] = useState(cfConfig.s3EndpointUrl || '');
   const [bucketNameInput, setBucketNameInput] = useState(cfConfig.bucketName || 'brivu-files');

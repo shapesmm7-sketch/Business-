@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Download,
@@ -42,6 +42,11 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
   onDuplicate,
 }) => {
   const [receipt, setReceipt] = useState<Receipt>(initialReceipt);
+
+  useEffect(() => {
+    setReceipt(initialReceipt);
+  }, [initialReceipt]);
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [toastState, setToastState] = useState<{ text: string; isError?: boolean } | null>(null);
   const [printerFallbackModal, setPrinterFallbackModal] = useState<{
@@ -59,7 +64,8 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
 
   const business = resolveEffectiveBusinessProfile(receipt);
   const currency = business?.currency || receipt.currency || 'UGX';
-  const currentTheme = getTemplateConfig(receipt.template || 'modern');
+  const effectiveTemplate = (receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId;
+  const currentTheme = getTemplateConfig(effectiveTemplate);
   const isQuotation = receipt.documentType === 'quotation';
   const isInvoice = receipt.documentType === 'invoice';
 
@@ -298,7 +304,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {TEMPLATES_CONFIG.map((t) => {
-              const active = receipt.template === t.id;
+              const active = effectiveTemplate === t.id;
               return (
                 <button
                   key={t.id}
@@ -426,10 +432,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             nonReturnable: receipt.nonReturnable === true || (receipt.nonReturnable === undefined && !receipt.nonRefundable),
             nonRefundable: Boolean(receipt.nonRefundable),
             currency: currency,
-            template: receipt.template || 'modern',
+            template: effectiveTemplate,
             accentColor: business.accentColor || receipt.accentColor,
             customTheme: (() => {
-              const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
+              const saved = StorageService.getCustomTemplate(effectiveTemplate);
               const defaultDocBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
               const rawBadge = receipt.customTheme?.badgeText || saved?.badgeText;
               const upperBadge = (rawBadge || '').trim().toUpperCase();

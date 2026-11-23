@@ -140,6 +140,32 @@ export function rgbToHex(r: number, g: number, b: number): string {
 }
 
 /**
+ * Extracts a primary 6-digit hex color from a solid hex, rgb()/rgba(), or CSS gradient string
+ */
+export function extractPrimaryHex(val?: string): string | null {
+  if (!val || typeof val !== 'string') return null;
+  const s = val.trim();
+  if (!s) return null;
+  if (isValidHex(s)) return normalizeHex(s);
+
+  const hexMatch = s.match(/#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})\b/);
+  if (hexMatch) {
+    return normalizeHex(hexMatch[0]);
+  }
+
+  const rgbMatch = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgbMatch) {
+    return rgbToHex(
+      parseInt(rgbMatch[1], 10),
+      parseInt(rgbMatch[2], 10),
+      parseInt(rgbMatch[3], 10)
+    );
+  }
+
+  return null;
+}
+
+/**
  * Calculates relative luminance according to WCAG formula
  */
 export function getLuminance(r: number, g: number, b: number): number {
@@ -195,57 +221,69 @@ export function resolveEffectiveTheme(
   customTheme?: TemplateCustomization
 ): TemplateThemeDef {
   const baseConfig = getTemplateConfig(templateId);
-  const effectiveAccent = customTheme?.accentColor || customAccentColor;
+  const resolvedAccentHex =
+    extractPrimaryHex(customTheme?.accentColor) ||
+    extractPrimaryHex(customAccentColor) ||
+    extractPrimaryHex(customTheme?.headerBgColor);
 
   const pdfOverride = { ...baseConfig.pdf };
   let fontFamilyClass = baseConfig.fontFamily;
 
-  if (effectiveAccent && isValidHex(effectiveAccent)) {
-    const normHex = normalizeHex(effectiveAccent);
-    const rgb = hexToRgb(normHex);
+  if (resolvedAccentHex) {
+    const rgb = hexToRgb(resolvedAccentHex);
     const textRgb = getContrastTextColor(rgb);
     const isDarkAccent = getLuminance(rgb[0], rgb[1], rgb[2]) <= 0.45;
-    const headerRgb = isDarkAccent ? rgb : adjustRgbBrightness(rgb, -0.6);
+    const customHeaderHex = extractPrimaryHex(customTheme?.headerBgColor);
+    const headerRgb = customHeaderHex
+      ? hexToRgb(customHeaderHex)
+      : (isDarkAccent ? rgb : adjustRgbBrightness(rgb, -0.6));
 
     pdfOverride.accentColor = rgb;
     pdfOverride.badgeBg = rgb;
     pdfOverride.badgeText = textRgb;
 
-    if (!customTheme?.headerBgColor) {
-      pdfOverride.headerBg = headerRgb;
-      pdfOverride.headerText = [255, 255, 255];
-      pdfOverride.subText = adjustRgbBrightness(headerRgb, 0.7);
-    }
-    if (!customTheme?.totalBgColor) {
-      pdfOverride.totalBg = rgb;
-      pdfOverride.totalText = textRgb;
-    }
+    pdfOverride.headerBg = headerRgb;
+    pdfOverride.headerText = getContrastTextColor(headerRgb);
+    pdfOverride.subText = adjustRgbBrightness(headerRgb, 0.7);
+
+    const customTotalBgHex = extractPrimaryHex(customTheme?.totalBgColor);
+    const totalBgSource = customTotalBgHex ? hexToRgb(customTotalBgHex) : rgb;
+    pdfOverride.totalBg = totalBgSource;
+    pdfOverride.totalText = getContrastTextColor(totalBgSource);
   }
 
   if (customTheme) {
-    if (customTheme.headerBgColor && isValidHex(customTheme.headerBgColor)) {
-      const hRgb = hexToRgb(customTheme.headerBgColor);
+    const hBgHex = extractPrimaryHex(customTheme.headerBgColor);
+    if (hBgHex) {
+      const hRgb = hexToRgb(hBgHex);
       pdfOverride.headerBg = hRgb;
+      pdfOverride.headerText = getContrastTextColor(hRgb);
       pdfOverride.subText = adjustRgbBrightness(hRgb, 0.7);
     }
-    if (customTheme.headerTextColor && isValidHex(customTheme.headerTextColor)) {
-      pdfOverride.headerText = hexToRgb(customTheme.headerTextColor);
+    const hTextHex = extractPrimaryHex(customTheme.headerTextColor);
+    if (hTextHex) {
+      pdfOverride.headerText = hexToRgb(hTextHex);
     }
-    if (customTheme.totalBgColor && isValidHex(customTheme.totalBgColor)) {
-      pdfOverride.totalBg = hexToRgb(customTheme.totalBgColor);
+    const tBgHex = extractPrimaryHex(customTheme.totalBgColor);
+    if (tBgHex) {
+      const tRgb = hexToRgb(tBgHex);
+      pdfOverride.totalBg = tRgb;
+      pdfOverride.totalText = getContrastTextColor(tRgb);
     }
-    if (customTheme.totalTextColor && isValidHex(customTheme.totalTextColor)) {
-      pdfOverride.totalText = hexToRgb(customTheme.totalTextColor);
+    const tTextHex = extractPrimaryHex(customTheme.totalTextColor);
+    if (tTextHex) {
+      pdfOverride.totalText = hexToRgb(tTextHex);
     }
-    if (customTheme.paperBgColor && isValidHex(customTheme.paperBgColor)) {
-      pdfOverride.pageBg = hexToRgb(customTheme.paperBgColor);
+    const pBgHex = extractPrimaryHex(customTheme.paperBgColor);
+    if (pBgHex) {
+      pdfOverride.pageBg = hexToRgb(pBgHex);
     }
-    if (customTheme.badgeBgColor && isValidHex(customTheme.badgeBgColor)) {
-      const bRgb = hexToRgb(customTheme.badgeBgColor);
+    const bBgHex = extractPrimaryHex(customTheme.badgeBgColor);
+    if (bBgHex) {
+      const bRgb = hexToRgb(bBgHex);
       pdfOverride.badgeBg = bRgb;
-      pdfOverride.badgeText = customTheme.badgeTextColor && isValidHex(customTheme.badgeTextColor)
-        ? hexToRgb(customTheme.badgeTextColor)
-        : getContrastTextColor(bRgb);
+      const bTextHex = extractPrimaryHex(customTheme.badgeTextColor);
+      pdfOverride.badgeText = bTextHex ? hexToRgb(bTextHex) : getContrastTextColor(bRgb);
     }
     if (customTheme.fontFamily) {
       if (customTheme.fontFamily === 'times') {

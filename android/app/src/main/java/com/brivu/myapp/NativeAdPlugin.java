@@ -38,9 +38,12 @@ import java.util.Map;
 @CapacitorPlugin(name = "NativeAdPlugin")
 public class NativeAdPlugin extends Plugin {
     private static final String TAG = "ADS";
-    private static final int MAX_NATIVE_RETRIES = 2;
-    private static final int MAX_AD_POOL_SIZE = 2;
-    private static final int MAX_HOLDER_COUNT = 6;
+    private static final int MAX_NATIVE_RETRIES = 5;
+    private static final int MAX_AD_POOL_SIZE = 5;
+    private static final int TARGET_WARM_POOL_SIZE = 3;
+    private static final int MAX_HOLDER_COUNT = 8;
+    private static final long AD_EXPIRATION_MS = 50L * 60L * 1000L;
+    private static final long LOADING_WATCHDOG_MS = 25000L;
 
     // Live Google AdMob Native Ad Unit ID
     public static final String LIVE_NATIVE_AD_UNIT_ID = "ca-app-pub-8582659585800553/6584166086";
@@ -84,11 +87,22 @@ public class NativeAdPlugin extends Plugin {
         }
     }
 
+    private static class PooledAd {
+        final NativeAd ad;
+        final long loadedAtMs;
+
+        PooledAd(NativeAd ad) {
+            this.ad = ad;
+            this.loadedAtMs = System.currentTimeMillis();
+        }
+    }
+
     private FrameLayout viewportClipContainer;
     private final Map<String, AdSlotHolder> slotHolders = new LinkedHashMap<>();
-    private final Deque<NativeAd> preloadedAdPool = new ArrayDeque<>();
+    private final Deque<PooledAd> preloadedAdPool = new ArrayDeque<>();
 
     private boolean isLoading = false;
+    private long loadingStartedAtMs = 0L;
     private boolean hasPendingNativeRequest = false;
     private String pendingNativeUnitId = LIVE_NATIVE_AD_UNIT_ID;
     private int nativeRetryCount = 0;
@@ -163,6 +177,73 @@ public class NativeAdPlugin extends Plugin {
         }
     }
 
+    private void pruneExpiredPooledAds() {
+        long now = System.currentTimeMillis();
+        Iterator<PooledAd> it = preloadedAdPool.iterator();
+        while (it.hasNext()) {
+            PooledAd entry = it.next();
+            if (entry == null || entry.ad == null || (now - entry.loadedAtMs) > AD_EXPIRATION_MS) {
+                if (entry != null && entry.ad != null) {
+                    try {
+                        entry.ad.destroy();
+                    } catch (Exception ignored) {}
+                }
+                it.remove();
+            }
+        }
+    }
+
+    private NativeAd pollValidPooledAd() {
+        pruneExpiredPooledAds();
+        PooledAd entry = preloadedAdPool.pollFirst();
+        return entry != null ? entry.ad : null;
+    }
+
+    private boolean isActivelyLoading() {
+        if (!isLoading) return false;
+        if (loadingStartedAtMs > 0L && (System.currentTimeMillis() - loadingStartedAtMs) > LOADING_WATCHDOG_MS) {
+            Log.w(TAG, "Resetting stale Native Ad loading state after watchdog timeout");
+            isLoading = false;
+            loadingStartedAtMs = 0L;
+            return false;
+        }
+        return true;
+    }
+
+    private void replenishAdPoolIfNeeded() {
+        Activity activity = getActivity();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        if (!MainActivity.isInitialized()) {
+            hasPendingNativeRequest = true;
+            return;
+        }
+
+        pruneExpiredPooledAds();
+
+        // Bind any available pooled ad to waiting visible holders first
+        boolean boundAny = false;
+        while (!preloadedAdPool.isEmpty()) {
+            AdSlotHolder waiting = findNextUnfilledHolder();
+            if (waiting == null) break;
+            NativeAd ad = pollValidPooledAd();
+            if (ad == null) break;
+            bindNativeAdToHolder(waiting, ad);
+            applySlotPosition(waiting);
+            boundAny = true;
+        }
+        if (boundAny) {
+            pruneExpiredPooledAds();
+        }
+
+        if (!isActivelyLoading() && (preloadedAdPool.size() < TARGET_WARM_POOL_SIZE || hasUnfilledVisibleHolder())) {
+            String unitId = (pendingNativeUnitId != null && !pendingNativeUnitId.isEmpty())
+                ? pendingNativeUnitId
+                : getNativeAdUnitId();
+            hasPendingNativeRequest = false;
+            requestAdMobNativeAd(unitId, false);
+        }
+    }
+
     /**
      * Ensures at least one native ad is preloaded in pool when initialized.
      */
@@ -171,13 +252,7 @@ public class NativeAdPlugin extends Plugin {
             hasPendingNativeRequest = true;
             return;
         }
-        if (preloadedAdPool.isEmpty() && !isLoading) {
-            String unitId = (pendingNativeUnitId != null && !pendingNativeUnitId.isEmpty())
-                ? pendingNativeUnitId
-                : getNativeAdUnitId();
-            hasPendingNativeRequest = false;
-            requestAdMobNativeAd(unitId, false);
-        }
+        mainHandler.post(this::replenishAdPoolIfNeeded);
     }
 
     /**
@@ -201,11 +276,13 @@ public class NativeAdPlugin extends Plugin {
 
         activity.runOnUiThread(() -> {
             if (activity.isFinishing() || activity.isDestroyed()) return;
-            if (isLoading) return;
+            if (isActivelyLoading()) return;
+            pruneExpiredPooledAds();
             if (preloadedAdPool.size() >= MAX_AD_POOL_SIZE && !hasUnfilledVisibleHolder()) {
                 return;
             }
             isLoading = true;
+            loadingStartedAtMs = System.currentTimeMillis();
             hasPendingNativeRequest = false;
             if (!isRetry) {
                 nativeRetryCount = 0;
@@ -218,6 +295,7 @@ public class NativeAdPlugin extends Plugin {
                     @Override
                     public void onNativeAdLoaded(@NonNull NativeAd nativeAd) {
                         isLoading = false;
+                        loadingStartedAtMs = 0L;
                         nativeRetryCount = 0;
                         Log.d(TAG, "onAdLoaded: Native Ad loaded successfully (isDebug=false). AdUnitId: "
                             + finalUnitId + ", Headline: " + nativeAd.getHeadline());
@@ -234,16 +312,17 @@ public class NativeAdPlugin extends Plugin {
                             applySlotPosition(target);
                         } else {
                             // Keep in preloaded pool for instant attachment to upcoming slots
+                            pruneExpiredPooledAds();
                             while (preloadedAdPool.size() >= MAX_AD_POOL_SIZE) {
-                                NativeAd oldest = preloadedAdPool.pollFirst();
-                                if (oldest != null) oldest.destroy();
+                                PooledAd oldest = preloadedAdPool.pollFirst();
+                                if (oldest != null && oldest.ad != null) oldest.ad.destroy();
                             }
-                            preloadedAdPool.offerLast(nativeAd);
+                            preloadedAdPool.offerLast(new PooledAd(nativeAd));
                         }
 
-                        // Warm one extra ad in pool if another unfilled visible slot needs one
-                        if (hasUnfilledVisibleHolder() && preloadedAdPool.isEmpty()) {
-                            requestAdMobNativeAd(finalUnitId, false);
+                        // Warm pool asynchronously to TARGET_WARM_POOL_SIZE for instant screen transitions
+                        if (preloadedAdPool.size() < TARGET_WARM_POOL_SIZE || hasUnfilledVisibleHolder()) {
+                            mainHandler.postDelayed(() -> replenishAdPoolIfNeeded(), 250L);
                         }
                     }
                 })
@@ -251,6 +330,7 @@ public class NativeAdPlugin extends Plugin {
                     @Override
                     public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
                         isLoading = false;
+                        loadingStartedAtMs = 0L;
                         Log.d(TAG, "onAdFailedToLoad: Native Ad failed. AdUnitId: " + finalUnitId
                             + ", ErrorCode: " + loadAdError.getCode()
                             + ", Domain: " + loadAdError.getDomain()
@@ -258,11 +338,12 @@ public class NativeAdPlugin extends Plugin {
 
                         if (nativeRetryCount < MAX_NATIVE_RETRIES) {
                             nativeRetryCount++;
-                            long delayMs = 2500L * nativeRetryCount;
+                            long[] delays = new long[]{2000L, 4000L, 8000L, 15000L, 25000L};
+                            long delayMs = delays[Math.min(nativeRetryCount - 1, delays.length - 1)];
                             mainHandler.postDelayed(() -> {
                                 Activity act = getActivity();
                                 if (act != null && !act.isFinishing() && !act.isDestroyed()
-                                    && (preloadedAdPool.isEmpty() || hasUnfilledVisibleHolder())) {
+                                    && (preloadedAdPool.size() < TARGET_WARM_POOL_SIZE || hasUnfilledVisibleHolder())) {
                                     requestAdMobNativeAd(finalUnitId, true);
                                 }
                             }, delayMs);
@@ -337,6 +418,13 @@ public class NativeAdPlugin extends Plugin {
     private AdSlotHolder getOrCreateHolder(String slotId) {
         AdSlotHolder holder = slotHolders.get(slotId);
         if (holder != null) {
+            if (holder.nativeAd == null) {
+                NativeAd pooled = pollValidPooledAd();
+                if (pooled != null) {
+                    bindNativeAdToHolder(holder, pooled);
+                }
+                replenishAdPoolIfNeeded();
+            }
             return holder;
         }
         evictOldestHiddenHolderIfNeeded();
@@ -370,15 +458,11 @@ public class NativeAdPlugin extends Plugin {
         slotHolders.put(slotId, holder);
 
         // Immediately attach a preloaded NativeAd if available in pool
-        NativeAd pooled = preloadedAdPool.pollFirst();
+        NativeAd pooled = pollValidPooledAd();
         if (pooled != null) {
             bindNativeAdToHolder(holder, pooled);
-            if (preloadedAdPool.isEmpty() && !isLoading) {
-                requestAdMobNativeAd(getNativeAdUnitId(), false);
-            }
-        } else if (!isLoading) {
-            requestAdMobNativeAd(getNativeAdUnitId(), false);
         }
+        replenishAdPoolIfNeeded();
 
         return holder;
     }
@@ -717,6 +801,8 @@ public class NativeAdPlugin extends Plugin {
             if (!anyVisible && viewportClipContainer != null) {
                 viewportClipContainer.setVisibility(View.GONE);
             }
+
+            replenishAdPoolIfNeeded();
         });
     }
 
@@ -782,6 +868,16 @@ public class NativeAdPlugin extends Plugin {
             holder.visible = true;
             holder.lastActiveAt = System.currentTimeMillis();
 
+            if (holder.nativeAd == null) {
+                NativeAd pooled = pollValidPooledAd();
+                if (pooled != null) {
+                    bindNativeAdToHolder(holder, pooled);
+                } else {
+                    nativeRetryCount = 0;
+                }
+                replenishAdPoolIfNeeded();
+            }
+
             applySlotPosition(holder);
         });
 
@@ -810,11 +906,18 @@ public class NativeAdPlugin extends Plugin {
         activity.runOnUiThread(() -> {
             for (AdSlotHolder h : slotHolders.values()) {
                 if (h.visible) {
+                    if (h.nativeAd == null) {
+                        NativeAd pooled = pollValidPooledAd();
+                        if (pooled != null) {
+                            bindNativeAdToHolder(h, pooled);
+                        }
+                    }
                     applySlotPosition(h);
                 }
             }
-            if (preloadedAdPool.isEmpty() && !isLoading) {
-                requestAdMobNativeAd(getNativeAdUnitId(), false);
+            if (hasUnfilledVisibleHolder() || preloadedAdPool.size() < TARGET_WARM_POOL_SIZE) {
+                nativeRetryCount = 0;
+                replenishAdPoolIfNeeded();
             }
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -834,16 +937,27 @@ public class NativeAdPlugin extends Plugin {
 
     @PluginMethod
     public void isAdLoaded(PluginCall call) {
-        boolean hasLoaded = !preloadedAdPool.isEmpty();
-        boolean anyVisible = false;
-        for (AdSlotHolder h : slotHolders.values()) {
-            if (h.nativeAd != null) hasLoaded = true;
-            if (h.visible && h.nativeAd != null) anyVisible = true;
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject ret = new JSObject();
+            ret.put("loaded", false);
+            ret.put("visible", false);
+            call.resolve(ret);
+            return;
         }
-        JSObject ret = new JSObject();
-        ret.put("loaded", hasLoaded);
-        ret.put("visible", anyVisible);
-        call.resolve(ret);
+        activity.runOnUiThread(() -> {
+            pruneExpiredPooledAds();
+            boolean hasLoaded = !preloadedAdPool.isEmpty();
+            boolean anyVisible = false;
+            for (AdSlotHolder h : slotHolders.values()) {
+                if (h.nativeAd != null) hasLoaded = true;
+                if (h.visible && h.nativeAd != null) anyVisible = true;
+            }
+            JSObject ret = new JSObject();
+            ret.put("loaded", hasLoaded);
+            ret.put("visible", anyVisible);
+            call.resolve(ret);
+        });
     }
 
     @PluginMethod
@@ -931,8 +1045,8 @@ public class NativeAdPlugin extends Plugin {
             it.remove();
         }
         while (!preloadedAdPool.isEmpty()) {
-            NativeAd ad = preloadedAdPool.pollFirst();
-            if (ad != null) ad.destroy();
+            PooledAd entry = preloadedAdPool.pollFirst();
+            if (entry != null && entry.ad != null) entry.ad.destroy();
         }
         super.handleOnDestroy();
     }

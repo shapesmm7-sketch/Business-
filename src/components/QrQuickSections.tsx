@@ -166,6 +166,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     configuredWorkerUrl.includes('localhost') ||
     configuredWorkerUrl.includes('127.0.0.1') ||
     configuredWorkerUrl.includes('brivu.shapesmm7.workers.dev') ||
+    configuredWorkerUrl.includes('brivu.shapesmm.com') ||
     configuredWorkerUrl.includes('.workers.dev')
       ? PUBLIC_QR_BASE_URL
       : configuredWorkerUrl
@@ -185,7 +186,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     const expectedKey = hasAuthenticatedEmail
       ? `users/${encodeURIComponent(resolvedAuthEmail)}/menu/menu_main.webp`
       : `menu-public/${cleanMenuOwnerKey}/menu_main.webp`;
-    return `${workerBaseUrl}/api/files/${encodeURIComponent(expectedKey)}`;
+    return `${workerBaseUrl}/api/files/${expectedKey}`;
   }, [workerBaseUrl, hasAuthenticatedEmail, resolvedAuthEmail, cleanMenuOwnerKey]);
 
   const hostedMenuImageUrl = resolvePublicImageUrl(activeMenuImage?.url);

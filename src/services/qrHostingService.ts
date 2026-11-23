@@ -24,6 +24,7 @@ export class QRHostingService {
         url.includes('localhost') ||
         url.includes('127.0.0.1') ||
         url.includes('brivu.shapesmm7.workers.dev') ||
+        url.includes('brivu.shapesmm.com') ||
         url.includes('.workers.dev')
       ) {
         url = PUBLIC_QR_BASE_URL;

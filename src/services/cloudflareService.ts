@@ -51,7 +51,7 @@ export function isAllowedCloudflareR2Upload(
 }
 
 export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
-  workerUrl: 'https://brivu.shapesmm7.workers.dev',
+  workerUrl: 'https://brivu.shapesmm.com',
   apiKey: '',
   autoSaveFiles: true,
   autoSyncData: true,
@@ -60,9 +60,9 @@ export const DEFAULT_CLOUDFLARE_CONFIG: CloudflareConfig = {
 };
 
 function normalizeUrl(url: string): string {
-  if (!url || url.includes('localhost') || url.includes('127.0.0.1')) return 'https://brivu.shapesmm7.workers.dev';
+  if (!url || url.includes('localhost') || url.includes('127.0.0.1')) return 'https://brivu.shapesmm.com';
   let trimmed = url.trim();
-  if (!trimmed || trimmed.includes('localhost') || trimmed.includes('127.0.0.1')) return 'https://brivu.shapesmm7.workers.dev';
+  if (!trimmed || trimmed.includes('localhost') || trimmed.includes('127.0.0.1')) return 'https://brivu.shapesmm.com';
   // Strip trailing slash
   if (trimmed.endsWith('/')) {
     trimmed = trimmed.slice(0, -1);

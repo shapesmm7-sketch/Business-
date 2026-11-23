@@ -3,6 +3,7 @@ import {
   AppSettings,
   BusinessProfile,
   Receipt,
+  ReceiptTemplateId,
   ReceiptItem,
   InventoryProduct,
   InventorySale,
@@ -477,6 +478,81 @@ export const StorageService = {
     return this.saveSettings(settings);
   },
 
+  applyTemplateToDocuments(
+    templateId: ReceiptTemplateId,
+    docTypeFilter?: 'receipt' | 'invoice' | 'quotation'
+  ): number {
+    const rawReceipts = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
+    let updatedCount = 0;
+    const nextReceipts = rawReceipts.map((r) => {
+      if (!r || typeof r !== 'object') return r;
+      const docType = r.documentType || 'receipt';
+      if (docTypeFilter && docType !== docTypeFilter) return r;
+      updatedCount++;
+      return {
+        ...r,
+        template: templateId,
+      };
+    });
+    if (updatedCount > 0) {
+      writeToStorage(STORAGE_KEYS.RECEIPTS, nextReceipts);
+      CloudflareService.syncAllToCloudflare().catch(() => {});
+    }
+    return updatedCount;
+  },
+
+  syncBrandColorsToExistingDocuments(updatedProfile: BusinessProfile): void {
+    const rawReceipts = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
+    if (!Array.isArray(rawReceipts) || rawReceipts.length === 0) return;
+
+    const updatedReceipts = rawReceipts.map((r) => {
+      if (!r || typeof r !== 'object') return r;
+      const nextSnapshot: BusinessProfile = {
+        ...(r.businessSnapshot || updatedProfile),
+        name: updatedProfile.name || r.businessSnapshot?.name || '',
+        description: updatedProfile.description ?? r.businessSnapshot?.description ?? '',
+        phone: updatedProfile.phone || r.businessSnapshot?.phone || '',
+        whatsapp: updatedProfile.whatsapp || r.businessSnapshot?.whatsapp || '',
+        email: updatedProfile.email || r.businessSnapshot?.email || '',
+        address: updatedProfile.address || r.businessSnapshot?.address || '',
+        taxNumber: updatedProfile.taxNumber || r.businessSnapshot?.taxNumber || '',
+        website: updatedProfile.website || r.businessSnapshot?.website || '',
+        currency: r.businessSnapshot?.currency || updatedProfile.currency || 'UGX',
+        language: updatedProfile.language || r.businessSnapshot?.language,
+        customFooter: updatedProfile.customFooter ?? r.businessSnapshot?.customFooter ?? '',
+        logo: updatedProfile.logo || r.businessSnapshot?.logo,
+        signature: updatedProfile.signature ?? r.businessSnapshot?.signature,
+        accentColor: updatedProfile.accentColor || undefined,
+        headerBgColor: updatedProfile.headerBgColor || undefined,
+        headerTextColor: updatedProfile.headerTextColor || undefined,
+        totalBgColor: updatedProfile.totalBgColor || undefined,
+        totalTextColor: updatedProfile.totalTextColor || undefined,
+        paperBgColor: updatedProfile.paperBgColor || undefined,
+      };
+
+      const cleanedCustomTheme = r.customTheme
+        ? {
+            ...r.customTheme,
+            accentColor: undefined,
+            headerBgColor: undefined,
+            headerTextColor: undefined,
+            totalBgColor: undefined,
+            totalTextColor: undefined,
+            paperBgColor: undefined,
+          }
+        : undefined;
+
+      return {
+        ...r,
+        accentColor: undefined,
+        customTheme: cleanedCustomTheme,
+        businessSnapshot: nextSnapshot,
+      };
+    });
+
+    writeToStorage(STORAGE_KEYS.RECEIPTS, updatedReceipts);
+  },
+
   getDeletedReceiptIds(): string[] {
     return readFromStorage<string[]>(STORAGE_KEYS.DELETED_RECEIPTS, []);
   },
@@ -883,13 +959,63 @@ export const StorageService = {
     if (!backupData || typeof backupData !== 'object') {
       return { success: false, message: 'Invalid backup file format' };
     }
-    const incomingProducts = Array.isArray(backupData.inventoryProducts)
-      ? backupData.inventoryProducts
-      : (Array.isArray((backupData as any).products) ? (backupData as any).products : null);
+
+    const collectArrays = (...candidates: any[]): any[] | null => {
+      const nonEmpty = candidates.filter((c) => Array.isArray(c) && c.length > 0);
+      if (nonEmpty.length > 0) {
+        const merged: any[] = [];
+        for (const arr of nonEmpty) {
+          merged.push(...arr);
+        }
+        return merged;
+      }
+      const anyArr = candidates.find((c) => Array.isArray(c));
+      return anyArr ? [] : null;
+    };
+
+    const rawAny = backupData as any;
+    const incomingProducts = collectArrays(
+      rawAny.inventoryProducts,
+      rawAny.products,
+      rawAny.items,
+      rawAny.stock,
+      rawAny.inventory
+    );
+
+    const incomingReceipts = collectArrays(
+      rawAny.receipts,
+      rawAny.invoices,
+      rawAny.quotations,
+      rawAny.documents
+    );
+
+    const incomingCustomers = collectArrays(rawAny.customers, rawAny.clients);
+    const incomingWorkers = collectArrays(rawAny.workers, rawAny.staff, rawAny.employees);
+
+    const hasProfileContent = Boolean(
+      backupData.profile &&
+        typeof backupData.profile === 'object' &&
+        (
+          (backupData.profile.name && String(backupData.profile.name).trim() !== '') ||
+          (backupData.profile.phone && String(backupData.profile.phone).trim() !== '') ||
+          (backupData.profile.email && String(backupData.profile.email).trim() !== '') ||
+          (backupData.profile.address && String(backupData.profile.address).trim() !== '') ||
+          (backupData.profile.taxNumber && String(backupData.profile.taxNumber).trim() !== '') ||
+          (backupData.profile.website && String(backupData.profile.website).trim() !== '') ||
+          backupData.profile.logo ||
+          backupData.profile.signature ||
+          (backupData.profile as any).logoBackupData ||
+          (backupData.profile as any).signatureBackupData ||
+          backupData.profile.accentColor ||
+          backupData.profile.headerBgColor ||
+          backupData.profile.totalBgColor ||
+          backupData.profile.paperBgColor
+        )
+    );
 
     const hasAnyContent =
-      (Array.isArray(backupData.receipts) && backupData.receipts.length > 0) ||
-      (Array.isArray(incomingProducts) && incomingProducts.length > 0) ||
+      (incomingReceipts && incomingReceipts.length > 0) ||
+      (incomingProducts && incomingProducts.length > 0) ||
       (Array.isArray(backupData.inventorySales) && backupData.inventorySales.length > 0) ||
       (Array.isArray(backupData.inventoryExpenses) && backupData.inventoryExpenses.length > 0) ||
       (Array.isArray(backupData.inventoryDebts) && backupData.inventoryDebts.length > 0) ||
@@ -901,21 +1027,21 @@ export const StorageService = {
       (Array.isArray(backupData.staffSales) && backupData.staffSales.length > 0) ||
       (Array.isArray(backupData.staffIncidents) && backupData.staffIncidents.length > 0) ||
       (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) ||
-      (Array.isArray(backupData.customers) && backupData.customers.length > 0) ||
+      (incomingCustomers && incomingCustomers.length > 0) ||
       (Array.isArray(backupData.agents) && backupData.agents.length > 0) ||
-      (Array.isArray(backupData.workers) && backupData.workers.length > 0) ||
+      (incomingWorkers && incomingWorkers.length > 0) ||
       (Array.isArray(backupData.shoppingListItems) && backupData.shoppingListItems.length > 0) ||
       (Array.isArray(backupData.websitesQrItems) && backupData.websitesQrItems.length > 0) ||
       (Array.isArray(backupData.socialsQrItems) && backupData.socialsQrItems.length > 0) ||
       (Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0) ||
       (Array.isArray((backupData as any).files) && (backupData as any).files.length > 0) ||
-      Boolean(backupData.profile);
+      hasProfileContent;
     if (!hasAnyContent) {
-      return { success: false, message: 'Backup file is empty or missing data' };
+      return { success: false, message: 'This backup file has 0 records (empty snapshot).' };
     }
 
     try {
-      if (backupData.profile) {
+      if (backupData.profile && hasProfileContent) {
         const {
           logoBackupData,
           signatureBackupData,
@@ -977,10 +1103,10 @@ export const StorageService = {
 
       // 3. Receipts, Invoices & Quotations
       // Preserve ALL existing local receipts/invoices/quotations created before restoring (in BOTH Replace & Merge modes)
-      if (Array.isArray(backupData.receipts)) {
+      if (incomingReceipts) {
         const currentDeleted = this.getDeletedReceiptIds();
         const incomingTombstonesToRemove = new Set<string>();
-        backupData.receipts.forEach((r) => {
+        incomingReceipts.forEach((r) => {
           if (!r) return;
           if (r.id) incomingTombstonesToRemove.add(String(r.id).trim().toLowerCase());
           if (r.receiptNumber) incomingTombstonesToRemove.add(String(r.receiptNumber).trim().toLowerCase());
@@ -1007,19 +1133,26 @@ export const StorageService = {
           }
         });
 
-        backupData.receipts.forEach((r, idx) => {
-          if (!r || !r.id || String(r.id).startsWith('sample-')) return;
-          const rid = String(r.id);
+        incomingReceipts.forEach((r, idx) => {
+          if (!r || typeof r !== 'object') return;
+          if (r.id && String(r.id).startsWith('sample-')) return;
+          const rid = String(
+            r.id ||
+              (r.receiptNumber
+                ? `rec-restored-${String(r.receiptNumber).trim()}-${idx}`
+                : `rec-restored-${idx}-${Date.now()}`)
+          );
+          const normalizedRec = { ...r, id: rid };
           const prev = receiptMap.get(rid);
           if (!prev) {
-            receiptMap.set(rid, r);
-          } else if (!isSameReceiptRecord(prev, r)) {
+            receiptMap.set(rid, normalizedRec);
+          } else if (!isSameReceiptRecord(prev, normalizedRec)) {
             // Same ID but different receipt details: preserve the local receipt AND keep the restored receipt under a unique ID
             const uniqueRestoredId = `${rid}-restored-${idx}-${Math.random().toString(36).slice(2, 6)}`;
-            receiptMap.set(uniqueRestoredId, { ...r, id: uniqueRestoredId });
+            receiptMap.set(uniqueRestoredId, { ...normalizedRec, id: uniqueRestoredId });
           } else if (replaceExisting) {
             // Same receipt in Replace Mode: update with backup copy
-            receiptMap.set(rid, r);
+            receiptMap.set(rid, normalizedRec);
           }
           // Merge Mode + same receipt: keep existing local copy intact
         });
@@ -1230,7 +1363,7 @@ export const StorageService = {
       }
 
       // 10. Customers / Clients
-      if (Array.isArray(backupData.customers)) {
+      if (incomingCustomers) {
         const normalizeCustomer = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
           const incomingPic = pickBestImage(rest.profilePic || photoUrl, profilePicBackupData);
@@ -1250,7 +1383,7 @@ export const StorageService = {
         const existing = this.getCustomers();
         const customerMap = new Map<string, any>();
         existing.forEach((c) => { if (c && c.id) customerMap.set(String(c.id), c); });
-        backupData.customers.forEach((c: any) => {
+        incomingCustomers.forEach((c: any) => {
           if (c && c.id) {
             const prev = customerMap.get(String(c.id));
             customerMap.set(String(c.id), normalizeCustomer(c, prev, !replaceExisting));
@@ -1296,7 +1429,7 @@ export const StorageService = {
       }
 
       // 12. Workers / Staff
-      if (Array.isArray(backupData.workers)) {
+      if (incomingWorkers) {
         const normalizeWorker = (raw: any, existing?: any, preferExisting = false) => {
           const { profilePicBackupData, photoUrl, ...rest } = raw || {};
           const incomingPic = pickBestImage(rest.profilePic || photoUrl, profilePicBackupData);
@@ -1316,7 +1449,7 @@ export const StorageService = {
         const existing = this.getWorkers();
         const workerMap = new Map<string, any>();
         existing.forEach((w) => { if (w && w.id) workerMap.set(String(w.id), w); });
-        backupData.workers.forEach((w: any) => {
+        incomingWorkers.forEach((w: any) => {
           if (w && w.id) {
             const prev = workerMap.get(String(w.id));
             workerMap.set(String(w.id), normalizeWorker(w, prev, !replaceExisting));
@@ -1558,7 +1691,7 @@ export const StorageService = {
           mergeByIdPreservingLocalNonMatching(this.getEventsQrItems(), incomingEvtItems, replaceExisting)
         );
       }
-      const recCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
+      const recCount = Array.isArray(incomingReceipts) ? incomingReceipts.length : 0;
       const prodCount = Array.isArray(incomingProducts) ? incomingProducts.length : 0;
       return {
         success: true,
@@ -2906,7 +3039,7 @@ export const StorageService = {
 
   getCloudflareConfig(): CloudflareConfig {
     const defaultVal: CloudflareConfig = {
-      workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || 'https://brivu.shapesmm7.workers.dev',
+      workerUrl: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLOUDFLARE_WORKER_URL) || 'https://brivu.shapesmm.com',
       apiKey: '',
       autoSaveFiles: true,
       autoSyncData: true,
@@ -3456,9 +3589,13 @@ export const StorageService = {
       window.dispatchEvent(new Event('storage'));
     };
 
-    const rawIncomingProducts = Array.isArray(backupData?.inventoryProducts)
-      ? backupData.inventoryProducts
-      : (Array.isArray(backupData?.products) ? backupData.products : []);
+    const rawIncomingProducts = [
+      ...(Array.isArray(backupData?.inventoryProducts) ? backupData.inventoryProducts : []),
+      ...(Array.isArray(backupData?.products) ? backupData.products : []),
+      ...(Array.isArray(backupData?.items) ? backupData.items : []),
+      ...(Array.isArray(backupData?.stock) ? backupData.stock : []),
+      ...(Array.isArray(backupData?.inventory) ? backupData.inventory : []),
+    ];
     const prodBackupMap = new Map<string, string>();
     rawIncomingProducts.forEach((rp: any, idx: number) => {
       if (!rp || typeof rp !== 'object') return;
@@ -3480,8 +3617,8 @@ export const StorageService = {
         inventoryChanged = true;
       } else if (backupImg && prod.image && !prod.image.startsWith('data:image/')) {
         productVerifyIndices.push(i);
-      } else if (typeof prod.image === 'string' && prod.image.includes('brivu.shapesmm7.workers.dev')) {
-        products[i] = { ...prod, image: prod.image.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, workerBase) };
+      } else if (typeof prod.image === 'string' && (prod.image.includes('brivu.shapesmm7.workers.dev') || prod.image.includes('brivu.shapesmm.com'))) {
+        products[i] = { ...prod, image: prod.image.replace(/https?:\/\/brivu\.shapesmm7\.workers\.dev/gi, workerBase).replace(/https?:\/\/brivu\.shapesmm\.com/gi, workerBase) };
         inventoryChanged = true;
       }
     }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Check,
   ArrowLeft,
@@ -29,10 +29,13 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
   business: propBusiness,
   mode,
 }) => {
-  const [business] = useState<BusinessProfile>(
-    propBusiness || StorageService.getProfile()
-  );
+  const business = propBusiness || StorageService.getProfile();
   const [selectedDefault, setSelectedDefault] = useState<ReceiptTemplateId>(currentDefault);
+
+  useEffect(() => {
+    setSelectedDefault(currentDefault);
+  }, [currentDefault]);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [previewModalId, setPreviewModalId] = useState<ReceiptTemplateId | null>(null);
   const [customizingTemplateId, setCustomizingTemplateId] = useState<ReceiptTemplateId | null>(null);

@@ -7,8 +7,14 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Configure pdfjs worker for converting jsPDF documents directly to PNG photo canvases
 if (typeof window !== 'undefined') {
   try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).href;
   } catch (e) {
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
+    } catch {}
     console.warn('pdfjs worker initialization note:', e);
   }
 }
@@ -16,11 +22,169 @@ if (typeof window !== 'undefined') {
 import { Receipt, ReceiptTemplateId, TemplateCustomization, BusinessProfile } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
-import { resolveEffectiveTheme } from '../utils/colors';
+import { resolveEffectiveTheme, extractPrimaryHex } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
 import { saveJsPdf, saveFile, shareContent, ensureStoragePermission, SaveFileResult } from './fileSaver';
 import { ReceiptLayoutRenderer } from '../components/ReceiptLayoutRenderer';
+
+const UNSUPPORTED_CSS_COLOR_RE = /(^|[^a-zA-Z0-9_-])(oklch|oklab|color-mix|lab|lch|color)\(/gi;
+const GRADIENT_COLORSPACE_HINT_RE = /\s+in\s+(?:oklab|oklch|srgb(?:-linear)?|hsl|hwb|lab|lch)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?(?=\s*,)/gi;
+const GRADIENT_LEADING_COLORSPACE_RE = /(\(\s*)in\s+(?:oklab|oklch|srgb(?:-linear)?|hsl|hwb|lab|lch)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?\s*,/gi;
+
+function resolveCssColorExpr(
+  expr: string,
+  probe: HTMLElement,
+  win: Window,
+  cache: Map<string, string>
+): string {
+  const cached = cache.get(expr);
+  if (cached !== undefined) return cached;
+
+  let resolved = 'rgba(0, 0, 0, 0)';
+  try {
+    probe.style.color = '';
+    probe.style.color = expr;
+    if (probe.style.color) {
+      const computed = win.getComputedStyle(probe).color;
+      if (computed && /^rgba?\(/i.test(computed)) {
+        resolved = computed;
+      }
+    }
+  } catch {}
+  cache.set(expr, resolved);
+  return resolved;
+}
+
+function replaceUnsupportedColorFunctions(
+  cssText: string,
+  probe: HTMLElement,
+  win: Window,
+  cache: Map<string, string>
+): string {
+  if (!cssText) return cssText;
+
+  let out = cssText
+    .replace(GRADIENT_COLORSPACE_HINT_RE, '')
+    .replace(GRADIENT_LEADING_COLORSPACE_RE, '$1');
+
+  let result = '';
+  let lastIndex = 0;
+  UNSUPPORTED_CSS_COLOR_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = UNSUPPORTED_CSS_COLOR_RE.exec(out)) !== null) {
+    const prefix = match[1] || '';
+    const fnStart = match.index + prefix.length;
+    const openParenIdx = out.indexOf('(', fnStart);
+    if (openParenIdx === -1) break;
+
+    let depth = 0;
+    let endIdx = -1;
+    for (let i = openParenIdx; i < out.length; i++) {
+      const ch = out[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') {
+        depth--;
+        if (depth === 0) {
+          endIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (endIdx === -1) break;
+
+    const fullExpr = out.slice(fnStart, endIdx + 1);
+    const replacement = resolveCssColorExpr(fullExpr, probe, win, cache);
+    result += out.slice(lastIndex, fnStart) + replacement;
+    lastIndex = endIdx + 1;
+    UNSUPPORTED_CSS_COLOR_RE.lastIndex = lastIndex;
+  }
+
+  result += out.slice(lastIndex);
+  return result;
+}
+
+function sanitizeClonedStylesForHtml2Canvas(clonedDoc: Document, clonedElement: HTMLElement): void {
+  const win = clonedDoc.defaultView || window;
+  try {
+    clonedDoc.documentElement.classList.remove('dark');
+    clonedDoc.body.classList.remove('dark');
+  } catch {}
+
+  const probe = clonedDoc.createElement('span');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;';
+  clonedElement.appendChild(probe);
+
+  const cache = new Map<string, string>();
+  const needsSanitize = (s: string | null | undefined): boolean =>
+    Boolean(s && /(oklch|oklab|color-mix|\blab\(|\blch\(|\bcolor\(|\bin\s+(?:oklab|oklch|srgb|hsl|hwb|lab|lch))/i.test(s));
+
+  try {
+    // 1. Convert accessible stylesheet <link> tags containing modern color spaces into sanitized inline <style>
+    const linkEls = Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]')) as HTMLLinkElement[];
+    for (const linkEl of linkEls) {
+      try {
+        const sheet = linkEl.sheet as CSSStyleSheet | null;
+        if (!sheet) continue;
+        const rules = sheet.cssRules;
+        if (!rules || rules.length === 0) continue;
+        let rawCss = '';
+        for (let i = 0; i < rules.length; i++) {
+          rawCss += rules[i].cssText + '\n';
+        }
+        if (needsSanitize(rawCss)) {
+          const styleEl = clonedDoc.createElement('style');
+          styleEl.textContent = replaceUnsupportedColorFunctions(rawCss, probe, win, cache);
+          linkEl.parentNode?.insertBefore(styleEl, linkEl);
+          linkEl.parentNode?.removeChild(linkEl);
+        }
+      } catch {
+        // Cross-origin stylesheet (e.g., Google Fonts) - ignore safely
+      }
+    }
+
+    // 2. Sanitize all inline <style> blocks
+    const styleEls = Array.from(clonedDoc.querySelectorAll('style'));
+    for (const styleEl of styleEls) {
+      const txt = styleEl.textContent;
+      if (needsSanitize(txt)) {
+        styleEl.textContent = replaceUnsupportedColorFunctions(txt || '', probe, win, cache);
+      }
+    }
+
+    // 3. Sanitize inline styles and gradient-clipped text on clonedElement subtree
+    const nodes: HTMLElement[] = [
+      clonedElement,
+      ...(Array.from(clonedElement.querySelectorAll('*')) as HTMLElement[]),
+    ];
+    for (const el of nodes) {
+      const inlineStyle = el.getAttribute('style');
+      if (inlineStyle && needsSanitize(inlineStyle)) {
+        el.setAttribute('style', replaceUnsupportedColorFunctions(inlineStyle, probe, win, cache));
+      }
+      try {
+        const cs = win.getComputedStyle(el);
+        const textFill = (el.style as any).webkitTextFillColor || (cs as any).webkitTextFillColor;
+        const bgImg = el.style.backgroundImage || cs.backgroundImage;
+        if (textFill === 'transparent' && bgImg && bgImg.includes('gradient')) {
+          const fallbackHex = extractPrimaryHex(bgImg) || '#0f172a';
+          (el.style as any).webkitTextFillColor = fallbackHex;
+          (el.style as any).webkitBackgroundClip = 'border-box';
+          el.style.backgroundClip = 'border-box';
+          el.style.backgroundImage = 'none';
+          el.style.backgroundColor = 'transparent';
+          el.style.color = fallbackHex;
+        }
+      } catch {}
+    }
+  } finally {
+    if (probe.parentNode) {
+      probe.parentNode.removeChild(probe);
+    }
+  }
+}
 
 /**
  * Resolves effective business profile by overlaying latest profile onto snapshot
@@ -529,10 +693,11 @@ export const PdfGenerator = {
           nonReturnable: receipt.nonReturnable === true || (receipt.nonReturnable === undefined && !receipt.nonRefundable),
           nonRefundable: Boolean(receipt.nonRefundable),
           currency: currency,
-          template: receipt.template || 'modern',
+          template: (receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId,
           accentColor: resolvedBiz.accentColor || receipt.accentColor,
           customTheme: (() => {
-            const saved = StorageService.getCustomTemplate(receipt.template || 'modern');
+            const effectiveTplId = (receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId;
+            const saved = StorageService.getCustomTemplate(effectiveTplId);
             const rawBadge = receipt.customTheme?.badgeText || saved?.badgeText;
             const resolvedBadge = isQuotation
               ? !rawBadge || rawBadge.toUpperCase() === 'RECEIPT' || rawBadge.toUpperCase() === 'INVOICE'
@@ -581,12 +746,20 @@ export const PdfGenerator = {
         logging: false,
         windowWidth: 1200,
         windowHeight: 1600,
-        onclone: (_clonedDoc, clonedElement) => {
+        onclone: (clonedDoc, clonedElement) => {
+          if (clonedElement.parentElement && clonedElement.parentElement.style.left === '-9999px') {
+            clonedElement.parentElement.style.position = 'static';
+            clonedElement.parentElement.style.left = '0px';
+            clonedElement.parentElement.style.top = '0px';
+            clonedElement.parentElement.style.opacity = '1';
+            clonedElement.parentElement.style.visibility = 'visible';
+          }
           clonedElement.style.position = 'static';
           clonedElement.style.left = '0px';
           clonedElement.style.top = '0px';
           clonedElement.style.opacity = '1';
           clonedElement.style.visibility = 'visible';
+          sanitizeClonedStylesForHtml2Canvas(clonedDoc, clonedElement);
         },
       });
     } catch (err) {
@@ -693,15 +866,13 @@ export const PdfGenerator = {
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.png`;
 
-    // 1. Generate the exact same PDF document that downloadPdf produces
-    const doc = await this.createPdfDoc(receipt);
+    // 1. Capture high-resolution DOM template directly at 3x DPI (works offline & preserves CSS gradients/layouts)
+    let canvas = await this.captureReceiptElementAsCanvas(receipt);
 
-    // 2. Render the exact PDF document onto a high-resolution 300+ DPI PNG canvas
-    let canvas = await this.convertPdfDocToCanvas(doc, 3.0);
-
-    // 3. Fallback to DOM element capture if PDF-to-Canvas rendering is unavailable
+    // 2. Fallback to PDF-to-Canvas rendering if DOM capture is unavailable
     if (!canvas) {
-      canvas = await this.captureReceiptElementAsCanvas(receipt);
+      const doc = await this.createPdfDoc(receipt);
+      canvas = await this.convertPdfDocToCanvas(doc, 3.0);
     }
 
     if (!canvas) {
@@ -766,7 +937,8 @@ export const PdfGenerator = {
     }
 
     // 2. Fallback: Native vector jsPDF generator
-    const template: ReceiptTemplateId = enrichedReceipt.template || 'modern';
+    const template: ReceiptTemplateId =
+      enrichedReceipt.template || StorageService.getSettings().defaultTemplate || 'modern';
 
     if (template === 'compact') {
       return this.renderCompactTemplate(enrichedReceipt);
@@ -786,7 +958,7 @@ export const PdfGenerator = {
    */
   async renderModernTemplate(receipt: Receipt): Promise<jsPDF> {
     const pageWidth = 210;
-    const naturalHeight = calculateReceiptPageHeight(receipt, 'modern');
+    const naturalHeight = calculateReceiptPageHeight(receipt, receipt.template || 'modern');
     const doc = createAdaptivePdf(pageWidth, naturalHeight);
     const business = receipt.businessSnapshot;
     const currency = business.currency || 'UGX';
@@ -1096,7 +1268,7 @@ export const PdfGenerator = {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(theme.pdf.totalText[0], theme.pdf.totalText[1], theme.pdf.totalText[2]);
     doc.text(isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL DUE:' : 'GRAND TOTAL:', totalsX, y + 8);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin - 4, y + 8, { align: 'right' });
 
@@ -1159,6 +1331,23 @@ export const PdfGenerator = {
     const contentWidth = pageWidth - margin * 2;
     let y = 18;
 
+    const accentColor = business.accentColor || receipt.accentColor;
+    const savedCustom = StorageService.getCustomTemplate('classic');
+    const classicTheme = resolveEffectiveTheme('classic', accentColor, {
+      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
+      badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
+    });
+    if (classicTheme.pdf.pageBg) {
+      doc.setFillColor(classicTheme.pdf.pageBg[0], classicTheme.pdf.pageBg[1], classicTheme.pdf.pageBg[2]);
+      doc.rect(0, 0, pageWidth, naturalHeight, 'F');
+    }
+
     // Formal Top Header with Logo on the left and Centered Text
     const hasLogo = Boolean(business.logo && business.logo.startsWith('data:image'));
     const logoSize = hasLogo ? 16 : 0;
@@ -1174,9 +1363,11 @@ export const PdfGenerator = {
     const formalBadgeH = 4.2;
     const formalBadgeX = (pageWidth - formalBadgeW) / 2;
     const formalBadgeY = y - 5;
-    doc.setFillColor(30, 41, 59); // deep slate
+    const cBadgeBg = classicTheme.pdf.badgeBg || [30, 41, 59];
+    const cBadgeTxt = classicTheme.pdf.badgeText || [255, 255, 255];
+    doc.setFillColor(cBadgeBg[0], cBadgeBg[1], cBadgeBg[2]);
     doc.roundedRect(formalBadgeX, formalBadgeY, formalBadgeW, formalBadgeH, 1, 1, 'F');
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(cBadgeTxt[0], cBadgeTxt[1], cBadgeTxt[2]);
     doc.text(badgeText, pageWidth / 2, formalBadgeY + 3.0, { align: 'center' });
 
     // 2. Business logo on the LEFT side where it was
@@ -1333,18 +1524,30 @@ export const PdfGenerator = {
       y += 6;
     }
 
-    doc.setDrawColor(40, 40, 40);
-    doc.line(tX, y, pageWidth - margin, y);
-    y += 6;
+    const hasCustomTotal = Boolean(receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor || accentColor);
+    if (hasCustomTotal && classicTheme.pdf.totalBg) {
+      doc.setFillColor(classicTheme.pdf.totalBg[0], classicTheme.pdf.totalBg[1], classicTheme.pdf.totalBg[2]);
+      doc.roundedRect(tX - 3, y - 5, pageWidth - margin - tX + 5, 9, 1.5, 1.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(classicTheme.pdf.totalText[0], classicTheme.pdf.totalText[1], classicTheme.pdf.totalText[2]);
+      doc.text(isQuotation ? 'QUOTED TOTAL:' : 'TOTAL DUE:', tX, y + 1);
+      doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 1, { align: 'right' });
+      y += 9;
+    } else {
+      doc.setDrawColor(40, 40, 40);
+      doc.line(tX, y, pageWidth - margin, y);
+      y += 6;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(isQuotation ? 'QUOTED TOTAL:' : 'TOTAL DUE:', tX, y);
-    doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y, { align: 'right' });
-    y += 2;
-    doc.line(tX, y + 1, pageWidth - margin, y + 1);
-    doc.line(tX, y + 2, pageWidth - margin, y + 2);
-    y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(isQuotation ? 'QUOTED TOTAL:' : 'TOTAL DUE:', tX, y);
+      doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y, { align: 'right' });
+      y += 2;
+      doc.line(tX, y + 1, pageWidth - margin, y + 1);
+      doc.line(tX, y + 2, pageWidth - margin, y + 2);
+      y += 8;
+    }
 
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
@@ -1395,6 +1598,23 @@ export const PdfGenerator = {
     const contentWidth = pageWidth - margin * 2;
     let y = 22;
 
+    const accentColor = business.accentColor || receipt.accentColor;
+    const savedCustom = StorageService.getCustomTemplate('minimal');
+    const minimalTheme = resolveEffectiveTheme('minimal', accentColor, {
+      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
+      badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
+    });
+    if (minimalTheme.pdf.pageBg) {
+      doc.setFillColor(minimalTheme.pdf.pageBg[0], minimalTheme.pdf.pageBg[1], minimalTheme.pdf.pageBg[2]);
+      doc.rect(0, 0, pageWidth, naturalHeight, 'F');
+    }
+
     // Minimal Header with Logo on the left and Centered Text
     const hasLogo = Boolean(business.logo && business.logo.startsWith('data:image'));
     const logoSize = hasLogo ? 15 : 0;
@@ -1410,11 +1630,11 @@ export const PdfGenerator = {
     const minBadgeH = 4.2;
     const minBadgeX = (pageWidth - minBadgeW) / 2;
     const minBadgeY = y - 5;
-    doc.setFillColor(241, 245, 249); // slate-100
+    const mBadgeBg = minimalTheme.pdf.badgeBg || [241, 245, 249];
+    const mBadgeTxt = minimalTheme.pdf.badgeText || [30, 41, 59];
+    doc.setFillColor(mBadgeBg[0], mBadgeBg[1], mBadgeBg[2]);
     doc.roundedRect(minBadgeX, minBadgeY, minBadgeW, minBadgeH, 1, 1, 'F');
-    doc.setDrawColor(203, 213, 225); // slate-300
-    doc.roundedRect(minBadgeX, minBadgeY, minBadgeW, minBadgeH, 1, 1, 'D');
-    doc.setTextColor(30, 41, 59); // slate-800
+    doc.setTextColor(mBadgeTxt[0], mBadgeTxt[1], mBadgeTxt[2]);
     doc.text(badgeText, pageWidth / 2, minBadgeY + 3.0, { align: 'center' });
 
     // 2. Business logo on the LEFT side where it was
@@ -1556,12 +1776,24 @@ export const PdfGenerator = {
       y += 6;
     }
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(17, 24, 39);
-    doc.text(isQuotation ? 'Quoted Total' : isInvoice ? 'Total Due' : 'Total', sumX, y + 2);
-    doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 2, { align: 'right' });
-    y += 10;
+    const hasCustomMinTotal = Boolean(receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor || accentColor);
+    if (hasCustomMinTotal && minimalTheme.pdf.totalBg) {
+      doc.setFillColor(minimalTheme.pdf.totalBg[0], minimalTheme.pdf.totalBg[1], minimalTheme.pdf.totalBg[2]);
+      doc.roundedRect(sumX - 4, y - 3, pageWidth - margin - sumX + 6, 10, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(minimalTheme.pdf.totalText[0], minimalTheme.pdf.totalText[1], minimalTheme.pdf.totalText[2]);
+      doc.text(isQuotation ? 'Quoted Total' : isInvoice ? 'Total Due' : 'Total', sumX, y + 3.5);
+      doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 3.5, { align: 'right' });
+      y += 11;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(17, 24, 39);
+      doc.text(isQuotation ? 'Quoted Total' : isInvoice ? 'Total Due' : 'Total', sumX, y + 2);
+      doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 2, { align: 'right' });
+      y += 10;
+    }
 
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
@@ -1623,6 +1855,10 @@ export const PdfGenerator = {
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
     };
     const theme = resolveEffectiveTheme('business', accentColor, bizCustomTheme);
+    if (theme.pdf.pageBg) {
+      doc.setFillColor(theme.pdf.pageBg[0], theme.pdf.pageBg[1], theme.pdf.pageBg[2]);
+      doc.rect(0, 0, pageWidth, naturalHeight, 'F');
+    }
     const margin = 16;
     const contentWidth = pageWidth - margin * 2;
     let y = 16;
@@ -1812,11 +2048,11 @@ export const PdfGenerator = {
     doc.text('Discount Applied:', boxX + 4, y + 13);
     doc.text(`-${formatCurrency(receipt.discountAmount, currency)}`, pageWidth - margin - 4, y + 13, { align: 'right' });
 
-    doc.setFillColor(241, 245, 249);
+    doc.setFillColor(theme.pdf.totalBg[0], theme.pdf.totalBg[1], theme.pdf.totalBg[2]);
     doc.rect(boxX, y + 18, boxW, 12, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(theme.pdf.totalText[0], theme.pdf.totalText[1], theme.pdf.totalText[2]);
     doc.text(isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL PAYABLE:' : 'FINAL TOTAL:', boxX + 4, y + 25.5);
     doc.text(formatCurrency(receipt.total, currency), pageWidth - margin - 4, y + 25.5, { align: 'right' });
 

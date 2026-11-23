@@ -58,9 +58,11 @@ class AdMobManager {
     if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     try {
       await this.initNativeAdMob();
-      console.log(`[ADS] Requesting Native Ad (isDebug=false). AdUnitId: ${unitId}`);
-      await NativeAdBridge.loadNativeAd({ adUnitId: unitId });
-      await NativeAdBridge.showNativeAd();
+      console.log(`[ADS] Showing/warming Native Ad (isDebug=false). AdUnitId: ${unitId}`);
+      await Promise.all([
+        NativeAdBridge.showNativeAd(),
+        NativeAdBridge.loadNativeAd({ adUnitId: unitId }),
+      ]);
     } catch (err) {
       console.warn(`[ADS] Native Ad failed to load. AdUnitId: ${unitId}, Error:`, err);
     }
@@ -92,6 +94,9 @@ class AdMobManager {
         console.log('[ADS] Ensuring native Google MobileAds SDK initialized (isDebug=false)');
         await NativeAdBridge.initializeAds();
         this.isInitialized = true;
+        if (this.shouldShowAds()) {
+          NativeAdBridge.loadNativeAd({ adUnitId: ADMOB_UNITS.NATIVE_ADVANCED }).catch(() => {});
+        }
       } catch (err) {
         console.warn('[ADS] Native MobileAds init note:', err);
       } finally {

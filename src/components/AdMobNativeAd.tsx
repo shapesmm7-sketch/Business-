@@ -162,14 +162,26 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
     // Request/preload live AdMob native advanced ad
     AdMobService.requestNativeAd(unitId).catch(() => {});
 
-    // Sync position promptly as DOM settles
+    // Sync position promptly as DOM and route animations settle
     const initialRaf = window.requestAnimationFrame(() => syncSlotPosition(true));
     const t1 = setTimeout(() => syncSlotPosition(), 80);
     const t2 = setTimeout(() => syncSlotPosition(), 240);
     const t3 = setTimeout(() => syncSlotPosition(), 600);
+    const t4 = setTimeout(() => syncSlotPosition(true), 1200);
 
-    // Sync when scroll finishes or DOM resizes (live scroll movement is locked natively on Android UI thread)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncSlotPosition(true);
+      }
+    };
+    const handlePageShow = () => syncSlotPosition(true);
+
+    // Sync when scroll finishes, DOM resizes, or CSS route transitions end
     document.addEventListener('scroll', scheduleSync, { passive: true, capture: true });
+    document.addEventListener('animationend', scheduleSync, { passive: true, capture: true });
+    document.addEventListener('transitionend', scheduleSync, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow, { passive: true });
     window.addEventListener('scroll', scheduleSync, { passive: true });
     window.addEventListener('resize', scheduleSync, { passive: true });
 
@@ -209,7 +221,12 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
       document.removeEventListener('scroll', scheduleSync, { capture: true });
+      document.removeEventListener('animationend', scheduleSync, { capture: true });
+      document.removeEventListener('transitionend', scheduleSync, { capture: true });
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
       window.removeEventListener('scroll', scheduleSync);
       window.removeEventListener('resize', scheduleSync);
       if (io) io.disconnect();

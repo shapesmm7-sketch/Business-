@@ -773,6 +773,58 @@ export const GoogleDriveService = {
   },
 
   /**
+   * Parses JSON text (stripping UTF-8 BOM if present) and unwraps nested backup wrappers
+   * while normalizing key aliases into canonical arrays.
+   */
+  parseAndNormalizeBackupPayload(rawText: string): any | null {
+    try {
+      const cleanText = String(rawText || '').replace(/^\uFEFF/, '').trim();
+      if (!cleanText) return null;
+      let parsed: any = JSON.parse(cleanText);
+      if (typeof parsed === 'string') {
+        parsed = JSON.parse(parsed.replace(/^\uFEFF/, '').trim());
+      }
+      return this.unwrapBackupData(parsed);
+    } catch {
+      return null;
+    }
+  },
+
+  unwrapBackupData(raw: any): any | null {
+    if (!raw || typeof raw !== 'object') return null;
+    let obj = raw;
+    for (let depth = 0; depth < 3; depth++) {
+      const inner = obj.backupData || obj.data || obj.backup || obj.payload;
+      if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+        obj = inner;
+      } else {
+        break;
+      }
+    }
+
+    const collectAll = (...lists: any[]): any[] => {
+      const out: any[] = [];
+      for (const list of lists) {
+        if (Array.isArray(list) && list.length > 0) out.push(...list);
+      }
+      return out;
+    };
+
+    const mergedReceipts = collectAll(obj.receipts, obj.invoices, obj.quotations, obj.documents);
+    const mergedProducts = collectAll(obj.inventoryProducts, obj.products, obj.items, obj.stock, obj.inventory);
+    const mergedCustomers = collectAll(obj.customers, obj.clients);
+    const mergedWorkers = collectAll(obj.workers, obj.staff, obj.employees);
+
+    return {
+      ...obj,
+      ...(mergedReceipts.length > 0 ? { receipts: mergedReceipts } : {}),
+      ...(mergedProducts.length > 0 ? { inventoryProducts: mergedProducts } : {}),
+      ...(mergedCustomers.length > 0 ? { customers: mergedCustomers } : {}),
+      ...(mergedWorkers.length > 0 ? { workers: mergedWorkers } : {}),
+    };
+  },
+
+  /**
    * Downloads and restores backup file content from Google Drive
    */
   async restoreBackup(
@@ -788,7 +840,8 @@ export const GoogleDriveService = {
         throw new Error(`Failed to download backup from Google Drive: ${errText}`);
       }
 
-      const backupData = await res.json();
+      const rawText = await res.text();
+      const backupData = this.parseAndNormalizeBackupPayload(rawText);
       if (!backupData || typeof backupData !== 'object') {
         throw new Error('The downloaded backup file is not valid JSON data.');
       }
@@ -834,7 +887,8 @@ export const GoogleDriveService = {
         const res = await this.driveFetch(downloadUrl);
 
         if (res.ok) {
-          const data = await res.json();
+          const rawText = await res.text();
+          const data = this.parseAndNormalizeBackupPayload(rawText);
           if (data && typeof data === 'object') {
             if (!consolidatedBackup) {
               consolidatedBackup = { ...data };
@@ -1032,7 +1086,7 @@ export const GoogleDriveService = {
     mergeStrategy: 'merge' | 'replace' = 'merge'
   ): Promise<{ success: boolean; itemCount?: any; error?: string }> {
     try {
-      const backupData = JSON.parse(jsonString);
+      const backupData = this.parseAndNormalizeBackupPayload(jsonString);
       if (!backupData || typeof backupData !== 'object') {
         return { success: false, error: 'Invalid backup file format' };
       }
@@ -1046,10 +1100,11 @@ export const GoogleDriveService = {
    * Internal helper to apply restored data to storage and recover embedded photos before refreshing UI
    */
   async applyRestoredData(
-    backupData: any,
+    rawBackupData: any,
     mergeStrategy: 'merge' | 'replace'
   ): Promise<{ success: boolean; itemCount?: any; error?: string }> {
     try {
+      const backupData = this.unwrapBackupData(rawBackupData) || rawBackupData;
       const importResult = StorageService.importBackup(backupData, mergeStrategy === 'replace');
       if (!importResult.success) {
         return { success: false, error: importResult.message };
@@ -1058,6 +1113,7 @@ export const GoogleDriveService = {
       // Recover any embedded product, client, agent, staff, and profile photos directly into localStorage before reading final counts
       await StorageService.recoverRestoredProductPhotos(backupData).catch(() => {});
 
+      const restoredReceipts = StorageService.getReceipts();
       const restoredProducts = StorageService.getInventoryProducts();
       const restoredCustomers = StorageService.getCustomers();
       const restoredAgents = StorageService.getAgents();
@@ -1076,14 +1132,17 @@ export const GoogleDriveService = {
         window.dispatchEvent(new Event('storage'));
       }
 
+      const incomingReceiptsCount = Array.isArray(backupData.receipts) ? backupData.receipts.length : 0;
+      const incomingProductsCount = Array.isArray(backupData.inventoryProducts) ? backupData.inventoryProducts.length : 0;
+
       return {
         success: true,
         itemCount: {
-          receipts: Array.isArray(backupData.receipts) ? backupData.receipts.length : 0,
-          products: restoredProducts.length,
-          customers: Array.isArray(backupData.customers) ? backupData.customers.length : restoredCustomers.length,
-          agents: Array.isArray(backupData.agents) ? backupData.agents.length : restoredAgents.length,
-          staff: Array.isArray(backupData.workers) ? backupData.workers.length : restoredWorkers.length,
+          receipts: Math.max(incomingReceiptsCount, restoredReceipts.length),
+          products: Math.max(incomingProductsCount, restoredProducts.length),
+          customers: restoredCustomers.length,
+          agents: restoredAgents.length,
+          staff: restoredWorkers.length,
           photos: restoredPhotoCount,
         },
       };
@@ -1134,10 +1193,27 @@ export const GoogleDriveService = {
       const accessToken = await this.getSilentAccessToken();
       if (!accessToken) return false;
 
-      const folderId = await this.getOrCreateBrivuFolder(accessToken);
+      // Never overwrite cloud auto-backup with an empty snapshot from a fresh/wiped device
       const payload = await StorageService.exportBackupWithEmbeddedPhotos();
+      const pAny = payload as any;
+      const hasLocalData =
+        (Array.isArray(pAny.receipts) && pAny.receipts.length > 0) ||
+        (Array.isArray(pAny.inventoryProducts) && pAny.inventoryProducts.length > 0) ||
+        (Array.isArray(pAny.customers) && pAny.customers.length > 0) ||
+        (Array.isArray(pAny.workers) && pAny.workers.length > 0) ||
+        (Array.isArray(pAny.agents) && pAny.agents.length > 0) ||
+        (Array.isArray(pAny.inventorySales) && pAny.inventorySales.length > 0) ||
+        (Array.isArray(pAny.inventoryExpenses) && pAny.inventoryExpenses.length > 0) ||
+        (Array.isArray(pAny.inventoryDebts) && pAny.inventoryDebts.length > 0) ||
+        (Array.isArray(pAny.shoppingListItems) && pAny.shoppingListItems.length > 0) ||
+        Boolean(pAny.profile?.name && String(pAny.profile.name).trim() !== '');
+      if (!hasLocalData) {
+        return false;
+      }
+
+      const folderId = await this.getOrCreateBrivuFolder(accessToken);
       const photoStats = this.getPhotoStats();
-      (payload as any).photoStats = photoStats;
+      pAny.photoStats = photoStats;
       const payloadStr = JSON.stringify(payload);
       const now = new Date();
       const formattedSyncTime = formatSyncTimestamp(now);

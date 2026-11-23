@@ -741,35 +741,46 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                     </button>
 
                     {/* Button 2: Restore Latest Backup */}
-                    {backups.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedBackupForRestore(backups[0])}
-                        disabled={isRestoringAll}
-                        className="w-full p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-slate-800 dark:text-slate-100 text-left hover:bg-sky-100/70 transition flex items-center justify-between group disabled:opacity-50"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Sparkles className="w-4 h-4 text-sky-600 shrink-0" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-sky-900 dark:text-sky-200">
-                              Restore Latest Backup
-                            </div>
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                              {new Date(backups[0].modifiedTime || backups[0].createdTime).toLocaleDateString('en-GB', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
+                    {backups.length > 0 && (() => {
+                      const preferredLatest =
+                        backups.find(
+                          (f) =>
+                            !f.name.includes('stock_auto_backup') &&
+                            (!f.size || parseInt(f.size, 10) > 600)
+                        ) ||
+                        backups.find((f) => !f.size || parseInt(f.size, 10) > 600) ||
+                        backups[0];
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBackupForRestore(preferredLatest)}
+                          disabled={isRestoringAll}
+                          className="w-full p-3 rounded-2xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-slate-800 dark:text-slate-100 text-left hover:bg-sky-100/70 transition flex items-center justify-between group disabled:opacity-50"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Sparkles className="w-4 h-4 text-sky-600 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-sky-900 dark:text-sky-200">
+                                Restore Latest Backup
+                              </div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                {preferredLatest.name} •{' '}
+                                {new Date(preferredLatest.modifiedTime || preferredLatest.createdTime).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 underline group-hover:translate-x-0.5 transition-transform shrink-0">
-                          Select &rarr;
-                        </span>
-                      </button>
-                    )}
+                          <span className="text-[11px] font-bold text-sky-600 dark:text-sky-400 underline group-hover:translate-x-0.5 transition-transform shrink-0">
+                            Select &rarr;
+                          </span>
+                        </button>
+                      );
+                    })()}
                   </div>
 
                   {/* Individual Backup Files Section */}
