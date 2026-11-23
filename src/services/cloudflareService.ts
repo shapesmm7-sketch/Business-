@@ -656,10 +656,19 @@ export const CloudflareService = {
     customBackup?: AppBackupData,
     options?: { immediate?: boolean }
   ): Promise<CloudflareSyncResponse> {
-    if (!this.shouldAutoSyncData()) {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
       return {
         success: false,
-        message: 'Cloud auto-sync is disabled (trial expired or not subscribed)',
+        message: 'Your 7-day free trial has ended. Subscribe to Pro to use cloud sync.',
+      };
+    }
+
+    const isImmediate = Boolean(options?.immediate || customBackup);
+    if (!isImmediate && !this.shouldAutoSyncData()) {
+      return {
+        success: false,
+        message: 'Cloud auto-sync is disabled in settings.',
       };
     }
 
@@ -677,8 +686,6 @@ export const CloudflareService = {
         message: 'Cloud service is not configured. Check your settings.',
       };
     }
-
-    const isImmediate = Boolean(options?.immediate || customBackup);
     if (!isImmediate && Date.now() < syncCooldownUntil) {
       return {
         success: false,
@@ -1391,7 +1398,16 @@ export const CloudflareService = {
     page: any,
     emailOverride?: string,
     options?: { immediate?: boolean }
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; requiresSubscription?: boolean }> {
+    const trial = StorageService.getTrialStatus();
+    if (trial.isExpired && !trial.subscribed) {
+      return {
+        success: false,
+        requiresSubscription: true,
+        message: 'Your 7-day free trial has ended. Subscribe to Pro to sync QR pages to the cloud.',
+      };
+    }
+
     const config = this.getConfig();
     if (!this.isConfigured()) {
       return { success: false, message: 'Cloudflare Worker is not configured' };

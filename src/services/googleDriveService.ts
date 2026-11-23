@@ -1,5 +1,6 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { StorageService } from './storage';
+import { PlayBillingService } from './playBillingService';
 
 export interface GoogleDriveAccount {
   connected: boolean;
@@ -239,11 +240,36 @@ export const GoogleDriveService = {
   },
 
   /**
+   * Checks whether Google Drive connect/sync is blocked because the 7-day free trial ended without a subscription.
+   */
+  isDriveSyncSubscriptionRequired(): boolean {
+    const trial = StorageService.getTrialStatus();
+    return Boolean(trial.isExpired && !trial.subscribed);
+  },
+
+  async ensureDriveSyncAllowed(): Promise<boolean> {
+    if (!this.isDriveSyncSubscriptionRequired()) {
+      return true;
+    }
+    const synced = await PlayBillingService.syncActiveSubscriptionSilently(true);
+    if (synced) {
+      return !this.isDriveSyncSubscriptionRequired();
+    }
+    return false;
+  },
+
+  /**
    * Initiates Google's official OAuth 2.0 authorization interface.
    * On Native Android: Invokes Google Play Services AuthorizationClient / GoogleSignInClient bottom-sheet account chooser.
    * On Web Browser: Opens Google's REAL account selection dialog via Google Identity Services (GIS).
    */
   async connectGoogleDrive(): Promise<GoogleDriveAccount> {
+    if (!(await this.ensureDriveSyncAllowed())) {
+      throw new Error(
+        'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.'
+      );
+    }
+
     if (this.isNativeAndroid()) {
       try {
         const res = await GoogleDriveNative.connectGoogleDrive();
@@ -359,6 +385,12 @@ export const GoogleDriveService = {
    * On Web: Revokes session and prompts account selection.
    */
   async switchGoogleAccount(): Promise<GoogleDriveAccount> {
+    if (!(await this.ensureDriveSyncAllowed())) {
+      throw new Error(
+        'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.'
+      );
+    }
+
     if (this.isNativeAndroid()) {
       try {
         const res = await GoogleDriveNative.switchGoogleAccount();
@@ -599,8 +631,18 @@ export const GoogleDriveService = {
     fileId?: string;
     syncTime?: string;
     photoCount?: number;
+    requiresSubscription?: boolean;
     error?: string;
   }> {
+    if (!(await this.ensureDriveSyncAllowed())) {
+      return {
+        success: false,
+        requiresSubscription: true,
+        error:
+          'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.',
+      };
+    }
+
     let accessToken: string;
     try {
       accessToken = await this.getValidAccessToken();
@@ -1184,6 +1226,9 @@ export const GoogleDriveService = {
    * "Brivu Backups/brivu_stock_auto_backup.json" in the user's connected Google Drive.
    */
   async syncStockQuietly(): Promise<boolean> {
+    if (this.isDriveSyncSubscriptionRequired()) {
+      return false;
+    }
     if (stockAutoSyncInFlight) {
       stockAutoSyncQueued = true;
       return false;
@@ -1293,6 +1338,7 @@ export const GoogleDriveService = {
 
   scheduleStockAutoSync(delayMs = 2500): void {
     if (typeof window === 'undefined') return;
+    if (this.isDriveSyncSubscriptionRequired()) return;
     const acc = this.getStoredAccount();
     if (!acc || !acc.connected) return;
     if (stockAutoSyncTimer) clearTimeout(stockAutoSyncTimer);

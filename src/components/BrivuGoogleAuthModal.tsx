@@ -19,6 +19,7 @@ import { Capacitor } from '@capacitor/core';
 import { ActiveScreen, BrivuUser } from '../types';
 import { BrivuAuthService } from '../services/brivuAuthService';
 import { StorageService } from '../services/storage';
+import { PlayBillingService } from '../services/playBillingService';
 
 interface BrivuGoogleAuthModalProps {
   isOpen: boolean;
@@ -54,6 +55,8 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showWebFallbackButton, setShowWebFallbackButton] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [trialStatus, setTrialStatus] = useState(() => StorageService.getTrialStatus());
+  const [isRestoringPlay, setIsRestoringPlay] = useState(false);
 
   // Signed-in backup password state
   const [isSettingBackupPassword, setIsSettingBackupPassword] = useState(false);
@@ -62,11 +65,13 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
   const [isSavingBackupPassword, setIsSavingBackupPassword] = useState(false);
 
   const webButtonRef = useRef<HTMLDivElement | null>(null);
-  const isBusy = isEmailLoading || isGoogleLoading || isSyncing || isSavingBackupPassword;
+  const isBusy = isEmailLoading || isGoogleLoading || isSyncing || isSavingBackupPassword || isRestoringPlay;
 
   useEffect(() => {
     if (isOpen) {
       setUser(BrivuAuthService.getCurrentUser());
+      const latestTrial = StorageService.getTrialStatus();
+      setTrialStatus(latestTrial);
       setError(initialNotice || null);
       setStatusMessage(null);
       setNeedsPasswordSetupEmail(null);
@@ -77,6 +82,17 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
       setIsSettingBackupPassword(false);
       setImgError(false);
       setShowWebFallbackButton(!Capacitor.isNativePlatform());
+
+      if (latestTrial.isExpired && !latestTrial.subscribed && PlayBillingService.isAndroid()) {
+        PlayBillingService.syncActiveSubscriptionSilently(true)
+          .then((restored) => {
+            if (restored) {
+              setTrialStatus(StorageService.getTrialStatus());
+              setStatusMessage('Active Google Play Pro subscription verified!');
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [isOpen, initialNotice]);
 
@@ -89,8 +105,19 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
       const updatedUser = e?.detail ?? BrivuAuthService.getCurrentUser();
       setUser(updatedUser || null);
     };
+    const handleSubscriptionOrRefresh = () => {
+      setTrialStatus(StorageService.getTrialStatus());
+    };
     window.addEventListener('brivu_auth_changed', handleAuthChanged);
-    return () => window.removeEventListener('brivu_auth_changed', handleAuthChanged);
+    window.addEventListener('brivu_subscription_changed', handleSubscriptionOrRefresh);
+    window.addEventListener('brivu_data_refreshed', handleSubscriptionOrRefresh);
+    window.addEventListener('storage', handleSubscriptionOrRefresh);
+    return () => {
+      window.removeEventListener('brivu_auth_changed', handleAuthChanged);
+      window.removeEventListener('brivu_subscription_changed', handleSubscriptionOrRefresh);
+      window.removeEventListener('brivu_data_refreshed', handleSubscriptionOrRefresh);
+      window.removeEventListener('storage', handleSubscriptionOrRefresh);
+    };
   }, []);
 
   useEffect(() => {
@@ -480,10 +507,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                 </button>
               </div>
             </div>
-          ) : (() => {
-            const trialStatus = StorageService.getTrialStatus();
-            if (trialStatus.isExpired && !trialStatus.subscribed) {
-              return (
+          ) : trialStatus.isExpired && !trialStatus.subscribed ? (
                 <div className="space-y-4">
                   <div className="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-center space-y-3">
                     <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-rose-500/30">
@@ -510,11 +534,35 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                       <span>Subscribe to Pro Plan</span>
                     </button>
                   )}
-                </div>
-              );
-            }
 
-            return (
+                  {PlayBillingService.isAndroid() && (
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={async () => {
+                        setIsRestoringPlay(true);
+                        setError(null);
+                        setStatusMessage(null);
+                        try {
+                          const res = await PlayBillingService.restorePurchases();
+                          setTrialStatus(StorageService.getTrialStatus());
+                          if (res.restored) {
+                            setStatusMessage(res.message);
+                          } else {
+                            setError(res.message);
+                          }
+                        } finally {
+                          setIsRestoringPlay(false);
+                        }
+                      }}
+                      className="w-full min-h-[46px] py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98] disabled:opacity-60 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isRestoringPlay ? 'animate-spin' : ''}`} />
+                      <span>{isRestoringPlay ? 'Checking Google Play...' : 'Already Subscribed? Restore Purchase'}</span>
+                    </button>
+                  )}
+                </div>
+          ) : (
               <div className="space-y-4">
                 {/* Segmented Login / Create Account Tabs */}
                 <div
@@ -727,8 +775,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                   <span>One unified account &amp; backup per email address</span>
                 </div>
               </div>
-            );
-          })()}
+          )}
         </div>
       </div>
     </div>

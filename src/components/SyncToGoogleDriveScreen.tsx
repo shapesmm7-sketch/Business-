@@ -20,6 +20,8 @@ import {
   Layers,
   X,
   ChevronRight,
+  Lock,
+  Crown,
 } from 'lucide-react';
 import {
   GoogleDriveService,
@@ -27,17 +29,22 @@ import {
   DriveBackupFile,
 } from '../services/googleDriveService';
 import { StorageService } from '../services/storage';
+import { PlayBillingService } from '../services/playBillingService';
 
 interface SyncToGoogleDriveScreenProps {
   onBack: () => void;
   onDataRestored?: () => void;
+  onUpgrade?: () => void;
 }
 
 export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = ({
   onBack,
   onDataRestored,
+  onUpgrade,
 }) => {
   const [account, setAccount] = useState<GoogleDriveAccount | null>(null);
+  const [trialStatus, setTrialStatus] = useState(() => StorageService.getTrialStatus());
+  const [showSubscriptionPrompt, setShowSubscriptionPrompt] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFetchingBackups, setIsFetchingBackups] = useState(false);
@@ -68,13 +75,43 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   };
 
   useEffect(() => {
-    // Load stored account on mount
+    // Load stored account and trial/subscription status on mount
+    const refreshTrialAndAccount = () => {
+      const nextTrial = StorageService.getTrialStatus();
+      setTrialStatus(nextTrial);
+      if (nextTrial.subscribed || !nextTrial.isExpired) {
+        setShowSubscriptionPrompt(false);
+      }
+    };
+    refreshTrialAndAccount();
+
+    if (StorageService.getTrialStatus().isExpired && !StorageService.isSubscribed() && PlayBillingService.isAndroid()) {
+      PlayBillingService.syncActiveSubscriptionSilently(true)
+        .then((synced) => {
+          if (synced) refreshTrialAndAccount();
+        })
+        .catch(() => {});
+    }
+
     const stored = GoogleDriveService.getStoredAccount();
     if (stored && stored.connected) {
       setAccount(stored);
       loadBackups();
     }
+
+    window.addEventListener('brivu_subscription_changed', refreshTrialAndAccount);
+    window.addEventListener('brivu_data_refreshed', refreshTrialAndAccount);
+    window.addEventListener('brivu_data_restored', refreshTrialAndAccount);
+    window.addEventListener('storage', refreshTrialAndAccount);
+    return () => {
+      window.removeEventListener('brivu_subscription_changed', refreshTrialAndAccount);
+      window.removeEventListener('brivu_data_refreshed', refreshTrialAndAccount);
+      window.removeEventListener('brivu_data_restored', refreshTrialAndAccount);
+      window.removeEventListener('storage', refreshTrialAndAccount);
+    };
   }, []);
+
+  const isSubscriptionRequired = Boolean(trialStatus.isExpired && !trialStatus.subscribed);
 
   const loadBackups = async () => {
     setIsFetchingBackups(true);
@@ -99,6 +136,18 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    * Opens Google's REAL account selection and authorization interface
    */
   const handleConnect = async (openModalAfter = false) => {
+    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
+    const latestTrial = StorageService.getTrialStatus();
+    setTrialStatus(latestTrial);
+    if (!allowed) {
+      setShowSubscriptionPrompt(true);
+      showToast(
+        'error',
+        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
+      );
+      return;
+    }
+
     setIsConnecting(true);
     setBackupsError(null);
     setNeedsReconnect(false);
@@ -122,6 +171,18 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    * Triggers native Google Play Services account chooser by signing out active session first
    */
   const handleSwitchAccount = async () => {
+    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
+    const latestTrial = StorageService.getTrialStatus();
+    setTrialStatus(latestTrial);
+    if (!allowed) {
+      setShowSubscriptionPrompt(true);
+      showToast(
+        'error',
+        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
+      );
+      return;
+    }
+
     setIsConnecting(true);
     setBackupsError(null);
     setNeedsReconnect(false);
@@ -153,6 +214,18 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   };
 
   const handleSyncNow = async () => {
+    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
+    const latestTrial = StorageService.getTrialStatus();
+    setTrialStatus(latestTrial);
+    if (!allowed) {
+      setShowSubscriptionPrompt(true);
+      showToast(
+        'error',
+        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
+      );
+      return;
+    }
+
     if (!account?.connected) {
       handleConnect();
       return;
@@ -168,6 +241,9 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
         if (updated) setAccount(updated);
         loadBackups();
       } else {
+        if (res.requiresSubscription) {
+          setShowSubscriptionPrompt(true);
+        }
         showToast('error', res.error || 'Failed to sync data to Google Drive');
       }
     } catch (err: any) {
@@ -321,6 +397,51 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
             <span className="flex-1">{toast.message}</span>
           </div>
         )}
+
+        {/* 7-Day Free Trial / Subscription Status Banner */}
+        {isSubscriptionRequired ? (
+          <div className="p-4 rounded-3xl bg-gradient-to-br from-rose-50 via-amber-50 to-orange-50 dark:from-rose-950/60 dark:via-slate-900 dark:to-amber-950/40 border border-rose-200 dark:border-rose-800/60 shadow-sm space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-500/25">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-black text-rose-950 dark:text-rose-100 leading-snug">
+                  Subscription Required for Google Drive Sync
+                </h3>
+                <p className="text-xs text-rose-900/85 dark:text-rose-200/85 mt-1 leading-relaxed">
+                  Your 1-week free trial has ended. Please subscribe to a Brivu Pro plan to connect and continue saving your files and photos to Google Drive. Your local files stay completely safe on your device.
+                </p>
+              </div>
+            </div>
+            {onUpgrade && (
+              <button
+                id="btn-drive-banner-subscribe"
+                type="button"
+                onClick={onUpgrade}
+                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 active:scale-[0.98] transition cursor-pointer"
+              >
+                <Crown className="w-4 h-4" />
+                <span>Subscribe to Continue Saving to Google Drive</span>
+              </button>
+            )}
+          </div>
+        ) : !trialStatus.subscribed && trialStatus.isFreeTrial ? (
+          <div className="px-4 py-2.5 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-emerald-800 dark:text-emerald-200">
+              7-Day Free Trial: <strong>{trialStatus.remainingTrialDays}</strong> {trialStatus.remainingTrialDays === 1 ? 'day' : 'days'} remaining for Google Drive sync
+            </span>
+            {onUpgrade && (
+              <button
+                type="button"
+                onClick={onUpgrade}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shrink-0 hover:bg-emerald-700 transition cursor-pointer"
+              >
+                Go Pro
+              </button>
+            )}
+          </div>
+        ) : null}
 
         {/* Hidden File Input for Local JSON Restores */}
         <input
@@ -958,6 +1079,68 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                     <span>Confirm Restore</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Subscription Required Modal (triggered when user taps Connect / Sync after 1-week trial ends) */}
+      {showSubscriptionPrompt && (
+        <div
+          id="modal-drive-subscription-required"
+          className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fadeIn"
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-rose-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/25">
+                  <Crown className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 block">
+                    1-Week Free Trial Ended
+                  </span>
+                  <h3 className="font-black text-base text-slate-900 dark:text-white leading-tight">
+                    Subscribe for Google Drive Sync
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSubscriptionPrompt(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-900 dark:text-rose-100 leading-relaxed font-medium">
+              Google Drive sync is available for subscribed users after the 7-day free trial ends. Please subscribe to Brivu Pro in order to continue saving your files and photos to Google Drive.
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {onUpgrade && (
+                <button
+                  id="btn-drive-modal-subscribe"
+                  type="button"
+                  onClick={() => {
+                    setShowSubscriptionPrompt(false);
+                    onUpgrade();
+                  }}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 active:scale-[0.98] transition cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Subscribe to Pro Plan</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowSubscriptionPrompt(false)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition cursor-pointer"
+              >
+                Maybe Later
               </button>
             </div>
           </div>

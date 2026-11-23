@@ -2979,11 +2979,28 @@ export const StorageService = {
   },
 
   saveSubscription(subscription: UserSubscription): boolean {
-    return writeToStorage(STORAGE_KEYS.SUBSCRIPTION, subscription);
+    const saved = writeToStorage(STORAGE_KEYS.SUBSCRIPTION, subscription);
+    if (saved) {
+      if (subscription?.status === 'active') {
+        try {
+          localStorage.removeItem('quickreceipt_cloud_wiped_v1');
+        } catch {}
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brivu_subscription_changed', { detail: subscription }));
+        window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+      }
+    }
+    return saved;
   },
 
   clearSubscription(): boolean {
-    return writeToStorage(STORAGE_KEYS.SUBSCRIPTION, null);
+    const cleared = writeToStorage(STORAGE_KEYS.SUBSCRIPTION, null);
+    if (cleared && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('brivu_subscription_changed', { detail: null }));
+      window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+    }
+    return cleared;
   },
 
   // --- APP LOCK & INTRUDER SECURITY ---

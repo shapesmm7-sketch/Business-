@@ -32,6 +32,7 @@ import {
   PLAY_INSTALL_STATUS,
 } from './services/playUpdateService';
 import { StorageService } from './services/storage';
+import { PlayBillingService } from './services/playBillingService';
 import { GoogleDriveService } from './services/googleDriveService';
 import { CloudflareService } from './services/cloudflareService';
 import { QRHostingService } from './services/qrHostingService';
@@ -740,20 +741,51 @@ export function App() {
     GoogleDriveService.initAutoSyncListener();
   }, []);
 
-  // Initialize Google AdMob SDK once on mount and preload live Native Advanced & Interstitial ads
+  // Sync active Play Store subscription first, then initialize Google AdMob only for non-subscribers
   useEffect(() => {
     if (isCustomerPathFromUrl()) return;
     let active = true;
-    AdMobService.initNativeAdMob()
-      .then(() => {
-        if (!active) return;
-        AdMobService.preloadNativeAdvanced().catch(() => {});
-        AdMobService.preloadInterstitial().catch(() => {});
+    let resumeHandle: { remove: () => Promise<void> } | null = null;
+
+    const syncSubscriptionAndAds = async () => {
+      try {
+        await PlayBillingService.syncActiveSubscriptionSilently();
+      } catch {}
+      if (!active) return;
+
+      if (!AdMobService.shouldShowAds()) {
+        await AdMobService.hideAllAds();
+        return;
+      }
+
+      AdMobService.initNativeAdMob()
+        .then(() => {
+          if (!active || !AdMobService.shouldShowAds()) return;
+          AdMobService.preloadNativeAdvanced().catch(() => {});
+          AdMobService.preloadInterstitial().catch(() => {});
+        })
+        .catch(console.error);
+    };
+
+    syncSubscriptionAndAds();
+
+    try {
+      CapApp.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          syncSubscriptionAndAds();
+        }
       })
-      .catch(console.error);
+        .then((handle) => {
+          resumeHandle = handle;
+        })
+        .catch(() => {});
+    } catch {}
 
     return () => {
       active = false;
+      if (resumeHandle) {
+        resumeHandle.remove().catch(() => {});
+      }
     };
   }, []);
 
@@ -890,10 +922,14 @@ export function App() {
   useEffect(() => {
     const handleSubscriptionLifecycle = async () => {
       try {
+        await PlayBillingService.syncActiveSubscriptionSilently(true).catch(() => false);
         const status = StorageService.getTrialStatus();
-        
-        // 1. If subscribed, nothing to restrict or alert about
-        if (status.subscribed) return;
+
+        // 1. If subscribed, hide any ads and never restrict or purge
+        if (status.subscribed) {
+          AdMobService.hideAllAds().catch(() => {});
+          return;
+        }
 
         // 2. Handle Grace Period Expiry (wipe cloud completely)
         if (status.isGracePeriodExpired) {
@@ -1865,6 +1901,7 @@ export function App() {
           <SyncToGoogleDriveScreen
             onBack={() => handleNavigate(previousScreen || 'settings')}
             onDataRestored={refreshData}
+            onUpgrade={() => handleNavigate('upgrade')}
           />
         )}
 

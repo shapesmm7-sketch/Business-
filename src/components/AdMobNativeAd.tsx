@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { ADMOB_UNITS, AdMobService } from '../services/admobService';
 import { NativeAdBridge } from '../services/nativeAdBridge';
@@ -52,9 +52,35 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   const slotRef = useRef<HTMLDivElement>(null);
   const slotIdRef = useRef<string>(`native-slot-${++slotSequence}`);
   const lastPayloadRef = useRef<string>('');
+  const [adsAllowed, setAdsAllowed] = useState<boolean>(() => AdMobService.shouldShowAds());
+
+  useEffect(() => {
+    const syncAllowed = () => {
+      const next = AdMobService.shouldShowAds();
+      setAdsAllowed(next);
+      if (!next && Capacitor.isNativePlatform()) {
+        NativeAdBridge.hideNativeAd({ slotId: slotIdRef.current, remove: true }).catch(() => {});
+      }
+    };
+    syncAllowed();
+    window.addEventListener('brivu_subscription_changed', syncAllowed);
+    window.addEventListener('brivu_data_refreshed', syncAllowed);
+    window.addEventListener('brivu_data_restored', syncAllowed);
+    window.addEventListener('storage', syncAllowed);
+    return () => {
+      window.removeEventListener('brivu_subscription_changed', syncAllowed);
+      window.removeEventListener('brivu_data_refreshed', syncAllowed);
+      window.removeEventListener('brivu_data_restored', syncAllowed);
+      window.removeEventListener('storage', syncAllowed);
+    };
+  }, []);
 
   const syncSlotPosition = useCallback((force = false) => {
     if (!Capacitor.isNativePlatform() || !slotRef.current) return;
+    if (!AdMobService.shouldShowAds()) {
+      NativeAdBridge.hideNativeAd({ slotId: slotIdRef.current, remove: true }).catch(() => {});
+      return;
+    }
     const slotEl = slotRef.current;
     const rect = slotEl.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -147,8 +173,12 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) return;
     const slotId = slotIdRef.current;
+    if (!Capacitor.isNativePlatform()) return;
+    if (!adsAllowed || !AdMobService.shouldShowAds()) {
+      NativeAdBridge.hideNativeAd({ slotId, remove: true }).catch(() => {});
+      return;
+    }
 
     let rafId: number | null = null;
     const scheduleSync = () => {
@@ -235,10 +265,10 @@ export const AdMobNativeAd: React.FC<AdMobNativeAdProps> = ({
       lastPayloadRef.current = '';
       NativeAdBridge.hideNativeAd({ slotId, remove: true }).catch(() => {});
     };
-  }, [unitId, syncSlotPosition]);
+  }, [unitId, syncSlotPosition, adsAllowed]);
 
-  // If on web / preview, return null so zero fake cards or HTML placeholders appear
-  if (!Capacitor.isNativePlatform() || !AdMobService.shouldShowAds()) {
+  // If on web / preview, or user is subscribed (Ad-Free Pro), return null so zero ads appear
+  if (!Capacitor.isNativePlatform() || !adsAllowed || !AdMobService.shouldShowAds()) {
     return null;
   }
 

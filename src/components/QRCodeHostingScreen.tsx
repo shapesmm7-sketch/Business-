@@ -52,6 +52,7 @@ import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, Bu
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
+import { PlayBillingService } from '../services/playBillingService';
 import { AdMobService, ADMOB_UNITS } from '../services/admobService';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { compressImageFile } from '../utils/imageCompressor';
@@ -191,21 +192,36 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isUploadingToCloudflare, setIsUploadingToCloudflare] = useState<boolean>(false);
+  const [isQrCloudSyncing, setIsQrCloudSyncing] = useState<boolean>(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>('Uploading...');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
     Boolean(StorageService.getAuthUser()?.email)
   );
+  const [trialStatus, setTrialStatus] = useState(() => StorageService.getTrialStatus());
   useEffect(() => {
-    const syncAuth = (e: any) => {
-      if (e && 'detail' in e) {
-        setIsLoggedIn(Boolean(e.detail?.email));
-      } else {
-        setIsLoggedIn(Boolean(StorageService.getAuthUser()?.email));
-      }
+    const syncAuthAndSub = () => {
+      setIsLoggedIn(Boolean(StorageService.getAuthUser()?.email));
+      setTrialStatus(StorageService.getTrialStatus());
     };
-    window.addEventListener('brivu_auth_changed', syncAuth);
-    return () => window.removeEventListener('brivu_auth_changed', syncAuth);
+    syncAuthAndSub();
+    if (StorageService.getTrialStatus().isExpired && !StorageService.isSubscribed() && PlayBillingService.isAndroid()) {
+      PlayBillingService.syncActiveSubscriptionSilently(true)
+        .then((synced) => {
+          if (synced) syncAuthAndSub();
+        })
+        .catch(() => {});
+    }
+    window.addEventListener('brivu_auth_changed', syncAuthAndSub);
+    window.addEventListener('brivu_subscription_changed', syncAuthAndSub);
+    window.addEventListener('brivu_data_refreshed', syncAuthAndSub);
+    window.addEventListener('storage', syncAuthAndSub);
+    return () => {
+      window.removeEventListener('brivu_auth_changed', syncAuthAndSub);
+      window.removeEventListener('brivu_subscription_changed', syncAuthAndSub);
+      window.removeEventListener('brivu_data_refreshed', syncAuthAndSub);
+      window.removeEventListener('storage', syncAuthAndSub);
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -1555,37 +1571,69 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             </button>
           )}
 
+          {(isLoggedIn || trialStatus.subscribed || qrCategory !== null) && (
+            <button
+              type="button"
+              disabled={isQrCloudSyncing}
+              onClick={async () => {
+                if (isQrCloudSyncing) return;
+                setIsQrCloudSyncing(true);
+                try {
+                  let latestTrial = StorageService.getTrialStatus();
+                  if (latestTrial.isExpired && !latestTrial.subscribed && PlayBillingService.isAndroid()) {
+                    await PlayBillingService.syncActiveSubscriptionSilently(true);
+                    latestTrial = StorageService.getTrialStatus();
+                  }
+                  setTrialStatus(latestTrial);
+
+                  if (latestTrial.isExpired && !latestTrial.subscribed) {
+                    showToast('Your 7-day free trial has ended. Subscribe to Pro to use QR Cloud Sync.');
+                    return;
+                  }
+
+                  const resolvedSyncEmail = ownerEmail || StorageService.getAuthenticatedEmail();
+                  if (!resolvedSyncEmail) {
+                    showToast('Please sign in with your account (Account icon at top) or add your business email to sync QR data to Cloud.');
+                    return;
+                  }
+
+                  const freshPages = StorageService.getHostedQRPages();
+                  setPages(freshPages);
+                  const latestPage = freshPages.find((p) => p.id === activePage?.id) || activePage;
+
+                  let pageRes: { success: boolean; message: string } = { success: true, message: '' };
+                  if (qrCategory === 'websites') {
+                    await QRHostingService.syncAllWebsitesPages(StorageService.getWebsitesQrItems(), business);
+                  } else if (qrCategory === 'socials') {
+                    await QRHostingService.syncAllSocialsPages(StorageService.getSocialsQrItems(), business);
+                  } else if (qrCategory === 'events') {
+                    await QRHostingService.syncAllEventsPages(StorageService.getEventsQrItems(), business);
+                  } else if (latestPage) {
+                    pageRes = await CloudflareService.saveSingleQrPage(latestPage, resolvedSyncEmail, { immediate: true });
+                  }
+
+                  const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true });
+                  if (pageRes.success || syncRes.success) {
+                    showToast('QR Code data synced & saved to Cloud!');
+                  } else {
+                    showToast(pageRes.message || syncRes.message || 'Cloud sync failed. Please check your connection.');
+                  }
+                } catch (err: any) {
+                  showToast(err?.message || 'Cloud sync failed. Please try again.');
+                } finally {
+                  setIsQrCloudSyncing(false);
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 disabled:opacity-60 cursor-pointer"
+              title="Save and sync all QR code files, stand PDFs, photos, and items"
+            >
+              <Cloud className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${isQrCloudSyncing ? 'animate-pulse' : ''}`} />
+              <span>{isQrCloudSyncing ? 'Syncing...' : t('cloud_sync', business?.language)}</span>
+            </button>
+          )}
+
           {qrCategory === 'business' && (
             <>
-              {isLoggedIn && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!ownerEmail) {
-                      showToast('Sign in or add your business email to sync QR data to Cloud.');
-                      return;
-                    }
-                    const freshPages = StorageService.getHostedQRPages();
-                    setPages(freshPages);
-                    const latestPage = freshPages.find((p) => p.id === activePage?.id) || activePage;
-                    const pageRes = latestPage
-                      ? await CloudflareService.saveSingleQrPage(latestPage, ownerEmail, { immediate: true })
-                      : { success: true, message: '' };
-                    const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true });
-                    if (pageRes.success || syncRes.success) {
-                      showToast('Data synced & saved!');
-                    } else {
-                      showToast(pageRes.message || syncRes.message || 'Cloud sync failed. Please check your connection.');
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold transition active:scale-95 cursor-pointer"
-                  title="Save and sync all QR code files, stand PDFs, photos, and items"
-                >
-                  <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>{t('cloud_sync', business?.language)}</span>
-                </button>
-              )}
-
               {isSaved && (
                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />

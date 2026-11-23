@@ -27,11 +27,47 @@ class AdMobManager {
   private initPromise: Promise<void> | null = null;
   private lastInterstitialTime = 0;
   private userTapCount = 0;
+  private listenerAttached = false;
+
+  constructor() {
+    this.setupSubscriptionListener();
+  }
+
+  private setupSubscriptionListener() {
+    if (this.listenerAttached || typeof window === 'undefined') return;
+    this.listenerAttached = true;
+
+    const handleSubscriptionChange = () => {
+      if (!this.shouldShowAds()) {
+        this.hideAllAds().catch(() => {});
+      }
+    };
+
+    window.addEventListener('brivu_subscription_changed', handleSubscriptionChange);
+    window.addEventListener('brivu_data_refreshed', handleSubscriptionChange);
+    window.addEventListener('brivu_data_restored', handleSubscriptionChange);
+    window.addEventListener('storage', handleSubscriptionChange);
+  }
+
+  async hideAllAds(): Promise<void> {
+    this.userTapCount = 0;
+    if (!Capacitor.isNativePlatform()) return;
+    try {
+      await NativeAdBridge.hideNativeAd({ remove: true });
+    } catch {
+      // Safe fallback
+    }
+  }
 
   async preloadInterstitial() {
-    if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
+    if (!Capacitor.isNativePlatform()) return;
+    if (!this.shouldShowAds()) {
+      await this.hideAllAds();
+      return;
+    }
     try {
       await this.initNativeAdMob();
+      if (!this.shouldShowAds()) return;
       const adId = ADMOB_UNITS.INTERSTITIAL;
       console.log(`[ADS] Requesting Interstitial Ad (isDebug=false). AdUnitId: ${adId}`);
       await NativeAdBridge.prepareInterstitial();
@@ -41,9 +77,14 @@ class AdMobManager {
   }
 
   async preloadNativeAdvanced() {
-    if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
+    if (!Capacitor.isNativePlatform()) return;
+    if (!this.shouldShowAds()) {
+      await this.hideAllAds();
+      return;
+    }
     try {
       await this.initNativeAdMob();
+      if (!this.shouldShowAds()) return;
       const adUnitId = ADMOB_UNITS.NATIVE_ADVANCED;
       console.log(`[ADS] Requesting Native Ad (isDebug=false). AdUnitId: ${adUnitId}`);
       await NativeAdBridge.loadNativeAd({
@@ -55,9 +96,17 @@ class AdMobManager {
   }
 
   async requestNativeAd(unitId: string = ADMOB_UNITS.NATIVE_ADVANCED) {
-    if (!Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
+    if (!Capacitor.isNativePlatform()) return;
+    if (!this.shouldShowAds()) {
+      await this.hideAllAds();
+      return;
+    }
     try {
       await this.initNativeAdMob();
+      if (!this.shouldShowAds()) {
+        await this.hideAllAds();
+        return;
+      }
       console.log(`[ADS] Showing/warming Native Ad (isDebug=false). AdUnitId: ${unitId}`);
       await Promise.all([
         NativeAdBridge.showNativeAd(),
@@ -69,7 +118,10 @@ class AdMobManager {
   }
 
   recordInteraction() {
-    if (!this.shouldShowAds()) return;
+    if (!this.shouldShowAds()) {
+      this.userTapCount = 0;
+      return;
+    }
     this.userTapCount++;
     if (this.userTapCount >= 25) {
       this.userTapCount = 0;
@@ -82,6 +134,10 @@ class AdMobManager {
   }
 
   async initNativeAdMob(): Promise<void> {
+    if (!this.shouldShowAds()) {
+      await this.hideAllAds();
+      return;
+    }
     if (this.isInitialized) return;
     if (this.initPromise) return this.initPromise;
 
@@ -90,12 +146,18 @@ class AdMobManager {
         this.isInitialized = true;
         return;
       }
+      if (!this.shouldShowAds()) {
+        await this.hideAllAds();
+        return;
+      }
       try {
         console.log('[ADS] Ensuring native Google MobileAds SDK initialized (isDebug=false)');
         await NativeAdBridge.initializeAds();
         this.isInitialized = true;
         if (this.shouldShowAds()) {
           NativeAdBridge.loadNativeAd({ adUnitId: ADMOB_UNITS.NATIVE_ADVANCED }).catch(() => {});
+        } else {
+          await this.hideAllAds();
         }
       } catch (err) {
         console.warn('[ADS] Native MobileAds init note:', err);
@@ -108,7 +170,7 @@ class AdMobManager {
   }
 
   private async ensurePluginAdMobFallbackReady(): Promise<void> {
-    if (this.isPluginAdMobInitialized || !Capacitor.isNativePlatform()) return;
+    if (this.isPluginAdMobInitialized || !Capacitor.isNativePlatform() || !this.shouldShowAds()) return;
     await AdMob.initialize({
       initializeForTesting: false,
     });
@@ -133,6 +195,7 @@ class AdMobManager {
 
   async showInterstitial(_actionSource = 'save', onClosed?: () => void): Promise<boolean> {
     if (!this.shouldShowAds()) {
+      await this.hideAllAds();
       onClosed?.();
       return false;
     }
@@ -147,6 +210,10 @@ class AdMobManager {
     if (Capacitor.isNativePlatform()) {
       try {
         await this.initNativeAdMob();
+        if (!this.shouldShowAds()) {
+          onClosed?.();
+          return false;
+        }
         // Primary path: native MainActivity preloaded Interstitial (single SDK instance, live unit ID)
         const nativeRes = await NativeAdBridge.showInterstitial();
         if (nativeRes && nativeRes.success) {
@@ -155,6 +222,10 @@ class AdMobManager {
         }
 
         // Secondary fallback via @capacitor-community/admob only if native interstitial wasn't ready yet
+        if (!this.shouldShowAds()) {
+          onClosed?.();
+          return false;
+        }
         await this.ensurePluginAdMobFallbackReady();
         const options: AdOptions = {
           adId: ADMOB_UNITS.INTERSTITIAL,
@@ -162,6 +233,10 @@ class AdMobManager {
         };
         console.log(`[ADS] Showing Fallback Interstitial Ad (isDebug=false). AdUnitId: ${options.adId}`);
         await AdMob.prepareInterstitial(options);
+        if (!this.shouldShowAds()) {
+          onClosed?.();
+          return false;
+        }
         await AdMob.showInterstitial();
         onClosed?.();
         return true;

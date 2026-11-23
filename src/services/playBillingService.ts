@@ -106,6 +106,8 @@ const PlayBillingNative = registerPlugin<NativePlayBillingPlugin>('PlayBillingPl
 
 export class PlayBillingService {
   private static isInitialized = false;
+  private static lastSilentSyncAt = 0;
+  private static silentSyncPromise: Promise<boolean> | null = null;
 
   /**
    * Check if running on Android native Capacitor
@@ -242,7 +244,17 @@ export class PlayBillingService {
         const now = new Date();
         const purchaseDate = purchase.purchaseTime ? new Date(purchase.purchaseTime) : now;
         const expiresAt = new Date(purchaseDate);
-        expiresAt.setMonth(expiresAt.getMonth() + product.monthsCount);
+        // Google Play queryPurchases returns currently active (including auto-renewed) entitlements
+        // while keeping original purchaseTime. Advance billing periods until expiresAt is in the future.
+        let periodSteps = 0;
+        do {
+          expiresAt.setMonth(expiresAt.getMonth() + product.monthsCount);
+          periodSteps++;
+        } while (expiresAt.getTime() <= now.getTime() && periodSteps < 240);
+        if (expiresAt.getTime() <= now.getTime()) {
+          expiresAt.setTime(now.getTime());
+          expiresAt.setMonth(expiresAt.getMonth() + product.monthsCount);
+        }
 
         const restoredSubscription: UserSubscription = {
           planId: product.planId,
@@ -278,6 +290,40 @@ export class PlayBillingService {
         message: 'Could not connect to Google Play to verify purchases.',
       };
     }
+  }
+
+  /**
+   * Silently syncs active Google Play purchases on Android without showing UI prompts.
+   * Ensures auto-renewed or reinstalled subscribers are recognized immediately across ads, login, Drive, and QR cloud sync.
+   */
+  public static async syncActiveSubscriptionSilently(force = false): Promise<boolean> {
+    if (StorageService.isSubscribed() && !force) {
+      return true;
+    }
+    if (!this.isAndroid()) {
+      return StorageService.isSubscribed();
+    }
+    const now = Date.now();
+    if (!force && now - this.lastSilentSyncAt < 60_000) {
+      return StorageService.isSubscribed();
+    }
+    if (this.silentSyncPromise) {
+      return this.silentSyncPromise;
+    }
+
+    this.silentSyncPromise = (async () => {
+      try {
+        this.lastSilentSyncAt = Date.now();
+        const res = await this.restorePurchases();
+        return Boolean(res.restored || StorageService.isSubscribed());
+      } catch {
+        return StorageService.isSubscribed();
+      } finally {
+        this.silentSyncPromise = null;
+      }
+    })();
+
+    return this.silentSyncPromise;
   }
 
   /**

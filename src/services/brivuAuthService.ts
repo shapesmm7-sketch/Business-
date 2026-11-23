@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { BrivuAuthSession, BrivuUser } from '../types';
 import { StorageService } from './storage';
 import { CloudflareService } from './cloudflareService';
+import { PlayBillingService } from './playBillingService';
 
 interface NativeGoogleSignInResult {
   success: boolean;
@@ -98,6 +99,19 @@ export interface BrivuSignInResult {
 }
 
 export const BrivuAuthService = {
+  async hasAuthAccess(): Promise<boolean> {
+    let trial = StorageService.getTrialStatus();
+    if (!trial.isExpired || trial.subscribed) {
+      return true;
+    }
+    const synced = await PlayBillingService.syncActiveSubscriptionSilently(true);
+    if (synced) {
+      trial = StorageService.getTrialStatus();
+      return !trial.isExpired || trial.subscribed;
+    }
+    return false;
+  },
+
   getCurrentUser(): BrivuUser | null {
     return StorageService.getAuthUser();
   },
@@ -144,8 +158,7 @@ export const BrivuAuthService = {
    * Never uses WorkOS, Firebase Auth, external browsers, or Custom Tabs.
    */
   async signInWithGoogle(): Promise<BrivuSignInResult> {
-    const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
+    if (!(await this.hasAuthAccess())) {
       return {
         success: false,
         message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
@@ -366,8 +379,7 @@ export const BrivuAuthService = {
     password: string,
     name?: string
   ): Promise<BrivuSignInResult> {
-    const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
+    if (!(await this.hasAuthAccess())) {
       return {
         success: false,
         message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
@@ -406,8 +418,7 @@ export const BrivuAuthService = {
    * Sign in with email and password (shares identical workspace & cloud data with Google login for the same email).
    */
   async loginWithEmailPassword(email: string, password: string): Promise<BrivuSignInResult> {
-    const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
+    if (!(await this.hasAuthAccess())) {
       return {
         success: false,
         message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
@@ -604,8 +615,7 @@ export const BrivuAuthService = {
     if (!user) {
       return { success: false, message: 'No signed-in user to sync' };
     }
-    const trial = StorageService.getTrialStatus();
-    if (trial.isExpired && !trial.subscribed) {
+    if (!(await this.hasAuthAccess())) {
       return {
         success: false,
         message: 'Your 7-day free trial has ended. Subscribe to Pro to resume automatic cloud sync!',
