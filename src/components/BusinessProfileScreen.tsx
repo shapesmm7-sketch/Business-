@@ -32,7 +32,7 @@ import { CloudflareService } from '../services/cloudflareService';
 import { AdMobService } from '../services/admobService';
 import { LanguageSelectorModal } from './LanguageSelectorModal';
 import { PhoneInputField } from './PhoneInputField';
-import { getLanguageByCode, WORLD_LANGUAGES } from '../data/languages';
+import { getLanguageByCode } from '../data/languages';
 import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem, getLocalizedCountryName } from '../data/countryCodes';
 import { t, formatNumber } from '../utils/i18n';
 import {
@@ -898,13 +898,13 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                     </div>
                     <div className="min-w-0">
                       <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
-                        <span>Brand & Receipt Theme Colors</span>
+                        <span>Brand Colors</span>
                         <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                           Optional
                         </span>
                       </h4>
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                        Customize header, text & total colors, or leave blank to use template defaults
+                        Set your default brand colors
                       </p>
                     </div>
                   </div>
@@ -1309,7 +1309,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
             <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60">
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 <Globe className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Business & App Language ({WORLD_LANGUAGES.length} International Languages)</span>
+                <span>Business & App Language</span>
               </label>
               <button
                 id="btn-open-language-modal"
