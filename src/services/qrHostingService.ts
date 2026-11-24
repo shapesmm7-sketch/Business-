@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
-import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, EventQrItem, WebsiteAppQrItem, SocialQrItem, BusinessProfile } from '../types';
+import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, EventQrItem, RoomQrItem, WebsiteAppQrItem, SocialQrItem, BusinessProfile } from '../types';
 import { saveJsPdf, SaveFileResult } from './fileSaver';
 import { CloudflareService } from './cloudflareService';
 import { StorageService } from './storage';
@@ -190,6 +190,28 @@ export class QRHostingService {
   }
 
   /**
+   * Generates direct Cloudflare-hosted URL for a single Room page with owner email
+   */
+  static getCustomerRoomUrl(roomId: string, emailOverride?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(roomId)}${emailParam}`;
+  }
+
+  /**
+   * Generates direct Cloudflare-hosted URL for the unified Rooms & Prices Hub page with owner email
+   */
+  static getCustomerRoomsHubUrl(businessName?: string, emailOverride?: string): string {
+    const base = this.getWorkerBaseUrl();
+    const cleanName = (businessName || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `rooms-hub-${cleanName}`;
+    const email = this.resolveOwnerEmail(emailOverride);
+    const emailParam = email ? `?email=${encodeURIComponent(email)}` : '';
+    return `${base}/qr/${encodeURIComponent(hubId)}${emailParam}`;
+  }
+
+  /**
    * Converts user cloud backup data into a complete QRCodeHostedPage
    */
   static convertBackupToHostedPage(bData: any): QRCodeHostedPage {
@@ -200,8 +222,12 @@ export class QRHostingService {
       p.pageType !== 'socials_hub' &&
       p.pageType !== 'events_hub' &&
       p.pageType !== 'event' &&
+      p.pageType !== 'rooms_hub' &&
+      p.pageType !== 'room' &&
       !String(p.id || '').startsWith('event-') &&
       !String(p.id || '').startsWith('events-hub') &&
+      !String(p.id || '').startsWith('room-') &&
+      !String(p.id || '').startsWith('rooms-hub') &&
       !String(p.id || '').startsWith('websites-hub') &&
       !String(p.id || '').startsWith('socials-hub')
     );
@@ -683,6 +709,196 @@ export class QRHostingService {
       await CloudflareService.syncAllToCloudflare().catch(() => {});
     } catch (err) {
       console.warn('Failed to remove event page from Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Converts a single RoomQrItem into its dedicated QRCodeHostedPage
+   */
+  static convertRoomToHostedPage(room: RoomQrItem, business: BusinessProfile): QRCodeHostedPage {
+    const cleanPhone = (room.whatsappPhone || business.whatsapp || business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+    const ownerEmail = this.resolveOwnerEmail(business.email);
+    const currency = business.currency || room.currency || 'UGX';
+
+    const cleanAccent =
+      room.darkColor && /^#[0-9a-f]{3,8}$/i.test(room.darkColor.trim())
+        ? room.darkColor.trim()
+        : '#059669';
+
+    const photos: QRBusinessPhoto[] = (room.photos || []).map((url, idx) => ({
+      id: `${room.id}-photo-${idx}`,
+      url,
+      title: room.name,
+      description: `${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
+      badge: room.isAvailable ? 'Available' : 'Booked',
+      caption: room.name,
+    }));
+
+    const menuItems: QRMenuItem[] = [
+      {
+        id: `room-item-${room.id}`,
+        name: room.name,
+        category: 'Rooms & Suites',
+        price: Number(room.pricePerNight || 0),
+        size: room.occupancy,
+        description: room.description || '',
+        photoUrl: room.photos?.[0] || undefined,
+        isAvailable: room.isAvailable !== false,
+        tags: room.amenities || [],
+        ctaText: room.ctaText || 'Book Room',
+      },
+    ];
+
+    return {
+      id: room.id,
+      title: this.cleanText(room.name),
+      tagline: this.cleanText(`${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`),
+      description: this.cleanText(room.description || ''),
+      pageType: 'room',
+      accentColor: cleanAccent,
+      theme: 'emerald',
+      coverImage: room.photos?.[0] || undefined,
+      logo: business.logo || room.photos?.[0] || undefined,
+      phone: room.whatsappPhone || business.phone || business.whatsapp || '',
+      whatsapp: cleanWa,
+      email: ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
+      address: business.address || '',
+      googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
+      currency,
+      announcement: undefined,
+      allowWhatsAppOrdering: true,
+      photos,
+      menuCategories: ['Rooms & Suites'],
+      menuItems,
+      roomsQrItems: [room],
+      qrDarkColor: room.darkColor || '#059669',
+      qrLightColor: room.lightColor || '#ffffff',
+      qrEyeColor: room.eyeColor || room.darkColor || '#047857',
+      qrBoxBgColor: room.boxBgColor || '#ffffff',
+      qrBoxBorderColor: room.boxBorderColor || '#cbd5e1',
+      createdAt: room.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Converts all RoomQrItems into a unified Rooms & Prices Hub QRCodeHostedPage
+   */
+  static convertRoomsHubToHostedPage(rooms: RoomQrItem[], business: BusinessProfile): QRCodeHostedPage {
+    const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
+    const hubId = `rooms-hub-${cleanName}`;
+    const cleanPhone = (business.whatsapp || business.phone || '').replace(/[^0-9+]/g, '');
+    const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+    const ownerEmail = this.resolveOwnerEmail(business.email);
+    const currency = business.currency || 'UGX';
+
+    const photos: QRBusinessPhoto[] = rooms.flatMap((room) =>
+      (room.photos || []).map((url, idx) => ({
+        id: `${room.id}-photo-${idx}`,
+        url,
+        title: room.name,
+        description: `${room.currency || currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
+        badge: room.isAvailable ? 'Available' : 'Booked',
+        caption: room.name,
+      }))
+    );
+
+    const menuItems: QRMenuItem[] = rooms.map((room) => ({
+      id: `room-item-${room.id}`,
+      name: room.name,
+      category: 'Rooms',
+      price: Number(room.pricePerNight || 0),
+      size: room.occupancy,
+      description: room.description || '',
+      photoUrl: room.photos?.[0] || undefined,
+      isAvailable: room.isAvailable !== false,
+      tags: room.amenities || [],
+      ctaText: room.ctaText || 'Book',
+    }));
+
+    return {
+      id: hubId,
+      title: business.name ? `${business.name} — Rooms` : 'Rooms',
+      tagline: `Browse rooms, photos, nightly rates & book instantly on WhatsApp`,
+      description: `Explore all rooms, nightly rates, guest capacity, amenities, and photos for ${business.name || 'our property'}.`,
+      pageType: 'rooms_hub',
+      accentColor: '#059669',
+      theme: 'emerald',
+      coverImage: photos[0]?.url || undefined,
+      logo: business.logo || photos[0]?.url || undefined,
+      phone: business.phone || business.whatsapp || '',
+      whatsapp: cleanWa,
+      email: ownerEmail || business.email || '',
+      userEmail: ownerEmail || business.email || '',
+      address: business.address || '',
+      googleMapsUrl: business.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(business.address)}` : undefined,
+      currency,
+      announcement: undefined,
+      allowWhatsAppOrdering: true,
+      photos,
+      menuCategories: ['Rooms'],
+      menuItems,
+      roomsQrItems: rooms,
+      qrDarkColor: '#059669',
+      qrLightColor: '#ffffff',
+      qrEyeColor: '#047857',
+      qrBoxBgColor: '#ffffff',
+      qrBoxBorderColor: '#cbd5e1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Syncs an individual room page + Rooms Hub to Cloudflare D1
+   */
+  static async syncRoomPage(room: RoomQrItem, business: BusinessProfile, allRoomsOverride?: RoomQrItem[]): Promise<void> {
+    try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
+      const page = this.convertRoomToHostedPage(room, business);
+      await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
+      const allRooms = Array.isArray(allRoomsOverride) ? allRoomsOverride : StorageService.getRoomsQrItems();
+      const updatedList = [room, ...allRooms.filter((r) => r.id !== room.id)];
+      const hubPage = this.convertRoomsHubToHostedPage(updatedList, business);
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync room page to Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Syncs all rooms & the Rooms Hub page to Cloudflare D1
+   */
+  static async syncAllRoomsPages(rooms: RoomQrItem[], business: BusinessProfile): Promise<void> {
+    try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
+      const hubPage = this.convertRoomsHubToHostedPage(rooms, business);
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
+      for (const rm of rooms) {
+        const page = this.convertRoomToHostedPage(rm, business);
+        await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
+      }
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to sync all room pages to Cloudflare:', err);
+    }
+  }
+
+  /**
+   * Removes a room's dedicated page when deleted
+   */
+  static async removeRoomPage(roomId: string, business: BusinessProfile): Promise<void> {
+    try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
+      const remainingRooms = StorageService.getRoomsQrItems().filter((r) => r.id !== roomId);
+      const hubPage = this.convertRoomsHubToHostedPage(remainingRooms, business);
+      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
+      await CloudflareService.syncAllToCloudflare().catch(() => {});
+    } catch (err) {
+      console.warn('Failed to remove room page from Cloudflare:', err);
     }
   }
 

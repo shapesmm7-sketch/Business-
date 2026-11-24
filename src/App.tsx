@@ -67,7 +67,10 @@ export function getQrPageIdFromUrl(): string | null {
     (params.get('websites') ? 'websites-hub-all' : null) ||
     params.get('social') ||
     params.get('socialId') ||
-    (params.get('socials') ? 'socials-hub-all' : null);
+    (params.get('socials') ? 'socials-hub-all' : null) ||
+    params.get('room') ||
+    params.get('roomId') ||
+    (params.get('rooms') ? 'rooms-hub-all' : null);
   if (fromQuery) return fromQuery;
 
   if (params.get('tab') === 'websites' || params.get('tab') === 'website') {
@@ -80,6 +83,10 @@ export function getQrPageIdFromUrl(): string | null {
 
   if (params.get('tab') === 'events' || params.get('tab') === 'event') {
     return 'events-hub-all';
+  }
+
+  if (params.get('tab') === 'rooms' || params.get('tab') === 'room') {
+    return 'rooms-hub-all';
   }
 
   // 2. Check pathname: /qr/:pageId
@@ -121,7 +128,10 @@ export function isCustomerPathFromUrl(): boolean {
     params.get('websites') ||
     params.get('social') ||
     params.get('socialId') ||
-    params.get('socials')
+    params.get('socials') ||
+    params.get('room') ||
+    params.get('roomId') ||
+    params.get('rooms')
   ) {
     return true;
   }
@@ -134,6 +144,7 @@ export function hasMeaningfulQrData(p: any): boolean {
   if (Array.isArray(p.websitesQrItems) && p.websitesQrItems.length > 0) return true;
   if (Array.isArray(p.socialsQrItems) && p.socialsQrItems.length > 0) return true;
   if (Array.isArray(p.eventsQrItems) && p.eventsQrItems.length > 0) return true;
+  if (Array.isArray(p.roomsQrItems) && p.roomsQrItems.length > 0) return true;
   if (Array.isArray(p.menuItems) && p.menuItems.length > 0) return true;
   if (Array.isArray(p.photos) && p.photos.length > 0) return true;
   if (Array.isArray(p.customSocialLinks) && p.customSocialLinks.length > 0) return true;
@@ -447,7 +458,8 @@ export function App() {
         const isWebsites = normFetchId.includes('website') || normFetchId.includes('web-hub');
         const isSocials = !isWebsites && normFetchId.includes('social');
         const isEvents = !isWebsites && !isSocials && normFetchId.includes('event');
-        const isBiz = !isWebsites && !isSocials && !isEvents;
+        const isRooms = !isWebsites && !isSocials && !isEvents && (normFetchId.includes('room') || tabParam === 'rooms' || tabParam === 'room');
+        const isBiz = !isWebsites && !isSocials && !isEvents && !isRooms;
 
         const initialSsrPage = (window as any).__INITIAL_QR_PAGE__;
         const initialSsrEmail = (initialSsrPage?.userEmail || initialSsrPage?.email || '').toLowerCase().trim();
@@ -470,10 +482,10 @@ export function App() {
           const nowIso = new Date().toISOString();
           return {
             id: fetchId,
-            title: 'Brivu Business',
+            title: isRooms ? 'Rooms & Prices' : 'Brivu Business',
             tagline: 'Welcome to our official business page',
             description: '',
-            pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+            pageType: isRooms ? 'rooms_hub' : isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
             accentColor: '#059669',
             theme: 'emerald',
             phone: '',
@@ -488,6 +500,7 @@ export function App() {
             websitesQrItems: [],
             socialsQrItems: [],
             eventsQrItems: [],
+            roomsQrItems: [],
             createdAt: nowIso,
             updatedAt: nowIso,
           };
@@ -531,6 +544,24 @@ export function App() {
                     }
                   }
                   setActiveCustomerPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
+                  return true;
+                }
+              } else if (isRooms) {
+                const rooms = StorageService.getRoomsQrItems();
+                if (rooms.length > 0) {
+                  if (normFetchId.includes('room') && !normFetchId.includes('rooms-hub') && !normFetchId.includes('room-hub') && normFetchId !== 'rooms') {
+                    const rawTarget = fetchId.toLowerCase().replace(/^room-/, '').replace(/^qr-/, '');
+                    const singleRoom = rooms.find((r: any) => {
+                      const rId = String(r.id || '').toLowerCase();
+                      const rRaw = rId.replace(/^room-/, '').replace(/^qr-/, '');
+                      return rId === fetchId.toLowerCase() || rRaw === rawTarget || `room-${rId}` === fetchId.toLowerCase();
+                    });
+                    if (singleRoom) {
+                      setActiveCustomerPage(QRHostingService.convertRoomToHostedPage(singleRoom, profile));
+                      return true;
+                    }
+                  }
+                  setActiveCustomerPage(QRHostingService.convertRoomsHubToHostedPage(rooms, profile));
                   return true;
                 }
               } else if (isBiz) {
@@ -636,6 +667,36 @@ export function App() {
                         finishWithPage(QRHostingService.convertEventsHubToHostedPage(events, profile));
                         return;
                       }
+                    } else if (isRooms) {
+                      const roomHub = hostedPages.find((p: any) => Array.isArray(p?.roomsQrItems) && p.roomsQrItems.length > 0);
+                      const singleRoomItems = hostedPages
+                        .filter((p: any) => p && p.pageType === 'room' && Array.isArray(p.roomsQrItems))
+                        .flatMap((p: any) => p.roomsQrItems);
+                      const mergedRoomsMap = new Map<string, any>();
+                      for (const rm of [
+                        ...(Array.isArray(bData.roomsQrItems) ? bData.roomsQrItems : []),
+                        ...(Array.isArray(roomHub?.roomsQrItems) ? roomHub.roomsQrItems : []),
+                        ...singleRoomItems,
+                      ]) {
+                        if (rm && rm.id && !mergedRoomsMap.has(rm.id)) mergedRoomsMap.set(rm.id, rm);
+                      }
+                      const rooms = Array.from(mergedRoomsMap.values());
+                      if (rooms.length > 0) {
+                        if (normFetchId.includes('room') && !normFetchId.includes('rooms-hub') && !normFetchId.includes('room-hub') && normFetchId !== 'rooms') {
+                          const rawTarget = fetchId.toLowerCase().replace(/^room-/, '').replace(/^qr-/, '');
+                          const singleRoom = rooms.find((r: any) => {
+                            const rId = String(r.id || '').toLowerCase();
+                            const rRaw = rId.replace(/^room-/, '').replace(/^qr-/, '');
+                            return rId === fetchId.toLowerCase() || rRaw === rawTarget || `room-${rId}` === fetchId.toLowerCase();
+                          });
+                          if (singleRoom) {
+                            finishWithPage(QRHostingService.convertRoomToHostedPage(singleRoom, profile));
+                            return;
+                          }
+                        }
+                        finishWithPage(QRHostingService.convertRoomsHubToHostedPage(rooms, profile));
+                        return;
+                      }
                     } else if (isBiz) {
                       const bizPage = QRHostingService.convertBackupToHostedPage(bData);
                       if (bizPage && hasMeaningfulQrData(bizPage)) {
@@ -684,10 +745,10 @@ export function App() {
           const nowIso = new Date().toISOString();
           const fallbackCleanPage: QRCodeHostedPage = {
             id: fetchId,
-            title: 'Brivu Business',
+            title: isRooms ? 'Rooms & Prices' : 'Brivu Business',
             tagline: 'Welcome to our official business page',
             description: '',
-            pageType: isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
+            pageType: isRooms ? 'rooms_hub' : isEvents ? 'events_hub' : isSocials ? 'socials_hub' : isWebsites ? 'websites_hub' : 'menu',
             accentColor: '#059669',
             theme: 'emerald',
             phone: '',
@@ -702,6 +763,7 @@ export function App() {
             websitesQrItems: [],
             socialsQrItems: [],
             eventsQrItems: [],
+            roomsQrItems: [],
             createdAt: nowIso,
             updatedAt: nowIso,
           };
@@ -1355,6 +1417,7 @@ export function App() {
 
   // Business profile updated
   const handleUpdateBusiness = (updated: BusinessProfile) => {
+    const prevCurrency = business.currency;
     StorageService.saveProfile(updated);
     StorageService.syncBrandColorsToExistingDocuments(updated);
     setBusiness(updated);
@@ -1370,6 +1433,15 @@ export function App() {
       );
     });
     refreshData();
+
+    if (prevCurrency !== updated.currency && StorageService.isSubscribed() && StorageService.getAuthenticatedEmail()) {
+      const rooms = StorageService.getRoomsQrItems();
+      if (rooms.length > 0) {
+        QRHostingService.syncAllRoomsPages(rooms, updated).catch(() => {});
+      } else {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    }
   };
 
   // Settings updated

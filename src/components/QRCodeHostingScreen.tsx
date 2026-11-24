@@ -47,6 +47,7 @@ import {
   RefreshCw,
   Mail,
   AlertTriangle,
+  BedDouble,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -61,6 +62,7 @@ import { PhoneInputField } from './PhoneInputField';
 import { WebsitesAppsQrSection } from './WebsitesAppsQrSection';
 import { SocialsQrSection } from './SocialsQrSection';
 import { EventsQrSection } from './EventsQrSection';
+import { RoomsQrSection } from './RoomsQrSection';
 import { QrQuickSections } from './QrQuickSections';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 
@@ -177,8 +179,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   onOpenCustomerView,
   onOpenQrScanner,
 }) => {
-  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | 'menu' | 'wifi' | 'contacts' | 'location' | null
-  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | 'menu' | 'wifi' | 'contacts' | 'location' | null>(null);
+  // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | 'rooms' | 'menu' | 'wifi' | 'contacts' | 'location' | null
+  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | 'rooms' | 'menu' | 'wifi' | 'contacts' | 'location' | null>(null);
+  const [roomsCount, setRoomsCount] = useState<number>(() => StorageService.getRoomsQrItems().length);
 
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
   const [activePageId, setActivePageId] = useState<string>(() => {
@@ -200,9 +203,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   );
   const [trialStatus, setTrialStatus] = useState(() => StorageService.getTrialStatus());
   useEffect(() => {
+    setRoomsCount(StorageService.getRoomsQrItems().length);
+  }, [qrCategory]);
+
+  useEffect(() => {
     const syncAuthAndSub = () => {
       setIsLoggedIn(Boolean(StorageService.getAuthUser()?.email));
       setTrialStatus(StorageService.getTrialStatus());
+      setRoomsCount(StorageService.getRoomsQrItems().length);
     };
     syncAuthAndSub();
     if (StorageService.getTrialStatus().isExpired && !StorageService.isSubscribed() && PlayBillingService.isAndroid()) {
@@ -350,7 +358,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 }, [business]);
 
-  const activePage: QRCodeHostedPage = (pages.find((p) => p.id === activePageId) || pages[0]) || fallbackPage;
+  const rawActivePage: QRCodeHostedPage = (pages.find((p) => p.id === activePageId) || pages[0]) || fallbackPage;
+  const activeCurrency = business.currency || rawActivePage.currency || 'UGX';
+  const activePage: QRCodeHostedPage = useMemo(
+    () => (rawActivePage.currency === activeCurrency ? rawActivePage : { ...rawActivePage, currency: activeCurrency }),
+    [rawActivePage, activeCurrency]
+  );
 
   // Keep pages fresh when user logs in or out
   useEffect(() => {
@@ -902,7 +915,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage || !itemQrModalItem) return;
     const url = QRHostingService.getCustomerItemUrl(activePage.id, itemQrModalItem.id, ownerEmail);
     const title = `${itemQrModalItem.name} - ${activePage.title}`;
-    const text = `Check out ${itemQrModalItem.name} (${activePage.currency} ${itemQrModalItem.price}) at ${activePage.title}:`;
+    const text = `Check out ${itemQrModalItem.name} (${activeCurrency} ${itemQrModalItem.price}) at ${activePage.title}:`;
 
     const res = await shareContent({
       title,
@@ -1059,7 +1072,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     }
   };
 
-  const MAX_PHOTOS = 20;
+  const MAX_PHOTOS = 10;
+  const MAX_ITEMS = 10;
 
   const handlePhotoUploadClick = () => {
     if (activePage && activePage.photos.length >= MAX_PHOTOS) {
@@ -1213,6 +1227,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleOpenItemModal = (item?: QRMenuItem) => {
+    if (!item && activePage && activePage.menuItems.length >= MAX_ITEMS) {
+      setToastMessage(`Limit reached: Maximum ${MAX_ITEMS} items allowed. Please delete an item to add a new one.`);
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
     if (item) {
       setEditingItem(item);
       setItemName(item.name);
@@ -1254,6 +1273,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const handleSaveMenuItem = () => {
     if (!itemName.trim() || !activePage) return;
+    if (!editingItem && activePage.menuItems.length >= MAX_ITEMS) {
+      setToastMessage(`Limit reached: Maximum ${MAX_ITEMS} items allowed. Please remove an item.`);
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
     const priceNum = parseFloat(itemPrice) || 0;
     const finalCategory = itemCategory.trim();
     const finalTags = itemTagsInput
@@ -1608,6 +1632,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                     await QRHostingService.syncAllSocialsPages(StorageService.getSocialsQrItems(), business);
                   } else if (qrCategory === 'events') {
                     await QRHostingService.syncAllEventsPages(StorageService.getEventsQrItems(), business);
+                  } else if (qrCategory === 'rooms') {
+                    await QRHostingService.syncAllRoomsPages(StorageService.getRoomsQrItems(), business);
                   } else if (latestPage) {
                     pageRes = await CloudflareService.saveSingleQrPage(latestPage, resolvedSyncEmail, { immediate: true });
                   }
@@ -1827,6 +1853,26 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <span>Location</span>
             </button>
           </div>
+
+          {/* Rooms quick link row directly below Menu & WiFi */}
+          <div className="pt-0.5 px-1 flex items-center gap-4">
+            <button
+              id="btn-text-qr-rooms"
+              type="button"
+              onClick={() => setQrCategory('rooms')}
+              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+            >
+              <BedDouble className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>
+                Rooms
+                {roomsCount > 0 && (
+                  <span className="ml-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                    ({roomsCount})
+                  </span>
+                )}
+              </span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -1867,6 +1913,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       {/* EVENTS QR SECTION */}
       {qrCategory === 'events' && (
         <EventsQrSection
+          business={business}
+          hostedPageId={activePageId || activePage?.id}
+          showToast={showToast}
+          onOpenCustomerView={(page) => onOpenCustomerView(page)}
+        />
+      )}
+
+      {/* ROOMS & PRICES QR SECTION */}
+      {qrCategory === 'rooms' && (
+        <RoomsQrSection
           business={business}
           hostedPageId={activePageId || activePage?.id}
           showToast={showToast}
@@ -2555,11 +2611,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                {t('digital_items_title', business?.language) || 'Digital Items'}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {formatNumber(activePage.menuItems.length, business?.language)} {t('items', business?.language) || 'items'}
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  {t('digital_items_title', business?.language) || 'Digital Items'}
+                </h2>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  {formatNumber(activePage.menuItems.length, business?.language)}/{formatNumber(MAX_ITEMS, business?.language)} Max
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {formatNumber(activePage.menuItems.length, business?.language)} / {formatNumber(MAX_ITEMS, business?.language)} {t('items', business?.language) || 'items'}
               </p>
             </div>
 
@@ -2576,10 +2637,19 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <button
                 type="button"
                 onClick={() => handleOpenItemModal()}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-95 transition"
+                disabled={activePage.menuItems.length >= MAX_ITEMS}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition ${
+                  activePage.menuItems.length >= MAX_ITEMS
+                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                }`}
               >
                 <Plus className="w-4 h-4" />
-                <span>{t('add_new_item', business?.language) || 'Add Item'}</span>
+                <span>
+                  {activePage.menuItems.length >= MAX_ITEMS
+                    ? `Limit Reached (${MAX_ITEMS}/${MAX_ITEMS})`
+                    : (t('add_new_item', business?.language) || 'Add Item')}
+                </span>
               </button>
             </div>
           </div>
@@ -2707,9 +2777,16 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               </p>
               <button
                 onClick={() => handleOpenItemModal()}
-                className="mt-4 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
+                disabled={activePage.menuItems.length >= MAX_ITEMS}
+                className={`mt-4 px-4 py-2 rounded-xl text-xs font-bold ${
+                  activePage.menuItems.length >= MAX_ITEMS
+                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 text-white'
+                }`}
               >
-                + Add Item in {selectedCategoryFilter}
+                {activePage.menuItems.length >= MAX_ITEMS
+                  ? `Limit Reached (${MAX_ITEMS}/${MAX_ITEMS})`
+                  : `+ Add Item in ${selectedCategoryFilter}`}
               </button>
             </div>
           ) : (
@@ -2832,11 +2909,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   {t('photo_gallery_title', business?.language) || 'Business Photos'}
                 </h2>
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                  {formatNumber(activePage.photos.length, business?.language)}/{formatNumber(20, business?.language)} Max
+                  {formatNumber(activePage.photos.length, business?.language)}/{formatNumber(MAX_PHOTOS, business?.language)} Max
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                {formatNumber(activePage.photos.length, business?.language)} / {formatNumber(20, business?.language)} {t('photos', business?.language) || 'photos'}
+                {formatNumber(activePage.photos.length, business?.language)} / {formatNumber(MAX_PHOTOS, business?.language)} {t('photos', business?.language) || 'photos'}
               </p>
             </div>
 
@@ -2852,15 +2929,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
               <button
                 onClick={handlePhotoUploadClick}
-                disabled={activePage.photos.length >= 20}
+                disabled={activePage.photos.length >= MAX_PHOTOS}
                 className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition ${
-                  activePage.photos.length >= 20
+                  activePage.photos.length >= MAX_PHOTOS
                     ? 'bg-slate-300 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                 }`}
               >
                 <Camera className="w-4 h-4" />
-                <span>{activePage.photos.length >= 20 ? 'Limit Reached (20/20)' : (t('upload_photo_btn', business?.language) || 'Upload Photo')}</span>
+                <span>{activePage.photos.length >= MAX_PHOTOS ? `Limit Reached (${MAX_PHOTOS}/${MAX_PHOTOS})` : (t('upload_photo_btn', business?.language) || 'Upload Photo')}</span>
               </button>
             </div>
           </div>
@@ -2870,7 +2947,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No photos uploaded yet</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                Customers love seeing real photos of your venue, products, and services (Max 20 photos).
+                Customers love seeing real photos of your venue, products, and services (Max 10 photos).
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <button
@@ -3240,7 +3317,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-600 dark:text-slate-400">Price ({activePage.currency}) *</label>
+                  <label className="font-bold text-slate-600 dark:text-slate-400">Price ({activeCurrency}) *</label>
                   <input
                     type="number"
                     placeholder="35000"

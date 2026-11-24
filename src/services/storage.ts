@@ -24,6 +24,7 @@ import {
   WebsiteAppQrItem,
   SocialQrItem,
   EventQrItem,
+  RoomQrItem,
   UserSubscription,
   AppLockConfig,
   CloudflareConfig,
@@ -59,6 +60,7 @@ const STORAGE_KEYS = {
   WEBSITES_QR: 'quickreceipt_websites_apps_qr_v1',
   SOCIALS_QR: 'quickreceipt_socials_qr_v1',
   EVENTS_QR: 'quickreceipt_events_qr_v1',
+  ROOMS_QR: 'quickreceipt_rooms_qr_v1',
   SUBSCRIPTION: 'quickreceipt_subscription_v1',
   APP_LOCK: 'quickreceipt_app_lock_config_v1',
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
@@ -502,55 +504,75 @@ export const StorageService = {
   },
 
   syncBrandColorsToExistingDocuments(updatedProfile: BusinessProfile): void {
+    const resolvedCurrency = updatedProfile.currency || 'UGX';
+
     const rawReceipts = readFromStorage<Receipt[]>(STORAGE_KEYS.RECEIPTS, []);
-    if (!Array.isArray(rawReceipts) || rawReceipts.length === 0) return;
+    if (Array.isArray(rawReceipts) && rawReceipts.length > 0) {
+      const updatedReceipts = rawReceipts.map((r) => {
+        if (!r || typeof r !== 'object') return r;
+        const nextSnapshot: BusinessProfile = {
+          ...(r.businessSnapshot || updatedProfile),
+          name: updatedProfile.name || r.businessSnapshot?.name || '',
+          description: updatedProfile.description ?? r.businessSnapshot?.description ?? '',
+          phone: updatedProfile.phone || r.businessSnapshot?.phone || '',
+          whatsapp: updatedProfile.whatsapp || r.businessSnapshot?.whatsapp || '',
+          email: updatedProfile.email || r.businessSnapshot?.email || '',
+          address: updatedProfile.address || r.businessSnapshot?.address || '',
+          taxNumber: updatedProfile.taxNumber || r.businessSnapshot?.taxNumber || '',
+          website: updatedProfile.website || r.businessSnapshot?.website || '',
+          currency: resolvedCurrency,
+          language: updatedProfile.language || r.businessSnapshot?.language,
+          customFooter: updatedProfile.customFooter ?? r.businessSnapshot?.customFooter ?? '',
+          logo: updatedProfile.logo || r.businessSnapshot?.logo,
+          signature: updatedProfile.signature ?? r.businessSnapshot?.signature,
+          accentColor: updatedProfile.accentColor || undefined,
+          headerBgColor: updatedProfile.headerBgColor || undefined,
+          headerTextColor: updatedProfile.headerTextColor || undefined,
+          totalBgColor: updatedProfile.totalBgColor || undefined,
+          totalTextColor: updatedProfile.totalTextColor || undefined,
+          paperBgColor: updatedProfile.paperBgColor || undefined,
+        };
 
-    const updatedReceipts = rawReceipts.map((r) => {
-      if (!r || typeof r !== 'object') return r;
-      const nextSnapshot: BusinessProfile = {
-        ...(r.businessSnapshot || updatedProfile),
-        name: updatedProfile.name || r.businessSnapshot?.name || '',
-        description: updatedProfile.description ?? r.businessSnapshot?.description ?? '',
-        phone: updatedProfile.phone || r.businessSnapshot?.phone || '',
-        whatsapp: updatedProfile.whatsapp || r.businessSnapshot?.whatsapp || '',
-        email: updatedProfile.email || r.businessSnapshot?.email || '',
-        address: updatedProfile.address || r.businessSnapshot?.address || '',
-        taxNumber: updatedProfile.taxNumber || r.businessSnapshot?.taxNumber || '',
-        website: updatedProfile.website || r.businessSnapshot?.website || '',
-        currency: r.businessSnapshot?.currency || updatedProfile.currency || 'UGX',
-        language: updatedProfile.language || r.businessSnapshot?.language,
-        customFooter: updatedProfile.customFooter ?? r.businessSnapshot?.customFooter ?? '',
-        logo: updatedProfile.logo || r.businessSnapshot?.logo,
-        signature: updatedProfile.signature ?? r.businessSnapshot?.signature,
-        accentColor: updatedProfile.accentColor || undefined,
-        headerBgColor: updatedProfile.headerBgColor || undefined,
-        headerTextColor: updatedProfile.headerTextColor || undefined,
-        totalBgColor: updatedProfile.totalBgColor || undefined,
-        totalTextColor: updatedProfile.totalTextColor || undefined,
-        paperBgColor: updatedProfile.paperBgColor || undefined,
-      };
+        const cleanedCustomTheme = r.customTheme
+          ? {
+              ...r.customTheme,
+              accentColor: undefined,
+              headerBgColor: undefined,
+              headerTextColor: undefined,
+              totalBgColor: undefined,
+              totalTextColor: undefined,
+              paperBgColor: undefined,
+            }
+          : undefined;
 
-      const cleanedCustomTheme = r.customTheme
-        ? {
-            ...r.customTheme,
-            accentColor: undefined,
-            headerBgColor: undefined,
-            headerTextColor: undefined,
-            totalBgColor: undefined,
-            totalTextColor: undefined,
-            paperBgColor: undefined,
-          }
-        : undefined;
+        return {
+          ...r,
+          currency: resolvedCurrency,
+          accentColor: undefined,
+          customTheme: cleanedCustomTheme,
+          businessSnapshot: nextSnapshot,
+        };
+      });
 
-      return {
-        ...r,
-        accentColor: undefined,
-        customTheme: cleanedCustomTheme,
-        businessSnapshot: nextSnapshot,
-      };
-    });
+      writeToStorage(STORAGE_KEYS.RECEIPTS, updatedReceipts);
+    }
 
-    writeToStorage(STORAGE_KEYS.RECEIPTS, updatedReceipts);
+    // Sync currency to hosted QR pages & Rooms QR items so QR pages & Rooms reflect the profile currency immediately
+    const rawHostedPages = readFromStorage<QRCodeHostedPage[]>(STORAGE_KEYS.QR_HOSTED_PAGES, []);
+    if (Array.isArray(rawHostedPages) && rawHostedPages.length > 0) {
+      const updatedHostedPages = rawHostedPages.map((p) =>
+        p && typeof p === 'object' ? { ...p, currency: resolvedCurrency } : p
+      );
+      writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, updatedHostedPages);
+    }
+
+    const rawRooms = readFromStorage<RoomQrItem[]>(STORAGE_KEYS.ROOMS_QR, []);
+    if (Array.isArray(rawRooms) && rawRooms.length > 0) {
+      const updatedRooms = rawRooms.map((rm) =>
+        rm && typeof rm === 'object' ? { ...rm, currency: resolvedCurrency } : rm
+      );
+      writeToStorage(STORAGE_KEYS.ROOMS_QR, updatedRooms);
+    }
   },
 
   getDeletedReceiptIds(): string[] {
@@ -952,6 +974,7 @@ export const StorageService = {
       websitesQrItems: this.getWebsitesQrItems(),
       socialsQrItems: this.getSocialsQrItems(),
       eventsQrItems: this.getEventsQrItems(),
+      roomsQrItems: this.getRoomsQrItems(),
     };
   },
 
@@ -1494,8 +1517,12 @@ export const StorageService = {
           ptype === 'socials_hub' ||
           ptype === 'events_hub' ||
           ptype === 'event' ||
+          ptype === 'rooms_hub' ||
+          ptype === 'room' ||
           pid.startsWith('event-') ||
           pid.startsWith('events-hub-') ||
+          pid.startsWith('room-') ||
+          pid.startsWith('rooms-hub-') ||
           pid.startsWith('websites-hub-') ||
           pid.startsWith('socials-hub-') ||
           pid.startsWith('test-event-') ||
@@ -1604,6 +1631,7 @@ export const StorageService = {
       const extractedWebFromPages: WebsiteAppQrItem[] = [];
       const extractedSocFromPages: SocialQrItem[] = [];
       const extractedEvtFromPages: EventQrItem[] = [];
+      const extractedRoomsFromPages: RoomQrItem[] = [];
       if (Array.isArray(backupData.qrHostedPages)) {
         for (const p of backupData.qrHostedPages as any[]) {
           if (!p || typeof p !== 'object') continue;
@@ -1615,6 +1643,9 @@ export const StorageService = {
           }
           if (Array.isArray(p.eventsQrItems)) {
             extractedEvtFromPages.push(...p.eventsQrItems);
+          }
+          if (Array.isArray(p.roomsQrItems)) {
+            extractedRoomsFromPages.push(...p.roomsQrItems);
           }
         }
       }
@@ -1689,6 +1720,17 @@ export const StorageService = {
         writeToStorage(
           STORAGE_KEYS.EVENTS_QR,
           mergeByIdPreservingLocalNonMatching(this.getEventsQrItems(), incomingEvtItems, replaceExisting)
+        );
+      }
+
+      const incomingRoomsItems = [
+        ...(Array.isArray(backupData.roomsQrItems) ? backupData.roomsQrItems : []),
+        ...extractedRoomsFromPages,
+      ];
+      if (incomingRoomsItems.length > 0) {
+        writeToStorage(
+          STORAGE_KEYS.ROOMS_QR,
+          mergeByIdPreservingLocalNonMatching(this.getRoomsQrItems(), incomingRoomsItems, replaceExisting)
         );
       }
       const recCount = Array.isArray(incomingReceipts) ? incomingReceipts.length : 0;
@@ -2564,6 +2606,8 @@ export const StorageService = {
           typeof p === 'object' &&
           !p.id.startsWith('event-') &&
           !p.id.startsWith('events-hub-') &&
+          !p.id.startsWith('room-') &&
+          !p.id.startsWith('rooms-hub-') &&
           !p.id.startsWith('test-event-') &&
           !p.id.startsWith('web-') &&
           !p.id.startsWith('social-')
@@ -2676,6 +2720,25 @@ export const StorageService = {
       if (id.startsWith('event-')) {
         return QRHostingService.convertEventsHubToHostedPage(events, business);
       }
+
+      // 4. Rooms & Prices Hub or Single Room
+      const rooms = this.getRoomsQrItems();
+      if (
+        id.startsWith('rooms-hub') ||
+        id.startsWith('room-hub') ||
+        id === 'rooms' ||
+        id === 'rooms-hub-all' ||
+        id.includes('rooms-hub')
+      ) {
+        return QRHostingService.convertRoomsHubToHostedPage(rooms, business);
+      }
+      const foundRoom = rooms.find((r) => r.id === id);
+      if (foundRoom) {
+        return QRHostingService.convertRoomToHostedPage(foundRoom, business);
+      }
+      if (id.startsWith('room-')) {
+        return QRHostingService.convertRoomsHubToHostedPage(rooms, business);
+      }
     } catch {}
     return undefined;
   },
@@ -2684,14 +2747,17 @@ export const StorageService = {
     const businessPages = this.getHostedQRPages();
     try {
       const events = this.getEventsQrItems();
+      const rooms = this.getRoomsQrItems();
       const websites = this.getWebsitesQrItems();
       const socials = this.getSocialsQrItems();
       const business = this.getProfile();
       const eventPages = events.map((e) => QRHostingService.convertEventToHostedPage(e, business));
       const hubPage = QRHostingService.convertEventsHubToHostedPage(events, business);
+      const roomPages = rooms.map((r) => QRHostingService.convertRoomToHostedPage(r, business));
+      const roomsHubPage = QRHostingService.convertRoomsHubToHostedPage(rooms, business);
       const websitesHubPage = QRHostingService.convertWebsitesHubToHostedPage(websites, business);
       const socialsHubPage = QRHostingService.convertSocialsHubToHostedPage(socials, business);
-      return [...businessPages, ...eventPages, hubPage, websitesHubPage, socialsHubPage];
+      return [...businessPages, ...eventPages, hubPage, ...roomPages, roomsHubPage, websitesHubPage, socialsHubPage];
     } catch {
       return businessPages;
     }
@@ -2702,6 +2768,8 @@ export const StorageService = {
       (p) =>
         !p.id.startsWith('event-') &&
         !p.id.startsWith('events-hub-') &&
+        !p.id.startsWith('room-') &&
+        !p.id.startsWith('rooms-hub-') &&
         !p.id.startsWith('websites-hub-') &&
         !p.id.startsWith('socials-hub-') &&
         !p.id.startsWith('test-event-') &&
@@ -2716,6 +2784,8 @@ export const StorageService = {
       (p) =>
         !p.id.startsWith('event-') &&
         !p.id.startsWith('events-hub-') &&
+        !p.id.startsWith('room-') &&
+        !p.id.startsWith('rooms-hub-') &&
         !p.id.startsWith('websites-hub-') &&
         !p.id.startsWith('socials-hub-') &&
         !p.id.startsWith('test-event-') &&
@@ -2733,6 +2803,8 @@ export const StorageService = {
     if (
       page.id.startsWith('event-') ||
       page.id.startsWith('events-hub-') ||
+      page.id.startsWith('room-') ||
+      page.id.startsWith('rooms-hub-') ||
       page.id.startsWith('websites-hub-') ||
       page.id.startsWith('socials-hub-') ||
       page.id.startsWith('test-event-') ||
@@ -2957,6 +3029,30 @@ export const StorageService = {
       try {
         const business = this.getProfile();
         QRHostingService.syncAllEventsPages(items, business).catch(() => {});
+      } catch {
+        CloudflareService.syncAllToCloudflare().catch(() => {});
+      }
+    }
+    return success;
+  },
+
+  // --- ROOMS & PRICES QR ITEMS ---
+  getRoomsQrItems(): RoomQrItem[] {
+    const raw = readFromStorage<RoomQrItem[]>(STORAGE_KEYS.ROOMS_QR, []);
+    return (raw || []).filter(
+      (item) =>
+        item &&
+        !item.id.includes('default') &&
+        !item.id.includes('sample')
+    );
+  },
+
+  saveRoomsQrItems(items: RoomQrItem[]): boolean {
+    const success = writeToStorage(STORAGE_KEYS.ROOMS_QR, items);
+    if (success) {
+      try {
+        const business = this.getProfile();
+        QRHostingService.syncAllRoomsPages(items, business).catch(() => {});
       } catch {
         CloudflareService.syncAllToCloudflare().catch(() => {});
       }
@@ -3332,6 +3428,7 @@ export const StorageService = {
     writeToStorage(STORAGE_KEYS.WEBSITES_QR, []);
     writeToStorage(STORAGE_KEYS.SOCIALS_QR, []);
     writeToStorage(STORAGE_KEYS.EVENTS_QR, []);
+    writeToStorage(STORAGE_KEYS.ROOMS_QR, []);
     writeToStorage(STORAGE_KEYS.DELETED_RECEIPTS, []);
   },
 

@@ -165,10 +165,18 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
       websitesQrItems: page.websitesQrItems || [],
       socialsQrItems: page.socialsQrItems || [],
       eventsQrItems: page.eventsQrItems || [],
+      roomsQrItems: (page.roomsQrItems || []).map((room) => ({
+        ...room,
+        photos: (room.photos || []).filter((p) => Boolean(p)),
+      })),
     })),
     eventsQrItems: (data.eventsQrItems || []).map((evt) => ({
       ...evt,
       photos: (evt.photos || []).filter((p) => Boolean(p)),
+    })),
+    roomsQrItems: (data.roomsQrItems || []).map((room) => ({
+      ...room,
+      photos: (room.photos || []).filter((p) => Boolean(p)),
     })),
     websitesQrItems: data.websitesQrItems || [],
     socialsQrItems: data.socialsQrItems || [],
@@ -199,6 +207,10 @@ function getQrSaveQueueKey(page: any, userEmail: string): string {
     return `${userEmail}::event::${rawId}`;
   }
   if (rawType.includes('event') || rawId.includes('event')) return `${userEmail}::events`;
+  if (rawType === 'room' || (rawId.startsWith('room-') && !rawId.startsWith('rooms-hub') && !rawId.startsWith('room-hub'))) {
+    return `${userEmail}::room::${rawId}`;
+  }
+  if (rawType.includes('room') || rawId.includes('room')) return `${userEmail}::rooms`;
   return `${userEmail}::business`;
 }
 
@@ -969,6 +981,7 @@ export const CloudflareService = {
         websitesQrItems: rawBackupData.websitesQrItems,
         socialsQrItems: rawBackupData.socialsQrItems,
         eventsQrItems: rawBackupData.eventsQrItems,
+        roomsQrItems: rawBackupData.roomsQrItems,
         ...(Array.isArray((rawBackupData as any).files) ? { files: (rawBackupData as any).files } : {}),
       };
 
@@ -1142,16 +1155,16 @@ export const CloudflareService = {
         let nextPhotos = existingPhotos;
 
         if (existingPhotos.length === 0 && r2GalleryPhotos.length > 0) {
-          nextPhotos = r2GalleryPhotos;
-          totalRecovered = r2GalleryPhotos.length;
+          nextPhotos = r2GalleryPhotos.slice(0, 10);
+          totalRecovered = nextPhotos.length;
           didUpdate = true;
         } else if (forceMergeMissing && r2GalleryPhotos.length > 0) {
           const existingUrlSet = new Set(existingPhotos.map((p) => p.url));
           const missing = r2GalleryPhotos.filter((p) => !existingUrlSet.has(p.url));
           if (missing.length > 0) {
-            nextPhotos = [...existingPhotos, ...missing].slice(0, 20);
-            totalRecovered = missing.length;
-            didUpdate = true;
+            nextPhotos = [...existingPhotos, ...missing].slice(0, 10);
+            totalRecovered = Math.max(0, nextPhotos.length - existingPhotos.length);
+            didUpdate = nextPhotos.length > existingPhotos.length;
           }
         }
 
@@ -1509,6 +1522,7 @@ export const CloudflareService = {
         websitesQrItems: page.websitesQrItems || [],
         socialsQrItems: page.socialsQrItems || [],
         eventsQrItems: page.eventsQrItems || [],
+        roomsQrItems: page.roomsQrItems || [],
         ...(page?.preserveExistingIfEmpty ? { preserveExistingIfEmpty: true } : {}),
       };
 

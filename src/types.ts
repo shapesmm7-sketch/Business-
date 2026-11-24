@@ -433,6 +433,7 @@ export interface AppBackupData {
   websitesQrItems?: WebsiteAppQrItem[];
   socialsQrItems?: SocialQrItem[];
   eventsQrItems?: EventQrItem[];
+  roomsQrItems?: RoomQrItem[];
 }
 
 export type SocialPlatform =
@@ -518,6 +519,27 @@ export interface EventQrItem {
   createdAt: string;
 }
 
+export interface RoomQrItem {
+  id: string;
+  name: string;
+  pricePerNight: number;
+  currency?: string;
+  occupancy: string;
+  bedType?: string;
+  amenities: string[];
+  description?: string;
+  photos: string[];
+  isAvailable: boolean;
+  whatsappPhone?: string;
+  ctaText?: string;
+  darkColor: string;
+  lightColor: string;
+  eyeColor?: string;
+  boxBgColor?: string;
+  boxBorderColor?: string;
+  createdAt: string;
+}
+
 export interface QRMenuItem {
   id: string;
   name: string;
@@ -566,7 +588,7 @@ export interface QRCodeHostedPage {
   title: string;
   tagline?: string;
   description?: string;
-  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog' | 'event' | 'events_hub' | 'website' | 'websites_hub' | 'social' | 'socials_hub' | string;
+  pageType: 'menu' | 'business_showcase' | 'hotel_resort' | 'catalog' | 'event' | 'events_hub' | 'room' | 'rooms_hub' | 'website' | 'websites_hub' | 'social' | 'socials_hub' | string;
   logo?: string;
   coverImage?: string;
   accentColor?: string;
@@ -595,6 +617,7 @@ export interface QRCodeHostedPage {
   websitesQrItems?: WebsiteAppQrItem[];
   socialsQrItems?: SocialQrItem[];
   eventsQrItems?: EventQrItem[];
+  roomsQrItems?: RoomQrItem[];
   currency: string;
   language?: string;
   announcement?: string;

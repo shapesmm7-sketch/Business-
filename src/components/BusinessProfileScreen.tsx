@@ -1279,7 +1279,7 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
             <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 <Coins className="w-3.5 h-3.5 text-amber-500" />
-                <span>Default Currency (Default: UGX)</span>
+                <span>Default Currency</span>
               </label>
               <button
                 id="btn-open-currency-modal"

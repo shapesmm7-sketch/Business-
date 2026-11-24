@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Crown,
   Sparkles,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { StorageService } from '../services/storage';
 import { PlayBillingService, GOOGLE_PLAY_PRODUCTS } from '../services/playBillingService';
+import { ExchangeRateService, UsdExchangeRatesSnapshot } from '../services/exchangeRateService';
 import { SubscriptionPlanId, UserSubscription } from '../types';
 
 interface UpgradeModalProps {
@@ -102,10 +103,49 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'google_play' | 'card' | 'gpay' | 'momo'>('google_play');
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string>('');
   const [restoreFeedback, setRestoreFeedback] = useState<{ msg: string; success: boolean } | null>(null);
+  const [businessCurrency, setBusinessCurrency] = useState<string>(
+    () => StorageService.getProfile().currency || 'UGX'
+  );
+  const [ratesSnapshot, setRatesSnapshot] = useState<UsdExchangeRatesSnapshot>(() =>
+    ExchangeRateService.getCachedOrFallbackRates()
+  );
+  const [isRefreshingRates, setIsRefreshingRates] = useState<boolean>(false);
+
+  const refreshLiveRates = useCallback(async (force = false) => {
+    setIsRefreshingRates(true);
+    try {
+      const snap = await ExchangeRateService.fetchLiveUsdRates(force);
+      setRatesSnapshot(snap);
+    } finally {
+      setIsRefreshingRates(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setBusinessCurrency(StorageService.getProfile().currency || 'UGX');
+      refreshLiveRates(false);
+    }
+    const syncCurrency = () => {
+      setBusinessCurrency(StorageService.getProfile().currency || 'UGX');
+    };
+    window.addEventListener('brivu_data_refreshed', syncCurrency);
+    window.addEventListener('storage', syncCurrency);
+    return () => {
+      window.removeEventListener('brivu_data_refreshed', syncCurrency);
+      window.removeEventListener('storage', syncCurrency);
+    };
+  }, [isOpen, refreshLiveRates]);
 
   if (!isOpen) return null;
 
+  const formatPlanAmount = (usdAmount: number) =>
+    ExchangeRateService.convertFromUsd(usdAmount, businessCurrency, ratesSnapshot.rates);
+
+  const liveRateLabel = ExchangeRateService.formatUsdRateLabel(businessCurrency, ratesSnapshot.rates);
+
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
+  const selectedPlanLocal = formatPlanAmount(selectedPlan.price);
   const isCurrentlyActive = currentSubscription && currentSubscription.status === 'active';
 
   const handleSubscribe = async () => {
@@ -120,7 +160,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     setIsProcessing(false);
     if (result.success && result.subscription) {
       onSubscriptionChange(result.subscription);
-      setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlan.formattedPrice} via Google Play Billing!`);
+      setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlanLocal.formatted} via Google Play Billing!`);
       setPaymentStep('success');
     } else if (!result.userCancelled) {
       setRestoreFeedback({
@@ -263,7 +303,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 </div>
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Amount:</span>
-                  <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{selectedPlan.formattedPrice}</strong>
+                  <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{selectedPlanLocal.formatted}</strong>
                 </div>
                 <div className="flex justify-between text-slate-500 dark:text-slate-400">
                   <span>Status:</span>
@@ -303,18 +343,33 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
               {/* Subscription Plans Selection */}
               <div>
-                <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
                   <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Select Your Subscription Plan
                   </span>
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-bold">
-                    Cancel Anytime
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {liveRateLabel && (
+                      <button
+                        type="button"
+                        onClick={() => refreshLiveRates(true)}
+                        disabled={isRefreshingRates}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-lg cursor-pointer"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 ${isRefreshingRates ? 'animate-spin' : ''}`} />
+                        <span>{liveRateLabel}</span>
+                      </button>
+                    )}
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400 font-bold">
+                      Cancel Anytime
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2.5">
                   {SUBSCRIPTION_PLANS.map((plan) => {
                     const isSelected = selectedPlanId === plan.id;
+                    const localPlanPrice = formatPlanAmount(plan.price);
+                    const localMonthlyEq = formatPlanAmount(plan.price / plan.monthsCount);
                     return (
                       <button
                         key={plan.id}
@@ -354,7 +409,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                               )}
                             </div>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
-                              {plan.description}
+                              {plan.id === '6-months'
+                                ? `Billed ${localPlanPrice.formatted} every 6 months.`
+                                : plan.id === '1-year'
+                                ? `Billed ${localPlanPrice.formatted} annually. Full Pro access.`
+                                : plan.description}
                             </p>
                           </div>
                         </div>
@@ -363,14 +422,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                         <div className="text-right shrink-0">
                           <div className="flex items-baseline justify-end gap-0.5">
                             <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                              {plan.formattedPrice}
+                              {localPlanPrice.formatted}
                             </span>
                             <span className="text-[10px] text-slate-400 font-medium">
                               {plan.periodLabel}
                             </span>
                           </div>
                           <span className="text-[10px] text-slate-400 block font-semibold">
-                            {plan.monthlyEquivalent}
+                            {localMonthlyEq.formatted}/mo{businessCurrency !== 'USD' ? ` • ${plan.formattedPrice}` : ''}
                           </span>
                         </div>
                       </button>
@@ -506,7 +565,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                     <>
                       <Crown className="w-4 h-4 fill-white" />
                       <span>
-                        {isCurrentlyActive ? 'Switch Plan' : 'Subscribe with Google Play'} — {selectedPlan.formattedPrice}
+                        {isCurrentlyActive ? 'Switch Plan' : 'Subscribe with Google Play'} — {selectedPlanLocal.formatted}
                       </span>
                       <ArrowRight className="w-4 h-4" />
                     </>

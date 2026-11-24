@@ -566,6 +566,7 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
 export function hasRealQrPageContent(page: any): boolean {
   if (!page || typeof page !== 'object') return false;
   if (Array.isArray(page.eventsQrItems) && page.eventsQrItems.length > 0) return true;
+  if (Array.isArray(page.roomsQrItems) && page.roomsQrItems.length > 0) return true;
   if (Array.isArray(page.websitesQrItems) && page.websitesQrItems.length > 0) return true;
   if (Array.isArray(page.socialsQrItems) && page.socialsQrItems.length > 0) return true;
   if (Array.isArray(page.menuItems) && page.menuItems.length > 0) return true;
@@ -639,6 +640,7 @@ export function hasRealUserContent(data: any): boolean {
   if (Array.isArray(backup.workers) && backup.workers.length > 0) return true;
   if (Array.isArray(backup.shoppingListItems) && backup.shoppingListItems.length > 0) return true;
   if (Array.isArray(backup.eventsQrItems) && backup.eventsQrItems.length > 0) return true;
+  if (Array.isArray(backup.roomsQrItems) && backup.roomsQrItems.length > 0) return true;
   if (Array.isArray(backup.websitesQrItems) && backup.websitesQrItems.length > 0) return true;
   if (Array.isArray(backup.socialsQrItems) && backup.socialsQrItems.length > 0) return true;
   if (Array.isArray(backup.photos) && backup.photos.length > 0) return true;
@@ -804,7 +806,7 @@ export function recoverQrPhotosFromFileRecords(filesList: any[], origin: string)
         title: 'Business Photo',
         description: '',
       });
-      if (photos.length >= 20) break;
+      if (photos.length >= 10) break;
     }
   }
 
@@ -1205,10 +1207,16 @@ export function sanitizePublicQrPage(rawPage: any): any {
     : undefined;
 
   const rawEvents = Array.isArray(rawPage.eventsQrItems) ? rawPage.eventsQrItems : [];
+  const rawRooms = Array.isArray(rawPage.roomsQrItems) ? rawPage.roomsQrItems : [];
   const isEvtType =
     rawPage.pageType === 'event' ||
     rawPage.pageType === 'events_hub' ||
     String(rawPage.id || '').toLowerCase().startsWith('event');
+  const isRoomType =
+    rawPage.pageType === 'room' ||
+    rawPage.pageType === 'rooms_hub' ||
+    String(rawPage.id || '').toLowerCase().startsWith('room-') ||
+    String(rawPage.id || '').toLowerCase().startsWith('rooms-hub');
 
   // Enrich menuItems with full event details (photoUrl, guestOfHonor, speakers, websiteUrl, description)
   // when legacy D1 qr_pages rows hold older menuItems alongside newer eventsQrItems.
@@ -1330,6 +1338,7 @@ export function sanitizePublicQrPage(rawPage: any): any {
     websitesQrItems: Array.isArray(rawPage.websitesQrItems) ? rawPage.websitesQrItems : [],
     socialsQrItems: Array.isArray(rawPage.socialsQrItems) ? rawPage.socialsQrItems : [],
     eventsQrItems: rawEvents,
+    roomsQrItems: rawRooms,
     qrDarkColor: rawPage.qrDarkColor || undefined,
     qrLightColor: rawPage.qrLightColor || undefined,
     qrEyeColor: rawPage.qrEyeColor || undefined,
@@ -1427,14 +1436,86 @@ function buildSingleEventPublicPage(evt: any, userEmail: string, baseInfo?: any)
   });
 }
 
+function matchRoomItemById(rooms: any[], rawTargetId: string): any | null {
+  if (!Array.isArray(rooms) || rooms.length === 0 || !rawTargetId) return null;
+  const target = rawTargetId.toLowerCase().trim();
+  const strippedTarget = target.replace(/^room-/, '').replace(/^qr-/, '');
+  return (
+    rooms.find((r: any) => {
+      if (!r || !r.id) return false;
+      const rId = String(r.id).toLowerCase().trim();
+      const strippedR = rId.replace(/^room-/, '').replace(/^qr-/, '');
+      return rId === target || strippedR === strippedTarget || `room-${rId}` === target;
+    }) || null
+  );
+}
+
+function buildSingleRoomPublicPage(room: any, userEmail: string, baseInfo?: any): any {
+  const cleanPhone = String(room?.whatsappPhone || baseInfo?.whatsapp || baseInfo?.phone || '').replace(/[^0-9+]/g, '');
+  const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
+  const roomPhotos = Array.isArray(room?.photos) ? room.photos : [];
+  const currency = baseInfo?.currency || room?.currency || 'UGX';
+  const photos = roomPhotos.map((u: string, idx: number) => ({
+    id: `${room.id}-photo-${idx}`,
+    url: u,
+    title: room.name,
+    description: `${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy || ''}`,
+    badge: room.isAvailable !== false ? 'Available' : 'Booked',
+    caption: room.name,
+  }));
+
+  return sanitizePublicQrPage({
+    id: room.id,
+    title: room.name || 'Room Booking',
+    tagline: `${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy || ''}`,
+    description: room.description || '',
+    pageType: 'room',
+    accentColor: room.darkColor || '#059669',
+    theme: 'emerald',
+    coverImage: roomPhotos[0] || undefined,
+    logo: baseInfo?.logo || roomPhotos[0] || undefined,
+    phone: room.whatsappPhone || baseInfo?.phone || baseInfo?.whatsapp || '',
+    whatsapp: cleanWa,
+    email: baseInfo?.email || userEmail,
+    userEmail: userEmail || baseInfo?.email || '',
+    address: baseInfo?.address || '',
+    currency,
+    announcement: '',
+    allowWhatsAppOrdering: true,
+    photos,
+    menuCategories: ['Rooms & Suites'],
+    menuItems: [
+      {
+        id: `room-item-${room.id}`,
+        name: room.name,
+        category: 'Rooms & Suites',
+        price: Number(room.pricePerNight || 0),
+        size: room.occupancy,
+        description: room.description || '',
+        photoUrl: roomPhotos[0] || undefined,
+        isAvailable: room.isAvailable !== false,
+        tags: Array.isArray(room.amenities) ? room.amenities : [],
+        ctaText: room.ctaText || 'Book',
+      },
+    ],
+    roomsQrItems: [room],
+    qrDarkColor: room.darkColor || '#059669',
+    qrLightColor: room.lightColor || '#ffffff',
+    qrEyeColor: room.eyeColor || room.darkColor || '#047857',
+    qrBoxBgColor: room.boxBgColor || '#ffffff',
+    qrBoxBorderColor: room.boxBorderColor || '#cbd5e1',
+    createdAt: room.createdAt || new Date().toISOString(),
+  });
+}
+
 /**
  * Saves a canonical QR page to D1 with hash-comparison write reduction.
- * Strictly canonical records per user: business, events, socials, websites (plus optional individual event IDs).
+ * Strictly canonical records per user: business, events, rooms, socials, websites (plus optional individual event/room IDs).
  */
 export async function saveCanonicalQrPage(
   db: any,
   userEmail: string,
-  category: 'business' | 'events' | 'socials' | 'websites',
+  category: 'business' | 'events' | 'rooms' | 'socials' | 'websites',
   rawPage: any,
   options?: { preserveExistingPhotosIfEmpty?: boolean; preserveExistingIfEmpty?: boolean; explicitId?: string }
 ): Promise<void> {
@@ -1499,6 +1580,9 @@ export async function saveCanonicalQrPage(
         if (Array.isArray(existingParsed?.eventsQrItems) && existingParsed.eventsQrItems.length > 0 && (!Array.isArray(pageToSave.eventsQrItems) || pageToSave.eventsQrItems.length === 0)) {
           pageToSave.eventsQrItems = existingParsed.eventsQrItems;
         }
+        if (Array.isArray(existingParsed?.roomsQrItems) && existingParsed.roomsQrItems.length > 0 && (!Array.isArray(pageToSave.roomsQrItems) || pageToSave.roomsQrItems.length === 0)) {
+          pageToSave.roomsQrItems = existingParsed.roomsQrItems;
+        }
       } catch (_) {}
     }
 
@@ -1558,17 +1642,22 @@ export async function resolveHostedQrPage(
     if (cached) return cached;
   }
 
-  // Identify category
-  const isWebsites = normId.includes('website') || normId.includes('web-hub') || normId === 'websites_hub' || normId === 'websites';
-  const isSocials = !isWebsites && (normId.includes('social') || normId === 'socials_hub' || normId === 'socials');
-  const isEvents = !isWebsites && !isSocials && (normId.includes('event') || normId === 'events_hub' || normId === 'events');
+  // Identify category (never misclassify explicit business QR IDs whose slug contains category words like "room")
+  const isExplicitBiz = normId.startsWith('qr-') || normId.startsWith('business-') || normId === 'default' || normId === 'latest';
+  const isWebsites = !isExplicitBiz && (normId.includes('website') || normId.includes('web-hub') || normId === 'websites_hub' || normId === 'websites');
+  const isSocials = !isExplicitBiz && !isWebsites && (normId.includes('social') || normId === 'socials_hub' || normId === 'socials');
+  const isEvents = !isExplicitBiz && !isWebsites && !isSocials && (normId.includes('event') || normId === 'events_hub' || normId === 'events');
   const isSingleEvent = isEvents && !normId.includes('events-hub') && !normId.includes('event-hub') && normId !== 'events' && normId !== 'events_hub';
-  const category: 'business' | 'events' | 'socials' | 'websites' = isWebsites
+  const isRooms = !isExplicitBiz && !isWebsites && !isSocials && !isEvents && (normId.includes('room') || normId === 'rooms_hub' || normId === 'rooms');
+  const isSingleRoom = isRooms && !normId.includes('rooms-hub') && !normId.includes('room-hub') && normId !== 'rooms' && normId !== 'rooms_hub';
+  const category: 'business' | 'events' | 'rooms' | 'socials' | 'websites' = isWebsites
     ? 'websites'
     : isSocials
     ? 'socials'
     : isEvents
     ? 'events'
+    : isRooms
+    ? 'rooms'
     : 'business';
 
   // If userEmail not passed in query/headers, do fast indexed lookup in D1 first (avoiding full-table scans)
@@ -1580,7 +1669,7 @@ export async function resolveHostedQrPage(
       if (row?.page_json) {
         try {
           const parsedDirect = JSON.parse(row.page_json);
-          if (parsedDirect && !isSingleEvent && hasRealQrPageContent(parsedDirect)) {
+          if (parsedDirect && !isSingleEvent && !isSingleRoom && hasRealQrPageContent(parsedDirect)) {
             const result = sanitizePublicQrPage(parsedDirect);
             setCachedQuery(cacheKey, result, 10);
             return result;
@@ -1677,6 +1766,43 @@ export async function resolveHostedQrPage(
         }
       }
 
+      // 1a-room. Standalone single-room lookup
+      if (isSingleRoom) {
+        const singleKey = `user_${userEmail}_room_${pageId}`;
+        const hubKey = `user_${userEmail}_rooms`;
+        const rowsRes: any = await runWithMissingTableRetry(db, () =>
+          db.prepare('SELECT id, page_json FROM qr_pages WHERE id IN (?, ?, ?)').bind(singleKey, pageId, hubKey).all()
+        );
+        const rowsList: any[] = rowsRes?.results || [];
+        const singleRow = rowsList.find((r) => r.id === singleKey || r.id === pageId);
+        const hubRow = rowsList.find((r) => r.id === hubKey);
+
+        let parsedSingle: any = null;
+        if (singleRow?.page_json) {
+          try { parsedSingle = JSON.parse(singleRow.page_json); } catch (_) {}
+        }
+        let parsedHub: any = null;
+        if (hubRow?.page_json) {
+          try { parsedHub = JSON.parse(hubRow.page_json); } catch (_) {}
+        }
+
+        const matchedHubRoom =
+          parsedHub && Array.isArray(parsedHub.roomsQrItems)
+            ? matchRoomItemById(parsedHub.roomsQrItems, pageId)
+            : null;
+
+        if (matchedHubRoom) {
+          const result = buildSingleRoomPublicPage(matchedHubRoom, userEmail, parsedHub);
+          setCachedQuery(cacheKey, result, 10);
+          return result;
+        }
+        if (parsedSingle && hasRealQrPageContent(parsedSingle)) {
+          const result = sanitizePublicQrPage(parsedSingle);
+          setCachedQuery(cacheKey, result, 10);
+          return result;
+        }
+      }
+
       // 1b. Business (including optional specific biz key) OR hub lookup in ONE single D1 query
       const canonicalId = `user_${userEmail}_${category}`;
       const isSpecificBusinessId =
@@ -1709,7 +1835,7 @@ export async function resolveHostedQrPage(
             } catch (_) {}
           }
         }
-      } else if (!isSingleEvent) {
+      } else if (!isSingleEvent && !isSingleRoom) {
         const row: any = await runWithMissingTableRetry(db, () =>
           db.prepare('SELECT page_json FROM qr_pages WHERE id = ? LIMIT 1').bind(canonicalId).first()
         );
@@ -1745,11 +1871,19 @@ export async function resolveHostedQrPage(
                 setCachedQuery(cacheKey, result, 10);
                 return result;
               }
+            } else if (isSingleRoom && Array.isArray(parsed.roomsQrItems)) {
+              const matchedRoom = matchRoomItemById(parsed.roomsQrItems, pageId);
+              if (matchedRoom) {
+                const result = buildSingleRoomPublicPage(matchedRoom, userEmail, parsed);
+                setCachedQuery(cacheKey, result, 10);
+                return result;
+              }
             } else if (
               (category === 'websites' && (pType === 'websites_hub' || r.id.includes('websites'))) ||
               (category === 'socials' && (pType === 'socials_hub' || r.id.includes('socials'))) ||
               (category === 'events' && !isSingleEvent && (pType === 'events_hub' || r.id.includes('events'))) ||
-              (category === 'business' && !pType.includes('website') && !pType.includes('social') && !pType.includes('event'))
+              (category === 'rooms' && !isSingleRoom && (pType === 'rooms_hub' || r.id.includes('rooms'))) ||
+              (category === 'business' && !pType.includes('website') && !pType.includes('social') && !pType.includes('event') && !pType.includes('room'))
             ) {
               const result = sanitizePublicQrPage(parsed);
               setCachedQuery(cacheKey, result, 10);
@@ -1962,6 +2096,65 @@ export async function resolveHostedQrPage(
           }
         }
 
+        if (category === 'rooms') {
+          const roomHubPage = hostedPages.find((p: any) => p && (p.pageType === 'rooms_hub' || String(p.id || '').includes('rooms-hub')));
+          const topLevelRooms = Array.isArray(bData.roomsQrItems) ? bData.roomsQrItems : [];
+          const hubRooms = Array.isArray(roomHubPage?.roomsQrItems) ? roomHubPage.roomsQrItems : [];
+          const singleRoomItems = hostedPages
+            .filter((p: any) => p && p.pageType === 'room' && Array.isArray(p.roomsQrItems))
+            .flatMap((p: any) => p.roomsQrItems);
+          const mergedRoomMap = new Map<string, any>();
+          for (const rm of [...topLevelRooms, ...hubRooms, ...singleRoomItems]) {
+            if (rm && rm.id && !mergedRoomMap.has(rm.id)) mergedRoomMap.set(rm.id, rm);
+          }
+          const roomItems = Array.from(mergedRoomMap.values());
+
+          if (isSingleRoom) {
+            const matchedRoom = matchRoomItemById(roomItems, pageId);
+            if (matchedRoom) {
+              return buildSingleRoomPublicPage(matchedRoom, userEmail, profile);
+            }
+            const matchedHostedRoom = hostedPages.find((p: any) => p && p.id === pageId && hasRealQrPageContent(p));
+            if (matchedHostedRoom) {
+              return sanitizePublicQrPage({ ...matchedHostedRoom, userEmail });
+            }
+          }
+
+          if (roomItems.length > 0 || (roomHubPage && hasRealQrPageContent(roomHubPage))) {
+            return sanitizePublicQrPage({
+              ...(roomHubPage || {}),
+              id: `user_${userEmail}_rooms`,
+              userEmail,
+              title: roomHubPage?.title || (profile.name ? `${profile.name} — Rooms & Prices` : 'Rooms & Prices'),
+              description: roomHubPage?.description || `Explore rooms, photos, nightly prices, occupancy & amenities for ${profile.name || 'our property'}.`,
+              pageType: 'rooms_hub',
+              accentColor: '#059669',
+              theme: 'emerald',
+              logo: roomHubPage?.logo || profile.logo,
+              phone: roomHubPage?.phone || profile.phone || '',
+              whatsapp: roomHubPage?.whatsapp || cleanWa,
+              email: roomHubPage?.email || profile.email || userEmail,
+              address: roomHubPage?.address || profile.address || '',
+              currency: roomHubPage?.currency || profile.currency || 'UGX',
+              announcement: '',
+              roomsQrItems: roomItems,
+              menuCategories: ['Rooms & Prices'],
+              menuItems: roomItems.map((rm: any) => ({
+                id: `room-item-${rm.id}`,
+                name: rm.name,
+                category: 'Rooms & Prices',
+                price: Number(rm.pricePerNight || 0),
+                size: rm.occupancy,
+                description: rm.description || '',
+                photoUrl: rm.photos?.[0] || undefined,
+                isAvailable: rm.isAvailable !== false,
+                tags: Array.isArray(rm.amenities) ? rm.amenities : [],
+                ctaText: rm.ctaText || 'Book',
+              })),
+            });
+          }
+        }
+
         // Business Showcase / Menu Page (prefer exact match or populated qrHostedPages business entry, fall back to backup inventory/photos)
         const bizCandidates = hostedPages.filter((p: any) =>
           p &&
@@ -1969,8 +2162,12 @@ export async function resolveHostedQrPage(
           p.pageType !== 'socials_hub' &&
           p.pageType !== 'events_hub' &&
           p.pageType !== 'event' &&
+          p.pageType !== 'rooms_hub' &&
+          p.pageType !== 'room' &&
           !String(p.id || '').startsWith('event-') &&
           !String(p.id || '').startsWith('events-hub') &&
+          !String(p.id || '').startsWith('room-') &&
+          !String(p.id || '').startsWith('rooms-hub') &&
           !String(p.id || '').startsWith('websites-hub') &&
           !String(p.id || '').startsWith('socials-hub')
         );
@@ -2066,7 +2263,7 @@ export async function resolveHostedQrPage(
       id: pageId || 'business',
       title: userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business',
       tagline: 'Welcome to our official business page',
-      pageType: isSingleEvent ? 'event' : isEvents ? 'events_hub' : isWebsites ? 'websites_hub' : isSocials ? 'socials_hub' : 'menu',
+      pageType: isSingleRoom ? 'room' : isRooms ? 'rooms_hub' : isSingleEvent ? 'event' : isEvents ? 'events_hub' : isWebsites ? 'websites_hub' : isSocials ? 'socials_hub' : 'menu',
       email: userEmail,
       userEmail,
       currency: 'UGX',
@@ -4150,23 +4347,30 @@ export default {
           );
         }
 
-        // Determine category: canonical types (business, events, socials, websites) + single events
+        // Determine category: canonical types (business, events, rooms, socials, websites) + single events/rooms
         const rawType = (page?.pageType || '').toLowerCase();
         const rawPageId = (page?.id || '').toLowerCase();
-        let category: 'business' | 'events' | 'socials' | 'websites' = 'business';
+        let category: 'business' | 'events' | 'rooms' | 'socials' | 'websites' = 'business';
         if (rawType.includes('website') || rawPageId.includes('website') || rawType === 'websites_hub') {
           category = 'websites';
         } else if (rawType.includes('social') || rawPageId.includes('social') || rawType === 'socials_hub') {
           category = 'socials';
         } else if (rawType.includes('event') || rawPageId.includes('event') || rawType === 'events_hub') {
           category = 'events';
+        } else if (rawType.includes('room') || rawPageId.includes('room') || rawType === 'rooms_hub') {
+          category = 'rooms';
         }
 
         const isSingleEvent =
           category === 'events' &&
           (rawType === 'event' || (rawPageId.startsWith('event-') && !rawPageId.startsWith('events-hub') && !rawPageId.startsWith('event-hub')));
+        const isSingleRoom =
+          category === 'rooms' &&
+          (rawType === 'room' || (rawPageId.startsWith('room-') && !rawPageId.startsWith('rooms-hub') && !rawPageId.startsWith('room-hub')));
         const canonicalId = isSingleEvent
           ? `user_${userEmail}_event_${String(page?.id || 'item').trim()}`
+          : isSingleRoom
+          ? `user_${userEmail}_room_${String(page?.id || 'item').trim()}`
           : `user_${userEmail}_${category}`;
 
         let existing: any = null;
@@ -4193,7 +4397,7 @@ export default {
         // Guard against sparse/photo-recovery payloads overwriting rich business QR text/menu/social fields in D1
         let pageToSanitize = {
           ...page,
-          id: isSingleEvent ? (page?.id || canonicalId) : canonicalId,
+          id: (isSingleEvent || isSingleRoom) ? (page?.id || canonicalId) : canonicalId,
           userEmail,
           email: page?.email || userEmail,
         };
@@ -4228,6 +4432,7 @@ export default {
             websitesQrItems: Array.isArray(pageToSanitize.websitesQrItems) && pageToSanitize.websitesQrItems.length > 0 ? pageToSanitize.websitesQrItems : (existingParsedPage.websitesQrItems || []),
             socialsQrItems: Array.isArray(pageToSanitize.socialsQrItems) && pageToSanitize.socialsQrItems.length > 0 ? pageToSanitize.socialsQrItems : (existingParsedPage.socialsQrItems || []),
             eventsQrItems: Array.isArray(pageToSanitize.eventsQrItems) && pageToSanitize.eventsQrItems.length > 0 ? pageToSanitize.eventsQrItems : (existingParsedPage.eventsQrItems || []),
+            roomsQrItems: Array.isArray(pageToSanitize.roomsQrItems) && pageToSanitize.roomsQrItems.length > 0 ? pageToSanitize.roomsQrItems : (existingParsedPage.roomsQrItems || []),
           };
         }
 
@@ -4769,6 +4974,51 @@ export default {
             }
           }
 
+          const incomingRoomsHub = incomingPages.find((p: any) => p && (p.pageType === 'rooms_hub' || String(p.id || '').includes('rooms-hub')));
+          const syncRoomItems = Array.isArray(backupData.roomsQrItems) && backupData.roomsQrItems.length > 0
+            ? backupData.roomsQrItems
+            : (Array.isArray(incomingRoomsHub?.roomsQrItems) ? incomingRoomsHub.roomsQrItems : []);
+          if (syncRoomItems.length > 0) {
+            const roomsPage = {
+              ...(incomingRoomsHub || {}),
+              title: incomingRoomsHub?.title || (profile.name ? `${profile.name} — Rooms & Prices` : 'Rooms & Prices'),
+              description: incomingRoomsHub?.description || `Explore rooms, photos, nightly prices, occupancy & amenities for ${profile.name || 'our property'}.`,
+              pageType: 'rooms_hub',
+              accentColor: incomingRoomsHub?.accentColor || '#059669',
+              theme: 'emerald',
+              logo: incomingRoomsHub?.logo || profile.logo,
+              phone: incomingRoomsHub?.phone || profile.phone || '',
+              whatsapp: incomingRoomsHub?.whatsapp || cleanWa,
+              email: incomingRoomsHub?.email || profile.email || userEmail,
+              address: incomingRoomsHub?.address || profile.address || '',
+              currency: incomingRoomsHub?.currency || profile.currency || 'UGX',
+              announcement: '',
+              roomsQrItems: syncRoomItems,
+              menuCategories: ['Rooms & Prices'],
+              menuItems: syncRoomItems.map((rm: any) => ({
+                id: `room-item-${rm.id}`,
+                name: rm.name,
+                category: 'Rooms & Prices',
+                price: Number(rm.pricePerNight || 0),
+                size: rm.occupancy,
+                description: rm.description || '',
+                photoUrl: rm.photos?.[0] || undefined,
+                isAvailable: rm.isAvailable !== false,
+                tags: Array.isArray(rm.amenities) ? rm.amenities : [],
+                ctaText: rm.ctaText || 'Book',
+              })),
+            };
+            await saveCanonicalQrPage(db, userEmail, 'rooms', roomsPage, { preserveExistingIfEmpty: true });
+            for (const singleRoom of syncRoomItems) {
+              if (singleRoom && singleRoom.id) {
+                const singleRoomPage = buildSingleRoomPublicPage(singleRoom, userEmail, profile);
+                await saveCanonicalQrPage(db, userEmail, 'rooms', singleRoomPage, {
+                  explicitId: `user_${userEmail}_room_${String(singleRoom.id).trim()}`,
+                });
+              }
+            }
+          }
+
           // D. Business Showcase — read from backupData.qrHostedPages instead of non-existent backupData.photos
           const bizCandidates = incomingPages.filter((p: any) =>
             p &&
@@ -4776,8 +5026,12 @@ export default {
             p.pageType !== 'socials_hub' &&
             p.pageType !== 'events_hub' &&
             p.pageType !== 'event' &&
+            p.pageType !== 'rooms_hub' &&
+            p.pageType !== 'room' &&
             !String(p.id || '').startsWith('event-') &&
             !String(p.id || '').startsWith('events-hub') &&
+            !String(p.id || '').startsWith('room-') &&
+            !String(p.id || '').startsWith('rooms-hub') &&
             !String(p.id || '').startsWith('websites-hub') &&
             !String(p.id || '').startsWith('socials-hub')
           );
@@ -4958,6 +5212,7 @@ export default {
                 websitesQrItems: pickNonEmptyArr(newer.websitesQrItems, older.websitesQrItems),
                 socialsQrItems: pickNonEmptyArr(newer.socialsQrItems, older.socialsQrItems),
                 eventsQrItems: pickNonEmptyArr(newer.eventsQrItems, older.eventsQrItems),
+                roomsQrItems: pickNonEmptyArr(newer.roomsQrItems, older.roomsQrItems),
               };
             };
 
@@ -5037,6 +5292,22 @@ export default {
             }
             if (mergedEvtMap.size > 0) {
               backupData.eventsQrItems = Array.from(mergedEvtMap.values());
+            }
+
+            const roomPages = combinedQrPages.filter((p: any) => p && (p.pageType === 'rooms_hub' || p.pageType === 'room' || String(p.id || '').includes('room')));
+            const mergedRoomMap = new Map<string, any>();
+            for (const rm of (Array.isArray(backupData.roomsQrItems) ? backupData.roomsQrItems : [])) {
+              if (rm?.id) mergedRoomMap.set(rm.id, rm);
+            }
+            for (const rp of roomPages) {
+              if (Array.isArray(rp.roomsQrItems)) {
+                for (const rm of rp.roomsQrItems) {
+                  if (rm?.id && !mergedRoomMap.has(rm.id)) mergedRoomMap.set(rm.id, rm);
+                }
+              }
+            }
+            if (mergedRoomMap.size > 0) {
+              backupData.roomsQrItems = Array.from(mergedRoomMap.values());
             }
 
             // B. Receipts & Invoices
@@ -5155,7 +5426,9 @@ export default {
                 p.pageType !== 'websites_hub' &&
                 p.pageType !== 'socials_hub' &&
                 p.pageType !== 'events_hub' &&
-                p.pageType !== 'event'
+                p.pageType !== 'event' &&
+                p.pageType !== 'rooms_hub' &&
+                p.pageType !== 'room'
               );
               const populatedBiz = bizPages.find((p: any) => Array.isArray(p.photos) && p.photos.length > 0);
               backupData.qrHostedPages = backupData.qrHostedPages.map((p: any) => {
@@ -5164,7 +5437,9 @@ export default {
                   p.pageType !== 'websites_hub' &&
                   p.pageType !== 'socials_hub' &&
                   p.pageType !== 'events_hub' &&
-                  p.pageType !== 'event'
+                  p.pageType !== 'event' &&
+                  p.pageType !== 'rooms_hub' &&
+                  p.pageType !== 'room'
                 ) {
                   let photos = Array.isArray(p.photos) ? p.photos : [];
                   if (photos.length === 0 && populatedBiz && populatedBiz.photos.length > 0) {

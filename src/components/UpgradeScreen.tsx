@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Crown,
   Sparkles,
@@ -27,6 +27,7 @@ import {
 import { SubscriptionPlanId, UserSubscription } from '../types';
 import { StorageService } from '../services/storage';
 import { PlayBillingService } from '../services/playBillingService';
+import { ExchangeRateService, UsdExchangeRatesSnapshot } from '../services/exchangeRateService';
 
 interface UpgradeScreenProps {
   onBack: () => void;
@@ -103,6 +104,41 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   const [showCancelConfirmModal, setShowCancelConfirmModal] = useState<boolean>(false);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
   const [restoreFeedback, setRestoreFeedback] = useState<{ msg: string; success: boolean } | null>(null);
+  const [businessCurrency, setBusinessCurrency] = useState<string>(
+    () => StorageService.getProfile().currency || 'UGX'
+  );
+  const [ratesSnapshot, setRatesSnapshot] = useState<UsdExchangeRatesSnapshot>(() =>
+    ExchangeRateService.getCachedOrFallbackRates()
+  );
+  const [isRefreshingRates, setIsRefreshingRates] = useState<boolean>(false);
+
+  const refreshLiveRates = useCallback(async (force = false) => {
+    setIsRefreshingRates(true);
+    try {
+      const snap = await ExchangeRateService.fetchLiveUsdRates(force);
+      setRatesSnapshot(snap);
+    } finally {
+      setIsRefreshingRates(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshLiveRates(false);
+    const syncCurrency = () => {
+      setBusinessCurrency(StorageService.getProfile().currency || 'UGX');
+    };
+    window.addEventListener('brivu_data_refreshed', syncCurrency);
+    window.addEventListener('storage', syncCurrency);
+    return () => {
+      window.removeEventListener('brivu_data_refreshed', syncCurrency);
+      window.removeEventListener('storage', syncCurrency);
+    };
+  }, [refreshLiveRates]);
+
+  const formatPlanAmount = (usdAmount: number) =>
+    ExchangeRateService.convertFromUsd(usdAmount, businessCurrency, ratesSnapshot.rates);
+
+  const liveRateLabel = ExchangeRateService.formatUsdRateLabel(businessCurrency, ratesSnapshot.rates);
 
   const handleRestorePurchases = async () => {
     setIsRestoring(true);
@@ -123,6 +159,8 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   };
 
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
+  const selectedPlanLocal = formatPlanAmount(selectedPlan.price);
+  const monthlyStartingLocal = formatPlanAmount(SUBSCRIPTION_PLANS[0].price);
   const isCurrentlyActive = subscription && subscription.status === 'active';
 
   // Calculate days remaining if active
@@ -146,7 +184,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           onSubscriptionChange(result.subscription);
         }
         setIsSuccess(true);
-        setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlan.formattedPrice}) via Google Play Billing!`);
+        setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlanLocal.formatted}) via Google Play Billing!`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else if (!result.userCancelled) {
         setRestoreFeedback({
@@ -226,7 +264,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                 Brivu Pro Active
               </h2>
               <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                {selectedPlan.name} ({selectedPlan.formattedPrice}) activated via Google Play.
+                {selectedPlan.name} ({selectedPlanLocal.formatted}) activated via Google Play.
               </p>
             </div>
           </div>
@@ -273,9 +311,14 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               Starting From
             </span>
             <div className="flex items-baseline justify-center sm:justify-end gap-1">
-              <span className="text-2xl font-black text-amber-400">$5.6</span>
+              <span className="text-2xl font-black text-amber-400">{monthlyStartingLocal.formatted}</span>
               <span className="text-xs text-indigo-200">/ mo</span>
             </div>
+            {businessCurrency !== 'USD' && (
+              <span className="text-[10px] text-indigo-200/80 font-semibold block">
+                ≈ {SUBSCRIPTION_PLANS[0].formattedPrice} USD
+              </span>
+            )}
             <span className="text-[10px] text-emerald-400 font-bold block mt-0.5">
               Cancel Anytime
             </span>
@@ -342,18 +385,34 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
 
       {/* Subscription Plans Selection Section */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
             Choose a Plan
           </h3>
-          <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-lg">
-            Instant Activation
-          </span>
+          <div className="flex items-center gap-2">
+            {liveRateLabel && (
+              <button
+                type="button"
+                onClick={() => refreshLiveRates(true)}
+                disabled={isRefreshingRates}
+                title="Refresh live dollar exchange rate"
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-lg cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition"
+              >
+                <RefreshCw className={`w-2.5 h-2.5 ${isRefreshingRates ? 'animate-spin' : ''}`} />
+                <span>{liveRateLabel}</span>
+              </button>
+            )}
+            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-lg">
+              Instant Activation
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
           {SUBSCRIPTION_PLANS.map((plan) => {
             const isSelected = selectedPlanId === plan.id;
+            const localPlanPrice = formatPlanAmount(plan.price);
+            const localMonthlyEq = formatPlanAmount(plan.price / plan.monthsCount);
             return (
               <button
                 key={plan.id}
@@ -402,16 +461,17 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                 {/* Right: Price Display */}
                 <div className="sm:text-right shrink-0 pl-8 sm:pl-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
                   <div className="flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-center gap-1">
-                    <div className="flex items-baseline gap-0.5">
+                    <div className="flex items-baseline gap-1">
                       <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                        {plan.formattedPrice}
+                        {localPlanPrice.formatted}
                       </span>
                       <span className="text-xs text-slate-400 font-semibold">
                         {plan.periodLabel}
                       </span>
                     </div>
                     <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded sm:bg-transparent sm:p-0">
-                      Equiv. {plan.monthlyEquivalent}
+                      Equiv. {localMonthlyEq.formatted}/mo
+                      {businessCurrency !== 'USD' ? ` (${plan.formattedPrice})` : ''}
                     </span>
                   </div>
                 </div>
@@ -439,7 +499,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             <>
               <Crown className="w-5 h-5 fill-white" />
               <span>
-                {isCurrentlyActive ? 'Switch Plan' : 'Subscribe'} — {selectedPlan.formattedPrice} ({selectedPlan.periodLabel.replace('/ ', '')})
+                {isCurrentlyActive ? 'Switch Plan' : 'Subscribe'} — {selectedPlanLocal.formatted} ({selectedPlan.periodLabel.replace('/ ', '')})
               </span>
               <ArrowRight className="w-5 h-5" />
             </>

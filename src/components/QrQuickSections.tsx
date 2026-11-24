@@ -330,10 +330,24 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     }
   };
 
+  const MAX_MENU_IMAGES = 5;
+
   // Upload one or more Hotel Menu Images directly to online image hosting so QR encodes the image URL itself
   const handleMenuImagesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     if (files.length === 0) return;
+
+    const remainingSlots = MAX_MENU_IMAGES - menuImages.length;
+    if (remainingSlots <= 0) {
+      showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu photos allowed. Delete or replace an existing menu photo.`);
+      e.target.value = '';
+      return;
+    }
+
+    const filesToProcess = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      showToast(`Only ${remainingSlots} more menu photo${remainingSlots === 1 ? '' : 's'} allowed (Max ${MAX_MENU_IMAGES}).`);
+    }
 
     setIsUploadingMenu(true);
     const newlyUploaded: QRBusinessPhoto[] = [];
@@ -341,8 +355,8 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     const uploadTs = Date.now();
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
         let imageUrl = '';
         const slotId =
           menuImages.length === 0 && i === 0
@@ -389,7 +403,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
 
       if (newlyUploaded.length > 0) {
         const lastUploadedId = newlyUploaded[newlyUploaded.length - 1].id;
-        const updatedList = [...menuImages, ...newlyUploaded].map((m) => ({
+        const updatedList = [...menuImages, ...newlyUploaded].slice(0, MAX_MENU_IMAGES).map((m) => ({
           ...m,
           badge: m.id === lastUploadedId ? 'active' : undefined,
         }));
@@ -817,12 +831,17 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
             <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <Utensils className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
-                Menu
-              </h2>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                  Menu
+                </h2>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  {menuImages.length}/{MAX_MENU_IMAGES} Max
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Upload your hotel or restaurant menu image so guests can view it from a QR scan
+                Upload up to {MAX_MENU_IMAGES} hotel or restaurant menu photos so guests can view them from a QR scan
               </p>
             </div>
           </div>
@@ -830,11 +849,25 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
           {/* Clickable Upload Zone */}
           <button
             type="button"
-            onClick={() => menuFileInputRef.current?.click()}
-            disabled={isUploadingMenu}
-            className="w-full p-6 rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-800/80 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 hover:border-amber-500 transition flex flex-col items-center justify-center gap-2 text-center cursor-pointer disabled:opacity-60"
+            onClick={() => {
+              if (menuImages.length >= MAX_MENU_IMAGES) {
+                showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu photos allowed. Delete or replace a menu photo below.`);
+                return;
+              }
+              menuFileInputRef.current?.click();
+            }}
+            disabled={isUploadingMenu || menuImages.length >= MAX_MENU_IMAGES}
+            className={`w-full p-6 rounded-2xl border-2 border-dashed transition flex flex-col items-center justify-center gap-2 text-center ${
+              menuImages.length >= MAX_MENU_IMAGES
+                ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 opacity-70 cursor-not-allowed'
+                : 'border-amber-300 dark:border-amber-800/80 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 hover:border-amber-500 cursor-pointer disabled:opacity-60'
+            }`}
           >
-            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+            <div className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center shadow-md ${
+              menuImages.length >= MAX_MENU_IMAGES
+                ? 'bg-slate-400 dark:bg-slate-700 shadow-none'
+                : 'bg-amber-500 shadow-amber-500/20'
+            }`}>
               {isUploadingMenu ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
               ) : (
@@ -844,12 +877,16 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
             <span className="text-sm font-black text-slate-900 dark:text-white">
               {isUploadingMenu
                 ? 'Uploading menu image...'
-                : menuImages.length > 0
-                  ? 'Upload Another Menu Image'
-                  : 'Click to Upload Hotel Menu Image'}
+                : menuImages.length >= MAX_MENU_IMAGES
+                  ? `Menu Limit Reached (${MAX_MENU_IMAGES}/${MAX_MENU_IMAGES})`
+                  : menuImages.length > 0
+                    ? `Upload Another Menu Image (${MAX_MENU_IMAGES - menuImages.length} left)`
+                    : 'Click to Upload Hotel Menu Image'}
             </span>
             <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              Supports PNG, JPG or WEBP · You can upload one or multiple menu pages
+              {menuImages.length >= MAX_MENU_IMAGES
+                ? `Maximum ${MAX_MENU_IMAGES} menu photos reached. Delete or replace an existing menu photo below.`
+                : `Supports PNG, JPG or WEBP · Upload up to ${MAX_MENU_IMAGES} menu photos`}
             </span>
           </button>
 
@@ -858,7 +895,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                  Uploaded Menu ({menuImages.length})
+                  Uploaded Menu ({menuImages.length}/{MAX_MENU_IMAGES})
                 </span>
                 <button
                   type="button"

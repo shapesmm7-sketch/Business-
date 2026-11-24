@@ -240,7 +240,7 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
     address: (latest.address && latest.address.trim() !== '') ? latest.address : (snapshot.address || ''),
     taxNumber: (latest.taxNumber && latest.taxNumber.trim() !== '') ? latest.taxNumber : (snapshot.taxNumber || ''),
     website: (latest.website && latest.website.trim() !== '') ? latest.website : (snapshot.website || ''),
-    currency: snapshot.currency || latest.currency || 'UGX',
+    currency: (hasLatestProfile && latest.currency) ? latest.currency : (snapshot.currency || latest.currency || 'UGX'),
     language: latest.language || snapshot.language,
     customFooter: (latest.customFooter !== undefined && latest.customFooter !== null) ? latest.customFooter : (snapshot.customFooter || ''),
     accentColor: cleanColor(receipt.accentColor) || cleanColor(receipt.customTheme?.accentColor) || brandAccent,
@@ -397,7 +397,7 @@ export const PdfGenerator = {
     
     const isOwed = receipt.balance < 0;
     const hasChange = receipt.balance > 0;
-    const currency = receipt.businessSnapshot.currency || 'UGX';
+    const currency = resolveEffectiveBusinessProfile(receipt).currency || 'UGX';
     const isInvoice = receipt.documentType === 'invoice';
     const isQuotation = receipt.documentType === 'quotation';
     const isBillStyle = isInvoice || isQuotation;
@@ -2369,7 +2369,7 @@ export const PdfGenerator = {
     const docTypeLabel = isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt';
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${docTypeLabel}_${cleanNum}.pdf`;
-    const currency = receipt.businessSnapshot.currency || 'UGX';
+    const currency = resolveEffectiveBusinessProfile(receipt).currency || 'UGX';
     
     const bizName = (receipt.businessSnapshot?.name || '').trim();
     const senderSuffix = (bizName && bizName.toLowerCase() !== 'business name') ? ` from ${bizName}` : '';
