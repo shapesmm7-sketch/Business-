@@ -547,11 +547,11 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
           ? `Browse ${rooms.length} room${rooms.length === 1 ? '' : 's'}, photos, occupancy & amenities`
           : activeRoom?.amenities?.slice(0, 5).join(' • '),
         accentColor: activeDarkColor,
-        filename: `${safeName}_Reception_Stand.pdf`,
-        documentTitle: `${headline} QR Stand`,
+        filename: `${safeName}_Table_Wall_Poster.pdf`,
+        documentTitle: `${headline} Table & Wall Poster`,
       });
       if (res.success) {
-        showToast('Reception QR Stand Poster (PDF) downloaded!');
+        showToast('Table & Wall QR Code Poster (PDF) downloaded!');
       }
     } catch (err) {
       console.error(err);
@@ -944,7 +944,7 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
                     className="col-span-2 sm:col-span-2 p-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5" />
-                    <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Reception QR Stand (PDF)'}</span>
+                    <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
                   </button>
                 </div>
               </div>
