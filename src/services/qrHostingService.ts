@@ -1122,14 +1122,11 @@ export class QRHostingService {
     // Header text
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    const titleText = (page.title || 'Welcome to our Venue').toUpperCase();
-    doc.text(titleText, pageWidth / 2, 38, { align: 'center', maxWidth: pageWidth - 60 });
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(240, 253, 244);
-    
+    const bizProfile = StorageService.getProfile();
+    const candidateName = (bizProfile?.name || (page?.title && !['Brivu Business', 'My Business', 'Business Page', 'Business Manager', 'Welcome to our Venue'].includes(page.title) ? page.title : '') || '').trim();
+    const titleText = candidateName.toUpperCase();
+
     let subText = page.tagline || 'Scan to view our items, special offers & business info';
     if (targetTab === 'menu') {
       subText = 'Scan to explore our items & special offers instantly';
@@ -1146,7 +1143,21 @@ export class QRHostingService {
         .replace(/business\s*info\s*only/gi, '')
         .trim();
     }
-    doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
+
+    if (titleText && subText) {
+      doc.setFontSize(18);
+      doc.text(titleText, pageWidth / 2, 36, { align: 'center', maxWidth: pageWidth - 60 });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(240, 253, 244);
+      doc.text(subText, pageWidth / 2, 45, { align: 'center', maxWidth: pageWidth - 60 });
+    } else if (titleText && !subText) {
+      doc.setFontSize(18);
+      doc.text(titleText, pageWidth / 2, 41, { align: 'center', maxWidth: pageWidth - 60 });
+    } else if (!titleText && subText) {
+      doc.setFontSize(13);
+      doc.text(subText, pageWidth / 2, 41, { align: 'center', maxWidth: pageWidth - 60 });
+    }
 
     let currentY = 58;
 
@@ -1380,15 +1391,22 @@ export class QRHostingService {
     // Header text
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    const titleText = (options.businessName || 'Official QR Hub').toUpperCase();
-    doc.text(titleText, pageWidth / 2, 38, { align: 'center', maxWidth: pageWidth - 60 });
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10.5);
-    doc.setTextColor(240, 253, 244);
-    const subText = options.headline || options.subline || 'Scan with your smartphone camera to connect';
-    doc.text(subText, pageWidth / 2, 46, { align: 'center', maxWidth: pageWidth - 60 });
+    const titleText = (options.businessName || '').trim().toUpperCase();
+    const subText = (options.headline || options.subline || '').trim();
+    if (titleText && subText) {
+      doc.setFontSize(18);
+      doc.text(titleText, pageWidth / 2, 36, { align: 'center', maxWidth: pageWidth - 60 });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10.5);
+      doc.setTextColor(240, 253, 244);
+      doc.text(subText, pageWidth / 2, 45, { align: 'center', maxWidth: pageWidth - 60 });
+    } else if (titleText && !subText) {
+      doc.setFontSize(18);
+      doc.text(titleText, pageWidth / 2, 41, { align: 'center', maxWidth: pageWidth - 60 });
+    } else {
+      doc.setFontSize(14);
+      doc.text(subText, pageWidth / 2, 41, { align: 'center', maxWidth: pageWidth - 60 });
+    }
 
     let currentY = 58;
 
@@ -1482,7 +1500,7 @@ export class QRHostingService {
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Powered by Brivu app • ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Powered by Brivu app', pageWidth / 2, pageHeight - 20, { align: 'center' });
 
     return await saveJsPdf(doc, options.filename, options.documentTitle);
   }

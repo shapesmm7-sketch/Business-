@@ -29,6 +29,7 @@ import { QRHostingService } from '../services/qrHostingService';
 import { CloudflareService } from '../services/cloudflareService';
 import { compressImageFile } from '../utils/imageCompressor';
 import { saveFile, shareContent } from '../services/fileSaver';
+import { StorageService } from '../services/storage';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { TouchZoomLightbox } from './TouchZoomLightbox';
@@ -720,27 +721,24 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     }
     setIsGeneratingPdf(true);
     try {
-      const bizName = (business.name || activePage.title || 'Business').trim();
+      const bizName = business.name || StorageService.getProfile().name || '';
       const customName = tableNumberForPrint.trim() || qrLabel.trim() || undefined;
 
       let headline = 'Scan QR Code';
       let calloutText = 'SCAN WITH YOUR PHONE CAMERA';
-      let urlOrHandleText = '';
-      let description = '';
+      let urlOrHandleText: string | undefined = '';
+      let description: string | undefined = '';
 
       if (mode === 'menu') {
-        headline = 'Hotel & Restaurant Menu';
+        headline = '';
         calloutText = 'SCAN TO VIEW OUR MENU';
-        urlOrHandleText = hasHostedMenuImage ? qrPayload : 'Digital Menu Photo';
-        description = 'Scan with your smartphone camera to open our menu';
+        urlOrHandleText = undefined;
+        description = undefined;
       } else if (mode === 'wifi') {
-        headline = 'Guest Wi-Fi Access';
+        headline = '';
         calloutText = 'SCAN TO CONNECT TO WI-FI';
-        urlOrHandleText = `Network: ${effectiveWifiSsid}`;
-        description =
-          wifiSecurity === 'nopass'
-            ? 'Open Wi-Fi network (no password needed)'
-            : 'Scan to connect to Wi-Fi automatically';
+        urlOrHandleText = undefined;
+        description = undefined;
       } else if (mode === 'contacts') {
         headline = 'Email & Contact Card';
         calloutText = 'SCAN TO SAVE CONTACT DETAILS';
@@ -756,7 +754,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         description = 'Scan with your smartphone camera to open in Google Maps';
       }
 
-      const safeFilePrefix = (customName || `${bizName}_${mode}`).replace(/[^a-zA-Z0-9]/g, '_');
+      const safeFilePrefix = (customName || `${bizName || 'Business'}_${mode}`).replace(/[^a-zA-Z0-9]/g, '_');
       const res = await QRHostingService.downloadGenericTableStand({
         businessName: bizName,
         headline,
@@ -767,7 +765,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         description,
         accentColor: activePage.accentColor || activeDarkColor || '#059669',
         filename: `${safeFilePrefix}_Table_Wall_Poster.pdf`,
-        documentTitle: `${headline} Poster`,
+        documentTitle: mode === 'menu' ? 'Menu Table & Wall Poster' : mode === 'wifi' ? 'WiFi Table & Wall Poster' : `${headline} Poster`,
       });
 
       if (res.success) {

@@ -410,31 +410,25 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
     if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const headline = isAllSelected
-        ? `${business.name || 'Official'} Websites & Apps Directory`
-        : (activeItem?.title || 'Official Website & App');
-      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
-      const subline = isAllSelected
-        ? `Scan to browse all our ${items.length} official websites, mobile apps & online booking portals`
-        : (activeItem?.description || 'Scan with your smartphone camera to visit');
+      const headline = isAllSelected ? '' : (activeItem?.title || 'Official Website & App');
+      const safeName = isAllSelected ? 'Websites_And_Apps' : (activeItem?.title || 'Website').replace(/[^a-zA-Z0-9]/g, '_');
+      const subline = isAllSelected ? '' : (activeItem?.description || 'Scan with your smartphone camera to visit');
       const calloutText = isAllSelected
-        ? 'SCAN TO ACCESS ALL WEBSITES & APPS'
+        ? 'SCAN TO SEE OUR SITES'
         : (activeItem?.ctaText || 'SCAN TO VISIT WEBSITE / APP');
 
       const res = await QRHostingService.downloadGenericTableStand({
-        businessName: business.name || 'Official Website & App',
+        businessName: business.name || StorageService.getProfile().name || '',
         headline,
         subline,
         qrNameOrTableNumber: tableNumberForPrint || undefined,
         qrDataUrl: activeQrDataUrl,
         calloutText,
-        urlOrHandleText: activeUrl,
-        description: isAllSelected
-          ? `Includes: ${items.map((it) => it.title).join(' • ')}`
-          : activeItem?.description,
+        urlOrHandleText: isAllSelected ? undefined : activeUrl,
+        description: isAllSelected ? undefined : activeItem?.description,
         accentColor: activeDarkColor,
         filename: `${safeName}_Table_Wall_Poster.pdf`,
-        documentTitle: `${headline} Poster`,
+        documentTitle: isAllSelected ? 'Websites & Apps Table & Wall Poster' : `${headline} Table & Wall Poster`,
       });
       if (res.success) {
         showToast('Table & Wall QR Code Poster (PDF) downloaded!');

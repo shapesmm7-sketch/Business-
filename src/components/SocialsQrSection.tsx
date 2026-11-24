@@ -677,31 +677,25 @@ export const SocialsQrSection: React.FC<SocialsQrSectionProps> = ({
     if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const headline = isAllSelected
-        ? 'our social media platforms'
-        : (activeItem?.title || 'Official Socials');
-      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
-      const subline = isAllSelected
-        ? `Scan to follow and chat with us on all ${items.length} social channels`
-        : (activeItem?.usernameOrPhone ? `${activeItem.usernameOrPhone}` : 'Scan to follow and connect with us online');
+      const headline = isAllSelected ? '' : (activeItem?.title || 'Official Socials');
+      const safeName = isAllSelected ? 'Social_Media_Platforms' : (activeItem?.title || 'Social').replace(/[^a-zA-Z0-9]/g, '_');
+      const subline = isAllSelected ? '' : (activeItem?.usernameOrPhone ? `${activeItem.usernameOrPhone}` : 'Scan to follow and connect with us online');
       const calloutText = isAllSelected
-        ? 'SCAN TO CONNECT ON SOCIAL MEDIA'
+        ? 'SCAN TO SEE OUR SOCIAL MEDIA PLATFORMS'
         : (activeItem?.ctaText || 'SCAN TO CONNECT ONLINE');
 
       const res = await QRHostingService.downloadGenericTableStand({
-        businessName: business.name || 'Official Socials',
+        businessName: business.name || StorageService.getProfile().name || '',
         headline,
         subline,
         qrNameOrTableNumber: tableNumberForPrint || undefined,
         qrDataUrl: activeQrDataUrl,
         calloutText,
-        urlOrHandleText: activeUrl,
-        description: isAllSelected
-          ? `Connected Channels: ${items.map((it) => it.customPlatformName || PLATFORMS_CONFIG[it.platform]?.name || it.title).join(' • ')}`
-          : (activeItem?.prefilledMessage || 'Follow our official channel for updates, inquiries & offers.'),
+        urlOrHandleText: isAllSelected ? undefined : activeUrl,
+        description: isAllSelected ? undefined : (activeItem?.prefilledMessage || 'Follow our official channel for updates, inquiries & offers.'),
         accentColor: activeDarkColor,
         filename: `${safeName}_Table_Wall_Poster.pdf`,
-        documentTitle: `${headline} Poster`,
+        documentTitle: isAllSelected ? 'Social Media Table & Wall Poster' : `${headline} Table & Wall Poster`,
       });
       if (res.success) {
         showToast('Table & Wall QR Code Poster (PDF) downloaded!');

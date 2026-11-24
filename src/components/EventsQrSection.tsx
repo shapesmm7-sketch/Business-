@@ -551,32 +551,33 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const headline = isAllSelected ? 'Our Events' : (activeItem?.title || 'Event Pass');
-      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
+      const headline = isAllSelected ? '' : (activeItem?.title || 'Event Pass');
+      const safeName = isAllSelected ? 'Events' : (activeItem?.title || 'Event').replace(/[^a-zA-Z0-9]/g, '_');
       const dtFormatted = activeItem ? formatEventDateTime(activeItem) : null;
       const sublineParts: string[] = [];
-      if (isAllSelected) {
-        sublineParts.push(`Our Events (${items.length})`);
-      } else {
+      if (!isAllSelected) {
         if (dtFormatted) sublineParts.push(dtFormatted);
         if (activeItem?.location) sublineParts.push(`📍 ${activeItem.location}`);
       }
-      const subline = sublineParts.length > 0 ? sublineParts.join(' • ') : 'Scan to RSVP and view event details';
+      const subline = sublineParts.length > 0 ? sublineParts.join(' • ') : '';
+      const calloutText = isAllSelected
+        ? 'SCAN TO SEE OUR EVENT'
+        : (activeItem?.ctaText || 'SCAN FOR EVENT PASS & RSVP');
 
       const res = await QRHostingService.downloadGenericTableStand({
-        businessName: business.name || 'Official Events',
+        businessName: business.name || StorageService.getProfile().name || '',
         headline,
         subline,
         qrNameOrTableNumber: tableNumberForPrint || undefined,
         qrDataUrl: activeQrDataUrl,
-        calloutText: isAllSelected ? 'SCAN FOR OUR EVENTS & RSVP' : (activeItem?.ctaText || 'SCAN FOR EVENT PASS & RSVP'),
-        urlOrHandleText: activeUrl,
+        calloutText,
+        urlOrHandleText: isAllSelected ? undefined : activeUrl,
         description: isAllSelected
-          ? `Access event schedule, ticket RSVP, venue locations & calendar passes`
+          ? undefined
           : (activeItem?.description || (activeItem?.location ? `Venue: ${activeItem.location}` : undefined)),
         accentColor: activeDarkColor,
         filename: `${safeName}_Table_Wall_Poster.pdf`,
-        documentTitle: `${headline} Poster`,
+        documentTitle: isAllSelected ? 'Events Table & Wall Poster' : `${headline} Table & Wall Poster`,
       });
       if (res.success) {
         showToast('Table & Wall QR Code Poster (PDF) downloaded!');

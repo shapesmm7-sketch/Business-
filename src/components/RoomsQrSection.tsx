@@ -529,26 +529,22 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
     if (!activeQrDataUrl) return;
     setIsGeneratingPdf(true);
     try {
-      const headline = isAllSelected ? 'Rooms' : activeRoom?.name || 'Room Details';
-      const safeName = headline.replace(/[^a-zA-Z0-9]/g, '_');
+      const headline = isAllSelected ? '' : activeRoom?.name || 'Room Details';
+      const safeName = isAllSelected ? 'Rooms' : (activeRoom?.name || 'Room_Details').replace(/[^a-zA-Z0-9]/g, '_');
       const subline = isAllSelected
-        ? `View rooms, photos, nightly rates & book on WhatsApp`
+        ? ''
         : `${currency} ${formatNumber(activeRoom?.pricePerNight || 0)} / night • ${activeRoom?.occupancy || ''}`;
 
       const res = await QRHostingService.downloadGenericTableStand({
-        businessName: business.name || 'Hospitality & Rooms',
+        businessName: business.name || StorageService.getProfile().name || '',
         headline,
         subline,
         qrNameOrTableNumber: qrLabelForPrint || undefined,
         qrDataUrl: activeQrDataUrl,
-        calloutText: 'SCAN TO VIEW ROOMS & BOOK ON WHATSAPP',
-        urlOrHandleText: activeUrl,
-        description: isAllSelected
-          ? `Browse ${rooms.length} room${rooms.length === 1 ? '' : 's'}, photos, occupancy & amenities`
-          : activeRoom?.amenities?.slice(0, 5).join(' • '),
+        calloutText: 'SCAN TO VIEW OUR ROOMS',
         accentColor: activeDarkColor,
         filename: `${safeName}_Table_Wall_Poster.pdf`,
-        documentTitle: `${headline} Table & Wall Poster`,
+        documentTitle: isAllSelected ? 'Rooms Table & Wall Poster' : `${headline} Table & Wall Poster`,
       });
       if (res.success) {
         showToast('Table & Wall QR Code Poster (PDF) downloaded!');
