@@ -517,24 +517,48 @@ export const BrivuAuthService = {
       window.dispatchEvent(new CustomEvent('brivu_data_restored'));
     }
 
-    // Run cloud pull and background profile/data sync asynchronously so login completes immediately
-    const trialStatus = StorageService.getTrialStatus();
+    // Run Play Billing + Cloudflare subscription verification BEFORE cloud restore/purge on login
     if (cleanEmail) {
       setTimeout(() => {
         void (async () => {
-          if (!trialStatus.isGracePeriodExpired || trialStatus.subscribed) {
-            try {
-              const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
-              if (pullRes.success && typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
-                window.dispatchEvent(new CustomEvent('brivu_data_restored'));
-              }
-            } catch (pullErr) {
-              console.warn('Background cloud restore note on login:', pullErr);
-            }
+          const playCheck = await PlayBillingService.verifyAndSyncSubscriptionSilently(true).catch(() => ({
+            active: StorageService.isSubscribed(),
+            verifiedFromPlay: false,
+          }));
+          const syncSubRes = await CloudflareService.syncSubscriptionStatusToCloud({
+            playVerifiedNoPurchase: playCheck.verifiedFromPlay && !playCheck.active,
+          }).catch(() => null);
+
+          const latestTrial = StorageService.getTrialStatus();
+          const confirmedSubscribed = Boolean(
+            playCheck.active ||
+              latestTrial.subscribed ||
+              syncSubRes?.isSubscribed ||
+              syncSubRes?.trialInfo?.isSubscribed
+          );
+
+          const isGraceOver = Boolean(
+            !confirmedSubscribed &&
+              syncSubRes?.success === true &&
+              syncSubRes?.gracePeriodExpired === true
+          );
+
+          if (isGraceOver) {
+            await StorageService.purgeAllCloudData().catch(() => {});
+            return;
           }
 
-          if (!trialStatus.isExpired || trialStatus.subscribed) {
+          try {
+            const pullRes = await CloudflareService.pullFromCloudflare(cleanEmail);
+            if (pullRes.success && typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+              window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+            }
+          } catch (pullErr) {
+            console.warn('Background cloud restore note on login:', pullErr);
+          }
+
+          if (!latestTrial.isExpired || confirmedSubscribed) {
             try {
               const syncRes = await CloudflareService.syncUserProfile(cleanUser, StorageService.getProfile());
               if (syncRes.success) {

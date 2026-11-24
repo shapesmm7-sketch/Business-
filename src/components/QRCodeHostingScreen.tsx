@@ -48,6 +48,7 @@ import {
   Mail,
   AlertTriangle,
   BedDouble,
+  Crown,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -69,6 +70,7 @@ import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
   onNavigateHome: () => void;
+  onNavigateUpgrade?: () => void;
   onOpenCustomerView: (
     page: QRCodeHostedPage,
     initialTab?: 'menu' | 'photos' | 'about' | 'menu-images',
@@ -176,6 +178,7 @@ const BOX_BORDER_PRESETS = [
 export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   business,
   onNavigateHome,
+  onNavigateUpgrade,
   onOpenCustomerView,
   onOpenQrScanner,
 }) => {
@@ -223,11 +226,13 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     window.addEventListener('brivu_auth_changed', syncAuthAndSub);
     window.addEventListener('brivu_subscription_changed', syncAuthAndSub);
     window.addEventListener('brivu_data_refreshed', syncAuthAndSub);
+    window.addEventListener('brivu_grace_expired_purged', syncAuthAndSub);
     window.addEventListener('storage', syncAuthAndSub);
     return () => {
       window.removeEventListener('brivu_auth_changed', syncAuthAndSub);
       window.removeEventListener('brivu_subscription_changed', syncAuthAndSub);
       window.removeEventListener('brivu_data_refreshed', syncAuthAndSub);
+      window.removeEventListener('brivu_grace_expired_purged', syncAuthAndSub);
       window.removeEventListener('storage', syncAuthAndSub);
     };
   }, []);
@@ -1033,6 +1038,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         return;
       }
 
+      if (uploadRes.requiresSubscription) {
+        showToast(uploadRes.message || 'Subscribe to Pro to upload QR photos.');
+        return;
+      }
+
       // Local fallback with compressed WebP data URL
       const compressed = await compressImageFile(file, {
         maxDimension: 1200,
@@ -1683,6 +1693,56 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           )}
         </div>
       </div>
+
+      {!trialStatus.subscribed && trialStatus.isGracePeriod && (
+        <div className="rounded-2xl border border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+              <p className="font-bold">
+                Grace Period: {trialStatus.remainingGraceDays} day{trialStatus.remainingGraceDays === 1 ? '' : 's'} remaining
+              </p>
+              <p className="text-amber-800/90 dark:text-amber-300/90 mt-0.5">
+                Subscribe before your grace period ends to keep your QR code pages and cloud photos active. If you do not subscribe, all QR code info and photos will be automatically deleted from the app and from cloud.
+              </p>
+            </div>
+          </div>
+          {onNavigateUpgrade && (
+            <button
+              type="button"
+              onClick={onNavigateUpgrade}
+              className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              <Crown className="w-3.5 h-3.5" />
+              <span>Upgrade</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {!trialStatus.subscribed && trialStatus.isGracePeriodExpired && (
+        <div className="rounded-2xl border border-rose-200 dark:border-rose-800/70 bg-rose-50 dark:bg-rose-950/40 p-3.5 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed">
+              <p className="font-bold">Grace Period Ended — QR Info Deleted</p>
+              <p className="text-rose-800/90 dark:text-rose-300/90 mt-0.5">
+                You have not subscribed and your grace period is over. Your QR code info and photos have been automatically deleted from the app and from cloud. Subscribe to Pro to host QR codes again.
+              </p>
+            </div>
+          </div>
+          {onNavigateUpgrade && (
+            <button
+              type="button"
+              onClick={onNavigateUpgrade}
+              className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+            >
+              <Crown className="w-3.5 h-3.5" />
+              <span>Upgrade</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* OVERVIEW SCREEN: When qrCategory is null, show the clean Quick Actions dashboard matching screenshot */}
       {qrCategory === null && (

@@ -306,6 +306,9 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             });
             if (uploadRes.success && uploadRes.url) {
               photoUrl = uploadRes.url;
+            } else if (uploadRes.requiresSubscription) {
+              showToast(uploadRes.message || 'Subscribe to Pro to upload event photos.');
+              break;
             }
           } catch (cfErr) {
             console.warn('Cloudflare event photo upload note:', cfErr);
@@ -313,8 +316,10 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           newPhotoUrls.push(photoUrl);
         }
       }
-      setFormPhotos((prev) => [...prev, ...newPhotoUrls].slice(0, 3));
-      showToast(`${newPhotoUrls.length} photo(s) saved to Cloud!`);
+      if (newPhotoUrls.length > 0) {
+        setFormPhotos((prev) => [...prev, ...newPhotoUrls].slice(0, 3));
+        showToast(`${newPhotoUrls.length} photo(s) saved to Cloud!`);
+      }
     } catch (err) {
       console.error(err);
       showToast('Failed to process image.');

@@ -16,6 +16,7 @@ export interface Env {
   brivu_r2?: any;
   BRIVU_BUCKET?: any;
   GOOGLE_WEB_CLIENT_ID?: string;
+  ADMIN_SECRET?: string;
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -416,10 +417,273 @@ async function issueBrivuSession(
   return { rawSessionToken, expiresAt };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function pickEarliestValidPastIso(nowIso: string, ...candidates: Array<unknown>): string {
+  const nowMs = Date.parse(nowIso) || Date.now();
+  let bestMs = nowMs;
+  let bestIso = nowIso;
+  for (const cand of candidates) {
+    if (typeof cand !== 'string' || !cand.trim()) continue;
+    const ms = Date.parse(cand);
+    // Reject invalid dates or future-dated timestamps (anti-tamper guard)
+    if (!isNaN(ms) && ms > 1577836800000 && ms <= nowMs + 60_000 && ms < bestMs) {
+      bestMs = ms;
+      bestIso = new Date(ms).toISOString();
+    }
+  }
+  return bestIso;
+}
+
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const encA = new TextEncoder().encode(a || '');
+  const encB = new TextEncoder().encode(b || '');
+  const len = Math.max(encA.length, encB.length);
+  let diff = encA.length ^ encB.length;
+  for (let i = 0; i < len; i++) {
+    const ba = i < encA.length ? encA[i] : 0;
+    const bb = i < encB.length ? encB[i] : 0;
+    diff |= ba ^ bb;
+  }
+  return diff === 0;
+}
+
+function verifyAdminSecretRequest(request: Request, env: Env): { ok: boolean; status: number; error?: string } {
+  const configuredSecret = String(env?.ADMIN_SECRET || '').trim();
+  if (!configuredSecret) {
+    return { ok: false, status: 503, error: 'ADMIN_SECRET is not configured on the server.' };
+  }
+  const authHeader = request.headers.get('Authorization') || '';
+  const bearerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';
+  const headerToken = (request.headers.get('X-Admin-Secret') || '').trim();
+  const candidate = headerToken || bearerToken;
+  if (!candidate || !timingSafeStringEqual(candidate, configuredSecret)) {
+    return { ok: false, status: 403, error: 'Forbidden: valid admin credentials required.' };
+  }
+  return { ok: true, status: 200 };
+}
+
+async function resolveAuthenticatedSession(
+  request: Request,
+  db: any
+): Promise<{
+  sessionId: string;
+  userId: string;
+  userEmail: string;
+  googleSub?: string | null;
+} | null> {
+  if (!db) return null;
+  const rawToken = extractBrivuSessionToken(request);
+  if (!rawToken) return null;
+  try {
+    await ensureD1Tables(db);
+    const tokenHash = await sha256Hex(rawToken);
+    const sessionRow: any = await db
+      .prepare('SELECT id, user_id, user_email, google_sub, expires_at, revoked_at FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
+      .bind(tokenHash)
+      .first()
+      .catch(() => null);
+    if (!sessionRow) return null;
+    const nowMs = Date.now();
+    if (sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) return null;
+    const userEmail = String(sessionRow.user_email || sessionRow.user_id || '').toLowerCase().trim();
+    if (!userEmail || !userEmail.includes('@')) return null;
+    return {
+      sessionId: String(sessionRow.id),
+      userId: String(sessionRow.user_id || userEmail),
+      userEmail,
+      googleSub: sessionRow.google_sub || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface UserTrialState {
+  userEmail: string;
+  hasUserRow: boolean;
+  isSubscribed: boolean;
+  subscriptionStatus: string;
+  subscriptionExpiresAt: string | null;
+  trialStartedAt: string | null;
+  createdAt: string | null;
+  gracePurgedAt: string | null;
+  daysSinceTrialStart: number;
+  daysSinceAccountCreated: number;
+  remainingTrialDays: number;
+  remainingGraceDays: number;
+  isFreeTrial: boolean;
+  isGracePeriod: boolean;
+  isExpired: boolean;
+  isGracePeriodExpired: boolean;
+  trialPhase:
+    | 'subscribed'
+    | 'free_trial'
+    | 'grace_period'
+    | 'grace_expired'
+    | 'grace_expired_purged'
+    | 'legacy_over_7_days'
+    | 'legacy_over_14_days';
+}
+
+export function computeUserTrialState(
+  row: any,
+  nowMs = Date.now(),
+  options?: { treatLegacyCreatedAtAsTrialStart?: boolean }
+): UserTrialState {
+  const cleanEmail = String(row?.email || row?.id || '').toLowerCase().trim();
+  const rawStatus = String(row?.subscription_status || 'none').toLowerCase().trim();
+  const expiresAtRaw = row?.subscription_expires_at ? String(row.subscription_expires_at).trim() : null;
+  const expiresMs = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
+  const SUBSCRIPTION_RENEWAL_BUFFER_MS = 14 * DAY_MS;
+
+  // Protect active & auto-renewing Google Play subscribers even if they haven't reopened the app on renewal day
+  const isWithinActiveOrRenewalBuffer =
+    rawStatus === 'active' &&
+    (!expiresAtRaw || (!isNaN(expiresMs) && expiresMs + SUBSCRIPTION_RENEWAL_BUFFER_MS > nowMs));
+  const isSubscribed = isWithinActiveOrRenewalBuffer;
+
+  const effectiveStatus = isSubscribed
+    ? 'active'
+    : rawStatus === 'active' && expiresAtRaw && !isNaN(expiresMs) && expiresMs + SUBSCRIPTION_RENEWAL_BUFFER_MS <= nowMs
+    ? 'expired'
+    : rawStatus || 'none';
+
+  const trialStartedAt = row?.trial_started_at ? String(row.trial_started_at).trim() : null;
+  const createdAt = row?.created_at ? String(row.created_at).trim() : null;
+  const gracePurgedAt = row?.grace_purged_at ? String(row.grace_purged_at).trim() : null;
+
+  const createdMs = createdAt ? Date.parse(createdAt) : NaN;
+  const daysSinceAccountCreated = !isNaN(createdMs)
+    ? Math.floor(Math.max(0, nowMs - createdMs) / DAY_MS)
+    : 0;
+
+  const effectiveStartIso =
+    trialStartedAt || (options?.treatLegacyCreatedAtAsTrialStart ? createdAt : null);
+  const startMs = effectiveStartIso ? Date.parse(effectiveStartIso) : NaN;
+  const daysSinceTrialStart = !isNaN(startMs)
+    ? Math.floor(Math.max(0, nowMs - startMs) / DAY_MS)
+    : daysSinceAccountCreated;
+
+  const hadPreviousSubscription = effectiveStatus === 'expired';
+  const daysSinceSubExpiry =
+    hadPreviousSubscription && !isNaN(expiresMs)
+      ? Math.floor(Math.max(0, nowMs - expiresMs) / DAY_MS)
+      : daysSinceTrialStart;
+
+  const isFreeTrial = !isSubscribed && !hadPreviousSubscription && daysSinceTrialStart <= 7;
+  const isGracePeriod = !isSubscribed && (
+    hadPreviousSubscription
+      ? daysSinceSubExpiry <= 7
+      : daysSinceTrialStart > 7 && daysSinceTrialStart <= 14
+  );
+  const isExpired = !isSubscribed && (
+    hadPreviousSubscription
+      ? true
+      : Boolean(effectiveStartIso) && daysSinceTrialStart > 7
+  );
+  const isGracePeriodExpired = !isSubscribed && (
+    hadPreviousSubscription
+      ? daysSinceSubExpiry > 7
+      : Boolean(effectiveStartIso) && daysSinceTrialStart > 14
+  );
+
+  const remainingTrialDays = isSubscribed || hadPreviousSubscription ? 0 : Math.max(0, 7 - daysSinceTrialStart);
+  const remainingGraceDays = isSubscribed
+    ? 0
+    : hadPreviousSubscription
+    ? Math.max(0, 7 - daysSinceSubExpiry)
+    : Math.max(0, 14 - daysSinceTrialStart);
+
+  let trialPhase: UserTrialState['trialPhase'] = 'free_trial';
+  if (isSubscribed) {
+    trialPhase = 'subscribed';
+  } else if (gracePurgedAt) {
+    trialPhase = 'grace_expired_purged';
+  } else if (isGracePeriodExpired) {
+    trialPhase = 'grace_expired';
+  } else if (isGracePeriod) {
+    trialPhase = 'grace_period';
+  } else if (!trialStartedAt && daysSinceAccountCreated > 14) {
+    trialPhase = 'legacy_over_14_days';
+  } else if (!trialStartedAt && daysSinceAccountCreated > 7) {
+    trialPhase = 'legacy_over_7_days';
+  }
+
+  return {
+    userEmail: cleanEmail,
+    hasUserRow: Boolean(row),
+    isSubscribed,
+    subscriptionStatus: effectiveStatus,
+    subscriptionExpiresAt: expiresAtRaw,
+    trialStartedAt,
+    createdAt,
+    gracePurgedAt,
+    daysSinceTrialStart,
+    daysSinceAccountCreated,
+    remainingTrialDays,
+    remainingGraceDays,
+    isFreeTrial,
+    isGracePeriod,
+    isExpired,
+    isGracePeriodExpired,
+    trialPhase,
+  };
+}
+
+async function getUserTrialState(
+  db: any,
+  userEmail: string,
+  options?: { treatLegacyCreatedAtAsTrialStart?: boolean }
+): Promise<UserTrialState | null> {
+  const cleanEmail = (userEmail || '').toLowerCase().trim();
+  if (!db || !cleanEmail || !cleanEmail.includes('@')) return null;
+  try {
+    await ensureD1Tables(db);
+    const row: any = await db
+      .prepare('SELECT id, email, created_at, trial_started_at, subscription_status, subscription_expires_at, grace_purged_at FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+      .bind(cleanEmail, cleanEmail)
+      .first()
+      .catch(() => null);
+    if (!row) return null;
+    return computeUserTrialState(row, Date.now(), options);
+  } catch {
+    return null;
+  }
+}
+
+async function ensureUserTrialStart(
+  db: any,
+  userEmail: string,
+  candidateInstallDate?: unknown
+): Promise<void> {
+  const cleanEmail = (userEmail || '').toLowerCase().trim();
+  if (!db || !cleanEmail || !cleanEmail.includes('@')) return;
+  try {
+    await ensureD1Tables(db);
+    const nowIso = new Date().toISOString();
+    const row: any = await db
+      .prepare('SELECT id, created_at, trial_started_at FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+      .bind(cleanEmail, cleanEmail)
+      .first()
+      .catch(() => null);
+    if (!row) return;
+    const earliest = pickEarliestValidPastIso(nowIso, row.trial_started_at, row.created_at, candidateInstallDate);
+    if (!row.trial_started_at || earliest !== row.trial_started_at) {
+      await db
+        .prepare('UPDATE users SET trial_started_at = ? WHERE id = ?')
+        .bind(earliest, row.id)
+        .run()
+        .catch(() => {});
+    }
+  } catch {}
+}
+
 function mapDbRowToBrivuUser(row: any, nowIso?: string) {
   const cleanEmail = String(row?.email || '').toLowerCase().trim();
   const rawProvider = String(row?.provider || '').trim().toLowerCase();
   const provider: 'google' | 'email' = rawProvider === 'email' ? 'email' : 'google';
+  const trialInfo = computeUserTrialState(row);
   return {
     id: row?.id || cleanEmail,
     googleSub: row?.google_sub || undefined,
@@ -432,6 +696,14 @@ function mapDbRowToBrivuUser(row: any, nowIso?: string) {
     hasPassword: Boolean(row?.password_hash),
     hasGoogleLinked: Boolean(row?.google_sub),
     provider,
+    trialStartedAt: trialInfo.trialStartedAt || undefined,
+    subscriptionStatus: trialInfo.subscriptionStatus,
+    subscriptionExpiresAt: trialInfo.subscriptionExpiresAt || undefined,
+    gracePurgedAt: trialInfo.gracePurgedAt || undefined,
+    daysSinceInstall: trialInfo.daysSinceTrialStart,
+    daysSinceAccountCreated: trialInfo.daysSinceAccountCreated,
+    trialPhase: trialInfo.trialPhase,
+    trialInfo,
     createdAt: row?.created_at || nowIso,
     updatedAt: row?.updated_at || nowIso,
     lastLogin: row?.last_login || nowIso,
@@ -460,6 +732,7 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
       profilePictureUrl: claims.picture,
       emailVerified: true,
       provider: 'google' as const,
+      trialStartedAt: nowIso,
       createdAt: nowIso,
       updatedAt: nowIso,
       lastLogin: nowIso,
@@ -487,6 +760,7 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
   }
 
   if (existingRow) {
+    const resolvedTrialStart = pickEarliestValidPastIso(nowIso, existingRow.trial_started_at, existingRow.created_at);
     await db.prepare(`
       UPDATE users
       SET google_sub = ?,
@@ -496,6 +770,8 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
           last_name = COALESCE(NULLIF(?, ''), last_name),
           profile_picture_url = COALESCE(NULLIF(?, ''), profile_picture_url),
           provider = 'google',
+          trial_started_at = COALESCE(trial_started_at, ?),
+          subscription_status = COALESCE(subscription_status, 'none'),
           updated_at = ?,
           last_login = ?
       WHERE id = ?
@@ -506,6 +782,7 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
       claims.givenName,
       claims.familyName,
       claims.picture,
+      resolvedTrialStart,
       nowIso,
       nowIso,
       existingRow.id
@@ -521,6 +798,8 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
         last_name: claims.familyName || existingRow.last_name,
         profile_picture_url: claims.picture || existingRow.profile_picture_url,
         provider: 'google',
+        trial_started_at: existingRow.trial_started_at || resolvedTrialStart,
+        subscription_status: existingRow.subscription_status || 'none',
         updated_at: nowIso,
         last_login: nowIso,
       },
@@ -530,8 +809,8 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
 
   // 3. Brand new Brivu user (canonical email as id to stay consistent across backups/qr_pages/files)
   await db.prepare(`
-    INSERT INTO users (id, email, google_sub, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'google', ?, ?, ?)
+    INSERT INTO users (id, email, google_sub, name, first_name, last_name, profile_picture_url, provider, trial_started_at, subscription_status, created_at, updated_at, last_login)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'google', ?, 'none', ?, ?, ?)
   `).bind(
     cleanEmail,
     cleanEmail,
@@ -540,6 +819,7 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
     claims.givenName,
     claims.familyName,
     claims.picture,
+    nowIso,
     nowIso,
     nowIso,
     nowIso
@@ -555,6 +835,8 @@ async function upsertVerifiedGoogleUser(db: any, claims: VerifiedGoogleClaims) {
       last_name: claims.familyName,
       profile_picture_url: claims.picture,
       provider: 'google',
+      trial_started_at: nowIso,
+      subscription_status: 'none',
       created_at: nowIso,
       updated_at: nowIso,
       last_login: nowIso,
@@ -1021,6 +1303,18 @@ export async function ensureD1Tables(db: any): Promise<void> {
         await db.prepare(`ALTER TABLE users ADD COLUMN password_salt TEXT`).run();
       } catch (_) {}
       try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN trial_started_at TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN subscription_status TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN subscription_expires_at TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE users ADD COLUMN grace_purged_at TEXT`).run();
+      } catch (_) {}
+      try {
         await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)`).run();
       } catch (_) {}
       d1SchemaReady = true;
@@ -1031,6 +1325,515 @@ export async function ensureD1Tables(db: any): Promise<void> {
   })();
 
   return d1SchemaPromise;
+}
+
+export function extractR2KeyFromFileUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('/api/files/')) {
+    const tail = trimmed.split('/api/files/')[1]?.split('?')[0]?.split('#')[0] || '';
+    try {
+      return decodeURIComponent(tail);
+    } catch {
+      return tail;
+    }
+  }
+  return '';
+}
+
+export function isQrProtectedAssetKey(rawKey: string): boolean {
+  const k = String(rawKey || '').toLowerCase();
+  if (!k) return false;
+  if (k.includes('/menu/') || k.includes('/events/') || k.startsWith('menu-public/')) return true;
+  const fname = k.split('/').pop() || '';
+  // Never purge shared profile logo/signature or stock/customer/staff photos
+  if (fname === 'logo.webp' || fname === 'signature.webp') return false;
+  if (fname.includes('product_') || fname.includes('customer_') || fname.includes('agent_') || fname.includes('staff_')) {
+    return false;
+  }
+  if (fname.includes('qr_cover') || fname.includes('qr_item') || fname.includes('qr_logo') || fname.includes('event_photo')) {
+    return true;
+  }
+  return isQrGalleryPhotoFile(k, fname);
+}
+
+function collectQrAssetKeysAndPageIds(
+  obj: any,
+  r2Keys: Set<string>,
+  pageIds: Set<string>,
+  includeSharedLogo = false
+): void {
+  if (!obj || typeof obj !== 'object') return;
+  if (typeof obj.id === 'string' && obj.id.trim()) {
+    pageIds.add(obj.id.trim());
+  }
+
+  const addIfQrUrl = (val: unknown, forceQr = false) => {
+    const key = extractR2KeyFromFileUrl(val);
+    if (!key) return;
+    const fname = (key.split('/').pop() || '').toLowerCase();
+    if (!includeSharedLogo && (fname === 'logo.webp' || fname === 'signature.webp')) return;
+    if (forceQr || isQrProtectedAssetKey(key)) {
+      r2Keys.add(key);
+    }
+  };
+
+  addIfQrUrl(obj.coverImage, true);
+  if (obj.logo) addIfQrUrl(obj.logo, false);
+
+  if (Array.isArray(obj.photos)) {
+    for (const p of obj.photos) {
+      addIfQrUrl(typeof p === 'string' ? p : p?.url, true);
+    }
+  }
+  if (Array.isArray(obj.menuImages)) {
+    for (const m of obj.menuImages) {
+      addIfQrUrl(typeof m === 'string' ? m : m?.url, true);
+    }
+  }
+  if (Array.isArray(obj.menuItems)) {
+    for (const item of obj.menuItems) {
+      if (item && !String(item.id || '').startsWith('prod-')) {
+        addIfQrUrl(item.photoUrl || item.image, true);
+      }
+    }
+  }
+  if (Array.isArray(obj.eventsQrItems)) {
+    for (const evt of obj.eventsQrItems) {
+      if (evt?.id) pageIds.add(String(evt.id).trim());
+      if (Array.isArray(evt?.photos)) {
+        for (const u of evt.photos) addIfQrUrl(u, true);
+      }
+    }
+  }
+  if (Array.isArray(obj.roomsQrItems)) {
+    for (const rm of obj.roomsQrItems) {
+      if (rm?.id) pageIds.add(String(rm.id).trim());
+      if (Array.isArray(rm?.photos)) {
+        for (const u of rm.photos) addIfQrUrl(u, true);
+      }
+    }
+  }
+}
+
+async function deleteR2KeysSafely(bucket: any, db: any, rawKeys: Iterable<string>): Promise<number> {
+  const expanded = new Set<string>();
+  for (const rawKey of rawKeys) {
+    const k = String(rawKey || '').trim();
+    if (!k) continue;
+    expanded.add(k);
+    try {
+      const dec = decodeURIComponent(k);
+      if (dec) expanded.add(dec);
+    } catch {}
+    const alt = k.includes('%40') ? k.replace(/%40/gi, '@') : k.replace(/@/g, '%40');
+    if (alt) expanded.add(alt);
+  }
+  let deletedCount = 0;
+  for (const k of expanded) {
+    if (bucket && typeof bucket.delete === 'function') {
+      try {
+        await bucket.delete(k);
+        deletedCount++;
+      } catch {}
+    }
+    if (db) {
+      try {
+        await db.prepare('DELETE FROM files WHERE id = ? OR r2_key = ?').bind(k, k).run();
+      } catch {}
+    }
+  }
+  return deletedCount;
+}
+
+function stripQrDataFromBackupObject(backup: any, purgedKeySet?: Set<string>): any {
+  if (!backup || typeof backup !== 'object') return backup;
+  const next = { ...backup };
+  next.qrHostedPages = [];
+  next.websitesQrItems = [];
+  next.socialsQrItems = [];
+  next.eventsQrItems = [];
+  next.roomsQrItems = [];
+  next.photos = [];
+  if (Array.isArray(next.files)) {
+    next.files = next.files.filter((f: any) => {
+      const k = String(f?.key || f?.id || '');
+      if (!k) return false;
+      if (purgedKeySet && purgedKeySet.has(k)) return false;
+      return !isQrProtectedAssetKey(k);
+    });
+  }
+  return next;
+}
+
+export async function purgeUserQrAndCloudData(
+  db: any,
+  bucket: any,
+  rawEmail: string,
+  options?: { treatLegacyCreatedAtAsTrialStart?: boolean }
+): Promise<{
+  ok: boolean;
+  skippedReason?: string;
+  userEmail: string;
+  deletedQrPages: number;
+  deletedR2Keys: number;
+  updatedBackup: boolean;
+  purgedAt: string;
+}> {
+  const cleanEmail = (rawEmail || '').toLowerCase().trim();
+  const purgedAt = new Date().toISOString();
+  if (!db || !cleanEmail || !cleanEmail.includes('@')) {
+    return {
+      ok: false,
+      skippedReason: !db ? 'no_database' : 'invalid_email',
+      userEmail: cleanEmail,
+      deletedQrPages: 0,
+      deletedR2Keys: 0,
+      updatedBackup: false,
+      purgedAt,
+    };
+  }
+
+  // Mandatory fail-safe subscription & grace verification directly against D1 BEFORE touching any user data
+  try {
+    await ensureD1Tables(db);
+    const userRow: any = await db
+      .prepare('SELECT id, email, created_at, trial_started_at, subscription_status, subscription_expires_at, grace_purged_at FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+      .bind(cleanEmail, cleanEmail)
+      .first()
+      .catch(() => null);
+
+    if (!userRow) {
+      return {
+        ok: false,
+        skippedReason: 'user_not_found',
+        userEmail: cleanEmail,
+        deletedQrPages: 0,
+        deletedR2Keys: 0,
+        updatedBackup: false,
+        purgedAt,
+      };
+    }
+
+    const verifiedState = computeUserTrialState(userRow, Date.now(), {
+      treatLegacyCreatedAtAsTrialStart: Boolean(options?.treatLegacyCreatedAtAsTrialStart),
+    });
+
+    if (verifiedState.isSubscribed || !verifiedState.isGracePeriodExpired) {
+      return {
+        ok: false,
+        skippedReason: verifiedState.isSubscribed ? 'user_is_subscribed' : 'grace_period_not_expired',
+        userEmail: cleanEmail,
+        deletedQrPages: 0,
+        deletedR2Keys: 0,
+        updatedBackup: false,
+        purgedAt,
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      skippedReason: 'verification_failed',
+      userEmail: cleanEmail,
+      deletedQrPages: 0,
+      deletedR2Keys: 0,
+      updatedBackup: false,
+      purgedAt,
+    };
+  }
+
+  const r2KeysToDelete = new Set<string>();
+  const pageIds = new Set<string>();
+  let deletedQrPages = 0;
+  let updatedBackup = false;
+
+  if (db) {
+    try {
+      await ensureD1Tables(db);
+      // 1. Inspect existing qr_pages rows owned by user
+      const qrRowsRes: any = await db
+        .prepare('SELECT id, page_json FROM qr_pages WHERE LOWER(user_email) = ? OR id LIKE ? OR id LIKE ?')
+        .bind(cleanEmail, `user_${cleanEmail}_%`, `user_${encodeURIComponent(cleanEmail)}_%`)
+        .all()
+        .catch(() => null);
+      for (const row of qrRowsRes?.results || []) {
+        if (row?.id) pageIds.add(String(row.id));
+        if (row?.page_json) {
+          try {
+            const parsed = JSON.parse(row.page_json);
+            collectQrAssetKeysAndPageIds(parsed, r2KeysToDelete, pageIds, false);
+          } catch {}
+        }
+      }
+
+      // 2. Inspect backups row & strip QR fields cleanly while keeping receipts/inventory/staff intact
+      const backupRowsRes: any = await db
+        .prepare('SELECT id, backup_data FROM backups WHERE id = ? OR LOWER(user_email) = ?')
+        .bind(`user_${cleanEmail}`, cleanEmail)
+        .all()
+        .catch(() => null);
+      for (const bRow of backupRowsRes?.results || []) {
+        if (!bRow?.backup_data) continue;
+        try {
+          const parsedBackup = JSON.parse(bRow.backup_data);
+          if (Array.isArray(parsedBackup.qrHostedPages)) {
+            for (const p of parsedBackup.qrHostedPages) {
+              collectQrAssetKeysAndPageIds(p, r2KeysToDelete, pageIds, false);
+            }
+          }
+          collectQrAssetKeysAndPageIds(parsedBackup, r2KeysToDelete, pageIds, false);
+          const cleanedBackup = stripQrDataFromBackupObject(parsedBackup, r2KeysToDelete);
+          await db
+            .prepare('UPDATE backups SET backup_data = ?, updated_at = ? WHERE id = ?')
+            .bind(JSON.stringify(cleanedBackup), purgedAt, bRow.id)
+            .run()
+            .catch(() => {});
+          updatedBackup = true;
+        } catch {}
+      }
+
+      // 3. Inspect D1 files table for QR assets owned by this user
+      const encEmail = encodeURIComponent(cleanEmail);
+      const fileRowsRes: any = await db
+        .prepare('SELECT id, r2_key, file_type FROM files WHERE LOWER(user_email) = ? OR id LIKE ? OR id LIKE ?')
+        .bind(cleanEmail, `users/${encEmail}/%`, `users/${cleanEmail}/%`)
+        .all()
+        .catch(() => null);
+      for (const fRow of fileRowsRes?.results || []) {
+        const keyCand = String(fRow?.r2_key || fRow?.id || '');
+        if (fRow?.file_type === 'menu_image' || isQrProtectedAssetKey(keyCand)) {
+          if (keyCand) r2KeysToDelete.add(keyCand);
+        }
+      }
+    } catch (err) {
+      console.warn('purgeUserQrAndCloudData D1 scan note:', err);
+    }
+  }
+
+  // 4. Scan R2 prefixes for any QR menu/event/photo objects & R2 backup JSON
+  if (bucket && typeof bucket.list === 'function') {
+    const encEmail = encodeURIComponent(cleanEmail);
+    const qrPrefixes = [
+      `users/${encEmail}/menu/`,
+      `users/${cleanEmail}/menu/`,
+      `users/${encEmail}/events/`,
+      `users/${cleanEmail}/events/`,
+    ];
+    for (const pid of pageIds) {
+      if (pid && !pid.includes('..') && !pid.startsWith('user_')) {
+        qrPrefixes.push(`menu-public/${pid}/`);
+      }
+    }
+    for (const pfx of qrPrefixes) {
+      try {
+        let cursor: string | undefined = undefined;
+        let rounds = 0;
+        do {
+          rounds++;
+          const listed: any = await bucket.list({ prefix: pfx, limit: 500, cursor });
+          for (const obj of listed?.objects || []) {
+            if (obj?.key) r2KeysToDelete.add(String(obj.key));
+          }
+          cursor = listed?.truncated ? listed.cursor : undefined;
+        } while (cursor && rounds < 10);
+      } catch {}
+    }
+
+    for (const photosPrefix of [`users/${encEmail}/photos/`, `users/${cleanEmail}/photos/`]) {
+      try {
+        let cursor: string | undefined = undefined;
+        let rounds = 0;
+        do {
+          rounds++;
+          const listed: any = await bucket.list({ prefix: photosPrefix, limit: 500, cursor });
+          for (const obj of listed?.objects || []) {
+            if (obj?.key && isQrProtectedAssetKey(String(obj.key))) {
+              r2KeysToDelete.add(String(obj.key));
+            }
+          }
+          cursor = listed?.truncated ? listed.cursor : undefined;
+        } while (cursor && rounds < 10);
+      } catch {}
+    }
+
+    // Also strip QR data from legacy R2 latest_backup.json / backup.json if they exist
+    for (const r2BackupKey of [`users/${encEmail}/latest_backup.json`, `users/${encEmail}/backup.json`]) {
+      try {
+        const obj = await bucket.get(r2BackupKey);
+        if (obj) {
+          const parsedR2 = JSON.parse(await obj.text());
+          collectQrAssetKeysAndPageIds(parsedR2, r2KeysToDelete, pageIds, false);
+          if (Array.isArray(parsedR2?.qrHostedPages)) {
+            for (const p of parsedR2.qrHostedPages) {
+              collectQrAssetKeysAndPageIds(p, r2KeysToDelete, pageIds, false);
+            }
+          }
+          const cleanedR2 = stripQrDataFromBackupObject(parsedR2, r2KeysToDelete);
+          await bucket.put(r2BackupKey, JSON.stringify(cleanedR2), {
+            httpMetadata: { contentType: 'application/json' },
+          });
+          updatedBackup = true;
+        }
+      } catch {}
+    }
+  }
+
+  // 5. Execute R2 + D1 file deletions and delete qr_pages rows
+  const deletedR2Keys = await deleteR2KeysSafely(bucket, db, r2KeysToDelete);
+
+  if (db) {
+    try {
+      const delRes: any = await db
+        .prepare('DELETE FROM qr_pages WHERE LOWER(user_email) = ? OR id LIKE ? OR id LIKE ?')
+        .bind(cleanEmail, `user_${cleanEmail}_%`, `user_${encodeURIComponent(cleanEmail)}_%`)
+        .run();
+      deletedQrPages = Number(delRes?.meta?.changes || 0);
+      await db
+        .prepare('UPDATE users SET grace_purged_at = ?, updated_at = ? WHERE LOWER(email) = ? OR id = ?')
+        .bind(purgedAt, purgedAt, cleanEmail, cleanEmail)
+        .run()
+        .catch(() => {});
+    } catch {}
+  }
+
+  invalidateCachePattern('qrCache:');
+  return {
+    ok: true,
+    userEmail: cleanEmail,
+    deletedQrPages,
+    deletedR2Keys,
+    updatedBackup,
+    purgedAt,
+  };
+}
+
+function buildExpiredQrPage(
+  pageId: string,
+  userEmail: string,
+  category: 'business' | 'events' | 'rooms' | 'socials' | 'websites'
+): any {
+  return {
+    id: pageId || 'expired',
+    title: 'QR Hosting Expired',
+    tagline: 'Free trial and grace period ended',
+    description: '',
+    pageType:
+      category === 'rooms'
+        ? 'rooms_hub'
+        : category === 'events'
+        ? 'events_hub'
+        : category === 'socials'
+        ? 'socials_hub'
+        : category === 'websites'
+        ? 'websites_hub'
+        : 'menu',
+    email: userEmail,
+    userEmail,
+    currency: 'UGX',
+    menuCategories: ['All'],
+    menuItems: [],
+    photos: [],
+    menuImages: [],
+    websitesQrItems: [],
+    socialsQrItems: [],
+    eventsQrItems: [],
+    roomsQrItems: [],
+    qrExpired: true,
+    graceExpired: true,
+    isEmptyFallback: true,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function resolveOwnerEmailFromAssetKey(db: any, candidateKeys: string[]): Promise<string> {
+  for (const ck of candidateKeys) {
+    const m = ck.match(/^users\/([^/]+)\//i);
+    if (m?.[1]) {
+      let decoded = m[1];
+      try { decoded = decodeURIComponent(decoded); } catch {}
+      decoded = decoded.toLowerCase().trim();
+      if (decoded.includes('@')) return decoded;
+    }
+  }
+  if (!db) return '';
+  try {
+    await ensureD1Tables(db);
+    for (const ck of candidateKeys) {
+      const fRow: any = await db
+        .prepare('SELECT user_email FROM files WHERE id = ? OR r2_key = ? LIMIT 1')
+        .bind(ck, ck)
+        .first()
+        .catch(() => null);
+      if (fRow?.user_email && String(fRow.user_email).includes('@')) {
+        return String(fRow.user_email).toLowerCase().trim();
+      }
+      if (ck.startsWith('menu-public/')) {
+        const pageIdPart = ck.split('/')[1] || '';
+        if (pageIdPart) {
+          const qrRow: any = await db
+            .prepare('SELECT user_email FROM qr_pages WHERE id = ? OR id LIKE ? LIMIT 1')
+            .bind(pageIdPart, `%_${pageIdPart}`)
+            .first()
+            .catch(() => null);
+          if (qrRow?.user_email && String(qrRow.user_email).includes('@')) {
+            return String(qrRow.user_email).toLowerCase().trim();
+          }
+        }
+      }
+    }
+  } catch {}
+  return '';
+}
+
+async function runScheduledGracePurgeSweep(
+  env: Env,
+  options?: { treatLegacyCreatedAtAsTrialStart?: boolean; limit?: number }
+): Promise<{ checked: number; purgedCount: number; purgedUsers: Array<{ email: string; deletedQrPages: number; deletedR2Keys: number }> }> {
+  const db = getD1Database(env);
+  const bucket = getR2Bucket(env);
+  if (!db) return { checked: 0, purgedCount: 0, purgedUsers: [] };
+  await ensureD1Tables(db);
+
+  const maxRows = Math.min(Math.max(Number(options?.limit) || 100, 1), 500);
+  const rowsRes: any = await db
+    .prepare(
+      `SELECT id, email, created_at, trial_started_at, subscription_status, subscription_expires_at, grace_purged_at
+       FROM users
+       WHERE grace_purged_at IS NULL
+       ORDER BY created_at ASC
+       LIMIT ?`
+    )
+    .bind(maxRows)
+    .all()
+    .catch(() => ({ results: [] }));
+
+  const rows: any[] = rowsRes?.results || [];
+  const purgedUsers: Array<{ email: string; deletedQrPages: number; deletedR2Keys: number }> = [];
+
+  for (const row of rows) {
+    const state = computeUserTrialState(row, Date.now(), {
+      treatLegacyCreatedAtAsTrialStart: Boolean(options?.treatLegacyCreatedAtAsTrialStart),
+    });
+    if (state.isGracePeriodExpired && state.userEmail) {
+      const res = await purgeUserQrAndCloudData(db, bucket, state.userEmail, {
+        treatLegacyCreatedAtAsTrialStart: Boolean(options?.treatLegacyCreatedAtAsTrialStart),
+      });
+      if (res.ok) {
+        purgedUsers.push({
+          email: res.userEmail,
+          deletedQrPages: res.deletedQrPages,
+          deletedR2Keys: res.deletedR2Keys,
+        });
+      }
+    }
+  }
+
+  return {
+    checked: rows.length,
+    purgedCount: purgedUsers.length,
+    purgedUsers,
+  };
 }
 
 // 200 MB user cloud storage cap
@@ -1660,7 +2463,8 @@ export async function resolveHostedQrPage(
     ? 'rooms'
     : 'business';
 
-  // If userEmail not passed in query/headers, do fast indexed lookup in D1 first (avoiding full-table scans)
+  // If userEmail not passed in query/headers, resolve owner email from D1 first (before returning cached/direct QR content)
+  let directCandidate: any = null;
   if (!userEmail && db && pageId && pageId !== 'default' && pageId !== 'latest') {
     try {
       const row: any = await runWithMissingTableRetry(db, () =>
@@ -1669,12 +2473,10 @@ export async function resolveHostedQrPage(
       if (row?.page_json) {
         try {
           const parsedDirect = JSON.parse(row.page_json);
-          if (parsedDirect && !isSingleEvent && !isSingleRoom && hasRealQrPageContent(parsedDirect)) {
-            const result = sanitizePublicQrPage(parsedDirect);
-            setCachedQuery(cacheKey, result, 10);
-            return result;
-          }
           userEmail = (row.user_email || parsedDirect?.userEmail || parsedDirect?.email || '').toLowerCase().trim();
+          if (parsedDirect && !isSingleEvent && !isSingleRoom && hasRealQrPageContent(parsedDirect)) {
+            directCandidate = sanitizePublicQrPage(parsedDirect);
+          }
         } catch (_) {
           if (row?.user_email) userEmail = row.user_email.toLowerCase().trim();
         }
@@ -1703,6 +2505,22 @@ export async function resolveHostedQrPage(
         }
       }
     } catch (_) {}
+  }
+
+  // Enforce server-side trial/grace expiry BEFORE serving any direct, cached, or backup-reconstructed QR page
+  if (db && userEmail) {
+    const trialState = await getUserTrialState(db, userEmail);
+    if (trialState?.isGracePeriodExpired) {
+      await purgeUserQrAndCloudData(db, bucket, userEmail);
+      const expiredPage = buildExpiredQrPage(pageId, userEmail, category);
+      setCachedQuery(cacheKey, expiredPage, 10);
+      return expiredPage;
+    }
+  }
+
+  if (directCandidate) {
+    setCachedQuery(cacheKey, directCandidate, 10);
+    return directCandidate;
   }
 
   // 1. Primary lookup in D1 qr_pages table (single batched roundtrip per case)
@@ -2820,8 +3638,8 @@ export default {
         const lastName = nameParts.slice(1).join(' ');
 
         await db.prepare(`
-          INSERT INTO users (id, email, password_hash, password_salt, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
-          VALUES (?, ?, ?, ?, ?, ?, ?, '', 'email', ?, ?, ?)
+          INSERT INTO users (id, email, password_hash, password_salt, name, first_name, last_name, profile_picture_url, provider, trial_started_at, subscription_status, created_at, updated_at, last_login)
+          VALUES (?, ?, ?, ?, ?, ?, ?, '', 'email', ?, 'none', ?, ?, ?)
         `).bind(
           cleanEmail,
           cleanEmail,
@@ -2830,6 +3648,7 @@ export default {
           fallbackName,
           firstName,
           lastName,
+          nowIso,
           nowIso,
           nowIso,
           nowIso
@@ -2844,6 +3663,8 @@ export default {
             first_name: firstName,
             last_name: lastName,
             provider: 'email',
+            trial_started_at: nowIso,
+            subscription_status: 'none',
             created_at: nowIso,
             updated_at: nowIso,
             last_login: nowIso,
@@ -3083,10 +3904,12 @@ export default {
           try {
             await ensureD1Tables(db);
             await db.prepare(`
-              INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, created_at, updated_at, last_login)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO users (id, email, name, first_name, last_name, profile_picture_url, provider, trial_started_at, subscription_status, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?)
               ON CONFLICT(email) DO UPDATE SET
                 name = excluded.name,
+                trial_started_at = COALESCE(users.trial_started_at, users.created_at, excluded.trial_started_at),
+                subscription_status = COALESCE(users.subscription_status, 'none'),
                 updated_at = excluded.updated_at,
                 last_login = excluded.last_login
             `).bind(
@@ -3097,6 +3920,7 @@ export default {
               user.lastName || '',
               user.profilePictureUrl || '',
               user.provider || 'google',
+              nowIso,
               nowIso,
               nowIso,
               nowIso
@@ -3181,7 +4005,7 @@ export default {
       );
     }
 
-    // 2f. List all stored users & emails from Cloudflare (/api/users/all)
+    // 2f. List all stored users & emails from Cloudflare (/api/users/all) with trial/grace visibility
     if (url.pathname === '/api/users/all') {
       const db = getD1Database(env);
       let users: any[] = [];
@@ -3194,6 +4018,15 @@ export default {
           }
         } catch (_) {}
       }
+      const summary = {
+        total: users.length,
+        subscribed: users.filter((u) => u.trialPhase === 'subscribed').length,
+        freeTrial: users.filter((u) => u.trialPhase === 'free_trial').length,
+        gracePeriod: users.filter((u) => u.trialPhase === 'grace_period').length,
+        graceExpired: users.filter(
+          (u) => u.trialPhase === 'grace_expired' || u.trialPhase === 'grace_expired_purged'
+        ).length,
+      };
       return new Response(
         JSON.stringify({
           ok: true,
@@ -3201,6 +4034,7 @@ export default {
           users,
           emails: users.map((u) => u.email),
           total: users.length,
+          summary,
           timestamp: new Date().toISOString(),
         }),
         {
@@ -3208,6 +4042,335 @@ export default {
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         }
       );
+    }
+
+    // 2g. Sync Trial Start & Subscription Status (/api/subscription/sync)
+    if (url.pathname === '/api/subscription/sync' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        const bucket = getR2Bucket(env);
+        const body: any = await request.json().catch(() => ({}));
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Database not bound on server.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        await ensureD1Tables(db);
+        const session = await resolveAuthenticatedSession(request, db);
+        const requestedEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          body?.userEmail ||
+          body?.email ||
+          ''
+        ).toLowerCase().trim();
+
+        const userEmail = session?.userEmail || requestedEmail;
+        if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Valid account email is required.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (session && requestedEmail && requestedEmail !== session.userEmail) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Forbidden: email mismatch with active session.' }),
+            { status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const existingRow: any = await db
+          .prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+          .bind(userEmail, userEmail)
+          .first()
+          .catch(() => null);
+
+        const nowIso = new Date().toISOString();
+        const nowMs = Date.now();
+        const incomingInstallDate = body?.installDate;
+        const incomingStatus = String(body?.subscriptionStatus || '').toLowerCase().trim();
+        const playVerifiedNoPurchase = body?.playVerifiedNoPurchase === true;
+        const incomingExpiresAt = typeof body?.subscriptionExpiresAt === 'string' && !isNaN(Date.parse(body.subscriptionExpiresAt))
+          ? new Date(Date.parse(body.subscriptionExpiresAt)).toISOString()
+          : null;
+
+        // Protect existing authenticated accounts against unauthenticated subscription spoofing
+        const hasAuthCredential = Boolean(existingRow && (existingRow.password_hash || existingRow.google_sub));
+        if (!session && hasAuthCredential) {
+          // Only read/evaluate server-recorded expiry; never let unauthenticated callers mutate subscription status
+          const currentTrial = computeUserTrialState(existingRow, nowMs);
+          if (currentTrial.isGracePeriodExpired && !currentTrial.isSubscribed) {
+            const purgeRes = await purgeUserQrAndCloudData(db, bucket, userEmail);
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                success: true,
+                isSubscribed: false,
+                gracePeriodExpired: purgeRes.ok,
+                purged: purgeRes.ok,
+                purgeDetails: purgeRes,
+                trialInfo: computeUserTrialState({ ...existingRow, grace_purged_at: purgeRes.ok ? purgeRes.purgedAt : existingRow.grace_purged_at }, nowMs),
+                message: 'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud files have been automatically deleted from the app and from cloud.',
+              }),
+              { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              ok: currentTrial.isSubscribed,
+              success: currentTrial.isSubscribed,
+              isSubscribed: currentTrial.isSubscribed,
+              authRequired: !currentTrial.isSubscribed,
+              gracePeriodExpired: false,
+              purged: false,
+              error: currentTrial.isSubscribed ? undefined : 'Session authentication required to update subscription status.',
+              trialInfo: currentTrial,
+            }),
+            { status: currentTrial.isSubscribed ? 200 : 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const earliestTrialStart = pickEarliestValidPastIso(
+          nowIso,
+          existingRow?.trial_started_at,
+          existingRow?.created_at,
+          incomingInstallDate
+        );
+
+        let nextStatus = existingRow?.subscription_status || 'none';
+        let nextExpiresAt: string | null = existingRow?.subscription_expires_at || null;
+        let nextGracePurgedAt: string | null = existingRow?.grace_purged_at || null;
+
+        if (incomingStatus === 'active' && session) {
+          const validFutureExpiry = incomingExpiresAt && Date.parse(incomingExpiresAt) > nowMs
+            ? incomingExpiresAt
+            : new Date(nowMs + 31 * DAY_MS).toISOString();
+          nextStatus = 'active';
+          nextExpiresAt = validFutureExpiry;
+          nextGracePurgedAt = null;
+        } else if (existingRow) {
+          const existingExpMs = existingRow.subscription_expires_at ? Date.parse(existingRow.subscription_expires_at) : NaN;
+          if (String(existingRow.subscription_status || '').toLowerCase() === 'active') {
+            if (playVerifiedNoPurchase && (!existingRow.subscription_expires_at || (!isNaN(existingExpMs) && existingExpMs <= nowMs))) {
+              // Only downgrade when Google Play on the owner's signed-in device explicitly verified no active purchase remains
+              nextStatus = 'expired';
+            } else if (!isNaN(existingExpMs) && existingExpMs + 14 * DAY_MS <= nowMs) {
+              // Past the 14-day auto-renewal buffer
+              nextStatus = 'expired';
+            }
+          }
+        }
+
+        if (existingRow) {
+          await db
+            .prepare(`
+              UPDATE users
+              SET trial_started_at = ?,
+                  subscription_status = ?,
+                  subscription_expires_at = ?,
+                  grace_purged_at = ?,
+                  updated_at = ?
+              WHERE id = ?
+            `)
+            .bind(
+              earliestTrialStart,
+              nextStatus,
+              nextExpiresAt,
+              nextGracePurgedAt,
+              nowIso,
+              existingRow.id
+            )
+            .run();
+        } else {
+          await db
+            .prepare(`
+              INSERT INTO users (id, email, name, provider, trial_started_at, subscription_status, subscription_expires_at, grace_purged_at, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, 'google', ?, ?, ?, NULL, ?, ?, ?)
+            `)
+            .bind(
+              userEmail,
+              userEmail,
+              userEmail.split('@')[0],
+              earliestTrialStart,
+              nextStatus,
+              nextExpiresAt,
+              earliestTrialStart,
+              nowIso,
+              nowIso
+            )
+            .run();
+        }
+
+        const refreshedRow: any = await db
+          .prepare('SELECT * FROM users WHERE LOWER(email) = ? OR id = ? LIMIT 1')
+          .bind(userEmail, userEmail)
+          .first()
+          .catch(() => ({
+            id: userEmail,
+            email: userEmail,
+            trial_started_at: earliestTrialStart,
+            subscription_status: nextStatus,
+            subscription_expires_at: nextExpiresAt,
+            grace_purged_at: nextGracePurgedAt,
+            created_at: existingRow?.created_at || earliestTrialStart,
+          }));
+
+        const trialInfo = computeUserTrialState(refreshedRow, nowMs);
+        invalidateCachePattern('qrCache:');
+
+        if (trialInfo.isGracePeriodExpired && !trialInfo.isSubscribed) {
+          const purgeRes = await purgeUserQrAndCloudData(db, bucket, userEmail);
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              isSubscribed: false,
+              gracePeriodExpired: purgeRes.ok,
+              purged: purgeRes.ok,
+              purgeDetails: purgeRes,
+              trialInfo: {
+                ...trialInfo,
+                gracePurgedAt: purgeRes.ok ? purgeRes.purgedAt : trialInfo.gracePurgedAt,
+                trialPhase: purgeRes.ok ? 'grace_expired_purged' : trialInfo.trialPhase,
+              },
+              message: purgeRes.ok
+                ? 'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud files have been automatically deleted from the app and from cloud.'
+                : 'Subscription status verified.',
+            }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            success: true,
+            isSubscribed: Boolean(trialInfo.isSubscribed),
+            gracePeriodExpired: false,
+            purged: false,
+            trialInfo,
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2h. User-Scoped QR + Cloud File Purge (/api/qr/purge-user)
+    if (url.pathname === '/api/qr/purge-user' && request.method === 'POST') {
+      try {
+        const db = getD1Database(env);
+        const bucket = getR2Bucket(env);
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Database not bound on server.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        await ensureD1Tables(db);
+        const session = await resolveAuthenticatedSession(request, db);
+        const body: any = await request.json().catch(() => ({}));
+        const requestedEmail = (
+          request.headers.get('X-User-Email') ||
+          request.headers.get('X-User-Id') ||
+          body?.userEmail ||
+          body?.email ||
+          ''
+        ).toLowerCase().trim();
+
+        const targetEmail = session?.userEmail || requestedEmail;
+        if (!targetEmail || !targetEmail.includes('@')) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Valid account email is required.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (session && requestedEmail && requestedEmail !== session.userEmail) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Forbidden: session mismatch.' }),
+            { status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Verify D1 status first — never delete if user is subscribed or still inside trial/grace period
+        const trialState = await getUserTrialState(db, targetEmail);
+        if (!trialState || trialState.isSubscribed || !trialState.isGracePeriodExpired) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              success: false,
+              skipped: true,
+              isSubscribed: Boolean(trialState?.isSubscribed),
+              gracePeriodExpired: false,
+              error: trialState?.isSubscribed
+                ? 'Account has an active subscription. QR data cannot be deleted.'
+                : 'Trial or grace period is still active.',
+            }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (!session && !trialState.isGracePeriodExpired) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Authentication required to purge QR cloud data.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const purgeRes = await purgeUserQrAndCloudData(db, bucket, targetEmail);
+        return new Response(
+          JSON.stringify({
+            ...purgeRes,
+            success: purgeRes.ok,
+            isSubscribed: purgeRes.skippedReason === 'user_is_subscribed',
+            gracePeriodExpired: purgeRes.ok,
+            message: purgeRes.ok
+              ? 'QR code info and cloud QR files have been permanently deleted.'
+              : 'Skipped deletion because user is subscribed or still within trial/grace period.',
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2i. Admin-Protected Expired Trials Sweep (/api/admin/purge-expired-trials)
+    if (url.pathname === '/api/admin/purge-expired-trials' && request.method === 'POST') {
+      const adminAuth = verifyAdminSecretRequest(request, env);
+      if (!adminAuth.ok) {
+        return new Response(
+          JSON.stringify({ ok: false, error: adminAuth.error }),
+          { status: adminAuth.status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+      try {
+        const body: any = await request.json().catch(() => ({}));
+        const result = await runScheduledGracePurgeSweep(env, {
+          treatLegacyCreatedAtAsTrialStart: Boolean(body?.includeLegacyCreatedAt),
+          limit: Number(body?.limit) || 200,
+        });
+        return new Response(
+          JSON.stringify({ ok: true, success: true, ...result, timestamp: new Date().toISOString() }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     // DELETE /api/receipts/:id - Delete receipt from D1 receipts table and update D1 backups
@@ -3749,6 +4912,32 @@ export default {
           );
         }
 
+        // Server-side trial / grace period enforcement for QR uploads
+        const ownerEmailForTrial = hasValidEmail
+          ? userEmail
+          : await resolveOwnerEmailFromAssetKey(db, cleanOwnerKey ? [`menu-public/${cleanOwnerKey}/menu_main.webp`] : []);
+        if (db && ownerEmailForTrial) {
+          await ensureUserTrialStart(db, ownerEmailForTrial);
+          const trialState = await getUserTrialState(db, ownerEmailForTrial);
+          if (trialState && trialState.isExpired && !trialState.isSubscribed) {
+            if (trialState.isGracePeriodExpired) {
+              await purgeUserQrAndCloudData(db, bucket, ownerEmailForTrial);
+            }
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                success: false,
+                requiresSubscription: true,
+                gracePeriodExpired: trialState.isGracePeriodExpired,
+                error: trialState.isGracePeriodExpired
+                  ? 'Your grace period has ended without a subscription. QR files were removed from cloud. Subscribe to Pro to upload again.'
+                  : 'Your 7-day free trial has ended. Subscribe to Pro to upload QR photos or menu images.',
+              }),
+              { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+        }
+
         // Fixed key for logo, signature, and replaceable menu photos to preserve a single permanent link
         const isSignature = lowerFolder === 'signatures' || lowerFilename.includes('signature');
         const isLogo = lowerFolder === 'photos' && (lowerFilename.includes('logo') || lowerFilename === 'logo.webp');
@@ -4249,6 +5438,34 @@ export default {
       );
 
       const isMenuAsset = candidateKeys.some((ck) => ck.includes('/menu/') || ck.startsWith('menu-public/'));
+      const isQrAsset = candidateKeys.some((ck) => isQrProtectedAssetKey(ck));
+
+      // Enforce grace-period auto-purge when a direct QR/menu/photo asset link is accessed
+      if (isQrAsset && db) {
+        const assetOwnerEmail = await resolveOwnerEmailFromAssetKey(db, candidateKeys);
+        if (assetOwnerEmail) {
+          const trialState = await getUserTrialState(db, assetOwnerEmail);
+          if (trialState?.isGracePeriodExpired) {
+            await purgeUserQrAndCloudData(db, bucket, assetOwnerEmail);
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                expired: true,
+                graceExpired: true,
+                error: 'QR hosting grace period expired. Files were automatically removed.',
+              }),
+              {
+                status: 410,
+                headers: {
+                  ...CORS_HEADERS,
+                  'Content-Type': 'application/json',
+                  'Cache-Control': 'no-store, no-cache, must-revalidate',
+                },
+              }
+            );
+          }
+        }
+      }
 
       if (bucket && candidateKeys.length > 0) {
         for (const k of candidateKeys) {
@@ -4345,6 +5562,29 @@ export default {
             JSON.stringify({ ok: false, error: 'Authentication required. Saving QR pages is restricted to logged-in users with a valid email.' }),
             { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
+        }
+
+        if (db) {
+          await ensureUserTrialStart(db, userEmail, page?.installDate);
+          const trialState = await getUserTrialState(db, userEmail);
+          if (trialState && trialState.isExpired && !trialState.isSubscribed) {
+            if (trialState.isGracePeriodExpired) {
+              const bucket = getR2Bucket(env);
+              await purgeUserQrAndCloudData(db, bucket, userEmail);
+            }
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                success: false,
+                requiresSubscription: true,
+                gracePeriodExpired: trialState.isGracePeriodExpired,
+                error: trialState.isGracePeriodExpired
+                  ? 'Your grace period has ended without a subscription. QR data has been removed from cloud.'
+                  : 'Your 7-day free trial has ended. Subscribe to Pro to save or host QR pages.',
+              }),
+              { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
         }
 
         // Determine category: canonical types (business, events, rooms, socials, websites) + single events/rooms
@@ -4520,9 +5760,83 @@ export default {
       }
     }
 
-    // 6. QR Page Fetch endpoint (/api/qr/:pageId)
+    // 6. QR Page Delete & Fetch endpoint (/api/qr/:pageId)
     if (url.pathname.startsWith('/api/qr/')) {
       const pageId = decodeURIComponent(url.pathname.replace('/api/qr/', '')).trim();
+
+      if (request.method === 'DELETE') {
+        try {
+          const db = getD1Database(env);
+          const bucket = getR2Bucket(env);
+          if (!db) {
+            return new Response(
+              JSON.stringify({ ok: false, error: 'Database not bound on server.' }),
+              { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+          await ensureD1Tables(db);
+          const session = await resolveAuthenticatedSession(request, db);
+          if (!session) {
+            return new Response(
+              JSON.stringify({ ok: false, error: 'Authentication required to delete QR pages.' }),
+              { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
+
+          const ownerEmail = session.userEmail;
+          const candidateIds = Array.from(
+            new Set([
+              pageId,
+              `user_${ownerEmail}_${pageId}`,
+              `user_${ownerEmail}_biz_${pageId}`,
+              `user_${ownerEmail}_event_${pageId}`,
+              `user_${ownerEmail}_room_${pageId}`,
+            ])
+          ).filter(Boolean);
+
+          const placeholders = candidateIds.map(() => '?').join(', ');
+          const matchedRows: any = await db
+            .prepare(`SELECT id, user_email, page_json FROM qr_pages WHERE LOWER(user_email) = ? AND id IN (${placeholders})`)
+            .bind(ownerEmail, ...candidateIds)
+            .all()
+            .catch(() => ({ results: [] }));
+
+          const keysToDelete = new Set<string>();
+          const subPageIds = new Set<string>();
+          for (const row of matchedRows?.results || []) {
+            if (row?.id) subPageIds.add(String(row.id));
+            if (row?.page_json) {
+              try {
+                collectQrAssetKeysAndPageIds(JSON.parse(row.page_json), keysToDelete, subPageIds, false);
+              } catch {}
+            }
+          }
+
+          const deletedR2 = await deleteR2KeysSafely(bucket, db, keysToDelete);
+          const delRes: any = await db
+            .prepare(`DELETE FROM qr_pages WHERE LOWER(user_email) = ? AND id IN (${placeholders})`)
+            .bind(ownerEmail, ...candidateIds)
+            .run();
+
+          invalidateCachePattern('qrCache:');
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              deletedCount: Number(delRes?.meta?.changes || 0),
+              deletedR2,
+              message: `QR page ${pageId} deleted`,
+            }),
+            { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        } catch (err: any) {
+          return new Response(
+            JSON.stringify({ ok: false, error: String(err?.message || err) }),
+            { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
       const userEmail = (
         url.searchParams.get('email') ||
         url.searchParams.get('u') ||
@@ -4534,7 +5848,7 @@ export default {
       ).toLowerCase().trim();
 
       const page = await resolveHostedQrPage(env, pageId, userEmail, {
-        skipCache: url.searchParams.has('_t') || url.searchParams.has('verify'),
+        skipCache: url.searchParams.has('_t') || url.searchParams.has('verify') || request.headers.get('Cache-Control') === 'no-cache',
       });
 
       if (page) {
@@ -4542,6 +5856,8 @@ export default {
           JSON.stringify({
             ok: true,
             success: true,
+            qrExpired: Boolean(page.qrExpired),
+            graceExpired: Boolean(page.graceExpired),
             isEmptyFallback: Boolean(page.isEmptyFallback),
             data: { page },
           }),
@@ -4614,6 +5930,27 @@ export default {
           const now = new Date().toISOString();
 
           await ensureD1Tables(db);
+          await ensureUserTrialStart(db, userEmail, body?.installDate || backupData?.installDate);
+
+          const syncTrialState = await getUserTrialState(db, userEmail);
+          if (syncTrialState && syncTrialState.isExpired && !syncTrialState.isSubscribed) {
+            if (syncTrialState.isGracePeriodExpired) {
+              const bucket = getR2Bucket(env);
+              await purgeUserQrAndCloudData(db, bucket, userEmail);
+            }
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                success: false,
+                requiresSubscription: true,
+                gracePeriodExpired: syncTrialState.isGracePeriodExpired,
+                error: syncTrialState.isGracePeriodExpired
+                  ? 'Your grace period has ended without a subscription. Cloud QR data has been purged.'
+                  : 'Your 7-day free trial has ended. Subscribe to Pro to use cloud sync.',
+              }),
+              { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+            );
+          }
 
           // Fast short-circuit if backup_data is completely identical AND qr_pages already populated
           let existingBackupRow: any = null;
@@ -4643,12 +5980,14 @@ export default {
           // 1. User record
           batchStatements.push(
             db.prepare(`
-              INSERT INTO users (id, email, name, provider, created_at, updated_at, last_login)
-              VALUES (?, ?, ?, 'google', ?, ?, ?)
+              INSERT INTO users (id, email, name, provider, trial_started_at, subscription_status, created_at, updated_at, last_login)
+              VALUES (?, ?, ?, 'google', ?, 'none', ?, ?, ?)
               ON CONFLICT(email) DO UPDATE SET 
+                trial_started_at = COALESCE(users.trial_started_at, users.created_at, excluded.trial_started_at),
+                subscription_status = COALESCE(users.subscription_status, 'none'),
                 last_login = excluded.last_login,
                 updated_at = excluded.updated_at
-            `).bind(userEmail, userEmail, userEmail.split('@')[0], now, now, now)
+            `).bind(userEmail, userEmail, userEmail.split('@')[0], now, now, now, now)
           );
 
           // 2. Single canonical backup row per user
@@ -5932,7 +7271,11 @@ export default {
 
       let html = await indexResponse.text();
 
-      if (isQrRoute && preloadedPage && !preloadedPage.isEmptyFallback && hasRealQrPageContent(preloadedPage)) {
+      if (
+        isQrRoute &&
+        preloadedPage &&
+        (preloadedPage.qrExpired || (!preloadedPage.isEmptyFallback && hasRealQrPageContent(preloadedPage)))
+      ) {
         const resolvedEmail = emailParam || preloadedPage.userEmail || preloadedPage.email || '';
         const scriptTag = `<script id="__INITIAL_QR_DATA__">window.__INITIAL_QR_PAGE__=${safeScriptJson(preloadedPage)};window.__OWNER_EMAIL__=${safeScriptJson(resolvedEmail)};</script>`;
         if (html.includes('</head>')) {
@@ -5965,6 +7308,20 @@ export default {
         status: 404,
         headers: CORS_HEADERS,
       });
+    }
+  },
+
+  async scheduled(_event: any, env: Env, ctx?: { waitUntil?: (promise: Promise<any>) => void }): Promise<void> {
+    const task = runScheduledGracePurgeSweep(env, {
+      treatLegacyCreatedAtAsTrialStart: false,
+      limit: 300,
+    }).catch((err) => {
+      console.warn('Scheduled grace-period purge note:', err);
+    });
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(task);
+    } else {
+      await task;
     }
   },
 };

@@ -1,5 +1,6 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { StorageService } from './storage';
+import { CloudflareService } from './cloudflareService';
 import { SubscriptionPlanId, UserSubscription } from '../types';
 
 /**
@@ -197,6 +198,7 @@ export class PlayBillingService {
       } as any;
 
       StorageService.saveSubscription(subscription);
+      CloudflareService.syncSubscriptionStatusToCloud().catch(() => {});
 
       return {
         success: true,
@@ -213,6 +215,7 @@ export class PlayBillingService {
    */
   public static async restorePurchases(): Promise<{
     restored: boolean;
+    verifiedFromPlay: boolean;
     subscription: UserSubscription | null;
     message: string;
   }> {
@@ -220,6 +223,7 @@ export class PlayBillingService {
       if (!this.isAndroid()) {
         return {
           restored: false,
+          verifiedFromPlay: false,
           subscription: null,
           message: 'Purchases can only be restored on Android devices signed into Google Play.',
         };
@@ -269,9 +273,11 @@ export class PlayBillingService {
         } as any;
 
         StorageService.saveSubscription(restoredSubscription);
+        CloudflareService.syncSubscriptionStatusToCloud().catch(() => {});
 
         return {
           restored: true,
+          verifiedFromPlay: true,
           subscription: restoredSubscription,
           message: `Active subscription restored from Google Play: ${product.name}!`,
         };
@@ -279,6 +285,7 @@ export class PlayBillingService {
 
       return {
         restored: false,
+        verifiedFromPlay: Boolean(res.success),
         subscription: null,
         message: 'No active Google Play subscription found for this Google account.',
       };
@@ -286,6 +293,7 @@ export class PlayBillingService {
       console.warn('Error restoring purchases:', err);
       return {
         restored: false,
+        verifiedFromPlay: false,
         subscription: null,
         message: 'Could not connect to Google Play to verify purchases.',
       };
@@ -296,6 +304,34 @@ export class PlayBillingService {
    * Silently syncs active Google Play purchases on Android without showing UI prompts.
    * Ensures auto-renewed or reinstalled subscribers are recognized immediately across ads, login, Drive, and QR cloud sync.
    */
+  public static async verifyAndSyncSubscriptionSilently(
+    force = false
+  ): Promise<{ active: boolean; verifiedFromPlay: boolean }> {
+    if (!this.isAndroid()) {
+      return {
+        active: StorageService.isSubscribed(),
+        verifiedFromPlay: false,
+      };
+    }
+    const now = Date.now();
+    if (!force && StorageService.isSubscribed() && now - this.lastSilentSyncAt < 60_000) {
+      return { active: true, verifiedFromPlay: true };
+    }
+    try {
+      this.lastSilentSyncAt = Date.now();
+      const res = await this.restorePurchases();
+      return {
+        active: Boolean(res.restored || StorageService.isSubscribed()),
+        verifiedFromPlay: Boolean(res.verifiedFromPlay),
+      };
+    } catch {
+      return {
+        active: StorageService.isSubscribed(),
+        verifiedFromPlay: false,
+      };
+    }
+  }
+
   public static async syncActiveSubscriptionSilently(force = false): Promise<boolean> {
     if (StorageService.isSubscribed() && !force) {
       return true;

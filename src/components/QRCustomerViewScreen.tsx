@@ -37,6 +37,7 @@ import {
   BedDouble,
   Users,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, RoomQrItem } from '../types';
 import { shareContent } from '../services/fileSaver';
@@ -582,6 +583,33 @@ export const QRCustomerViewScreen: React.FC<QRCustomerViewScreenProps> = ({
     if (n.includes('web') || n.includes('site') || n.includes('online')) return <Globe className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
     return <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
   };
+
+  if ((page as any)?.qrExpired || (page as any)?.graceExpired) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-7 shadow-xl space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <h1 className="text-lg font-black text-slate-900 dark:text-slate-100">
+            QR Page Unavailable
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            This business&apos;s QR code hosting trial and grace period have ended, so its QR menu and cloud files have been automatically removed.
+          </p>
+          {isMerchantPreview && onBackToApp && (
+            <button
+              type="button"
+              onClick={onBackToApp}
+              className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition cursor-pointer"
+            >
+              Back to QR Hosting
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Dedicated Rooms & Prices Customer View
   if (isRoomPage) {

@@ -726,14 +726,21 @@ export class QRHostingService {
         ? room.darkColor.trim()
         : '#059669';
 
-    const photos: QRBusinessPhoto[] = (room.photos || []).map((url, idx) => ({
-      id: `${room.id}-photo-${idx}`,
-      url,
-      title: room.name,
-      description: `${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
-      badge: room.isAvailable ? 'Available' : 'Booked',
-      caption: room.name,
-    }));
+    const isRemotePhotoUrl = (u?: string): boolean =>
+      Boolean(u && !String(u).trim().startsWith('data:'));
+
+    const photos: QRBusinessPhoto[] = (room.photos || [])
+      .filter((url) => isRemotePhotoUrl(url))
+      .map((url, idx) => ({
+        id: `${room.id}-photo-${idx}`,
+        url,
+        title: room.name,
+        description: `${currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
+        badge: room.isAvailable ? 'Available' : 'Booked',
+        caption: room.name,
+      }));
+
+    const firstRemotePhoto = (room.photos || []).find((u) => isRemotePhotoUrl(u));
 
     const menuItems: QRMenuItem[] = [
       {
@@ -743,7 +750,7 @@ export class QRHostingService {
         price: Number(room.pricePerNight || 0),
         size: room.occupancy,
         description: room.description || '',
-        photoUrl: room.photos?.[0] || undefined,
+        photoUrl: firstRemotePhoto || undefined,
         isAvailable: room.isAvailable !== false,
         tags: room.amenities || [],
         ctaText: room.ctaText || 'Book Room',
@@ -758,8 +765,8 @@ export class QRHostingService {
       pageType: 'room',
       accentColor: cleanAccent,
       theme: 'emerald',
-      coverImage: room.photos?.[0] || undefined,
-      logo: business.logo || room.photos?.[0] || undefined,
+      coverImage: firstRemotePhoto || undefined,
+      logo: business.logo || firstRemotePhoto || undefined,
       phone: room.whatsappPhone || business.phone || business.whatsapp || '',
       whatsapp: cleanWa,
       email: ownerEmail || business.email || '',
@@ -784,7 +791,7 @@ export class QRHostingService {
   }
 
   /**
-   * Converts all RoomQrItems into a unified Rooms & Prices Hub QRCodeHostedPage
+   * Converts all RoomQrItems into a unified Rooms Hub QRCodeHostedPage
    */
   static convertRoomsHubToHostedPage(rooms: RoomQrItem[], business: BusinessProfile): QRCodeHostedPage {
     const cleanName = (business.name || 'brivu').toLowerCase().replace(/[^a-z0-9]/g, '') || 'all';
@@ -793,30 +800,37 @@ export class QRHostingService {
     const cleanWa = cleanPhone.replace(/[^0-9]/g, '');
     const ownerEmail = this.resolveOwnerEmail(business.email);
     const currency = business.currency || 'UGX';
+    const isRemotePhotoUrl = (u?: string): boolean =>
+      Boolean(u && !String(u).trim().startsWith('data:'));
 
     const photos: QRBusinessPhoto[] = rooms.flatMap((room) =>
-      (room.photos || []).map((url, idx) => ({
-        id: `${room.id}-photo-${idx}`,
-        url,
-        title: room.name,
-        description: `${room.currency || currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
-        badge: room.isAvailable ? 'Available' : 'Booked',
-        caption: room.name,
-      }))
+      (room.photos || [])
+        .filter((url) => isRemotePhotoUrl(url))
+        .map((url, idx) => ({
+          id: `${room.id}-photo-${idx}`,
+          url,
+          title: room.name,
+          description: `${room.currency || currency} ${Number(room.pricePerNight || 0).toLocaleString()} / night • ${room.occupancy}`,
+          badge: room.isAvailable ? 'Available' : 'Booked',
+          caption: room.name,
+        }))
     );
 
-    const menuItems: QRMenuItem[] = rooms.map((room) => ({
-      id: `room-item-${room.id}`,
-      name: room.name,
-      category: 'Rooms',
-      price: Number(room.pricePerNight || 0),
-      size: room.occupancy,
-      description: room.description || '',
-      photoUrl: room.photos?.[0] || undefined,
-      isAvailable: room.isAvailable !== false,
-      tags: room.amenities || [],
-      ctaText: room.ctaText || 'Book',
-    }));
+    const menuItems: QRMenuItem[] = rooms.map((room) => {
+      const firstRemote = (room.photos || []).find((u) => isRemotePhotoUrl(u));
+      return {
+        id: `room-item-${room.id}`,
+        name: room.name,
+        category: 'Rooms',
+        price: Number(room.pricePerNight || 0),
+        size: room.occupancy,
+        description: room.description || '',
+        photoUrl: firstRemote || undefined,
+        isAvailable: room.isAvailable !== false,
+        tags: room.amenities || [],
+        ctaText: room.ctaText || 'Book',
+      };
+    });
 
     return {
       id: hubId,
@@ -852,51 +866,112 @@ export class QRHostingService {
   }
 
   /**
-   * Syncs an individual room page + Rooms Hub to Cloudflare D1
+   * Syncs Rooms Hub + individual room page to Cloudflare D1 in parallel (immediate)
    */
-  static async syncRoomPage(room: RoomQrItem, business: BusinessProfile, allRoomsOverride?: RoomQrItem[]): Promise<void> {
+  static async syncRoomPage(
+    room: RoomQrItem,
+    business: BusinessProfile,
+    allRoomsOverride?: RoomQrItem[]
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
       const page = this.convertRoomToHostedPage(room, business);
-      await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
       const allRooms = Array.isArray(allRoomsOverride) ? allRoomsOverride : StorageService.getRoomsQrItems();
-      const updatedList = [room, ...allRooms.filter((r) => r.id !== room.id)];
+      const updatedList = allRooms.some((r) => r.id === room.id)
+        ? allRooms.map((r) => (r.id === room.id ? room : r))
+        : [room, ...allRooms];
       const hubPage = this.convertRoomsHubToHostedPage(updatedList, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
-      await CloudflareService.syncAllToCloudflare().catch(() => {});
+
+      const [hubRes, singleRes] = await Promise.all([
+        CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch((e) => ({
+          success: false,
+          message: e instanceof Error ? e.message : 'Failed to save rooms directory',
+        })),
+        CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch((e) => ({
+          success: false,
+          message: e instanceof Error ? e.message : 'Failed to save room page',
+        })),
+      ]);
+
+      const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch((e) => ({
+        success: false,
+        message: e instanceof Error ? e.message : 'Cloud backup sync failed',
+      }));
+
+      const ok = Boolean(hubRes?.success || singleRes?.success || syncRes?.success);
+      return {
+        success: ok,
+        message: hubRes?.message || singleRes?.message || syncRes?.message,
+      };
     } catch (err) {
       console.warn('Failed to sync room page to Cloudflare:', err);
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to sync room page',
+      };
     }
   }
 
   /**
    * Syncs all rooms & the Rooms Hub page to Cloudflare D1
    */
-  static async syncAllRoomsPages(rooms: RoomQrItem[], business: BusinessProfile): Promise<void> {
+  static async syncAllRoomsPages(
+    rooms: RoomQrItem[],
+    business: BusinessProfile
+  ): Promise<{ success: boolean; message?: string }> {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
-      const hubPage = this.convertRoomsHubToHostedPage(rooms, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
-      for (const rm of rooms) {
-        const page = this.convertRoomToHostedPage(rm, business);
-        await CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
+      if (rooms.length === 0) {
+        await CloudflareService.deleteHostedQrPage('rooms').catch(() => {});
+        await CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => {});
+        return { success: true };
       }
-      await CloudflareService.syncAllToCloudflare().catch(() => {});
+      const hubPage = this.convertRoomsHubToHostedPage(rooms, business);
+      const hubRes = await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => ({
+        success: false,
+        message: 'Failed to save rooms directory',
+      }));
+      await Promise.all(
+        rooms.map((rm) => {
+          const page = this.convertRoomToHostedPage(rm, business);
+          return CloudflareService.saveSingleQrPage(page, ownerEmail, { immediate: true }).catch(() => {});
+        })
+      );
+      const syncRes = await CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => ({
+        success: false,
+        message: 'Failed to sync backup',
+      }));
+      return {
+        success: Boolean(hubRes?.success || syncRes?.success),
+        message: hubRes?.message || syncRes?.message,
+      };
     } catch (err) {
       console.warn('Failed to sync all room pages to Cloudflare:', err);
+      return { success: false, message: err instanceof Error ? err.message : 'Sync failed' };
     }
   }
 
   /**
    * Removes a room's dedicated page when deleted
    */
-  static async removeRoomPage(roomId: string, business: BusinessProfile): Promise<void> {
+  static async removeRoomPage(
+    roomId: string,
+    business: BusinessProfile,
+    remainingRoomsOverride?: RoomQrItem[]
+  ): Promise<void> {
     try {
       const ownerEmail = this.resolveOwnerEmail(business.email);
-      const remainingRooms = StorageService.getRoomsQrItems().filter((r) => r.id !== roomId);
-      const hubPage = this.convertRoomsHubToHostedPage(remainingRooms, business);
-      await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
-      await CloudflareService.syncAllToCloudflare().catch(() => {});
+      const remainingRooms = Array.isArray(remainingRoomsOverride)
+        ? remainingRoomsOverride
+        : StorageService.getRoomsQrItems().filter((r) => r.id !== roomId);
+      await CloudflareService.deleteHostedQrPage(roomId).catch(() => {});
+      if (remainingRooms.length > 0) {
+        const hubPage = this.convertRoomsHubToHostedPage(remainingRooms, business);
+        await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
+      } else {
+        await CloudflareService.deleteHostedQrPage('rooms').catch(() => {});
+      }
+      await CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => {});
     } catch (err) {
       console.warn('Failed to remove room page from Cloudflare:', err);
     }

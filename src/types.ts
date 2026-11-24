@@ -628,6 +628,8 @@ export interface QRCodeHostedPage {
   qrEyeColor?: string; // Color for the 3 corner square boxes (top-left, top-right, bottom-left)
   qrBoxBgColor?: string;
   qrBoxBorderColor?: string;
+  qrExpired?: boolean;
+  graceExpired?: boolean;
   createdAt: string;
   updatedAt: string;
 }

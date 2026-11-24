@@ -375,6 +375,10 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
           });
           if (uploadRes.success && uploadRes.url) {
             imageUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
+          } else if (uploadRes.requiresSubscription) {
+            lastUploadError = uploadRes.message || 'Subscribe to Pro to upload menu photos.';
+            showToast(lastUploadError);
+            break;
           } else if (uploadRes.message) {
             lastUploadError = uploadRes.message;
           }

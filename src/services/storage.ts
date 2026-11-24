@@ -2752,12 +2752,16 @@ export const StorageService = {
       const socials = this.getSocialsQrItems();
       const business = this.getProfile();
       const eventPages = events.map((e) => QRHostingService.convertEventToHostedPage(e, business));
-      const hubPage = QRHostingService.convertEventsHubToHostedPage(events, business);
       const roomPages = rooms.map((r) => QRHostingService.convertRoomToHostedPage(r, business));
-      const roomsHubPage = QRHostingService.convertRoomsHubToHostedPage(rooms, business);
-      const websitesHubPage = QRHostingService.convertWebsitesHubToHostedPage(websites, business);
-      const socialsHubPage = QRHostingService.convertSocialsHubToHostedPage(socials, business);
-      return [...businessPages, ...eventPages, hubPage, ...roomPages, roomsHubPage, websitesHubPage, socialsHubPage];
+      return [
+        ...businessPages,
+        ...eventPages,
+        ...(events.length > 0 ? [QRHostingService.convertEventsHubToHostedPage(events, business)] : []),
+        ...roomPages,
+        ...(rooms.length > 0 ? [QRHostingService.convertRoomsHubToHostedPage(rooms, business)] : []),
+        ...(websites.length > 0 ? [QRHostingService.convertWebsitesHubToHostedPage(websites, business)] : []),
+        ...(socials.length > 0 ? [QRHostingService.convertSocialsHubToHostedPage(socials, business)] : []),
+      ];
     } catch {
       return businessPages;
     }
@@ -3047,6 +3051,10 @@ export const StorageService = {
     );
   },
 
+  saveRoomsQrItemsLocalOnly(items: RoomQrItem[]): boolean {
+    return writeToStorage(STORAGE_KEYS.ROOMS_QR, items);
+  },
+
   saveRoomsQrItems(items: RoomQrItem[]): boolean {
     const success = writeToStorage(STORAGE_KEYS.ROOMS_QR, items);
     if (success) {
@@ -3080,6 +3088,7 @@ export const StorageService = {
       if (subscription?.status === 'active') {
         try {
           localStorage.removeItem('quickreceipt_cloud_wiped_v1');
+          localStorage.removeItem('quickreceipt_grace_purged_notice_shown_v1');
         } catch {}
       }
       if (typeof window !== 'undefined') {
@@ -3239,69 +3248,257 @@ export const StorageService = {
     };
   },
 
-  async purgeAllCloudData(): Promise<{ success: boolean; message: string }> {
+  syncServerInstallDate(serverIso?: string | null): void {
+    if (!serverIso || typeof serverIso !== 'string') return;
+    const serverMs = Date.parse(serverIso);
+    if (!Number.isFinite(serverMs) || serverMs > Date.now() + 60_000) return;
     try {
-      const config = this.getCloudflareConfig();
-      if (!config.workerUrl) {
-        return { success: false, message: 'Cloudflare Worker is not configured' };
+      const localIso = localStorage.getItem(STORAGE_KEYS.INSTALL_DATE);
+      const localMs = localIso ? Date.parse(localIso) : NaN;
+      if (!Number.isFinite(localMs) || serverMs < localMs) {
+        localStorage.setItem(STORAGE_KEYS.INSTALL_DATE, new Date(serverMs).toISOString());
       }
-      
-      const cleanUrl = config.workerUrl.replace(/\/$/, '');
-      const headers: Record<string, string> = {};
-      if (config.apiKey && config.apiKey.trim() !== '') {
-        headers['X-Sync-Key'] = config.apiKey.trim();
-        headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
-      }
+    } catch {}
+  },
 
-      // 1. Wipe bulk D1 backup by pushing an empty backup
-      const emptyBackup = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        profile: { name: '', currency: 'UGX' },
-        settings: { currency: 'UGX' },
-        receipts: [],
-        deletedReceiptIds: [],
-        inventoryProducts: [],
-        inventorySales: [],
-        inventoryExpenses: [],
-        inventoryDebts: [],
-        shoppingListItems: [],
-        shoppingCategories: [],
-        productCategories: [],
-        customers: [],
-        agents: [],
-        workers: [],
-        staffAttendance: [],
-        staffLosses: [],
-        staffSales: [],
-        staffIncidents: [],
-        qrHostedPages: [],
-      };
-      
-      await fetch(`${cleanUrl}/api/sync/push`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
+  hasLocalQrAssets(): boolean {
+    try {
+      if (this.getWebsitesQrItems().length > 0) return true;
+      if (this.getSocialsQrItems().length > 0) return true;
+      if (this.getEventsQrItems().length > 0) return true;
+      if (this.getRoomsQrItems().length > 0) return true;
+      const pages = this.getHostedQRPages();
+      return pages.some(
+        (p) =>
+          Boolean(
+            (Array.isArray(p.photos) && p.photos.length > 0) ||
+              (Array.isArray(p.menuImages) && p.menuImages.length > 0) ||
+              (Array.isArray(p.menuItems) && p.menuItems.length > 0) ||
+              (Array.isArray(p.customSocialLinks) && p.customSocialLinks.length > 0) ||
+              p.coverImage ||
+              p.wifiName ||
+              p.wifiPassword ||
+              p.phone ||
+              p.whatsapp ||
+              p.address ||
+              p.announcement ||
+              p.openingHours ||
+              p.googleMapsUrl
+          )
+      );
+    } catch {
+      return false;
+    }
+  },
+
+  clearLocalQrData(): void {
+    try {
+      const profile = this.getProfile();
+      const nowIso = new Date().toISOString();
+      const cleanPage: QRCodeHostedPage = {
+        id: `qr-${Date.now().toString(36)}`,
+        title: '',
+        tagline: '',
+        description: '',
+        pageType: 'menu',
+        accentColor: '#059669',
+        theme: 'emerald',
+        phone: '',
+        whatsapp: '',
+        email: profile.email || '',
+        address: '',
+        googleMapsUrl: '',
+        wifiName: '',
+        wifiPassword: '',
+        openingHours: '',
+        currency: profile.currency || 'UGX',
+        announcement: '',
+        allowWhatsAppOrdering: true,
+        socialLinks: {
+          instagram: '',
+          facebook: '',
+          website: '',
         },
-        body: JSON.stringify({ backupData: emptyBackup }),
-      }).catch(() => {});
+        customSocialLinks: [],
+        photos: [],
+        menuImages: [],
+        menuCategories: ['All'],
+        menuItems: [],
+        websitesQrItems: [],
+        socialsQrItems: [],
+        eventsQrItems: [],
+        roomsQrItems: [],
+        qrDarkColor: '#000000',
+        qrEyeColor: '#000000',
+        qrLightColor: '#ffffff',
+        qrBoxBgColor: '#ffffff',
+        qrBoxBorderColor: '#e2e8f0',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, [cleanPage]);
+      writeToStorage(STORAGE_KEYS.WEBSITES_QR, []);
+      writeToStorage(STORAGE_KEYS.SOCIALS_QR, []);
+      writeToStorage(STORAGE_KEYS.EVENTS_QR, []);
+      writeToStorage(STORAGE_KEYS.ROOMS_QR, []);
 
-      // 2. Clear hosted QR pages individually from D1
-      const localPages = this.getHostedQRPages();
-      for (const p of localPages) {
-        await fetch(`${cleanUrl}/api/qr/${encodeURIComponent(p.id)}`, {
-          method: 'DELETE',
-          headers,
-        }).catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+        window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+      }
+    } catch (err) {
+      console.warn('Error clearing local QR data:', err);
+    }
+  },
+
+  async purgeAllCloudData(): Promise<{ success: boolean; skipped?: boolean; message: string }> {
+    let purgedCloud = false;
+    try {
+      // Fail-safe 1: Never delete data for a subscribed user
+      if (this.isSubscribed()) {
+        return {
+          success: false,
+          skipped: true,
+          message: 'Active subscription detected. QR data and cloud files were kept safe.',
+        };
       }
 
-      // Mark that cloud has been wiped/purged
-      localStorage.setItem('quickreceipt_cloud_wiped_v1', 'true');
-      return { success: true, message: 'All cloud files and backups permanently purged from Cloudflare' };
+      // Fail-safe 2: Never wipe QR data offline without verifying subscription status online
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return {
+          success: false,
+          skipped: true,
+          message: 'Device is offline. Waiting for online subscription verification before any deletion.',
+        };
+      }
+
+      const localPages = this.getHostedQRPages();
+      const localEvents = this.getEventsQrItems();
+      const localRooms = this.getRoomsQrItems();
+
+      // Collect direct QR R2 file URLs before clearing local state (never touch business logo.webp / signature.webp)
+      const qrFileUrls = new Set<string>();
+      const collectQrUrl = (raw?: string) => {
+        if (!raw || typeof raw !== 'string') return;
+        const lower = raw.toLowerCase();
+        if (!lower.includes('/api/files/')) return;
+        if (lower.includes('logo.webp') || lower.includes('signature.webp')) return;
+        qrFileUrls.add(raw);
+      };
+
+      const pageIds = new Set<string>(['events-hub-all', 'rooms-hub-all', 'websites-hub-all', 'socials-hub-all']);
+      for (const p of localPages) {
+        if (p?.id) pageIds.add(p.id);
+        collectQrUrl(p?.coverImage);
+        if (p?.logo && p.logo.toLowerCase().includes('qr_logo')) collectQrUrl(p.logo);
+        if (Array.isArray(p?.photos)) p.photos.forEach((ph) => collectQrUrl(ph?.url));
+        if (Array.isArray(p?.menuImages)) p.menuImages.forEach((mi) => collectQrUrl(mi?.url));
+        if (Array.isArray(p?.menuItems)) p.menuItems.forEach((it) => collectQrUrl(it?.photoUrl));
+      }
+      for (const ev of localEvents) {
+        if (ev?.id) pageIds.add(ev.id);
+        if (Array.isArray(ev?.photos)) ev.photos.forEach((u) => collectQrUrl(u));
+      }
+      for (const rm of localRooms) {
+        if (rm?.id) pageIds.add(rm.id);
+        if (Array.isArray(rm?.photos)) rm.photos.forEach((u) => collectQrUrl(u));
+      }
+
+      const config = this.getCloudflareConfig();
+      const userEmail = this.getAuthenticatedEmail();
+      if (userEmail && config.workerUrl) {
+        const cleanUrl = config.workerUrl.replace(/\/$/, '');
+        const headers = CloudflareService.getAuthHeaders();
+
+        // 1. Verify status & run server-side atomic purge; abort immediately if server says subscribed or skipped
+        const purgeRes = await fetch(`${cleanUrl}/api/qr/purge-user`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userEmail,
+            installDate: this.getInstallDate(),
+            reason: 'grace_period_expired',
+            pageIds: Array.from(pageIds),
+          }),
+        });
+
+        const purgeJson: any = await purgeRes.json().catch(() => null);
+        if (!purgeRes.ok || !purgeJson || purgeJson.isSubscribed || purgeJson.skipped || !purgeJson.ok) {
+          if (purgeJson?.isSubscribed && !this.isSubscribed()) {
+            this.saveSubscription({
+              planId: '1-month',
+              planName: 'Brivu Pro',
+              status: 'active',
+              startedAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
+              amountPaid: 0,
+              currency: 'USD',
+              isGooglePlay: true,
+            } as any);
+          }
+          return {
+            success: false,
+            skipped: true,
+            message: purgeJson?.error || purgeJson?.message || 'Skipped deletion: could not confirm unsubscribed grace expiry.',
+          };
+        }
+        purgedCloud = true;
+
+        // 2. Delete any public/anonymous menu-public R2 objects directly
+        for (const fileUrl of qrFileUrls) {
+          if (fileUrl.includes('menu-public/')) {
+            await CloudflareService.deleteFile(fileUrl).catch(() => {});
+          }
+        }
+      } else if (!userEmail) {
+        const latestTrial = this.getTrialStatus();
+        if (!latestTrial.isGracePeriodExpired || latestTrial.subscribed) {
+          return {
+            success: false,
+            skipped: true,
+            message: 'Trial or grace period is still active.',
+          };
+        }
+        for (const fileUrl of qrFileUrls) {
+          await CloudflareService.deleteFile(fileUrl).catch(() => {});
+        }
+      }
+
+      // Final re-check before deleting local QR storage
+      if (this.isSubscribed()) {
+        return {
+          success: false,
+          skipped: true,
+          message: 'Active subscription verified. Local QR data was kept safe.',
+        };
+      }
+
+      // 3. Delete all QR code info and QR media from local App storage (keep receipts, invoices, inventory intact)
+      this.clearLocalQrData();
+
+      try {
+        localStorage.setItem('quickreceipt_cloud_wiped_v1', 'true');
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('brivu_grace_expired_purged', {
+            detail: { purgedCloud, purgedLocal: true },
+          })
+        );
+      }
+
+      return {
+        success: true,
+        message: 'All QR code info and cloud QR files have been permanently deleted from the app and from cloud.',
+      };
     } catch (err: any) {
-      console.warn('Wipe all cloud data error:', err);
-      return { success: false, message: err.message || 'Purge failed' };
+      console.warn('Grace period QR purge aborted safely:', err);
+      // Never delete local data on network/unexpected error
+      return { success: false, skipped: true, message: err?.message || 'Purge deferred until connection succeeds.' };
     }
   },
 

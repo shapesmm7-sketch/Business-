@@ -40,7 +40,7 @@ import { PdfGenerator } from './services/pdfGenerator';
 import { PushNotificationService } from './services/pushNotificationService';
 import { App as CapApp } from '@capacitor/app';
 import { BrivuAuthService } from './services/brivuAuthService';
-import { AlertCircle, Ticket, Sparkles, Loader2 } from 'lucide-react';
+import { AlertCircle, Ticket, Sparkles, Loader2, Crown, X } from 'lucide-react';
 import {
   ActiveScreen,
   AppSettings,
@@ -232,7 +232,8 @@ export function App() {
     const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
     const initialPage = (window as any).__INITIAL_QR_PAGE__;
     const initialEmail = (initialPage?.userEmail || initialPage?.email || '').toLowerCase().trim();
-    if (initialPage && hasMeaningfulQrData(initialPage) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
+    const initialIsExpired = Boolean(initialPage?.qrExpired || initialPage?.graceExpired);
+    if (initialPage && (initialIsExpired || hasMeaningfulQrData(initialPage)) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
       return false;
     }
     return true;
@@ -245,7 +246,8 @@ export function App() {
       const emailParam = (params.get('email') || params.get('u') || params.get('user') || '').toLowerCase().trim();
       const initialPage = (window as any).__INITIAL_QR_PAGE__;
       const initialEmail = (initialPage?.userEmail || initialPage?.email || '').toLowerCase().trim();
-      if (initialPage && initialPage.id && hasMeaningfulQrData(initialPage) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
+      const initialIsExpired = Boolean(initialPage?.qrExpired || initialPage?.graceExpired);
+      if (initialPage && initialPage.id && (initialIsExpired || hasMeaningfulQrData(initialPage)) && (!emailParam || !initialEmail || initialEmail === emailParam)) {
         if (emailParam && !initialPage.userEmail) {
           initialPage.userEmail = emailParam;
         }
@@ -416,6 +418,10 @@ export function App() {
     documentType?: 'receipt' | 'invoice' | 'quotation';
     documentNumber?: string;
   }>({ isOpen: false });
+  const [graceExpiredNoticeOpen, setGraceExpiredNoticeOpen] = useState<boolean>(false);
+  const [graceExpiredMessage, setGraceExpiredMessage] = useState<string>(
+    'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud QR photos have been automatically deleted from the app and from cloud. Receipts, invoices, quotations, and inventory remain safe on your device.'
+  );
 
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=events...)
   useEffect(() => {
@@ -463,9 +469,10 @@ export function App() {
 
         const initialSsrPage = (window as any).__INITIAL_QR_PAGE__;
         const initialSsrEmail = (initialSsrPage?.userEmail || initialSsrPage?.email || '').toLowerCase().trim();
+        const initialSsrIsExpired = Boolean(initialSsrPage?.qrExpired || initialSsrPage?.graceExpired);
         const hasValidInitialSsr = Boolean(
           initialSsrPage &&
-          hasMeaningfulQrData(initialSsrPage) &&
+          (initialSsrIsExpired || hasMeaningfulQrData(initialSsrPage)) &&
           (!emailFromUrl || !initialSsrEmail || initialSsrEmail === emailFromUrl)
         );
 
@@ -602,7 +609,7 @@ export function App() {
               if (cancelled) return;
               clearTimeout(watchdogTimer);
 
-              if (remotePage && !remotePage.isEmptyFallback && hasMeaningfulQrData(remotePage)) {
+              if (remotePage && (remotePage.qrExpired || remotePage.graceExpired || (!remotePage.isEmptyFallback && hasMeaningfulQrData(remotePage)))) {
                 setActiveCustomerPage(remotePage);
                 setIsCustomerDataResolving(false);
                 resolved = true;
@@ -982,30 +989,90 @@ export function App() {
 
   // Free Trial (7 Days) and Grace Period (7 Days) lifecycle management
   useEffect(() => {
+    const showGracePurgedNoticeIfNeeded = (customMessage?: string) => {
+      try {
+        if (isCustomerPathFromUrl()) return;
+        const alreadyShown = localStorage.getItem('quickreceipt_grace_purged_notice_shown_v1') === 'true';
+        if (alreadyShown) return;
+        localStorage.setItem('quickreceipt_grace_purged_notice_shown_v1', 'true');
+        const msg =
+          customMessage ||
+          'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud QR photos have been automatically deleted from the app and from cloud. Receipts, invoices, quotations, and inventory remain safe on your device.';
+        setGraceExpiredMessage(msg);
+        setGraceExpiredNoticeOpen(true);
+        PushNotificationService.triggerBusinessAlert({
+          title: 'QR Code & Cloud Data Deleted',
+          body: msg,
+          type: 'debt_reminder',
+          actionUrl: 'upgrade',
+        }).catch(() => {});
+      } catch {}
+    };
+
+    const handleGracePurgedEvent = (e: Event) => {
+      const detail = (e as CustomEvent<any>)?.detail;
+      window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+      if (!StorageService.isSubscribed()) {
+        showGracePurgedNoticeIfNeeded(detail?.message);
+      }
+    };
+
+    window.addEventListener('brivu_grace_expired_purged', handleGracePurgedEvent);
+
     const handleSubscriptionLifecycle = async () => {
       try {
-        await PlayBillingService.syncActiveSubscriptionSilently(true).catch(() => false);
+        const playCheck = await PlayBillingService.verifyAndSyncSubscriptionSilently(true).catch(() => ({
+          active: StorageService.isSubscribed(),
+          verifiedFromPlay: false,
+        }));
+        const serverSync = await CloudflareService.syncSubscriptionStatusToCloud({
+          playVerifiedNoPurchase: playCheck.verifiedFromPlay && !playCheck.active,
+        }).catch(() => null);
         const status = StorageService.getTrialStatus();
 
-        // 1. If subscribed, hide any ads and never restrict or purge
-        if (status.subscribed) {
+        // 1. If subscribed locally, on Google Play, or on Cloudflare D1, hide ads and NEVER purge
+        const isConfirmedSubscriber = Boolean(
+          status.subscribed ||
+            playCheck.active ||
+            serverSync?.isSubscribed ||
+            serverSync?.trialInfo?.isSubscribed
+        );
+        if (isConfirmedSubscriber) {
+          setGraceExpiredNoticeOpen(false);
           AdMobService.hideAllAds().catch(() => {});
           return;
         }
 
-        // 2. Handle Grace Period Expiry (wipe cloud completely)
-        if (status.isGracePeriodExpired) {
+        // 2. Safety gate: never purge while offline, when Android Play Billing couldn't respond, or when signed-in server check failed
+        const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const playUnavailableOnAndroid = PlayBillingService.isAndroid() && !playCheck.verifiedFromPlay;
+        const signedInEmail = StorageService.getAuthenticatedEmail();
+        const serverVerificationMissing = Boolean(signedInEmail && !serverSync?.success);
+
+        if (isOffline || playUnavailableOnAndroid || serverVerificationMissing) {
+          return;
+        }
+
+        // 3. Handle Grace Period Expiry ONLY when verified not subscribed on both Google Play and Cloudflare
+        const isGraceOver = Boolean(
+          signedInEmail
+            ? serverSync?.gracePeriodExpired && !serverSync?.isSubscribed
+            : status.isGracePeriodExpired
+        );
+        if (isGraceOver) {
           const alreadyWiped = localStorage.getItem('quickreceipt_cloud_wiped_v1') === 'true';
-          if (!alreadyWiped) {
-            console.warn('Grace Period Expired! Purging all Cloudflare database records and backups...');
-            await StorageService.purgeAllCloudData();
-            
-            // Trigger a business alert notification in notification box only
-            PushNotificationService.triggerBusinessAlert({
-              title: '⚠️ Grace Period Expired: Files Deleted',
-              body: 'Your 7-day grace period is over. All files have been safely wiped from Cloud but remain secure on your phone local storage!',
-              type: 'debt_reminder',
-            }).catch(() => {});
+          const hasResidualQr = StorageService.hasLocalQrAssets();
+          if (!alreadyWiped || hasResidualQr || serverSync?.purged) {
+            if (!alreadyWiped || hasResidualQr) {
+              const purgeResult = await StorageService.purgeAllCloudData();
+              if (!purgeResult.success) return;
+            } else {
+              StorageService.clearLocalQrData();
+            }
+            window.dispatchEvent(new CustomEvent('brivu_data_restored'));
+            showGracePurgedNoticeIfNeeded(serverSync?.message);
+          } else {
+            showGracePurgedNoticeIfNeeded(serverSync?.message);
           }
           return;
         }
@@ -1034,13 +1101,14 @@ export function App() {
             } else if (status.isGracePeriod) {
               const remaining = status.remainingGraceDays;
               const title = 'Grace Period Warning';
-              const message = `You have ${remaining} remaining days for your grace period. If you don't subscribe, all your files will be deleted from the cloud, but they will stay perfectly safe in your local storage in the app.`;
+              const message = `You have ${remaining} remaining days for your grace period. If you don't subscribe, all your QR code info and photos will be automatically deleted from the app and from cloud, while receipts remain safe on your device.`;
 
               // Send native local notification alert to notification box only
               PushNotificationService.triggerBusinessAlert({
                 title: `⚠️ ${title}: ${remaining} Days Left`,
                 body: message,
                 type: 'debt_reminder',
+                actionUrl: 'upgrade',
               }).catch(() => {});
             }
           }
@@ -1055,7 +1123,10 @@ export function App() {
       handleSubscriptionLifecycle();
     }, 1500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('brivu_grace_expired_purged', handleGracePurgedEvent);
+    };
   }, []);
 
   // Handle notification click navigation
@@ -1892,6 +1963,7 @@ export function App() {
           <QRCodeHostingScreen
             business={business}
             onNavigateHome={() => handleNavigate('home')}
+            onNavigateUpgrade={() => handleNavigate('upgrade')}
             onOpenCustomerView={(page, initialTab, initialItemId, initialPhotoId) => {
               setActiveCustomerPage(page);
               setCustomerInitialTab(initialTab || 'menu');
@@ -2156,6 +2228,61 @@ export function App() {
           await PlayUpdateService.openPlayStore();
         }}
       />
+
+      {graceExpiredNoticeOpen && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/60 rounded-3xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
+                    Grace Period Ended
+                  </h3>
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    QR info & cloud files removed
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGraceExpiredNoticeOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              {graceExpiredMessage}
+            </p>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setGraceExpiredNoticeOpen(false);
+                  handleNavigate('upgrade');
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-xs transition cursor-pointer"
+              >
+                <Crown className="w-4 h-4" />
+                <span>Upgrade to Pro</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGraceExpiredNoticeOpen(false)}
+                className="py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold transition cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -491,6 +491,7 @@ export const CloudflareService = {
     ownerKey?: string;
   }): Promise<{
     success: boolean;
+    requiresSubscription?: boolean;
     storageLimitExceeded?: boolean;
     url?: string;
     key?: string;
@@ -498,6 +499,25 @@ export const CloudflareService = {
     size?: number;
     message: string;
   }> {
+    const trial = StorageService.getTrialStatus();
+    const lowerFolderArg = String(options.folder || '').toLowerCase().trim();
+    const lowerFilenameArg = String(options.filename || '').toLowerCase().trim();
+    const isSharedProfileAsset =
+      lowerFolderArg === 'signatures' ||
+      lowerFilenameArg === 'logo.webp' ||
+      lowerFilenameArg.startsWith('logo_') ||
+      lowerFilenameArg.includes('signature');
+
+    if (trial.isExpired && !trial.subscribed && !isSharedProfileAsset) {
+      return {
+        success: false,
+        requiresSubscription: true,
+        message: trial.isGracePeriodExpired
+          ? 'Your grace period has expired without a subscription. Subscribe to Pro to upload QR photos to cloud.'
+          : 'Your 7-day free trial has ended. Subscribe to Pro to upload QR photos to cloud.',
+      };
+    }
+
     const isManualOrDiagnostic = Boolean(
       options.force ||
       options.folder === 'manual_uploads'
@@ -615,6 +635,7 @@ export const CloudflareService = {
       if (!response.ok) {
         let errorMsg = `HTTP ${response.status} upload failed`;
         const isStorageExceeded = Boolean(parsed.data?.storageLimitExceeded);
+        const requiresSub = Boolean(parsed.data?.requiresSubscription || response.status === 402);
         if (parsed.ok && parsed.data?.error) {
           errorMsg = parsed.data.error;
         } else if (parsed.error) {
@@ -624,6 +645,7 @@ export const CloudflareService = {
         }
         return {
           success: false,
+          requiresSubscription: requiresSub,
           storageLimitExceeded: isStorageExceeded,
           message: errorMsg,
         };
@@ -956,6 +978,9 @@ export const CloudflareService = {
           })()
         : undefined;
 
+      const trialStatus = StorageService.getTrialStatus();
+      const blockExpiredQrRestore = trialStatus.isGracePeriodExpired && !trialStatus.subscribed;
+
       const qrOnlyBackup: AppBackupData = {
         version: rawBackupData.version || 1,
         exportedAt: rawBackupData.exportedAt || new Date().toISOString(),
@@ -977,19 +1002,19 @@ export const CloudflareService = {
         staffLosses: undefined,
         staffSales: undefined,
         staffIncidents: undefined,
-        qrHostedPages: rawBackupData.qrHostedPages,
-        websitesQrItems: rawBackupData.websitesQrItems,
-        socialsQrItems: rawBackupData.socialsQrItems,
-        eventsQrItems: rawBackupData.eventsQrItems,
-        roomsQrItems: rawBackupData.roomsQrItems,
-        ...(Array.isArray((rawBackupData as any).files) ? { files: (rawBackupData as any).files } : {}),
+        qrHostedPages: blockExpiredQrRestore ? undefined : rawBackupData.qrHostedPages,
+        websitesQrItems: blockExpiredQrRestore ? undefined : rawBackupData.websitesQrItems,
+        socialsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.socialsQrItems,
+        eventsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.eventsQrItems,
+        roomsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.roomsQrItems,
+        ...(Array.isArray((rawBackupData as any).files) && !blockExpiredQrRestore ? { files: (rawBackupData as any).files } : {}),
       };
 
       const importResult = StorageService.importBackup(qrOnlyBackup, false);
       if (importResult.success) {
         // Recover QR gallery photos from Cloud storage asynchronously if business QR page photos are missing
         const pages = StorageService.getHostedQRPages();
-        const needsPhotoRecovery = pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
+        const needsPhotoRecovery = !blockExpiredQrRestore && pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
         if (needsPhotoRecovery) {
           this.recoverQrPhotosFromCloud(email, false).catch(() => {});
         }
@@ -1574,7 +1599,8 @@ export const CloudflareService = {
     if (!this.isConfigured()) return false;
     try {
       const headers = this.getAuthHeaders();
-      const targetUrl = `${config.workerUrl}/api/qr/${encodeURIComponent(pageId)}`;
+      const cleanBaseUrl = normalizeUrl(config.workerUrl);
+      const targetUrl = `${cleanBaseUrl}/api/qr/${encodeURIComponent(pageId)}`;
       const res = await fetch(targetUrl, {
         method: 'DELETE',
         headers,
@@ -1585,6 +1611,125 @@ export const CloudflareService = {
       console.warn('Failed to delete hosted QR page from Cloudflare:', err);
       await this.syncAllToCloudflare().catch(() => {});
       return false;
+    }
+  },
+
+  /**
+   * Synchronizes trial start date and active subscription status to Cloudflare D1.
+   * If the user's 14-day grace period has ended without subscription, the server deletes their cloud QR data
+   * and signals the app to wipe all local QR code info & photos too.
+   */
+  async syncSubscriptionStatusToCloud(options?: {
+    playVerifiedNoPurchase?: boolean;
+  }): Promise<{
+    success: boolean;
+    isSubscribed?: boolean;
+    gracePeriodExpired?: boolean;
+    purged?: boolean;
+    message?: string;
+    trialInfo?: any;
+  }> {
+    const userEmail = this.getUserEmail();
+    if (!userEmail || !this.isConfigured()) {
+      return { success: false };
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { success: false };
+    }
+
+    const config = this.getConfig();
+    const cleanUrl = normalizeUrl(config.workerUrl);
+    const sub = StorageService.getSubscription();
+    const installDate = StorageService.getInstallDate();
+
+    try {
+      const headers = this.getAuthHeaders();
+      headers['Content-Type'] = 'application/json';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/subscription/sync`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            userEmail,
+            installDate,
+            subscriptionStatus: sub?.status || 'none',
+            subscriptionExpiresAt: sub?.expiresAt || null,
+            planId: sub?.planId || null,
+            playVerifiedNoPurchase: Boolean(options?.playVerifiedNoPurchase),
+          }),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const rawText = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(rawText);
+      if (!res.ok || !parsed.ok || !parsed.data) {
+        return {
+          success: false,
+          isSubscribed: Boolean(parsed.data?.trialInfo?.isSubscribed || parsed.data?.isSubscribed),
+          trialInfo: parsed.data?.trialInfo,
+          message: parsed.data?.error || parsed.error,
+        };
+      }
+
+      const data = parsed.data;
+      if (data.trialInfo?.trialStartedAt) {
+        StorageService.syncServerInstallDate(data.trialInfo.trialStartedAt);
+      }
+
+      const serverIsSubscribed = Boolean(data.isSubscribed || data.trialInfo?.isSubscribed);
+      if (serverIsSubscribed) {
+        // Restore active subscription status locally (prevents wipe after reinstall, new device, or cleared cache)
+        if (!StorageService.isSubscribed()) {
+          const fallbackExp = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
+          StorageService.saveSubscription({
+            planId: '1-month',
+            planName: 'Brivu Pro',
+            status: 'active',
+            startedAt: data.trialInfo?.trialStartedAt || new Date().toISOString(),
+            expiresAt: data.trialInfo?.subscriptionExpiresAt || fallbackExp,
+            amountPaid: 0,
+            currency: 'USD',
+            isGooglePlay: true,
+          } as any);
+        }
+        return {
+          success: true,
+          isSubscribed: true,
+          gracePeriodExpired: false,
+          purged: false,
+          message: data.message,
+          trialInfo: data.trialInfo,
+        };
+      }
+
+      if (data.gracePeriodExpired && data.purged && !StorageService.isSubscribed()) {
+        StorageService.clearLocalQrData();
+        try {
+          localStorage.setItem('quickreceipt_cloud_wiped_v1', 'true');
+        } catch {}
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('brivu_grace_expired_purged', { detail: data })
+          );
+        }
+      }
+
+      return {
+        success: true,
+        isSubscribed: false,
+        gracePeriodExpired: Boolean(data.gracePeriodExpired),
+        purged: Boolean(data.purged),
+        message: data.message,
+        trialInfo: data.trialInfo,
+      };
+    } catch {
+      return { success: false };
     }
   },
 

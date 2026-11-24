@@ -110,18 +110,29 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
     boxBorderColor: '#cbd5e1',
   });
 
+  const [ownerEmail, setOwnerEmail] = useState<string>(
+    () => StorageService.getAuthenticatedEmail() || business.email || ''
+  );
+
   const isAllSelected = selectedRoomId === 'all';
   const activeRoom = rooms.find((r) => r.id === selectedRoomId) || null;
   const currency = business.currency || StorageService.getProfile().currency || 'UGX';
 
+  useEffect(() => {
+    const authEmail = StorageService.getAuthenticatedEmail() || business.email || '';
+    if (authEmail !== ownerEmail) {
+      setOwnerEmail(authEmail);
+    }
+  }, [business.email]);
+
   const roomsHubUrl = useMemo(() => {
-    return QRHostingService.getCustomerRoomsHubUrl(business.name, business.email);
-  }, [business.name, business.email]);
+    return QRHostingService.getCustomerRoomsHubUrl(business.name, ownerEmail || business.email);
+  }, [business.name, business.email, ownerEmail]);
 
   const activeUrl = isAllSelected
     ? roomsHubUrl
     : activeRoom
-    ? QRHostingService.getCustomerRoomUrl(activeRoom.id, business.email)
+    ? QRHostingService.getCustomerRoomUrl(activeRoom.id, ownerEmail || business.email)
     : '';
 
   const activeDarkColor = isAllSelected ? allQrColors.darkColor : activeRoom?.darkColor || '#059669';
@@ -173,6 +184,8 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
     const syncFromStorage = () => {
       const fresh = StorageService.getRoomsQrItems();
       setRooms(fresh);
+      const nextEmail = StorageService.getAuthenticatedEmail() || business.email || '';
+      setOwnerEmail(nextEmail);
       setSelectedRoomId((prev) => {
         if (prev === 'all' && fresh.length > 0) return 'all';
         if (prev && fresh.some((r) => r.id === prev)) return prev;
@@ -187,7 +200,9 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
     if (authEmail && StorageService.getRoomsQrItems().length === 0) {
       CloudflareService.pullFromCloudflare(authEmail)
         .then((res) => {
-          if (res?.success) syncFromStorage();
+          if (res?.success && StorageService.getRoomsQrItems().length === 0) {
+            syncFromStorage();
+          }
         })
         .catch(() => {});
     }
@@ -307,6 +322,9 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
           if (uploadRes.success && uploadRes.url) {
             finalUrl = resolveOnlinePhotoUrl(uploadRes.url) || uploadRes.url;
             cloudUploadedCount++;
+          } else if (uploadRes.requiresSubscription) {
+            showToast(uploadRes.message || 'Subscribe to Pro to upload room photos.');
+            break;
           }
         } catch (err) {
           console.warn('Room photo Cloudflare upload fallback:', err);
@@ -314,10 +332,10 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
 
         if (!finalUrl) {
           finalUrl = await compressImageFile(file, {
-            maxDimension: 1200,
+            maxDimension: 960,
             mimeType: 'image/webp',
-            quality: 0.85,
-            maxBytes: 280 * 1024,
+            quality: 0.8,
+            maxBytes: 120 * 1024,
           });
         }
 
@@ -387,10 +405,16 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
         whatsappPhone: cleanWaPhone || undefined,
       };
       const nextRooms = rooms.map((r) => (r.id === editingRoom.id ? updatedRoom : r));
-      shouldPersistRef.current = true;
+      StorageService.saveRoomsQrItemsLocalOnly(nextRooms);
       setRooms(nextRooms);
-      QRHostingService.syncRoomPage(updatedRoom, business, nextRooms);
-      showToast('Room updated & hosted online!');
+      showToast('Updating room & publishing online...');
+      QRHostingService.syncRoomPage(updatedRoom, business, nextRooms).then((res) => {
+        if (res.success) {
+          showToast('Room updated & live online!');
+        } else {
+          showToast(`Room saved on device, but online sync failed: ${res.message || 'check connection'}`);
+        }
+      });
     } else {
       if (rooms.length >= MAX_ROOMS) {
         showToast(`Limit reached: Maximum ${MAX_ROOMS} rooms allowed. Please delete a room to add a new one.`);
@@ -415,11 +439,17 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
         createdAt: new Date().toISOString(),
       };
       const nextRooms = [newRoom, ...rooms];
-      shouldPersistRef.current = true;
+      StorageService.saveRoomsQrItemsLocalOnly(nextRooms);
       setRooms(nextRooms);
       setSelectedRoomId('all');
-      QRHostingService.syncRoomPage(newRoom, business, nextRooms);
-      showToast('New room added & hosted online!');
+      showToast('Publishing new room online...');
+      QRHostingService.syncRoomPage(newRoom, business, nextRooms).then((res) => {
+        if (res.success) {
+          showToast('New room added & live online!');
+        } else {
+          showToast(`Room saved on device, but online sync failed: ${res.message || 'check connection'}`);
+        }
+      });
     }
     setShowModal(false);
   };
@@ -432,9 +462,9 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
       }
     }
     const remaining = rooms.filter((r) => r.id !== id);
-    shouldPersistRef.current = true;
+    StorageService.saveRoomsQrItemsLocalOnly(remaining);
     setRooms(remaining);
-    QRHostingService.removeRoomPage(id, business);
+    QRHostingService.removeRoomPage(id, business, remaining);
     if (selectedRoomId === id) {
       setSelectedRoomId(remaining.length > 0 ? 'all' : '');
     }

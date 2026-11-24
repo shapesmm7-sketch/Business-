@@ -26,3 +26,5 @@ binding = "DB"
 database_name = "brivu-db"
 database_id = "add56248-d8bf-46ba-9373-9a65037c0e55"
 
+[triggers]
+crons = ["0 */6 * * *"]
