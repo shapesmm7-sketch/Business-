@@ -420,7 +420,7 @@ export function App() {
   }>({ isOpen: false });
   const [graceExpiredNoticeOpen, setGraceExpiredNoticeOpen] = useState<boolean>(false);
   const [graceExpiredMessage, setGraceExpiredMessage] = useState<string>(
-    'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud QR photos have been automatically deleted from the app and from cloud. Receipts, invoices, quotations, and inventory remain safe on your device.'
+    'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.'
   );
 
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=events...)
@@ -997,11 +997,11 @@ export function App() {
         localStorage.setItem('quickreceipt_grace_purged_notice_shown_v1', 'true');
         const msg =
           customMessage ||
-          'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud QR photos have been automatically deleted from the app and from cloud. Receipts, invoices, quotations, and inventory remain safe on your device.';
+          'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.';
         setGraceExpiredMessage(msg);
         setGraceExpiredNoticeOpen(true);
         PushNotificationService.triggerBusinessAlert({
-          title: 'QR Code & Cloud Data Deleted',
+          title: 'Trial Ended',
           body: msg,
           type: 'debt_reminder',
           actionUrl: 'upgrade',
@@ -2239,10 +2239,10 @@ export function App() {
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
-                    Grace Period Ended
+                    Trial Ended
                   </h3>
                   <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-                    QR info & cloud files removed
+                    Upgrade to Pro to continue hosting
                   </p>
                 </div>
               </div>

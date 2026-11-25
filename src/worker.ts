@@ -4113,7 +4113,7 @@ export default {
                 purged: purgeRes.ok,
                 purgeDetails: purgeRes,
                 trialInfo: computeUserTrialState({ ...existingRow, grace_purged_at: purgeRes.ok ? purgeRes.purgedAt : existingRow.grace_purged_at }, nowMs),
-                message: 'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud files have been automatically deleted from the app and from cloud.',
+                message: 'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.',
               }),
               { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
@@ -4237,7 +4237,7 @@ export default {
                 trialPhase: purgeRes.ok ? 'grace_expired_purged' : trialInfo.trialPhase,
               },
               message: purgeRes.ok
-                ? 'You have not subscribed and your 7-day grace period is over. Your QR code info and cloud files have been automatically deleted from the app and from cloud.'
+                ? 'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.'
                 : 'Subscription status verified.',
             }),
             { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }

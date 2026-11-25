@@ -740,18 +740,15 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         urlOrHandleText = undefined;
         description = undefined;
       } else if (mode === 'contacts') {
-        headline = 'Email & Contact Card';
+        headline = '';
         calloutText = 'SCAN TO SAVE CONTACT DETAILS';
-        urlOrHandleText =
-          [contactPhone.trim(), contactEmail.trim()].filter(Boolean).join(' • ') ||
-          contactName.trim() ||
-          bizName;
-        description = 'Scan to save our phone, WhatsApp & email instantly';
+        urlOrHandleText = undefined;
+        description = undefined;
       } else {
-        headline = 'Google Maps Location';
+        headline = '';
         calloutText = 'SCAN FOR DIRECTIONS';
-        urlOrHandleText = address.trim() || qrPayload;
-        description = 'Scan with your smartphone camera to open in Google Maps';
+        urlOrHandleText = undefined;
+        description = undefined;
       }
 
       const safeFilePrefix = (customName || `${bizName || 'Business'}_${mode}`).replace(/[^a-zA-Z0-9]/g, '_');
@@ -765,7 +762,14 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         description,
         accentColor: activePage.accentColor || activeDarkColor || '#059669',
         filename: `${safeFilePrefix}_Table_Wall_Poster.pdf`,
-        documentTitle: mode === 'menu' ? 'Menu Table & Wall Poster' : mode === 'wifi' ? 'WiFi Table & Wall Poster' : `${headline} Poster`,
+        documentTitle:
+          mode === 'menu'
+            ? 'Menu Table & Wall Poster'
+            : mode === 'wifi'
+            ? 'WiFi Table & Wall Poster'
+            : mode === 'contacts'
+            ? 'Contact Table & Wall Poster'
+            : 'Location Table & Wall Poster',
       });
 
       if (res.success) {

@@ -1725,9 +1725,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <div className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed">
-              <p className="font-bold">Grace Period Ended — QR Info Deleted</p>
+              <p className="font-bold">Trial Ended</p>
               <p className="text-rose-800/90 dark:text-rose-300/90 mt-0.5">
-                You have not subscribed and your grace period is over. Your QR code info and photos have been automatically deleted from the app and from cloud. Subscribe to Pro to host QR codes again.
+                Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.
               </p>
             </div>
           </div>
