@@ -136,24 +136,14 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    * Opens Google's REAL account selection and authorization interface
    */
   const handleConnect = async (openModalAfter = false) => {
-    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
-    const latestTrial = StorageService.getTrialStatus();
-    setTrialStatus(latestTrial);
-    if (!allowed) {
-      setShowSubscriptionPrompt(true);
-      showToast(
-        'error',
-        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
-      );
-      return;
-    }
-
     setIsConnecting(true);
     setBackupsError(null);
     setNeedsReconnect(false);
     try {
       const connectedAccount = await GoogleDriveService.connectGoogleDrive();
       setAccount(connectedAccount);
+      setTrialStatus(StorageService.getTrialStatus());
+      setShowSubscriptionPrompt(false);
       showToast('success', `Connected to Google Drive as ${connectedAccount.email}`);
       if (openModalAfter) {
         setShowBackupsModal(true);
@@ -161,6 +151,11 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       await loadBackups();
     } catch (err: any) {
       console.error('Google authorization error:', err);
+      const latestTrial = StorageService.getTrialStatus();
+      setTrialStatus(latestTrial);
+      if (latestTrial.isExpired && !latestTrial.subscribed) {
+        setShowSubscriptionPrompt(true);
+      }
       showToast('error', err?.message || 'Google account authorization was cancelled or failed.');
     } finally {
       setIsConnecting(false);
@@ -171,28 +166,23 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
    * Triggers native Google Play Services account chooser by signing out active session first
    */
   const handleSwitchAccount = async () => {
-    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
-    const latestTrial = StorageService.getTrialStatus();
-    setTrialStatus(latestTrial);
-    if (!allowed) {
-      setShowSubscriptionPrompt(true);
-      showToast(
-        'error',
-        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
-      );
-      return;
-    }
-
     setIsConnecting(true);
     setBackupsError(null);
     setNeedsReconnect(false);
     try {
       const connectedAccount = await GoogleDriveService.switchGoogleAccount();
       setAccount(connectedAccount);
+      setTrialStatus(StorageService.getTrialStatus());
+      setShowSubscriptionPrompt(false);
       showToast('success', `Switched Google Drive account to ${connectedAccount.email}`);
       await loadBackups();
     } catch (err: any) {
       console.error('Google switch account error:', err);
+      const latestTrial = StorageService.getTrialStatus();
+      setTrialStatus(latestTrial);
+      if (latestTrial.isExpired && !latestTrial.subscribed) {
+        setShowSubscriptionPrompt(true);
+      }
       showToast('error', err?.message || 'Failed to switch Google account.');
     } finally {
       setIsConnecting(false);
@@ -214,7 +204,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   };
 
   const handleSyncNow = async () => {
-    const allowed = await GoogleDriveService.ensureDriveSyncAllowed();
+    const allowed = await GoogleDriveService.ensureDriveSyncAllowed(account?.email);
     const latestTrial = StorageService.getTrialStatus();
     setTrialStatus(latestTrial);
     if (!allowed) {

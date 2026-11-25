@@ -42,6 +42,9 @@ import {
   isValidColorOrGradient,
   normalizeHex,
   getContrastTextHex,
+  extractPrimaryHex,
+  getLuminance,
+  hexToRgb,
 } from '../utils/colors';
 
 interface BusinessProfileScreenProps {
@@ -73,7 +76,16 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
   // Accordion state for Brand Accent & Theme Colors
   const [isAccentColorOpen, setIsAccentColorOpen] = useState(false);
   const [activeColorTarget, setActiveColorTarget] = useState<
-    'accentColor' | 'headerBgColor' | 'headerTextColor' | 'totalBgColor' | 'totalTextColor' | 'paperBgColor'
+    | 'accentColor'
+    | 'headerBgColor'
+    | 'headerTextColor'
+    | 'paperBgColor'
+    | 'metaTextColor'
+    | 'receiptTextColor'
+    | 'totalBgColor'
+    | 'totalTextColor'
+    | 'paymentTextColor'
+    | 'footerTextColor'
   >('accentColor');
 
   // Country modal & search state
@@ -860,12 +872,16 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
         <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60">
           {(() => {
             const targets = [
-              { id: 'accentColor', label: 'Primary Accent', shortLabel: 'Accent', desc: 'Badges, icons, borders, & default highlights' },
+              { id: 'accentColor', label: 'Primary Accent', shortLabel: 'Accent', desc: 'Badges, icons, borders & default highlights' },
               { id: 'headerBgColor', label: 'Header Fill', shortLabel: 'Header BG', desc: 'Top receipt header banner background fill' },
-              { id: 'headerTextColor', label: 'Header Text', shortLabel: 'Header Text', desc: 'Business store name & description text color' },
+              { id: 'headerTextColor', label: 'Header Text', shortLabel: 'Header Text', desc: 'Business store name, description & address text' },
+              { id: 'paperBgColor', label: 'Paper Canvas', shortLabel: 'Paper BG', desc: 'Receipt, invoice & quotation background canvas' },
+              { id: 'metaTextColor', label: 'Receipt No. & Date', shortLabel: 'No. & Date', desc: 'Receipt/Invoice number, date & time text color' },
+              { id: 'receiptTextColor', label: 'Items & Body Text', shortLabel: 'Items Text', desc: 'Item names, quantities, prices & body text' },
               { id: 'totalBgColor', label: 'Total Box Fill', shortLabel: 'Total BG', desc: 'Grand total summary box fill color' },
               { id: 'totalTextColor', label: 'Total Text', shortLabel: 'Total Text', desc: 'Grand total number and label color' },
-              { id: 'paperBgColor', label: 'Paper Canvas', shortLabel: 'Paper BG', desc: 'Receipt background paper canvas fill' },
+              { id: 'paymentTextColor', label: 'Payment & Amount Paid', shortLabel: 'Payment', desc: 'Payment method (Cash), balance & Amount Paid in words' },
+              { id: 'footerTextColor', label: 'Policies & Footer', shortLabel: 'Footer', desc: 'Thank you, not returnable/refundable & Powered by Brivu' },
             ] as const;
 
             const activeTargetObj = targets.find((t) => t.id === activeColorTarget) || targets[0];
@@ -878,9 +894,13 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
               profile.accentColor,
               profile.headerBgColor,
               profile.headerTextColor,
+              profile.paperBgColor,
+              profile.metaTextColor,
+              profile.receiptTextColor,
               profile.totalBgColor,
               profile.totalTextColor,
-              profile.paperBgColor,
+              profile.paymentTextColor,
+              profile.footerTextColor,
             ].filter(Boolean).length;
 
             return (
@@ -999,9 +1019,13 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                               accentColor: '',
                               headerBgColor: '',
                               headerTextColor: '',
+                              paperBgColor: '',
+                              metaTextColor: '',
+                              receiptTextColor: '',
                               totalBgColor: '',
                               totalTextColor: '',
-                              paperBgColor: '',
+                              paymentTextColor: '',
+                              footerTextColor: '',
                             }));
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 text-rose-600 dark:text-rose-400 font-bold text-[10px] hover:bg-rose-50 dark:hover:bg-rose-950/40 transition shrink-0 cursor-pointer shadow-2xs self-end sm:self-auto"
@@ -1011,12 +1035,12 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                       )}
                     </div>
 
-                    {/* Element Selector Tabs (6 Target Areas) */}
+                    {/* Element Selector Tabs (10 Target Areas) */}
                     <div>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
                         1. Choose Receipt Element to Customize
                       </span>
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                         {targets.map((target) => {
                           const val = profile[target.id] || '';
                           const isTargetGradient = val.includes('gradient');
@@ -1158,76 +1182,125 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
                         </span>
                       </div>
 
-                      <div
-                        className="rounded-xl p-3 shadow-xs border border-slate-200 dark:border-slate-800 transition-all space-y-2.5 overflow-hidden"
-                        style={{
-                          background: profile.paperBgColor && isValidColorOrGradient(profile.paperBgColor)
-                            ? (isValidHex(profile.paperBgColor) ? normalizeHex(profile.paperBgColor) : profile.paperBgColor)
-                            : '#FFFFFF',
-                          color: profile.paperBgColor && isValidHex(profile.paperBgColor) ? getContrastTextHex(profile.paperBgColor) : undefined,
-                        }}
-                      >
-                        {/* Header Fill & Header Text */}
-                        <div
-                          className="p-2.5 rounded-lg transition-all flex items-center justify-between gap-2"
-                          style={{
-                            background: profile.headerBgColor && isValidColorOrGradient(profile.headerBgColor)
-                              ? (isValidHex(profile.headerBgColor) ? normalizeHex(profile.headerBgColor) : profile.headerBgColor)
-                              : (profile.accentColor && isValidColorOrGradient(profile.accentColor) ? (isValidHex(profile.accentColor) ? normalizeHex(profile.accentColor) : profile.accentColor) : '#059669'),
-                            color: profile.headerTextColor && isValidColorOrGradient(profile.headerTextColor) ? (isValidHex(profile.headerTextColor) ? normalizeHex(profile.headerTextColor) : profile.headerTextColor) : '#FFFFFF',
-                          }}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[9px] font-bold tracking-widest uppercase block opacity-80">*** RECEIPT ***</span>
-                            <h5 className="font-bold text-xs truncate">{profile.name || 'Your Store Name'}</h5>
-                          </div>
-                          <div className="px-2 py-0.5 rounded-full text-[9px] font-bold border border-white/20 bg-white/10 shrink-0">
-                            OFFICIAL
-                          </div>
-                        </div>
+                      {(() => {
+                        const previewPaperHex = profile.paperBgColor ? extractPrimaryHex(profile.paperBgColor) : null;
+                        const isDarkPreviewPaper = previewPaperHex ? getLuminance(...hexToRgb(previewPaperHex)) < 0.45 : false;
+                        const autoContrastText = previewPaperHex ? getContrastTextHex(previewPaperHex) : undefined;
+                        const resolvePreviewColor = (customVal?: string, mutedDark?: string, mutedLight?: string) => {
+                          if (customVal && isValidColorOrGradient(customVal)) {
+                            return isValidHex(customVal) ? normalizeHex(customVal) : (extractPrimaryHex(customVal) || undefined);
+                          }
+                          if (previewPaperHex) {
+                            return isDarkPreviewPaper ? (mutedDark || autoContrastText) : (mutedLight || autoContrastText);
+                          }
+                          return undefined;
+                        };
+                        const previewHeaderPrimary = profile.headerBgColor
+                          ? extractPrimaryHex(profile.headerBgColor)
+                          : (profile.accentColor ? extractPrimaryHex(profile.accentColor) : '#059669');
+                        const previewHeaderText = resolvePreviewColor(profile.headerTextColor) || (previewHeaderPrimary ? getContrastTextHex(previewHeaderPrimary) : '#FFFFFF');
+                        const previewTotalPrimary = profile.totalBgColor
+                          ? extractPrimaryHex(profile.totalBgColor)
+                          : (profile.accentColor ? extractPrimaryHex(profile.accentColor) : '#059669');
+                        const previewTotalText = resolvePreviewColor(profile.totalTextColor) || (previewTotalPrimary ? getContrastTextHex(previewTotalPrimary) : '#FFFFFF');
+                        const previewMetaColor = resolvePreviewColor(profile.metaTextColor, 'rgba(255,255,255,0.85)', '#475569');
+                        const previewBodyColor = resolvePreviewColor(profile.receiptTextColor, '#FFFFFF', '#0F172A');
+                        const previewPaymentColor = resolvePreviewColor(profile.paymentTextColor, 'rgba(255,255,255,0.9)', '#334155');
+                        const previewFooterColor = resolvePreviewColor(profile.footerTextColor, 'rgba(255,255,255,0.82)', '#475569');
+                        const previewDividerColor = previewPaperHex
+                          ? (isDarkPreviewPaper ? 'rgba(255,255,255,0.28)' : 'rgba(15,23,42,0.16)')
+                          : undefined;
 
-                        {/* Primary Accent Badges & Line */}
-                        <div className="flex items-center justify-between text-[10px] pb-1 border-b border-dashed border-slate-300 dark:border-slate-700">
-                          <span
-                            className="px-2 py-0.5 rounded-md font-bold text-[9px]"
+                        return (
+                          <div
+                            className="rounded-xl p-3 shadow-xs border border-slate-200 dark:border-slate-800 transition-all space-y-2.5 overflow-hidden"
                             style={{
-                              background: profile.accentColor && isValidColorOrGradient(profile.accentColor)
-                                ? (isValidHex(profile.accentColor) ? normalizeHex(profile.accentColor) : profile.accentColor)
-                                : '#059669',
-                              color: profile.accentColor && isValidHex(profile.accentColor) ? getContrastTextHex(profile.accentColor) : '#FFFFFF',
+                              background: profile.paperBgColor && isValidColorOrGradient(profile.paperBgColor)
+                                ? (isValidHex(profile.paperBgColor) ? normalizeHex(profile.paperBgColor) : profile.paperBgColor)
+                                : '#FFFFFF',
+                              color: previewBodyColor,
                             }}
                           >
-                            PAID CASH
-                          </span>
-                          <span className="text-slate-400 text-[10px]">REC-01</span>
-                        </div>
+                            {/* Header Fill & Header Text */}
+                            <div
+                              className="p-2.5 rounded-lg transition-all flex items-center justify-between gap-2"
+                              style={{
+                                background: profile.headerBgColor && isValidColorOrGradient(profile.headerBgColor)
+                                  ? (isValidHex(profile.headerBgColor) ? normalizeHex(profile.headerBgColor) : profile.headerBgColor)
+                                  : (profile.accentColor && isValidColorOrGradient(profile.accentColor) ? (isValidHex(profile.accentColor) ? normalizeHex(profile.accentColor) : profile.accentColor) : '#059669'),
+                                color: previewHeaderText,
+                              }}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] font-bold tracking-widest uppercase block opacity-80">*** RECEIPT ***</span>
+                                <h5 className="font-bold text-xs truncate">{profile.name || 'Your Store Name'}</h5>
+                              </div>
+                              <div className="px-2 py-0.5 rounded-full text-[9px] font-bold border border-white/20 bg-white/10 shrink-0">
+                                OFFICIAL
+                              </div>
+                            </div>
 
-                        {/* Item List */}
-                        <div className="text-[10px] space-y-1">
-                          <div className="flex justify-between">
-                            <span>1x Item Sample A</span>
-                            <span>50,000</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>2x Item Sample B</span>
-                            <span>100,000</span>
-                          </div>
-                        </div>
+                            {/* Receipt No. & Date/Time */}
+                            <div
+                              className="flex items-center justify-between text-[10px] pb-1.5 border-b border-dashed border-slate-300 dark:border-slate-700"
+                              style={{
+                                ...(previewMetaColor ? { color: previewMetaColor } : {}),
+                                ...(previewDividerColor ? { borderColor: previewDividerColor } : {}),
+                              }}
+                            >
+                              <span>Receipt: #REC-01</span>
+                              <span>Today, 12:24 PM</span>
+                            </div>
 
-                        {/* Total Banner Fill & Total Text */}
-                        <div
-                          className="p-2.5 rounded-lg flex justify-between items-center font-bold text-xs transition-all shadow-xs"
-                          style={{
-                            background: profile.totalBgColor && isValidColorOrGradient(profile.totalBgColor)
-                              ? (isValidHex(profile.totalBgColor) ? normalizeHex(profile.totalBgColor) : profile.totalBgColor)
-                              : (profile.accentColor && isValidColorOrGradient(profile.accentColor) ? (isValidHex(profile.accentColor) ? normalizeHex(profile.accentColor) : profile.accentColor) : '#059669'),
-                            color: profile.totalTextColor && isValidColorOrGradient(profile.totalTextColor) ? (isValidHex(profile.totalTextColor) ? normalizeHex(profile.totalTextColor) : profile.totalTextColor) : '#FFFFFF',
-                          }}
-                        >
-                          <span>TOTAL DUE</span>
-                          <span>{profile.currency || 'UGX'} 150,000</span>
-                        </div>
-                      </div>
+                            {/* Item List */}
+                            <div className="text-[10px] space-y-1" style={previewBodyColor ? { color: previewBodyColor } : undefined}>
+                              <div className="flex justify-between">
+                                <span>Booking × 1</span>
+                                <span className="font-bold">{profile.currency || 'UGX'} 100,000</span>
+                              </div>
+                            </div>
+
+                            {/* Total Banner Fill & Total Text */}
+                            <div
+                              className="p-2.5 rounded-lg flex justify-between items-center font-bold text-xs transition-all shadow-xs"
+                              style={{
+                                background: profile.totalBgColor && isValidColorOrGradient(profile.totalBgColor)
+                                  ? (isValidHex(profile.totalBgColor) ? normalizeHex(profile.totalBgColor) : profile.totalBgColor)
+                                  : (profile.accentColor && isValidColorOrGradient(profile.accentColor) ? (isValidHex(profile.accentColor) ? normalizeHex(profile.accentColor) : profile.accentColor) : '#059669'),
+                                color: previewTotalText,
+                              }}
+                            >
+                              <span>TOTAL AMOUNT</span>
+                              <span>{profile.currency || 'UGX'} 100,000</span>
+                            </div>
+
+                            {/* Payment, Balance & Amount Paid */}
+                            <div
+                              className="text-[10px] space-y-1 pt-0.5 border-b border-dashed border-slate-300 dark:border-slate-700 pb-1.5"
+                              style={{
+                                ...(previewPaymentColor ? { color: previewPaymentColor } : {}),
+                                ...(previewDividerColor ? { borderColor: previewDividerColor } : {}),
+                              }}
+                            >
+                              <div className="flex justify-between">
+                                <span>Payment: Cash</span>
+                                <span>Balance: {profile.currency || 'UGX'} 0</span>
+                              </div>
+                              <div>
+                                <span className="font-bold">Amount Paid: </span>
+                                <span className="italic">ONE HUNDRED THOUSAND</span>
+                              </div>
+                            </div>
+
+                            {/* Policies & Footer */}
+                            <div className="text-center text-[9.5px] space-y-0.5 pt-0.5" style={previewFooterColor ? { color: previewFooterColor } : undefined}>
+                              <div className="font-bold">Thank you for your business!</div>
+                              <div className="italic">Money paid is not refundable.</div>
+                              <div className="text-[9px] opacity-85">Powered by Brivu</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

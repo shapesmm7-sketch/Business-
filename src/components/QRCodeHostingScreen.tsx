@@ -49,6 +49,7 @@ import {
   AlertTriangle,
   BedDouble,
   Crown,
+  LogIn,
 } from 'lucide-react';
 import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
 import { StorageService } from '../services/storage';
@@ -1741,6 +1742,34 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <span>Upgrade</span>
             </button>
           )}
+        </div>
+      )}
+
+      {!isLoggedIn && (
+        <div
+          id="qr-login-required-warning"
+          className="rounded-2xl border border-amber-300 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/50 p-3.5 flex items-start justify-between gap-3 shadow-xs"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-950 dark:text-amber-100 leading-relaxed">
+              <p className="font-bold">Login Required Before Creating QR Codes</p>
+              <p className="text-amber-900/90 dark:text-amber-200/90 mt-0.5">
+                Please log in first before creating QR codes. QR codes, files, and images will not work if you create them before logging in.
+              </p>
+            </div>
+          </div>
+          <button
+            id="btn-qr-login-warning"
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('brivu_open_auth_modal'));
+            }}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition cursor-pointer shadow-xs"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Log In</span>
+          </button>
         </div>
       )}
 

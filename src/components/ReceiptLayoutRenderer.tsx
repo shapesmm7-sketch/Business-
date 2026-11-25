@@ -13,11 +13,19 @@ import {
 import { ReceiptTemplateId, TemplateCustomization } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
-import { isValidHex, normalizeHex, getContrastTextHex, resolveEffectiveTheme, rgbToHex, hexToRgb, getLuminance, isValidColorOrGradient, formatBgStyle, formatTextStyle, extractPrimaryHex } from '../utils/colors';
+import { isValidHex, normalizeHex, getContrastTextHex, resolveEffectiveTheme, rgbToHex, hexToRgb, getLuminance, isValidColorOrGradient, formatBgStyle, formatTextStyle, formatSolidTextStyle, extractPrimaryHex } from '../utils/colors';
 import { ReceiptQrCodeSection } from './ReceiptQrCodeSection';
 
 
 import { t } from '../utils/i18n';
+
+interface SupplementaryStyleConfig {
+  bodyStyle?: React.CSSProperties;
+  paymentStyle?: React.CSSProperties;
+  footerStyle?: React.CSSProperties;
+  dividerColor?: string;
+  isDarkPaper?: boolean;
+}
 
 const renderSupplementaryInfo = (
   amountInWords?: string,
@@ -28,7 +36,8 @@ const renderSupplementaryInfo = (
   nonRefundable: boolean = false,
   isInvoice: boolean = false,
   lang?: string,
-  signature?: string
+  signature?: string,
+  styleConfig?: SupplementaryStyleConfig
 ) => {
   const isOwed = balance < 0;
   const hasChange = balance > 0;
@@ -37,28 +46,64 @@ const renderSupplementaryInfo = (
 
   const hasThankYouInNotes = notes && notes.toLowerCase().includes('thank');
   const thankYouText = hasThankYouInNotes ? notes.trim() : (!notes ? t('thank_you_business', lang) : null);
+  const paymentStyle = styleConfig?.paymentStyle;
+  const bodyStyle = styleConfig?.bodyStyle;
+  const footerStyle = styleConfig?.footerStyle;
+  const isDarkPaper = Boolean(styleConfig?.isDarkPaper);
 
   return (
-    <div className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700 space-y-2 font-sans">
+    <div
+      className="mt-4 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700 space-y-2 font-sans"
+      style={styleConfig?.dividerColor ? { borderColor: styleConfig.dividerColor } : undefined}
+    >
       {(isOwed || hasChange) && (
-        <div className="ml-auto max-w-[280px] flex justify-between gap-4 py-0.5 font-bold text-xs">
-          <span className={isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>
+        <div
+          className="ml-auto max-w-[280px] flex justify-between gap-4 py-0.5 font-bold text-xs"
+          style={paymentStyle}
+        >
+          <span
+            className={
+              paymentStyle?.color
+                ? ''
+                : isDarkPaper
+                  ? (isOwed ? 'text-amber-300' : 'text-emerald-300')
+                  : (isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')
+            }
+          >
             {isOwed ? `${t('balance_due', lang)}:` : 'Change:'}
           </span>
-          <span className={`font-mono ${isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+          <span
+            className={`font-mono ${
+              paymentStyle?.color
+                ? ''
+                : isDarkPaper
+                  ? (isOwed ? 'text-amber-300' : 'text-emerald-300')
+                  : (isOwed ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')
+            }`}
+          >
             {formatCurrency(Math.abs(balance), currency)}
           </span>
         </div>
       )}
       {amountInWords && (
-        <div className="text-[11px] text-slate-600 dark:text-slate-400 pt-1 text-left">
-          <span className="font-semibold text-slate-900 dark:text-slate-200">{t('amount_paid', lang)}: </span>
+        <div
+          className="text-[11px] text-slate-600 dark:text-slate-400 pt-1 text-left"
+          style={paymentStyle}
+        >
+          <span className={paymentStyle?.color ? 'font-semibold' : 'font-semibold text-slate-900 dark:text-slate-200'}>
+            {t('amount_paid', lang)}:{' '}
+          </span>
           <span className="italic uppercase">{amountInWords}</span>
         </div>
       )}
       {notes && !hasThankYouInNotes && (
-        <div className="text-[11px] text-slate-600 dark:text-slate-400 text-left">
-          <span className="font-semibold text-slate-900 dark:text-slate-200">{t('notes', lang)}: </span>
+        <div
+          className="text-[11px] text-slate-600 dark:text-slate-400 text-left"
+          style={bodyStyle}
+        >
+          <span className={bodyStyle?.color ? 'font-semibold' : 'font-semibold text-slate-900 dark:text-slate-200'}>
+            {t('notes', lang)}:{' '}
+          </span>
           <span>{notes}</span>
         </div>
       )}
@@ -68,25 +113,39 @@ const renderSupplementaryInfo = (
         <div className="pt-2 pb-1 flex justify-end">
           <div className="flex flex-col items-center">
             <img src={signature} alt="Authorized Signature" className="max-h-9 w-auto max-w-[110px] object-contain mb-0.5" />
-            <div className="w-28 border-b border-slate-300 dark:border-slate-600" />
-            <span className="text-[9px] text-slate-400 mt-0.5">Authorized Signature</span>
+            <div
+              className="w-28 border-b border-slate-300 dark:border-slate-600"
+              style={styleConfig?.dividerColor ? { borderColor: styleConfig.dividerColor } : undefined}
+            />
+            <span className="text-[9px] text-slate-400 mt-0.5" style={footerStyle}>
+              Authorized Signature
+            </span>
           </div>
         </div>
       )}
 
       {/* 2. Thank You message and Policies: Placed BELOW the Signature section */}
       {thankYouText && (
-        <div className="text-center font-bold text-xs text-slate-800 dark:text-slate-200 pt-1 pb-0.5">
+        <div
+          className="text-center font-bold text-xs text-slate-800 dark:text-slate-200 pt-1 pb-0.5"
+          style={footerStyle}
+        >
           {thankYouText}
         </div>
       )}
       {nonReturnable && (
-        <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic">
+        <div
+          className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic"
+          style={footerStyle}
+        >
           {t('goods_not_returnable', lang)}
         </div>
       )}
       {nonRefundable && (
-        <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic">
+        <div
+          className="text-center text-[11px] text-slate-500 dark:text-slate-400 italic"
+          style={footerStyle}
+        >
           {t('money_not_refundable', lang)}
         </div>
       )}
@@ -241,7 +300,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
   const headerStyle: React.CSSProperties = {
     ...(headerBgStyle ? formatBgStyle(headerBgStyle) : {}),
-    ...(effectiveHeaderTextColor ? formatTextStyle(effectiveHeaderTextColor) : {}),
+    ...(effectiveHeaderTextColor ? formatSolidTextStyle(effectiveHeaderTextColor) : {}),
   };
 
   // 4. Total Box Background & Text Style
@@ -254,23 +313,69 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   const totalStyle: React.CSSProperties = {
     ...formatBgStyle(totalBgVal),
     ...(customTheme?.totalTextColor
-      ? formatTextStyle(customTheme.totalTextColor)
+      ? formatSolidTextStyle(customTheme.totalTextColor)
       : { color: (totalPrimaryHex ? getContrastTextHex(totalPrimaryHex) : '#ffffff') }),
   };
 
-  // 5. Paper Background & Receipt Text Color Style
+  // 5. Paper Background & Element Text Color Styles
   const paperBgVal = isCustomPaperBg && isValidColorOrGradient(customTheme?.paperBgColor)
     ? customTheme!.paperBgColor
     : (theme.pdf.pageBg ? rgbToHex(theme.pdf.pageBg[0], theme.pdf.pageBg[1], theme.pdf.pageBg[2]) : undefined);
   const paperPrimaryHex = extractPrimaryHex(paperBgVal);
+  const isDarkPaper = paperPrimaryHex
+    ? getLuminance(...hexToRgb(paperPrimaryHex)) < 0.45
+    : (template === 'executive-navy' || template === 'indigo-tech');
 
-  const receiptTextColorVal = customTheme?.receiptTextColor && isValidColorOrGradient(customTheme.receiptTextColor)
-    ? customTheme.receiptTextColor
+  const isCustomReceiptText = Boolean(customTheme?.receiptTextColor && isValidColorOrGradient(customTheme.receiptTextColor));
+  const isCustomMetaText = Boolean(customTheme?.metaTextColor && isValidColorOrGradient(customTheme.metaTextColor));
+  const isCustomPaymentText = Boolean(customTheme?.paymentTextColor && isValidColorOrGradient(customTheme.paymentTextColor));
+  const isCustomFooterText = Boolean(customTheme?.footerTextColor && isValidColorOrGradient(customTheme.footerTextColor));
+
+  const receiptTextColorVal = isCustomReceiptText
+    ? customTheme!.receiptTextColor
     : (isCustomPaperBg && paperPrimaryHex ? getContrastTextHex(paperPrimaryHex) : undefined);
+
+  const metaTextColorVal = isCustomMetaText
+    ? customTheme!.metaTextColor
+    : (isCustomPaperBg && paperPrimaryHex ? (isDarkPaper ? 'rgba(255, 255, 255, 0.86)' : '#475569') : undefined);
+
+  const paymentTextColorVal = isCustomPaymentText
+    ? customTheme!.paymentTextColor
+    : (isCustomPaperBg && paperPrimaryHex ? (isDarkPaper ? 'rgba(255, 255, 255, 0.92)' : '#334155') : undefined);
+
+  const footerTextColorVal = isCustomFooterText
+    ? customTheme!.footerTextColor
+    : (isCustomPaperBg && paperPrimaryHex ? (isDarkPaper ? 'rgba(255, 255, 255, 0.85)' : '#475569') : undefined);
+
+  const paperDividerColor =
+    isCustomPaperBg && paperPrimaryHex
+      ? (isDarkPaper ? 'rgba(255, 255, 255, 0.28)' : 'rgba(15, 23, 42, 0.14)')
+      : undefined;
 
   const paperStyle: React.CSSProperties = {
     ...(paperBgVal ? formatBgStyle(paperBgVal) : {}),
-    ...(receiptTextColorVal ? formatTextStyle(receiptTextColorVal) : {}),
+    ...(receiptTextColorVal ? formatSolidTextStyle(receiptTextColorVal) : {}),
+  };
+
+  const bodyTextStyle: React.CSSProperties | undefined = receiptTextColorVal
+    ? formatSolidTextStyle(receiptTextColorVal)
+    : undefined;
+  const metaTextStyle: React.CSSProperties | undefined = metaTextColorVal
+    ? formatSolidTextStyle(metaTextColorVal)
+    : undefined;
+  const paymentTextStyle: React.CSSProperties | undefined = paymentTextColorVal
+    ? formatSolidTextStyle(paymentTextColorVal)
+    : undefined;
+  const footerTextStyle: React.CSSProperties | undefined = footerTextColorVal
+    ? formatSolidTextStyle(footerTextColorVal)
+    : undefined;
+
+  const suppStyleConfig: SupplementaryStyleConfig = {
+    bodyStyle: bodyTextStyle,
+    paymentStyle: paymentTextStyle,
+    footerStyle: footerTextStyle,
+    dividerColor: paperDividerColor,
+    isDarkPaper,
   };
 
   // 6. Header Specific Element Styles
@@ -278,21 +383,21 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
     customTheme?.headerNameColor && isValidColorOrGradient(customTheme.headerNameColor)
       ? formatTextStyle(customTheme.headerNameColor)
       : effectiveHeaderTextColor
-        ? formatTextStyle(effectiveHeaderTextColor)
+        ? formatSolidTextStyle(effectiveHeaderTextColor)
         : {};
 
   const headerDescStyle: React.CSSProperties =
     customTheme?.headerDescColor && isValidColorOrGradient(customTheme.headerDescColor)
       ? formatTextStyle(customTheme.headerDescColor)
       : effectiveHeaderTextColor
-        ? formatTextStyle(effectiveHeaderTextColor)
+        ? formatSolidTextStyle(effectiveHeaderTextColor)
         : {};
 
   const headerAddressStyle: React.CSSProperties =
     customTheme?.headerAddressColor && isValidColorOrGradient(customTheme.headerAddressColor)
       ? formatTextStyle(customTheme.headerAddressColor)
       : effectiveHeaderTextColor
-        ? formatTextStyle(effectiveHeaderTextColor)
+        ? formatSolidTextStyle(effectiveHeaderTextColor)
         : {};
 
   // 6. Header Background Resolution for Contrast Checking
@@ -449,35 +554,49 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </div>
           </div>
 
-          <div className="flex justify-between items-start text-xs font-sans text-slate-600 dark:text-slate-400 mb-3">
+          <div className="flex justify-between items-start text-xs font-sans text-slate-600 dark:text-slate-400 mb-3" style={metaTextStyle}>
             <div>
-              <div className="font-bold text-slate-900 dark:text-white">
+              <div className={metaTextStyle ? 'font-bold' : 'font-bold text-slate-900 dark:text-white'}>
                 {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'} {customerName || (isQuotation || isInvoice ? 'Valued Client' : 'General Customer')}
               </div>
-              {customerPhone && <div className="text-[11px] text-slate-500">Phone: {customerPhone}</div>}
-              {customerEmail && <div className="text-[11px] text-slate-500">Email: {customerEmail}</div>}
-              {customerAddress && <div className="text-[11px] text-slate-500">Address: {customerAddress}</div>}
+              {customerPhone && <div className={metaTextStyle ? 'text-[11px]' : 'text-[11px] text-slate-500'}>Phone: {customerPhone}</div>}
+              {customerEmail && <div className={metaTextStyle ? 'text-[11px]' : 'text-[11px] text-slate-500'}>Email: {customerEmail}</div>}
+              {customerAddress && <div className={metaTextStyle ? 'text-[11px]' : 'text-[11px] text-slate-500'}>Address: {customerAddress}</div>}
             </div>
-            <span className="font-mono font-bold whitespace-nowrap">{isQuotation ? 'Quotation No.' : isInvoice ? 'Invoice No.' : 'No.'} {receiptNumber}</span>
+            <span className="font-mono font-bold whitespace-nowrap" style={isCustomMetaText ? metaTextStyle : undefined}>
+              {isQuotation ? 'Quotation No.' : isInvoice ? 'Invoice No.' : 'No.'} {receiptNumber}
+            </span>
           </div>
 
-          <div className="font-sans text-xs border-t border-b border-slate-300 dark:border-slate-700 py-2.5 space-y-2">
-            <div className="flex justify-between font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-200 dark:border-slate-800">
+          <div
+            className="font-sans text-xs border-t border-b border-slate-300 dark:border-slate-700 py-2.5 space-y-2"
+            style={{
+              ...(bodyTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
+            <div
+              className="flex justify-between font-bold text-slate-500 uppercase text-[10px] pb-1 border-b border-slate-200 dark:border-slate-800"
+              style={{
+                ...(metaTextStyle || {}),
+                ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+              }}
+            >
               <span>{isQuotation || isInvoice ? 'Item Description' : 'Paid For'}</span>
               <span className="text-center">Qty × Price</span>
               <span>Amount</span>
             </div>
             {items.map((item) => (
-              <div key={item.id} className="flex justify-between items-center py-0.5">
+              <div key={item.id} className="flex justify-between items-center py-0.5" style={bodyTextStyle}>
                 <span className="font-medium">{item.name}</span>
-                <span className="text-slate-500 text-[11px]">{item.quantity} × {formatCurrency(item.unitPrice, currency)}</span>
+                <span className={bodyTextStyle ? 'text-[11px] opacity-85' : 'text-slate-500 text-[11px]'}>{item.quantity} × {formatCurrency(item.unitPrice, currency)}</span>
                 <span className="font-bold">{formatCurrency(item.subtotal, currency)}</span>
               </div>
             ))}
           </div>
 
           <div className="pt-3 font-sans space-y-1.5 text-right text-xs">
-            <div className="flex justify-between text-slate-500">
+            <div className="flex justify-between text-slate-500" style={bodyTextStyle}>
               <span>Subtotal:</span>
               <span>{formatCurrency(subtotal, currency)}</span>
             </div>
@@ -494,7 +613,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <span>GRAND TOTAL:</span>
               <span className="font-mono">{formatCurrency(total, currency)}</span>
             </div>
-            <div className="flex justify-between text-slate-500 pt-0.5">
+            <div className="flex justify-between text-slate-500 pt-0.5" style={paymentTextStyle}>
               <span>{isBillStyle ? 'Amount Paid:' : `Amount Paid (${paymentMethod || 'Cash'}):`}</span>
               <span>{formatCurrency(amountPaid, currency)}</span>
             </div>
@@ -502,14 +621,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="mt-4 pt-2">
-          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature)}
+          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature, suppStyleConfig)}
           {customFooter && (
-            <div className="mt-2 text-center text-[10px] text-slate-500">
+            <div className="mt-2 text-center text-[10px] text-slate-500" style={footerTextStyle}>
               {customFooter}
             </div>
           )}
           <div className="mt-3 pt-2 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} size={46} />
+            <ReceiptQrCodeSection data={data} size={46} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -546,34 +665,43 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               {address && (
                 <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address}</p>
               )}
-              <div className="text-xs font-mono text-slate-400 mt-1 text-center">#{receiptNumber}</div>
+              <div className="text-xs font-mono text-slate-400 mt-1 text-center" style={isCustomMetaText ? metaTextStyle : undefined}>#{receiptNumber}</div>
             </div>
           </div>
         </div>
 
         {(customerName || customerPhone || customerEmail) && (
-          <div className="py-2.5 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-            <span>Client: <strong className="text-slate-700 dark:text-slate-300">{customerName || 'General Customer'}</strong>{[customerPhone, customerEmail].filter(Boolean).length > 0 ? ` (${[customerPhone, customerEmail].filter(Boolean).join(' • ')})` : ''}</span>
+          <div
+            className="py-2.5 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
+            <span>Client: <strong className={metaTextStyle ? 'font-bold' : 'text-slate-700 dark:text-slate-300'}>{customerName || 'General Customer'}</strong>{[customerPhone, customerEmail].filter(Boolean).length > 0 ? ` (${[customerPhone, customerEmail].filter(Boolean).join(' • ')})` : ''}</span>
             <span>{formattedDate}</span>
           </div>
         )}
 
-        <div className="py-4 space-y-2.5 text-xs">
+        <div className="py-4 space-y-2.5 text-xs" style={bodyTextStyle}>
           {items.map((item) => (
             <div key={item.id} className="flex justify-between items-baseline">
               <div>
-                <span className="text-slate-800 dark:text-slate-200 font-medium">{item.name}</span>
-                <span className="text-slate-400 ml-2 text-[11px]">× {item.quantity}</span>
+                <span className={bodyTextStyle ? 'font-medium' : 'text-slate-800 dark:text-slate-200 font-medium'}>{item.name}</span>
+                <span className={bodyTextStyle ? 'ml-2 text-[11px] opacity-80' : 'text-slate-400 ml-2 text-[11px]'}>× {item.quantity}</span>
               </div>
-              <span className="font-semibold text-slate-900 dark:text-white font-mono">
+              <span className={bodyTextStyle ? 'font-semibold font-mono' : 'font-semibold text-slate-900 dark:text-white font-mono'}>
                 {formatCurrency(item.subtotal, currency)}
               </span>
             </div>
           ))}
         </div>
 
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1 text-xs">
-          <div className="flex justify-between text-slate-400">
+        <div
+          className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1 text-xs"
+          style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+        >
+          <div className="flex justify-between text-slate-400" style={bodyTextStyle}>
             <span>Subtotal</span>
             <span>{formatCurrency(subtotal, currency)}</span>
           </div>
@@ -583,26 +711,29 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <span>-{formatCurrency(discountAmount, currency)}</span>
             </div>
           )}
-          <div className="flex justify-between items-baseline pt-2 border-t border-slate-100 dark:border-slate-800" style={(totalStyle.background || totalStyle.backgroundColor) ? { ...totalStyle, padding: '8px 12px', borderRadius: '12px' } : undefined}>
+          <div
+            className="flex justify-between items-baseline pt-2 border-t border-slate-100 dark:border-slate-800"
+            style={(totalStyle.background || totalStyle.backgroundColor) ? { ...totalStyle, padding: '8px 12px', borderRadius: '12px' } : (paperDividerColor ? { borderColor: paperDividerColor } : undefined)}
+          >
             <span className="text-xs uppercase tracking-wider text-slate-400 font-medium" style={(totalStyle.background || totalStyle.backgroundColor) ? { color: 'inherit' } : undefined}>Total</span>
             <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white font-mono" style={(totalStyle.background || totalStyle.backgroundColor) ? { color: 'inherit' } : undefined}>
               {formatCurrency(total, currency)}
             </span>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-400 pt-1">
+          <div className="flex justify-between text-[11px] text-slate-400 pt-1" style={paymentTextStyle}>
             <span>{isBillStyle ? `Amount Paid: ${formatCurrency(amountPaid, currency)}` : `Paid via ${paymentMethod || 'Cash'}`}</span>
             <span>Balance: {formatCurrency(Math.max(0, total - amountPaid), currency)}</span>
           </div>
         </div>
 
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature)}
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature, suppStyleConfig)}
         {customFooter && (
-          <div className="text-center text-xs text-slate-400 mt-2">
+          <div className="text-center text-xs text-slate-400 mt-2" style={footerTextStyle}>
             {customFooter}
           </div>
         )}
         <div className="mt-3 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={44} />
+          <ReceiptQrCodeSection data={data} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -639,7 +770,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 </div>
               )}
               {address && <p className="text-[11px] text-slate-500 text-center" style={headerAddressStyle}>{address}</p>}
-              <div className="text-xs font-mono text-slate-500 mt-0.5 text-center font-bold">
+              <div className="text-xs font-mono text-slate-500 mt-0.5 text-center font-bold" style={isCustomMetaText ? metaTextStyle : undefined}>
                 {isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:'} {receiptNumber} • {formattedDate}
               </div>
             </div>
@@ -655,13 +786,19 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           {customerAddress && <span className="text-slate-500 text-[11px] block">Address: {customerAddress}</span>}
         </div>
 
-        <div className="text-xs space-y-1.5 py-2 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex justify-between font-bold text-slate-500 text-[10px] uppercase pb-1">
+        <div
+          className="text-xs space-y-1.5 py-2 border-b border-slate-200 dark:border-slate-700"
+          style={{
+            ...(bodyTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
+          <div className="flex justify-between font-bold text-slate-500 text-[10px] uppercase pb-1" style={metaTextStyle}>
             <span>{isQuotation || isInvoice ? 'Item Description' : 'Paid For'}</span>
             <span>Amount</span>
           </div>
           {items.map((item) => (
-            <div key={item.id} className="flex justify-between">
+            <div key={item.id} className="flex justify-between" style={bodyTextStyle}>
               <span>{item.name} × {item.quantity}</span>
               <span className="font-medium font-mono">{formatCurrency(item.subtotal, currency)}</span>
             </div>
@@ -681,8 +818,8 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           )}
 
           <div className="space-y-1 text-right">
-            <div className="text-slate-500 text-[11px]">Subtotal: {formatCurrency(subtotal, currency)}</div>
-            <div className="text-slate-500 text-[11px]">VAT (18% Incl.): {formatCurrency(Math.round(total * 0.1525), currency)}</div>
+            <div className="text-slate-500 text-[11px]" style={bodyTextStyle}>Subtotal: {formatCurrency(subtotal, currency)}</div>
+            <div className="text-slate-500 text-[11px]" style={bodyTextStyle}>VAT (18% Incl.): {formatCurrency(Math.round(total * 0.1525), currency)}</div>
             <div
               className="text-sm font-bold text-slate-900 dark:text-white pt-1 border-t border-slate-200 dark:border-slate-700 font-mono"
               style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '6px 10px', borderRadius: '8px' } : undefined}
@@ -692,12 +829,18 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
         </div>
 
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable)}
-        <div className="mt-3 text-center text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, undefined, suppStyleConfig)}
+        <div
+          className="mt-3 text-center text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800"
+          style={{
+            ...(footerTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
           {customFooter || 'Thank you for your business. Valid tax invoice.'}
         </div>
         <div className="mt-3 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={44} />
+          <ReceiptQrCodeSection data={data} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -735,14 +878,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                   {[address, phone ? `Tel ${phone}` : ''].filter(Boolean).join(' • ')}
                 </p>
               )}
-              <div className="text-[10px] text-slate-500 pt-0.5 text-center">
+              <div className="text-[10px] text-slate-500 pt-0.5 text-center" style={isCustomMetaText ? metaTextStyle : undefined}>
                 RC# {receiptNumber} • {formattedDate}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="space-y-1.5 py-2 text-[11px]">
+        <div className="space-y-1.5 py-2 text-[11px]" style={bodyTextStyle}>
           {items.map((item) => (
             <div key={item.id} className="flex justify-between">
               <span>{item.quantity}X {item.name.toUpperCase()}</span>
@@ -751,7 +894,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           ))}
         </div>
 
-        <div className="text-center text-[9px] tracking-widest text-slate-400 select-none">
+        <div className="text-center text-[9px] tracking-widest text-slate-400 select-none" style={footerTextStyle}>
           ---------------------------------------------
         </div>
 
@@ -763,30 +906,36 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             <span>TOTAL:</span>
             <span>{formatCurrency(total, currency)}</span>
           </div>
-          <div className="flex justify-between text-slate-600 dark:text-slate-400 text-[11px]">
+          <div className="flex justify-between text-slate-600 dark:text-slate-400 text-[11px]" style={paymentTextStyle}>
             <span>AMOUNT PAID:</span>
             <span>{formatCurrency(amountPaid, currency)}</span>
           </div>
-          <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400 text-[11px]">
+          <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400 text-[11px]" style={paymentTextStyle}>
             <span>CHANGE:</span>
             <span>{formatCurrency(Math.max(0, amountPaid - total), currency)}</span>
           </div>
         </div>
 
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable)}
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, undefined, suppStyleConfig)}
         {signature && (
           <div className="text-center pt-2 flex flex-col items-center">
             <img src={signature} alt="Authorized Signature" className="max-h-8 w-auto max-w-[100px] object-contain mb-0.5" />
-            <div className="w-20 border-b border-dashed border-slate-400" />
-            <span className="text-[8px] text-slate-400 mt-0.5">Authorized Sign</span>
+            <div className="w-20 border-b border-dashed border-slate-400" style={paperDividerColor ? { borderColor: paperDividerColor } : undefined} />
+            <span className="text-[8px] text-slate-400 mt-0.5" style={footerTextStyle}>Authorized Sign</span>
           </div>
         )}
-        <div className="text-center pt-2 text-[10px] text-slate-500 space-y-0.5 border-t border-dashed border-slate-300 dark:border-slate-700">
+        <div
+          className="text-center pt-2 text-[10px] text-slate-500 space-y-0.5 border-t border-dashed border-slate-300 dark:border-slate-700"
+          style={{
+            ...(footerTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
           <p className="font-bold">*** THANK YOU FOR VISITING ***</p>
           <p>{customFooter || 'PLEASE KEEP THIS SLIP'}</p>
         </div>
         <div className="pt-2.5 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={42} />
+          <ReceiptQrCodeSection data={data} size={42} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -842,18 +991,18 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               <span className="font-bold text-white block mt-0.5">{customerName || 'Corporate Client'}</span>
               <span className="text-[11px] text-slate-400 block">{[customerPhone, customerEmail].filter(Boolean).join(' • ') || 'Verified Walk-in'}</span>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] uppercase tracking-wider text-amber-300 font-bold block">
+            <div className="text-right" style={isCustomMetaText ? metaTextStyle : undefined}>
+              <span className="text-[10px] uppercase tracking-wider text-amber-300 font-bold block" style={isCustomMetaText ? metaTextStyle : undefined}>
                 RECORD ID
               </span>
-              <span className="font-mono font-bold text-white block mt-0.5">{receiptNumber}</span>
-              <span className="text-[11px] text-slate-400">{formattedDate}</span>
+              <span className="font-mono font-bold text-white block mt-0.5" style={isCustomMetaText ? metaTextStyle : undefined}>{receiptNumber}</span>
+              <span className="text-[11px] text-slate-400" style={isCustomMetaText ? metaTextStyle : undefined}>{formattedDate}</span>
             </div>
           </div>
 
           {/* Alternating Row Ledger */}
-          <div className="text-xs font-sans py-2 space-y-1">
-            <div className="flex justify-between font-bold text-amber-300/80 text-[10px] uppercase pb-1.5 border-b border-slate-800">
+          <div className="text-xs font-sans py-2 space-y-1" style={isCustomReceiptText ? bodyTextStyle : undefined}>
+            <div className="flex justify-between font-bold text-amber-300/80 text-[10px] uppercase pb-1.5 border-b border-slate-800" style={isCustomMetaText ? metaTextStyle : undefined}>
               <span>Item Particulars</span>
               <span>Amount</span>
             </div>
@@ -863,9 +1012,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 className={`flex justify-between items-center p-2 rounded-lg ${
                   idx % 2 === 0 ? 'bg-blue-900/20' : 'bg-transparent'
                 }`}
+                style={isCustomReceiptText ? bodyTextStyle : undefined}
               >
                 <span>{item.quantity} × {item.name}</span>
-                <span className="font-mono font-bold text-amber-200">
+                <span className="font-mono font-bold text-amber-200" style={isCustomReceiptText ? bodyTextStyle : undefined}>
                   {formatCurrency(item.subtotal, currency)}
                 </span>
               </div>
@@ -874,7 +1024,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
           {/* Double Gold Ruled Total Banner */}
           <div className="mt-3 pt-3 border-t-2 border-amber-500/40 font-sans space-y-2">
-            <div className="flex justify-between text-xs text-slate-400">
+            <div className="flex justify-between text-xs text-slate-400" style={isCustomReceiptText ? bodyTextStyle : undefined}>
               <span>Subtotal:</span>
               <span>{formatCurrency(subtotal, currency)}</span>
             </div>
@@ -887,17 +1037,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
 
           {/* Digital Wax Seal & Verification */}
-          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400 font-sans">
-            <div className="flex items-center gap-1.5 text-amber-400/90">
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400 font-sans" style={isCustomPaymentText ? paymentTextStyle : (isCustomFooterText ? footerTextStyle : undefined)}>
+            <div className="flex items-center gap-1.5 text-amber-400/90" style={isCustomFooterText ? footerTextStyle : undefined}>
               <ShieldCheck className="w-4 h-4" />
               <span>Cryptographically Verified Transaction</span>
             </div>
             {!isBillStyle && paymentMethod ? (
-              <span className="uppercase tracking-wider">{paymentMethod}</span>
+              <span className="uppercase tracking-wider" style={isCustomPaymentText ? paymentTextStyle : undefined}>{paymentMethod}</span>
             ) : null}
           </div>
           <div className="mt-3 pt-2 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} darkBg={true} size={44} />
+            <ReceiptQrCodeSection data={data} darkBg={true} size={44} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -941,7 +1091,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                   <p className="text-xs text-slate-500 mt-0.5 text-center" style={headerDescStyle}>{address}</p>
                 )}
                 <div className="mt-1 flex justify-center">
-                  <span className="px-2 py-0.5 rounded-full font-bold text-[10px] border" style={{ background: `${effectiveAccentHex}20`, color: effectiveAccentHex, borderColor: `${effectiveAccentHex}40` }}>
+                  <span className="px-2 py-0.5 rounded-full font-bold text-[10px] border" style={{ background: `${effectiveAccentHex}20`, color: isCustomMetaText ? metaTextStyle?.color : effectiveAccentHex, borderColor: `${effectiveAccentHex}40` }}>
                     #{receiptNumber}
                   </span>
                 </div>
@@ -960,9 +1110,9 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                   <span className="w-5 h-5 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0" style={accentBadgeStyle}>
                     {item.quantity}
                   </span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">{item.name}</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200" style={isCustomReceiptText ? bodyTextStyle : undefined}>{item.name}</span>
                 </div>
-                <span className="font-bold font-mono" style={accentTextStyle}>
+                <span className="font-bold font-mono" style={isCustomReceiptText ? bodyTextStyle : accentTextStyle}>
                   {formatCurrency(item.subtotal, currency)}
                 </span>
               </div>
@@ -976,12 +1126,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               {formatCurrency(total, currency)}
             </span>
           </div>
-          <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-1">
+          <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-1" style={paymentTextStyle}>
             <span>{isBillStyle ? (isQuotation ? 'Quotation' : 'Invoice') : `Method: ${paymentMethod || 'Cash'}`}</span>
-            <span>Thank you for preserving nature!</span>
+            <span style={footerTextStyle}>Thank you for preserving nature!</span>
           </div>
           <div className="pt-2.5 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} size={42} />
+            <ReceiptQrCodeSection data={data} size={42} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -1022,13 +1172,22 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
 
         {/* Heavy Boxed Grid Table */}
         <div className="p-4 sm:p-5 space-y-3">
-          <div className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-2">
+          <div
+            className="flex justify-between text-xs font-bold text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-2"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             <span>{isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT'}: #{receiptNumber}</span>
             <span>{formattedDate}</span>
           </div>
 
-          <div className="border-2 border-slate-900 dark:border-slate-700 rounded-lg overflow-hidden text-xs">
-            <div className="bg-slate-100 dark:bg-slate-800 font-black p-2 border-b-2 border-slate-900 dark:border-slate-700 flex justify-between uppercase text-[10px]">
+          <div
+            className="border-2 border-slate-900 dark:border-slate-700 rounded-lg overflow-hidden text-xs"
+            style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+          >
+            <div className="bg-slate-100 dark:bg-slate-800 font-black p-2 border-b-2 border-slate-900 dark:border-slate-700 flex justify-between uppercase text-[10px] text-slate-900 dark:text-slate-100">
               <span>ITEM DETAILS</span>
               <span>SUBTOTAL</span>
             </div>
@@ -1038,10 +1197,14 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 className={`p-2.5 flex justify-between items-center ${
                   idx > 0 ? 'border-t border-slate-300 dark:border-slate-700' : ''
                 }`}
+                style={{
+                  ...(bodyTextStyle || {}),
+                  ...(idx > 0 && paperDividerColor ? { borderColor: paperDividerColor } : {}),
+                }}
               >
                 <div>
                   <span className="font-bold">{item.name}</span>
-                  <span className="text-rose-600 font-bold ml-2">[{item.quantity} UNIT]</span>
+                  <span className={isDarkPaper ? 'text-rose-300 font-bold ml-2' : 'text-rose-600 font-bold ml-2'}>[{item.quantity} UNIT]</span>
                 </div>
                 <span className="font-mono font-black">{formatCurrency(item.subtotal, currency)}</span>
               </div>
@@ -1056,12 +1219,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </span>
           </div>
 
-          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable)}
-        <div className="text-center text-[10px] font-bold text-slate-400 uppercase pt-2">
+          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, undefined, suppStyleConfig)}
+          <div className="text-center text-[10px] font-bold text-slate-400 uppercase pt-2" style={footerTextStyle}>
             {customFooter || 'ORIGINAL CUSTOMER TAX RECEIPT • RETAIN FOR WARRANTY'}
           </div>
           <div className="pt-2.5 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} darkBg={true} size={42} />
+            <ReceiptQrCodeSection data={data} darkBg={true} size={42} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -1096,7 +1259,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               {businessDescription && (
                 <p className="text-xs text-indigo-200/80 italic mt-0.5 text-center">{businessDescription}</p>
               )}
-              <div className="text-[10px] text-slate-400 mt-0.5 font-mono text-center">
+              <div className="text-[10px] text-slate-400 mt-0.5 font-mono text-center" style={isCustomMetaText ? metaTextStyle : undefined}>
                 TX_HASH: 0x8F2A...{receiptNumber.slice(-4)}
               </div>
             </div>
@@ -1115,7 +1278,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
           <div>
             <span className="text-slate-400 block text-[8px]">{isBillStyle ? 'STATUS' : 'GATEWAY'}</span>
-            <span className="font-bold text-white">
+            <span className="font-bold text-white" style={isCustomPaymentText ? paymentTextStyle : undefined}>
               {isQuotation
                 ? 'QUOTED'
                 : isInvoice
@@ -1133,12 +1296,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               className="p-2 rounded-lg bg-slate-900 border border-indigo-500/20 flex justify-between items-center"
             >
               <div>
-                <span className="font-sans font-bold text-white block text-xs">{item.name}</span>
+                <span className="font-sans font-bold text-white block text-xs" style={isCustomReceiptText ? bodyTextStyle : undefined}>{item.name}</span>
                 <span className="text-[9px] text-slate-400">
                   Qty: {item.quantity} • Price: {formatCurrency(item.unitPrice, currency)}
                 </span>
               </div>
-              <span className="font-mono font-bold text-cyan-300">
+              <span className="font-mono font-bold text-cyan-300" style={isCustomReceiptText ? bodyTextStyle : undefined}>
                 {formatCurrency(item.subtotal, currency)}
               </span>
             </div>
@@ -1151,12 +1314,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           <span className="text-base font-black font-mono">{formatCurrency(total, currency)}</span>
         </div>
 
-        <div className="text-center text-[9px] text-slate-400 pt-3 flex items-center justify-center gap-1">
+        <div className="text-center text-[9px] text-slate-400 pt-3 flex items-center justify-center gap-1" style={footerTextStyle}>
           <Sparkles className="w-3 h-3 text-cyan-400" />
           <span>Authenticated Digital {isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt'}</span>
         </div>
         <div className="pt-2.5 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} darkBg={true} size={42} />
+          <ReceiptQrCodeSection data={data} darkBg={true} size={42} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -1196,20 +1359,26 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="p-4 sm:p-5 space-y-3">
-          <div className="flex justify-between text-xs text-stone-500 pb-2 border-b border-stone-200 dark:border-stone-800">
+          <div
+            className="flex justify-between text-xs text-stone-500 pb-2 border-b border-stone-200 dark:border-stone-800"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             <span>Date: {formattedDate}</span>
-            <span className="font-bold text-amber-700 dark:text-amber-400">TABLE 04</span>
+            <span className={metaTextStyle ? 'font-bold' : 'font-bold text-amber-700 dark:text-amber-400'}>TABLE 04</span>
           </div>
 
           {/* Dot Leader Items */}
-          <div className="space-y-2 text-xs">
+          <div className="space-y-2 text-xs" style={bodyTextStyle}>
             {items.map((item) => (
               <div key={item.id} className="flex justify-between items-baseline">
-                <span className="font-medium text-stone-800 dark:text-stone-200">
+                <span className={bodyTextStyle ? 'font-medium' : 'font-medium text-stone-800 dark:text-stone-200'}>
                   {item.quantity}× {item.name}
                 </span>
-                <span className="flex-1 mx-2 border-b border-dotted border-stone-400/60 dark:border-stone-600" />
-                <span className="font-mono font-bold text-stone-900 dark:text-white">
+                <span className="flex-1 mx-2 border-b border-dotted border-stone-400/60 dark:border-stone-600" style={paperDividerColor ? { borderColor: paperDividerColor } : undefined} />
+                <span className={bodyTextStyle ? 'font-mono font-bold' : 'font-mono font-bold text-stone-900 dark:text-white'}>
                   {formatCurrency(item.subtotal, currency)}
                 </span>
               </div>
@@ -1217,32 +1386,35 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
 
           {/* Amber Total & Artisan Stamp */}
-          <div className="pt-3 border-t-2 border-stone-300 dark:border-stone-700 flex items-center justify-between gap-2">
+          <div
+            className="pt-3 border-t-2 border-stone-300 dark:border-stone-700 flex items-center justify-between gap-2"
+            style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+          >
             <div
               className="flex-1"
               style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '8px 12px', borderRadius: '10px' } : undefined}
             >
               <span
                 className="text-[10px] uppercase font-bold text-stone-400 block"
-                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit', opacity: 0.85 } : undefined}
+                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit', opacity: 0.85 } : bodyTextStyle}
               >
                 TOTAL DUE:
               </span>
               <span
                 className="text-base sm:text-lg font-black font-mono text-stone-900 dark:text-white"
-                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit' } : undefined}
+                style={(isCustomTotalBg || isCustomTotalText) ? { color: 'inherit' } : bodyTextStyle}
               >
                 {formatCurrency(total, currency)}
               </span>
             </div>
 
-            <div className="w-14 h-14 rounded-full border-2 border-dashed border-amber-600 text-amber-700 dark:text-amber-400 flex flex-col items-center justify-center text-center p-1 rotate-[-6deg] bg-amber-500/10">
+            <div className="w-14 h-14 rounded-full border-2 border-dashed border-amber-600 text-amber-700 dark:text-amber-400 flex flex-col items-center justify-center text-center p-1 rotate-[-6deg] bg-amber-500/10" style={isCustomFooterText ? footerTextStyle : undefined}>
               <span className="text-[7px] font-black uppercase leading-tight">FRESH</span>
               <span className="text-[6px] font-bold">★ THANK YOU ★</span>
             </div>
           </div>
           <div className="pt-2.5 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} darkBg={true} size={42} />
+            <ReceiptQrCodeSection data={data} darkBg={true} size={42} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -1285,25 +1457,35 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="p-4 sm:p-5 space-y-3">
-          <div className="flex justify-between text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800 pb-2">
+          <div
+            className="flex justify-between text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800 pb-2"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             <span>Customer: <strong>{customerName || 'Standard Client'}</strong></span>
             <span>{formattedDate}</span>
           </div>
 
           {/* Zebra Striped Marine Table */}
-          <div className="rounded-xl overflow-hidden border border-cyan-100 dark:border-cyan-900/40 text-xs">
+          <div
+            className="rounded-xl overflow-hidden border border-cyan-100 dark:border-cyan-900/40 text-xs"
+            style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+          >
             {items.map((item, idx) => (
               <div
                 key={item.id}
                 className={`flex justify-between items-center p-2.5 ${
-                  idx % 2 === 0 ? 'bg-cyan-50/40 dark:bg-cyan-950/20' : 'bg-transparent'
+                  idx % 2 === 0 ? (isDarkPaper ? 'bg-white/10' : 'bg-cyan-50/40 dark:bg-cyan-950/20') : 'bg-transparent'
                 }`}
+                style={bodyTextStyle}
               >
                 <div>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{item.name}</span>
-                  <span className="text-slate-400 ml-2 text-[11px]">× {item.quantity}</span>
+                  <span className={bodyTextStyle ? 'font-semibold' : 'font-semibold text-slate-800 dark:text-slate-200'}>{item.name}</span>
+                  <span className={bodyTextStyle ? 'ml-2 text-[11px] opacity-80' : 'text-slate-400 ml-2 text-[11px]'}>× {item.quantity}</span>
                 </div>
-                <span className="font-mono font-bold text-cyan-800 dark:text-cyan-300">
+                <span className={bodyTextStyle ? 'font-mono font-bold' : 'font-mono font-bold text-cyan-800 dark:text-cyan-300'}>
                   {formatCurrency(item.subtotal, currency)}
                 </span>
               </div>
@@ -1318,12 +1500,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             </span>
           </div>
 
-          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable)}
-        <div className="text-center text-[10px] text-slate-400 pt-1">
+          {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, undefined, suppStyleConfig)}
+          <div className="text-center text-[10px] text-slate-400 pt-1" style={footerTextStyle}>
             {customFooter || 'Smooth sailing & thank you for your patronage!'}
           </div>
           <div className="pt-2.5 flex flex-col items-center justify-center">
-            <ReceiptQrCodeSection data={data} darkBg={true} size={42} />
+            <ReceiptQrCodeSection data={data} darkBg={true} size={42} textStyle={footerTextStyle} />
           </div>
         </div>
       </div>
@@ -1358,20 +1540,26 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
               {businessDescription && (
                 <p className="text-[10px] italic mt-0.5 text-center">{businessDescription}</p>
               )}
-              <span className="text-[10px] font-mono font-bold block mt-0.5 text-center">NO. {receiptNumber} • {formattedDate}</span>
+              <span className="text-[10px] font-mono font-bold block mt-0.5 text-center" style={isCustomMetaText ? metaTextStyle : undefined}>NO. {receiptNumber} • {formattedDate}</span>
             </div>
           </div>
         </div>
 
         {/* Stark Item Grid */}
-        <div className="border-b-2 border-black dark:border-white pb-3 space-y-2 text-xs">
-          <div className="flex justify-between font-black uppercase text-[10px] tracking-wider pb-1">
+        <div
+          className="border-b-2 border-black dark:border-white pb-3 space-y-2 text-xs"
+          style={{
+            ...(bodyTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
+          <div className="flex justify-between font-black uppercase text-[10px] tracking-wider pb-1" style={metaTextStyle}>
             <span>DESCRIPTION</span>
             <span>QTY</span>
             <span className="text-right">TOTAL</span>
           </div>
           {items.map((item) => (
-            <div key={item.id} className="flex justify-between items-baseline font-mono text-xs">
+            <div key={item.id} className="flex justify-between items-baseline font-mono text-xs" style={bodyTextStyle}>
               <span className="font-sans font-bold w-1/2 truncate">{item.name}</span>
               <span className="text-center w-1/4 font-bold">{item.quantity}</span>
               <span className="text-right w-1/4 font-bold">
@@ -1384,7 +1572,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         {/* Massive Total Block */}
         <div
           className="my-4 py-3 border-b-4 border-black dark:border-white flex justify-between items-baseline"
-          style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '10px 12px', borderRadius: '4px' } : undefined}
+          style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '10px 12px', borderRadius: '4px' } : (paperDividerColor ? { borderColor: paperDividerColor } : undefined)}
         >
           <span className="text-xs font-black uppercase tracking-widest">TOTAL AMOUNT:</span>
           <span className="text-xl sm:text-2xl font-black font-mono">
@@ -1393,7 +1581,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         {/* Swiss Barcode Block */}
-        <div className="flex justify-between items-center text-[10px] font-mono pt-1">
+        <div className="flex justify-between items-center text-[10px] font-mono pt-1" style={paymentTextStyle}>
           <span>
             {isQuotation
               ? 'OFFICIAL QUOTATION'
@@ -1406,7 +1594,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
         </div>
         <div className="mt-3 pt-2 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} darkBg={true} size={44} />
+          <ReceiptQrCodeSection data={data} darkBg={true} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -1448,26 +1636,35 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
         </div>
 
-        <div className="flex justify-between text-xs font-sans py-3 border-b border-rose-100 dark:border-rose-900/40 text-slate-600 dark:text-slate-400">
-          <span>Pour: <strong className="font-serif italic text-rose-900 dark:text-rose-200">{customerName || 'Distinguished Guest'}</strong></span>
+        <div
+          className="flex justify-between text-xs font-sans py-3 border-b border-rose-100 dark:border-rose-900/40 text-slate-600 dark:text-slate-400"
+          style={{
+            ...(metaTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
+          <span>Pour: <strong className={metaTextStyle ? 'font-serif italic' : 'font-serif italic text-rose-900 dark:text-rose-200'}>{customerName || 'Distinguished Guest'}</strong></span>
           <span>Bordereau No. {receiptNumber}</span>
         </div>
 
-        <div className="py-3 space-y-2 text-xs">
+        <div className="py-3 space-y-2 text-xs" style={bodyTextStyle}>
           {items.map((item) => (
             <div key={item.id} className="flex justify-between items-baseline">
               <div>
-                <span className="font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
-                <span className="text-[11px] font-sans text-slate-400 ml-2">× {item.quantity}</span>
+                <span className={bodyTextStyle ? 'font-medium' : 'font-medium text-slate-900 dark:text-slate-100'}>{item.name}</span>
+                <span className={bodyTextStyle ? 'text-[11px] font-sans opacity-80 ml-2' : 'text-[11px] font-sans text-slate-400 ml-2'}>× {item.quantity}</span>
               </div>
-              <span className="font-mono font-bold text-rose-900 dark:text-rose-300">
+              <span className={bodyTextStyle ? 'font-mono font-bold' : 'font-mono font-bold text-rose-900 dark:text-rose-300'}>
                 {formatCurrency(item.subtotal, currency)}
               </span>
             </div>
           ))}
         </div>
 
-        <div className="mt-3 pt-3 border-t-2 border-rose-900/40 space-y-2">
+        <div
+          className="mt-3 pt-3 border-t-2 border-rose-900/40 space-y-2"
+          style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+        >
           <div
             className="flex justify-between items-center p-3 rounded-xl bg-rose-950 text-white shadow-md"
             style={(isCustomTotalBg || isCustomTotalText) ? totalStyle : undefined}
@@ -1481,11 +1678,17 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
         </div>
 
-        <div className="mt-4 text-center text-xs italic text-rose-900/80 dark:text-rose-400 pt-2 border-t border-rose-100 dark:border-rose-900/40">
+        <div
+          className="mt-4 text-center text-xs italic text-rose-900/80 dark:text-rose-400 pt-2 border-t border-rose-100 dark:border-rose-900/40"
+          style={{
+            ...(footerTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
           « Avec nos remerciements les plus chaleureux »
         </div>
         <div className="mt-2.5 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={44} />
+          <ReceiptQrCodeSection data={data} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -1532,18 +1735,15 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         {/* Floating Capsule Item Cards */}
         <div className="space-y-1.5 py-3">
           {items.map((item) => (
-            <div
-              key={item.id}
-              className="flex justify-between items-center p-2.5 rounded-2xl bg-white dark:bg-slate-800/80 shadow-xs border border-slate-100 dark:border-slate-700 text-xs"
-            >
-              <div>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">{item.name}</span>
-                <span className="text-slate-400 text-[11px] ml-2">Qty {item.quantity}</span>
+              <div key={item.id} className="flex justify-between items-center p-2.5 rounded-2xl bg-white dark:bg-slate-800/80 shadow-xs border border-slate-100 dark:border-slate-700 text-xs">
+                <div>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200" style={isCustomReceiptText ? bodyTextStyle : undefined}>{item.name}</span>
+                  <span className="text-slate-400 text-[11px] ml-2">Qty {item.quantity}</span>
+                </div>
+                <span className="font-bold text-sky-700 dark:text-sky-300 font-mono" style={isCustomReceiptText ? bodyTextStyle : undefined}>
+                  {formatCurrency(item.subtotal, currency)}
+                </span>
               </div>
-              <span className="font-bold text-sky-700 dark:text-sky-300 font-mono">
-                {formatCurrency(item.subtotal, currency)}
-              </span>
-            </div>
           ))}
         </div>
 
@@ -1558,12 +1758,12 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </span>
         </div>
 
-        <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-1">
+        <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-1" style={metaTextStyle}>
           <span>Ref: #{receiptNumber}</span>
           <span>{formattedDate}</span>
         </div>
         <div className="pt-2.5 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={42} />
+          <ReceiptQrCodeSection data={data} size={42} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -1596,21 +1796,33 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                   {businessDescription}
                 </p>
               )}
-              <div className="text-[10px] font-mono text-[#795548] dark:text-[#bcaaa4] mt-0.5 text-center">
+              <div className="text-[10px] font-mono text-[#795548] dark:text-[#bcaaa4] mt-0.5 text-center" style={isCustomMetaText ? metaTextStyle : undefined}>
                 RECORD NO. {receiptNumber} • {formattedDate}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="py-3 font-mono text-xs border-b border-[#8c6d58] space-y-2">
-          <div className="flex justify-between font-bold text-[#5d4037] dark:text-[#d7ccc8] text-[10px] uppercase border-b border-dashed border-[#8c6d58] pb-1">
+        <div
+          className="py-3 font-mono text-xs border-b border-[#8c6d58] space-y-2"
+          style={{
+            ...(bodyTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
+          <div
+            className="flex justify-between font-bold text-[#5d4037] dark:text-[#d7ccc8] text-[10px] uppercase border-b border-dashed border-[#8c6d58] pb-1"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             <span>PARTICULARS</span>
             <span>QTY</span>
             <span>PRICE</span>
           </div>
           {items.map((item) => (
-            <div key={item.id} className="flex justify-between">
+            <div key={item.id} className="flex justify-between" style={bodyTextStyle}>
               <span className="w-1/2 truncate font-bold">{item.name}</span>
               <span className="w-1/4 text-center">{item.quantity}</span>
               <span className="w-1/4 text-right font-bold">{formatCurrency(item.subtotal, currency)}</span>
@@ -1619,29 +1831,35 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="pt-3 font-mono space-y-1.5 text-xs text-right">
-          <div className="flex justify-between text-[#5d4037] dark:text-[#d7ccc8]">
+          <div className="flex justify-between text-[#5d4037] dark:text-[#d7ccc8]" style={bodyTextStyle}>
             <span>SUBTOTAL:</span>
             <span>{formatCurrency(subtotal, currency)}</span>
           </div>
           <div
             className="flex justify-between text-base font-bold border-t-2 border-b-2 border-[#8c6d58] py-1.5 text-[#3e2723] dark:text-[#f4ebd0]"
-            style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '8px 12px', borderRadius: '8px' } : undefined}
+            style={(isCustomTotalBg || isCustomTotalText) ? { ...totalStyle, padding: '8px 12px', borderRadius: '8px' } : (paperDividerColor ? { borderColor: paperDividerColor } : undefined)}
           >
             <span>TOTAL AMOUNT:</span>
             <span>{formatCurrency(total, currency)}</span>
           </div>
         </div>
 
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable)}
-        <div className="mt-4 pt-3 border-t border-[#8c6d58] flex justify-between items-end text-[10px] font-mono text-[#5d4037] dark:text-[#d7ccc8]">
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, undefined, suppStyleConfig)}
+        <div
+          className="mt-4 pt-3 border-t border-[#8c6d58] flex justify-between items-end text-[10px] font-mono text-[#5d4037] dark:text-[#d7ccc8]"
+          style={{
+            ...(footerTextStyle || {}),
+            ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+          }}
+        >
           <span>{customFooter || 'Goods once sold are gratefully acknowledged.'}</span>
           <div className="text-center">
-            <div className="w-24 border-b border-[#5d4037] dark:border-[#d7ccc8] mb-0.5" />
+            <div className="w-24 border-b border-[#5d4037] dark:border-[#d7ccc8] mb-0.5" style={paperDividerColor ? { borderColor: paperDividerColor } : undefined} />
             <span>Checked by Clerk</span>
           </div>
         </div>
         <div className="pt-2 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={42} />
+          <ReceiptQrCodeSection data={data} size={42} textStyle={footerTextStyle} />
         </div>
       </div>
     );
@@ -1656,7 +1874,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         {/* Modern Slate Header Banner */}
         <div className="bg-slate-900 text-white p-4 sm:p-5" style={headerStyle}>
           <div className="text-center pb-1">
-            <span className="text-[10px] uppercase tracking-widest font-extrabold px-3 py-0.5 rounded-full inline-block shadow-xs" style={receiptBadgeStyle}>
+            <span className="text-[10px] uppercase tracking-widest font-extrabold px-3 py-1 rounded-full inline-flex items-center justify-center leading-tight shadow-xs" style={receiptBadgeStyle}>
               {effectiveBadgeText}
             </span>
           </div>
@@ -1683,7 +1901,13 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
         </div>
 
         <div className="p-4 sm:p-5 space-y-3">
-          <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">
+          <div
+            className="flex justify-between text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2"
+            style={{
+              ...(metaTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             <span>{isQuotation ? 'Quotation:' : isInvoice ? 'Invoice:' : 'Receipt:'} #{receiptNumber}</span>
             <span>{formattedDate}</span>
           </div>
@@ -1700,14 +1924,18 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           )}
 
           {/* Items Table */}
-          <div className="space-y-2 py-1 text-xs">
+          <div className="space-y-2 py-1 text-xs" style={bodyTextStyle}>
             {items.map((item) => (
-              <div key={item.id} className="flex justify-between font-medium text-slate-700 dark:text-slate-200">
+              <div
+                key={item.id}
+                className={bodyTextStyle ? 'flex justify-between font-medium' : 'flex justify-between font-medium text-slate-700 dark:text-slate-200'}
+                style={bodyTextStyle}
+              >
                 <div>
                   <span>{item.name}</span>
-                  <span className="text-slate-400 ml-2 text-[11px]">× {item.quantity}</span>
+                  <span className={bodyTextStyle ? 'ml-2 text-[11px] opacity-80' : 'text-slate-400 ml-2 text-[11px]'}>× {item.quantity}</span>
                 </div>
-                <span className="font-bold text-slate-900 dark:text-white font-mono">
+                <span className={bodyTextStyle ? 'font-bold font-mono' : 'font-bold text-slate-900 dark:text-white font-mono'}>
                   {formatCurrency(item.subtotal, currency)}
                 </span>
               </div>
@@ -1715,7 +1943,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
           </div>
 
           {/* Emerald / Custom Accent Total Banner */}
-          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+          <div
+            className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800"
+            style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+          >
             <div
               className="flex items-center justify-between p-3 rounded-xl text-white shadow-xs"
               style={totalStyle}
@@ -1725,7 +1956,10 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
                 {formatCurrency(total, currency)}
               </span>
             </div>
-            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-2 px-1">
+            <div
+              className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-2 px-1"
+              style={paymentTextStyle}
+            >
               <span>{isBillStyle ? `Amount Paid: ${formatCurrency(amountPaid, currency)}` : `Payment: ${paymentMethod || 'Cash'}`}</span>
               <span>Balance: {formatCurrency(isBillStyle ? Math.max(0, total - amountPaid) : 0, currency)}</span>
             </div>
@@ -1734,14 +1968,20 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
       </div>
 
       <div className="p-4 sm:p-5 pt-1 mt-2">
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature)}
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature, suppStyleConfig)}
         {customFooter ? (
-          <div className="text-center text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div
+            className="text-center text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800"
+            style={{
+              ...(footerTextStyle || {}),
+              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+            }}
+          >
             {customFooter}
           </div>
         ) : null}
         <div className="pt-2 flex flex-col items-center justify-center">
-          <ReceiptQrCodeSection data={data} size={44} />
+          <ReceiptQrCodeSection data={data} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
     </div>

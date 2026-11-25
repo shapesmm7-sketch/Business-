@@ -9,6 +9,7 @@ export interface StorageQuotaInfo {
   limitMB: number;
   percent: number;
   isExceeded: boolean;
+  isUnlimited?: boolean;
   warning?: string | null;
 }
 
@@ -1265,14 +1266,16 @@ export const CloudflareService = {
    * Fetches the 200 MB user storage quota and current usage
    */
   async getStorageQuota(): Promise<StorageQuotaInfo> {
+    const isAdmin = StorageService.isCurrentUserAdmin();
     const config = this.getConfig();
     const defaultQuota: StorageQuotaInfo = {
       usedBytes: 0,
-      limitBytes: 200 * 1024 * 1024,
+      limitBytes: isAdmin ? 0 : 200 * 1024 * 1024,
       usedMB: 0,
-      limitMB: 200,
+      limitMB: isAdmin ? 0 : 200,
       percent: 0,
       isExceeded: false,
+      isUnlimited: isAdmin,
       warning: null,
     };
     if (!this.isConfigured()) return defaultQuota;
@@ -1296,14 +1299,16 @@ export const CloudflareService = {
       if (!parsed.ok || !parsed.data) return defaultQuota;
 
       const data = parsed.data;
+      const unlimited = Boolean(data.isUnlimited) || isAdmin;
       return {
         usedBytes: Number(data.usedBytes) || 0,
-        limitBytes: Number(data.limitBytes) || 200 * 1024 * 1024,
+        limitBytes: unlimited ? 0 : Number(data.limitBytes) || 200 * 1024 * 1024,
         usedMB: typeof data.usedMB === 'number' ? data.usedMB : parseFloat(data.usedMB) || 0,
-        limitMB: Number(data.limitMB) || 200,
-        percent: Number(data.percent) || 0,
-        isExceeded: Boolean(data.isExceeded),
-        warning: data.warning || null,
+        limitMB: unlimited ? 0 : Number(data.limitMB) || 200,
+        percent: unlimited ? 0 : Number(data.percent) || 0,
+        isExceeded: unlimited ? false : Boolean(data.isExceeded),
+        isUnlimited: unlimited,
+        warning: unlimited ? null : data.warning || null,
       };
     } catch (err) {
       console.warn('Failed to fetch storage quota:', err);

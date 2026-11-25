@@ -89,6 +89,20 @@ export function formatTextStyle(val: string | undefined): CSSProperties {
 }
 
 /**
+ * Container-safe text color helper (never sets background-clip: text on wrapper elements
+ * that also carry a background fill or hold child boxes).
+ */
+export function formatSolidTextStyle(val: string | undefined): CSSProperties {
+  if (!val) return {};
+  const s = val.trim();
+  if (s.toLowerCase().includes('gradient')) {
+    const hex = extractPrimaryHex(s);
+    return hex ? { color: hex } : {};
+  }
+  return { color: isValidHex(s) ? normalizeHex(s) : s };
+}
+
+/**
  * Validates a 3 or 6 digit hex color code
  */
 export function isValidHex(hex: string): boolean {

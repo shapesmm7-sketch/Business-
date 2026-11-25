@@ -86,6 +86,16 @@ export function getD1Database(env: any): any {
 const BRIVU_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const BRIVU_SESSION_RENEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+export const ADMIN_LIFETIME_EMAILS = new Set([
+  'shapesmm7@gmail.com',
+  'tabsmrman@gmail.com',
+]);
+
+export function isAdminLifetimeEmail(email?: string | null): boolean {
+  const clean = String(email || '').toLowerCase().trim();
+  return Boolean(clean && ADMIN_LIFETIME_EMAILS.has(clean));
+}
+
 interface CachedGoogleJwks {
   keys: JsonWebKey[];
   expiresAt: number;
@@ -532,6 +542,35 @@ export function computeUserTrialState(
   options?: { treatLegacyCreatedAtAsTrialStart?: boolean }
 ): UserTrialState {
   const cleanEmail = String(row?.email || row?.id || '').toLowerCase().trim();
+  const trialStartedAt = row?.trial_started_at ? String(row.trial_started_at).trim() : null;
+  const createdAt = row?.created_at ? String(row.created_at).trim() : null;
+  const createdMs = createdAt ? Date.parse(createdAt) : NaN;
+  const daysSinceAccountCreated = !isNaN(createdMs)
+    ? Math.floor(Math.max(0, nowMs - createdMs) / DAY_MS)
+    : 0;
+
+  if (isAdminLifetimeEmail(cleanEmail)) {
+    return {
+      userEmail: cleanEmail,
+      hasUserRow: Boolean(row),
+      isSubscribed: true,
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: '2099-12-31T23:59:59.000Z',
+      trialStartedAt,
+      createdAt,
+      gracePurgedAt: null,
+      daysSinceTrialStart: 0,
+      daysSinceAccountCreated,
+      remainingTrialDays: 0,
+      remainingGraceDays: 0,
+      isFreeTrial: false,
+      isGracePeriod: false,
+      isExpired: false,
+      isGracePeriodExpired: false,
+      trialPhase: 'subscribed',
+    };
+  }
+
   const rawStatus = String(row?.subscription_status || 'none').toLowerCase().trim();
   const expiresAtRaw = row?.subscription_expires_at ? String(row.subscription_expires_at).trim() : null;
   const expiresMs = expiresAtRaw ? Date.parse(expiresAtRaw) : NaN;
@@ -549,14 +588,7 @@ export function computeUserTrialState(
     ? 'expired'
     : rawStatus || 'none';
 
-  const trialStartedAt = row?.trial_started_at ? String(row.trial_started_at).trim() : null;
-  const createdAt = row?.created_at ? String(row.created_at).trim() : null;
   const gracePurgedAt = row?.grace_purged_at ? String(row.grace_purged_at).trim() : null;
-
-  const createdMs = createdAt ? Date.parse(createdAt) : NaN;
-  const daysSinceAccountCreated = !isNaN(createdMs)
-    ? Math.floor(Math.max(0, nowMs - createdMs) / DAY_MS)
-    : 0;
 
   const effectiveStartIso =
     trialStartedAt || (options?.treatLegacyCreatedAtAsTrialStart ? createdAt : null);
@@ -637,7 +669,11 @@ async function getUserTrialState(
   options?: { treatLegacyCreatedAtAsTrialStart?: boolean }
 ): Promise<UserTrialState | null> {
   const cleanEmail = (userEmail || '').toLowerCase().trim();
-  if (!db || !cleanEmail || !cleanEmail.includes('@')) return null;
+  if (!cleanEmail || !cleanEmail.includes('@')) return null;
+  if (isAdminLifetimeEmail(cleanEmail)) {
+    return computeUserTrialState({ email: cleanEmail }, Date.now(), options);
+  }
+  if (!db) return null;
   try {
     await ensureD1Tables(db);
     const row: any = await db
@@ -1483,6 +1519,17 @@ export async function purgeUserQrAndCloudData(
 }> {
   const cleanEmail = (rawEmail || '').toLowerCase().trim();
   const purgedAt = new Date().toISOString();
+  if (isAdminLifetimeEmail(cleanEmail)) {
+    return {
+      ok: false,
+      skippedReason: 'user_is_subscribed',
+      userEmail: cleanEmail,
+      deletedQrPages: 0,
+      deletedR2Keys: 0,
+      updatedBackup: false,
+      purgedAt,
+    };
+  }
   if (!db || !cleanEmail || !cleanEmail.includes('@')) {
     return {
       ok: false,
@@ -5009,8 +5056,8 @@ export default {
           incomingBytes = (data as any).byteLength;
         }
 
-        // Enforce 200 MB limit per user account / email
-        if (userEmail) {
+        // Enforce 200 MB limit per user account / email (unlimited for lifetime admin accounts)
+        if (userEmail && !isAdminLifetimeEmail(userEmail)) {
           const currentUsage = await getUserStorageUsageBytes(userEmail, env);
           if (currentUsage + incomingBytes > MAX_USER_STORAGE_BYTES) {
             const limitMB = 200;
@@ -5284,8 +5331,11 @@ export default {
       }
 
       const totalUsedBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
-      const isExceeded = totalUsedBytes >= MAX_USER_STORAGE_BYTES;
-      const percent = Math.min(100, Math.round((totalUsedBytes / MAX_USER_STORAGE_BYTES) * 100));
+      const isUnlimited = isAdminLifetimeEmail(userEmail);
+      const isExceeded = isUnlimited ? false : totalUsedBytes >= MAX_USER_STORAGE_BYTES;
+      const percent = isUnlimited
+        ? 0
+        : Math.min(100, Math.round((totalUsedBytes / MAX_USER_STORAGE_BYTES) * 100));
 
       return new Response(
         JSON.stringify({
@@ -5294,11 +5344,12 @@ export default {
           files,
           total: files.length,
           usedBytes: totalUsedBytes,
-          limitBytes: MAX_USER_STORAGE_BYTES,
+          limitBytes: isUnlimited ? 0 : MAX_USER_STORAGE_BYTES,
           usedMB: Number((totalUsedBytes / (1024 * 1024)).toFixed(2)),
-          limitMB: 200,
+          limitMB: isUnlimited ? 0 : 200,
           percent,
           isExceeded,
+          isUnlimited,
           warning: isExceeded
             ? 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
             : null,
@@ -5327,9 +5378,10 @@ export default {
         ).toLowerCase().trim();
 
         const usedBytes = await getUserStorageUsageBytes(userEmail, env);
-        const limitBytes = MAX_USER_STORAGE_BYTES;
-        const isExceeded = usedBytes >= limitBytes;
-        const percent = Math.min(100, Math.round((usedBytes / limitBytes) * 100));
+        const isUnlimited = isAdminLifetimeEmail(userEmail);
+        const limitBytes = isUnlimited ? 0 : MAX_USER_STORAGE_BYTES;
+        const isExceeded = isUnlimited ? false : usedBytes >= limitBytes;
+        const percent = isUnlimited ? 0 : Math.min(100, Math.round((usedBytes / limitBytes) * 100));
 
         return new Response(
           JSON.stringify({
@@ -5339,9 +5391,10 @@ export default {
             usedBytes,
             limitBytes,
             usedMB: Number((usedBytes / (1024 * 1024)).toFixed(2)),
-            limitMB: 200,
+            limitMB: isUnlimited ? 0 : 200,
             percent,
             isExceeded,
+            isUnlimited,
             warning: isExceeded
               ? 'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
               : null,

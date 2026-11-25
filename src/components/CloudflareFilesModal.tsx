@@ -112,7 +112,8 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
       return;
     }
 
-    if (quota?.isExceeded) {
+    const isUnlimited = Boolean(quota?.isUnlimited) || StorageService.isCurrentUserAdmin();
+    if (quota?.isExceeded && !isUnlimited) {
       showToast(
         t('storage_limit_warning', currentLang) ||
         'You have used up your 200mbs so delete some files that are nolonger needed to save new files'
@@ -218,33 +219,39 @@ export const CloudflareFilesModal: React.FC<CloudflareFilesModalProps> = ({ isOp
           </div>
         </div>
 
-        {/* Storage Quota Usage Meter (200 MB Limit) */}
+        {/* Storage Quota Usage Meter */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
               <HardDrive className="w-3.5 h-3.5 text-orange-500" />
               <span>{t('storage_quota', currentLang) || 'Cloud Storage Quota'}</span>
             </span>
-            <span className={`font-mono font-bold text-[11px] ${quota?.isExceeded ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
-              {quota ? `${quota.usedMB} MB / 200 MB (${quota.percent}%)` : 'Calculating...'}
+            <span className={`font-mono font-bold text-[11px] ${quota?.isExceeded && !quota?.isUnlimited ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              {quota
+                ? quota.isUnlimited || StorageService.isCurrentUserAdmin()
+                  ? `${quota.usedMB} MB / Unlimited`
+                  : `${quota.usedMB} MB / 200 MB (${quota.percent}%)`
+                : 'Calculating...'}
             </span>
           </div>
-          <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-            <div
-              className={`h-full transition-all duration-500 ${
-                quota?.isExceeded
-                  ? 'bg-rose-500'
-                  : (quota?.percent || 0) > 85
-                  ? 'bg-amber-500'
-                  : 'bg-emerald-500'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(2, quota?.percent || 0))}%` }}
-            />
-          </div>
+          {!(quota?.isUnlimited || StorageService.isCurrentUserAdmin()) && (
+            <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  quota?.isExceeded
+                    ? 'bg-rose-500'
+                    : (quota?.percent || 0) > 85
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(2, quota?.percent || 0))}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {/* 200 MB Exceeded Warning Banner */}
-        {quota?.isExceeded && (
+        {quota?.isExceeded && !(quota?.isUnlimited || StorageService.isCurrentUserAdmin()) && (
           <div className="mx-4 mt-3 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/70 border border-rose-200 dark:border-rose-900 flex items-start gap-3 text-rose-800 dark:text-rose-200 animate-fadeIn">
             <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
             <div className="text-xs space-y-1">

@@ -75,6 +75,17 @@ const STORAGE_KEYS = {
   STOCK_VIEW_MODE: 'quickreceipt_stock_view_mode_v1',
 };
 
+export const ADMIN_LIFETIME_EMAILS = [
+  'shapesmm7@gmail.com',
+  'tabsmrman@gmail.com',
+] as const;
+
+export function isAdminLifetimeEmail(email?: string | null): boolean {
+  const clean = String(email || '').toLowerCase().trim();
+  if (!clean) return false;
+  return (ADMIN_LIFETIME_EMAILS as readonly string[]).includes(clean);
+}
+
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
   name: '',
   description: '',
@@ -531,6 +542,10 @@ export const StorageService = {
           totalBgColor: updatedProfile.totalBgColor || undefined,
           totalTextColor: updatedProfile.totalTextColor || undefined,
           paperBgColor: updatedProfile.paperBgColor || undefined,
+          receiptTextColor: updatedProfile.receiptTextColor || undefined,
+          metaTextColor: updatedProfile.metaTextColor || undefined,
+          paymentTextColor: updatedProfile.paymentTextColor || undefined,
+          footerTextColor: updatedProfile.footerTextColor || undefined,
         };
 
         const cleanedCustomTheme = r.customTheme
@@ -542,6 +557,10 @@ export const StorageService = {
               totalBgColor: undefined,
               totalTextColor: undefined,
               paperBgColor: undefined,
+              receiptTextColor: undefined,
+              metaTextColor: undefined,
+              paymentTextColor: undefined,
+              footerTextColor: undefined,
             }
           : undefined;
 
@@ -1032,7 +1051,11 @@ export const StorageService = {
           backupData.profile.accentColor ||
           backupData.profile.headerBgColor ||
           backupData.profile.totalBgColor ||
-          backupData.profile.paperBgColor
+          backupData.profile.paperBgColor ||
+          backupData.profile.receiptTextColor ||
+          backupData.profile.metaTextColor ||
+          backupData.profile.paymentTextColor ||
+          backupData.profile.footerTextColor
         )
     );
 
@@ -3068,8 +3091,49 @@ export const StorageService = {
     return success;
   },
 
+  isAdminEmail(email?: string | null): boolean {
+    return isAdminLifetimeEmail(email);
+  },
+
+  isCurrentUserAdmin(): boolean {
+    try {
+      const authUser = this.getAuthUser();
+      if (isAdminLifetimeEmail(authUser?.email)) return true;
+
+      const authSession = this.getAuthSession();
+      if (isAdminLifetimeEmail(authSession?.userEmail)) return true;
+
+      const profile = readFromStorage<BusinessProfile | null>(STORAGE_KEYS.PROFILE, null);
+      if (isAdminLifetimeEmail(profile?.email)) return true;
+
+      const cfConfig = readFromStorage<CloudflareConfig | null>(STORAGE_KEYS.CLOUDFLARE, null);
+      if (isAdminLifetimeEmail(cfConfig?.apiKey)) return true;
+
+      const driveRaw = localStorage.getItem('brivu_google_drive_account');
+      if (driveRaw) {
+        const driveAccount = JSON.parse(driveRaw);
+        if (isAdminLifetimeEmail(driveAccount?.email)) return true;
+      }
+    } catch {}
+    return false;
+  },
+
   getSubscription(): UserSubscription | null {
     const sub = readFromStorage<UserSubscription | null>(STORAGE_KEYS.SUBSCRIPTION, null);
+    if (this.isCurrentUserAdmin()) {
+      if (sub && sub.status === 'active') {
+        return sub;
+      }
+      return {
+        planId: '1-year',
+        planName: 'Lifetime Admin Pro',
+        status: 'active',
+        price: 0,
+        formattedPrice: '$0',
+        startDate: new Date(0).toISOString(),
+        expiresAt: '2099-12-31T23:59:59.000Z',
+      };
+    }
     if (!sub) return null;
     // Check if expired
     if (sub.status === 'active' && sub.expiresAt) {
@@ -3216,6 +3280,9 @@ export const StorageService = {
   },
 
   isSubscribed(): boolean {
+    if (this.isCurrentUserAdmin()) {
+      return true;
+    }
     const sub = this.getSubscription();
     return Boolean(sub && sub.status === 'active');
   },
@@ -3354,8 +3421,8 @@ export const StorageService = {
   async purgeAllCloudData(): Promise<{ success: boolean; skipped?: boolean; message: string }> {
     let purgedCloud = false;
     try {
-      // Fail-safe 1: Never delete data for a subscribed user
-      if (this.isSubscribed()) {
+      // Fail-safe 1: Never delete data for a subscribed or lifetime admin user
+      if (this.isCurrentUserAdmin() || this.isSubscribed()) {
         return {
           success: false,
           skipped: true,

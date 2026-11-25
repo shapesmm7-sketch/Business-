@@ -57,6 +57,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
   const [imgError, setImgError] = useState(false);
   const [trialStatus, setTrialStatus] = useState(() => StorageService.getTrialStatus());
   const [isRestoringPlay, setIsRestoringPlay] = useState(false);
+  const [showExpiredSignIn, setShowExpiredSignIn] = useState(false);
 
   // Signed-in backup password state
   const [isSettingBackupPassword, setIsSettingBackupPassword] = useState(false);
@@ -81,6 +82,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
       setBackupPassword('');
       setIsSettingBackupPassword(false);
       setImgError(false);
+      setShowExpiredSignIn(false);
       setShowWebFallbackButton(!Capacitor.isNativePlatform());
 
       if (latestTrial.isExpired && !latestTrial.subscribed && PlayBillingService.isAndroid()) {
@@ -144,7 +146,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, user, showWebFallbackButton, onUserChange]);
+  }, [isOpen, user, showWebFallbackButton, showExpiredSignIn, onUserChange]);
 
   const handleEmailAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -507,7 +509,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                 </button>
               </div>
             </div>
-          ) : trialStatus.isExpired && !trialStatus.subscribed ? (
+          ) : trialStatus.isExpired && !trialStatus.subscribed && !showExpiredSignIn ? (
                 <div className="space-y-4">
                   <div className="p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-center space-y-3">
                     <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-rose-500/30">
@@ -561,9 +563,35 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                       <span>{isRestoringPlay ? 'Checking Google Play...' : 'Already Subscribed? Restore Purchase'}</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => {
+                      setError(null);
+                      setStatusMessage(null);
+                      setShowExpiredSignIn(true);
+                    }}
+                    className="w-full min-h-[42px] py-2.5 px-4 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer"
+                  >
+                    <span>Admin / Existing Pro Account Sign In</span>
+                  </button>
                 </div>
           ) : (
               <div className="space-y-4">
+                {trialStatus.isExpired && !trialStatus.subscribed && showExpiredSignIn && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setStatusMessage(null);
+                      setShowExpiredSignIn(false);
+                    }}
+                    className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition cursor-pointer"
+                  >
+                    &larr; Back
+                  </button>
+                )}
                 {/* Segmented Login / Create Account Tabs */}
                 <div
                   role="tablist"

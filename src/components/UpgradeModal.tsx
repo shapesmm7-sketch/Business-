@@ -264,13 +264,19 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
 
           {/* Active status banner if already subscribed */}
-          {isCurrentlyActive && (
+          {(isCurrentlyActive || StorageService.isCurrentUserAdmin()) && (
             <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span>
-                  <strong>Active Plan:</strong> {currentSubscription.planName} (Expires:{' '}
-                  {new Date(currentSubscription.expiresAt).toLocaleDateString()})
+                  <strong>Active Plan:</strong>{' '}
+                  {StorageService.isCurrentUserAdmin()
+                    ? 'Lifetime Admin Pro (Unlimited)'
+                    : `${currentSubscription?.planName} (Expires: ${
+                        currentSubscription?.expiresAt
+                          ? new Date(currentSubscription.expiresAt).toLocaleDateString()
+                          : 'Active'
+                      })`}
                 </span>
               </div>
               <span className="text-[10px] uppercase font-extrabold bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded">

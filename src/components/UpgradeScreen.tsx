@@ -161,10 +161,13 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
   const selectedPlanLocal = formatPlanAmount(selectedPlan.price);
   const monthlyStartingLocal = formatPlanAmount(SUBSCRIPTION_PLANS[0].price);
-  const isCurrentlyActive = subscription && subscription.status === 'active';
+  const isAdmin = StorageService.isCurrentUserAdmin();
+  const isCurrentlyActive = (subscription && subscription.status === 'active') || isAdmin;
 
   // Calculate days remaining if active
-  const daysRemaining = subscription && subscription.expiresAt
+  const daysRemaining = isAdmin
+    ? null
+    : subscription && subscription.expiresAt
     ? Math.max(0, Math.ceil((new Date(subscription.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
 
@@ -331,15 +334,29 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>
-                <strong>Active Plan:</strong> {subscription.planName} ({subscription.formattedPrice})
+                <strong>Active Plan:</strong>{' '}
+                {isAdmin
+                  ? 'Lifetime Admin Pro'
+                  : `${subscription?.planName} (${subscription?.formattedPrice})`}
               </span>
             </div>
             <div className="flex items-center gap-3 text-indigo-200 text-[11px]">
-              <span className="flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                <span>{daysRemaining} days remaining</span>
-              </span>
-              <span>Expires: {new Date(subscription.expiresAt).toLocaleDateString()}</span>
+              {isAdmin ? (
+                <span className="flex items-center gap-1 text-emerald-300 font-bold">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Lifetime Unlimited Access</span>
+                </span>
+              ) : (
+                <>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{daysRemaining} days remaining</span>
+                  </span>
+                  {subscription?.expiresAt && (
+                    <span>Expires: {new Date(subscription.expiresAt).toLocaleDateString()}</span>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -506,7 +523,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           )}
         </button>
 
-        {isCurrentlyActive && (
+        {isCurrentlyActive && !isAdmin && (
           <div className="text-center">
             <button
               id="btn-cancel-subscription"

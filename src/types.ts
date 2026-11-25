@@ -73,6 +73,9 @@ export interface TemplateCustomization {
   headerDescColor?: string;
   headerAddressColor?: string;
   receiptTextColor?: string;
+  metaTextColor?: string;
+  paymentTextColor?: string;
+  footerTextColor?: string;
   accentColor?: string;
   totalBgColor?: string;
   totalTextColor?: string;
@@ -109,6 +112,10 @@ export interface BusinessProfile {
   totalBgColor?: string; // Custom total section background fill
   totalTextColor?: string; // Custom total section text color
   paperBgColor?: string; // Custom receipt paper canvas background fill
+  receiptTextColor?: string; // Custom receipt body & items text color
+  metaTextColor?: string; // Custom receipt number, date & time text color
+  paymentTextColor?: string; // Custom payment method, balance & amount paid text color
+  footerTextColor?: string; // Custom thank you, policy disclaimers & footer text color
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;
@@ -734,6 +741,12 @@ export interface BrivuUser {
   hasPassword?: boolean;
   hasGoogleLinked?: boolean;
   provider?: 'google' | 'email' | string;
+  subscriptionStatus?: string;
+  trialPhase?: string;
+  trialInfo?: {
+    isSubscribed?: boolean;
+    [key: string]: any;
+  };
   createdAt?: string;
   updatedAt?: string;
   syncedToCloudflare?: boolean;

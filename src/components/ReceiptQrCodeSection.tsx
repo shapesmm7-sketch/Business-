@@ -8,11 +8,13 @@ interface ReceiptQrCodeSectionProps {
   className?: string;
   size?: number;
   darkBg?: boolean;
+  textStyle?: React.CSSProperties;
 }
 
 export const ReceiptQrCodeSection: React.FC<ReceiptQrCodeSectionProps> = ({
   className = '',
   darkBg = false,
+  textStyle,
 }) => {
   return (
     <div className={`flex flex-col items-center justify-center shrink-0 ${className}`}>
@@ -21,6 +23,7 @@ export const ReceiptQrCodeSection: React.FC<ReceiptQrCodeSectionProps> = ({
         className={`text-center text-[11px] tracking-wide font-medium select-none ${
           darkBg ? 'text-slate-400/80' : 'text-slate-400 dark:text-slate-500'
         }`}
+        style={textStyle}
       >
         Powered by Brivu
       </div>

@@ -179,7 +179,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </div>
             <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
-              {subscription && subscription.status === 'active'
+              {StorageService.isCurrentUserAdmin()
+                ? 'Lifetime Unlimited Pro & Cloud Storage'
+                : subscription && subscription.status === 'active'
                 ? `Expires on ${new Date(subscription.expiresAt).toLocaleDateString()}`
                 : '1 Month $3.6 • 6 Months $19.2 • 1 Year $31.9'}
             </p>

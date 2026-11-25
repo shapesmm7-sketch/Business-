@@ -66,6 +66,15 @@ export const TemplateCustomizerModal: React.FC<TemplateCustomizerModalProps> = (
   const [receiptTextColor, setReceiptTextColor] = useState<string>(
     initialCustomization.receiptTextColor || ''
   );
+  const [metaTextColor, setMetaTextColor] = useState<string>(
+    initialCustomization.metaTextColor || ''
+  );
+  const [paymentTextColor, setPaymentTextColor] = useState<string>(
+    initialCustomization.paymentTextColor || ''
+  );
+  const [footerTextColor, setFooterTextColor] = useState<string>(
+    initialCustomization.footerTextColor || ''
+  );
   const [headerTextColor, setHeaderTextColor] = useState<string>(
     initialCustomization.headerTextColor || ''
   );
@@ -104,6 +113,9 @@ export const TemplateCustomizerModal: React.FC<TemplateCustomizerModalProps> = (
     headerDescColor: headerDescColor || undefined,
     headerAddressColor: headerAddressColor || undefined,
     receiptTextColor: receiptTextColor || undefined,
+    metaTextColor: metaTextColor || undefined,
+    paymentTextColor: paymentTextColor || undefined,
+    footerTextColor: footerTextColor || undefined,
     headerTextColor: headerTextColor || undefined,
     accentColor: accentColor || undefined,
     totalBgColor: totalBgColor || undefined,
@@ -121,6 +133,9 @@ export const TemplateCustomizerModal: React.FC<TemplateCustomizerModalProps> = (
     setHeaderDescColor('');
     setHeaderAddressColor('');
     setReceiptTextColor('');
+    setMetaTextColor('');
+    setPaymentTextColor('');
+    setFooterTextColor('');
     setHeaderTextColor('');
     setAccentColor('');
     setTotalBgColor('');
@@ -308,8 +323,17 @@ export const TemplateCustomizerModal: React.FC<TemplateCustomizerModalProps> = (
                     Icon: Sliders,
                   },
                   {
+                    id: 'metaText',
+                    label: 'Receipt No. & Date/Time Color',
+                    subtitle: 'Receipt/Invoice number and date & time row color',
+                    value: metaTextColor,
+                    setter: setMetaTextColor,
+                    defaultFallback: '#64748B',
+                    Icon: FileText,
+                  },
+                  {
                     id: 'receiptText',
-                    label: 'Receipt Text Color',
+                    label: 'Receipt Items & Body Text Color',
                     subtitle: 'Body text color for items, table info & receipt details',
                     value: receiptTextColor,
                     setter: setReceiptTextColor,
@@ -324,6 +348,24 @@ export const TemplateCustomizerModal: React.FC<TemplateCustomizerModalProps> = (
                     setter: setTotalBgColor,
                     defaultFallback: '#059669',
                     Icon: CreditCard,
+                  },
+                  {
+                    id: 'paymentText',
+                    label: 'Payment & Amount Paid Color',
+                    subtitle: 'Payment method (Cash), balance & Amount Paid in words',
+                    value: paymentTextColor,
+                    setter: setPaymentTextColor,
+                    defaultFallback: '#475569',
+                    Icon: CreditCard,
+                  },
+                  {
+                    id: 'footerText',
+                    label: 'Policies & Footer Color',
+                    subtitle: 'Thank you, not returnable/refundable & footer text',
+                    value: footerTextColor,
+                    setter: setFooterTextColor,
+                    defaultFallback: '#64748B',
+                    Icon: FileText,
                   },
                   {
                     id: 'paperBg',

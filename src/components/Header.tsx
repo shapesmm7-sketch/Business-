@@ -109,11 +109,17 @@ export const Header: React.FC<HeaderProps> = ({
       setToastMsg('Your session expired. Please sign in again.');
       setTimeout(() => setToastMsg(null), 4000);
     };
+    const handleOpenAuthEvent = () => {
+      setAuthModalNotice(null);
+      setIsAuthModalOpen(true);
+    };
     window.addEventListener('brivu_auth_changed', handleUserUpdate);
     window.addEventListener('brivu_auth_expired', handleAuthExpired);
+    window.addEventListener('brivu_open_auth_modal', handleOpenAuthEvent);
     return () => {
       window.removeEventListener('brivu_auth_changed', handleUserUpdate);
       window.removeEventListener('brivu_auth_expired', handleAuthExpired);
+      window.removeEventListener('brivu_open_auth_modal', handleOpenAuthEvent);
     };
   }, []);
 

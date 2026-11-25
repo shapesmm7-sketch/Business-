@@ -458,7 +458,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
                 headerNameColor: receipt.customTheme?.headerNameColor || saved?.headerNameColor,
                 headerDescColor: receipt.customTheme?.headerDescColor || saved?.headerDescColor,
                 headerAddressColor: receipt.customTheme?.headerAddressColor || saved?.headerAddressColor,
-                receiptTextColor: receipt.customTheme?.receiptTextColor || saved?.receiptTextColor,
+                receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || saved?.receiptTextColor,
+                metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || saved?.metaTextColor,
+                paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || saved?.paymentTextColor,
+                footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || saved?.footerTextColor,
               };
             })(),
             isSample: false,

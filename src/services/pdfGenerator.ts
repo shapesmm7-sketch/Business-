@@ -22,43 +22,209 @@ if (typeof window !== 'undefined') {
 import { Receipt, ReceiptTemplateId, TemplateCustomization, BusinessProfile } from '../types';
 import { formatCurrency, formatDateTime } from '../utils/currencies';
 import { getTemplateConfig } from '../utils/templates';
-import { resolveEffectiveTheme, extractPrimaryHex } from '../utils/colors';
+import { resolveEffectiveTheme, extractPrimaryHex, hexToRgb, getLuminance } from '../utils/colors';
 import { generateReceiptQrDataUrl, generateVerificationHash } from '../utils/qrCode';
 import { StorageService } from './storage';
 import { saveJsPdf, saveFile, shareContent, ensureStoragePermission, SaveFileResult } from './fileSaver';
 import { ReceiptLayoutRenderer } from '../components/ReceiptLayoutRenderer';
 
 const UNSUPPORTED_CSS_COLOR_RE = /(^|[^a-zA-Z0-9_-])(oklch|oklab|color-mix|lab|lch|color)\(/gi;
-const GRADIENT_COLORSPACE_HINT_RE = /\s+in\s+(?:oklab|oklch|srgb(?:-linear)?|hsl|hwb|lab|lch)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?(?=\s*,)/gi;
+const GRADIENT_COLORSPACE_HINT_RE = /\s+in\s+(?:oklab|oklch|srgb(?:-linear)?|hsl|hwb|lab|lch)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?(?=\s*(?:,|;|}|$))/gi;
 const GRADIENT_LEADING_COLORSPACE_RE = /(\(\s*)in\s+(?:oklab|oklch|srgb(?:-linear)?|hsl|hwb|lab|lch)(?:\s+(?:shorter|longer|increasing|decreasing)\s+hue)?\s*,/gi;
+
+function parseCssNumberOrPercent(token: string | undefined, percentScale: number): number {
+  if (!token) return 0;
+  const clean = token.trim().toLowerCase();
+  if (clean === 'none') return 0;
+  if (clean.endsWith('%')) {
+    const val = parseFloat(clean.slice(0, -1));
+    return Number.isFinite(val) ? (val / 100) * percentScale : 0;
+  }
+  const val = parseFloat(clean);
+  return Number.isFinite(val) ? val : 0;
+}
+
+function parseCssAngleDeg(token: string | undefined): number {
+  if (!token) return 0;
+  const clean = token.trim().toLowerCase();
+  if (clean === 'none') return 0;
+  if (clean.endsWith('deg')) return parseFloat(clean.slice(0, -3)) || 0;
+  if (clean.endsWith('rad')) return ((parseFloat(clean.slice(0, -3)) || 0) * 180) / Math.PI;
+  if (clean.endsWith('grad')) return ((parseFloat(clean.slice(0, -4)) || 0) * 360) / 400;
+  if (clean.endsWith('turn')) return (parseFloat(clean.slice(0, -4)) || 0) * 360;
+  const val = parseFloat(clean);
+  return Number.isFinite(val) ? val : 0;
+}
+
+function linearSrgbChannelTo255(c: number): number {
+  const clamped = Math.max(0, Math.min(1, c));
+  const gamma = clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+  return Math.max(0, Math.min(255, Math.round(gamma * 255)));
+}
+
+function formatRgbOrRgba(r: number, g: number, b: number, alpha: number): string {
+  const cr = Math.max(0, Math.min(255, Math.round(r)));
+  const cg = Math.max(0, Math.min(255, Math.round(g)));
+  const cb = Math.max(0, Math.min(255, Math.round(b)));
+  const ca = Math.max(0, Math.min(1, alpha));
+  if (ca >= 0.999) {
+    return `rgb(${cr}, ${cg}, ${cb})`;
+  }
+  return `rgba(${cr}, ${cg}, ${cb}, ${Number(ca.toFixed(3))})`;
+}
+
+function oklabToCssRgba(L: number, a: number, b: number, alpha: number): string {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  const l = l_ * l_ * l_;
+  const m = m_ * m_ * m_;
+  const s = s_ * s_ * s_;
+
+  const lr = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  const lb = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+
+  return formatRgbOrRgba(
+    linearSrgbChannelTo255(lr),
+    linearSrgbChannelTo255(lg),
+    linearSrgbChannelTo255(lb),
+    alpha
+  );
+}
+
+function parseModernColorFallback(colorStr: string): string | null {
+  const s = colorStr.trim();
+  if (!s) return null;
+
+  // oklch(L C H [/ alpha])
+  const oklchMatch = s.match(/^oklch\(\s*([^)]+)\s*\)$/i);
+  if (oklchMatch) {
+    const [chanPart, alphaPart] = oklchMatch[1].split('/');
+    const parts = chanPart.trim().split(/[\s,]+/).filter(Boolean);
+    if (parts.length >= 3) {
+      const L = parseCssNumberOrPercent(parts[0], 1);
+      const C = parseCssNumberOrPercent(parts[1], 0.4);
+      const H = (parseCssAngleDeg(parts[2]) * Math.PI) / 180;
+      const alpha = alphaPart !== undefined ? parseCssNumberOrPercent(alphaPart, 1) : 1;
+      return oklabToCssRgba(L, C * Math.cos(H), C * Math.sin(H), alpha);
+    }
+  }
+
+  // oklab(L a b [/ alpha])
+  const oklabMatch = s.match(/^oklab\(\s*([^)]+)\s*\)$/i);
+  if (oklabMatch) {
+    const [chanPart, alphaPart] = oklabMatch[1].split('/');
+    const parts = chanPart.trim().split(/[\s,]+/).filter(Boolean);
+    if (parts.length >= 3) {
+      const L = parseCssNumberOrPercent(parts[0], 1);
+      const a = parseCssNumberOrPercent(parts[1], 0.4);
+      const b = parseCssNumberOrPercent(parts[2], 0.4);
+      const alpha = alphaPart !== undefined ? parseCssNumberOrPercent(alphaPart, 1) : 1;
+      return oklabToCssRgba(L, a, b, alpha);
+    }
+  }
+
+  // color(srgb r g b [/ alpha]) or color(srgb-linear r g b [/ alpha])
+  const srgbMatch = s.match(/^color\(\s*(srgb-linear|srgb)\s+([^)]+)\s*\)$/i);
+  if (srgbMatch) {
+    const space = srgbMatch[1].toLowerCase();
+    const [chanPart, alphaPart] = srgbMatch[2].split('/');
+    const parts = chanPart.trim().split(/[\s,]+/).filter(Boolean);
+    if (parts.length >= 3) {
+      const r = parseCssNumberOrPercent(parts[0], 1);
+      const g = parseCssNumberOrPercent(parts[1], 1);
+      const b = parseCssNumberOrPercent(parts[2], 1);
+      const alpha = alphaPart !== undefined ? parseCssNumberOrPercent(alphaPart, 1) : 1;
+      if (space === 'srgb-linear') {
+        return formatRgbOrRgba(
+          linearSrgbChannelTo255(r),
+          linearSrgbChannelTo255(g),
+          linearSrgbChannelTo255(b),
+          alpha
+        );
+      }
+      return formatRgbOrRgba(r * 255, g * 255, b * 255, alpha);
+    }
+  }
+
+  return null;
+}
+
+function canvasColorToRgba(candidate: string, ctx2d: CanvasRenderingContext2D | null): string | null {
+  if (!ctx2d || !candidate) return null;
+  const trimmed = candidate.trim();
+  if (!trimmed) return null;
+  if (/^rgba?\(/i.test(trimmed)) return trimmed;
+  try {
+    ctx2d.fillStyle = '#010203';
+    ctx2d.fillStyle = trimmed;
+    if (ctx2d.fillStyle === '#010203') {
+      ctx2d.fillStyle = '#040506';
+      ctx2d.fillStyle = trimmed;
+      if (ctx2d.fillStyle === '#040506') {
+        return null;
+      }
+    }
+    const normalized = String(ctx2d.fillStyle || '');
+    if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+      const [r, g, b] = hexToRgb(normalized);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+    if (/^rgba?\(/i.test(normalized)) {
+      return normalized;
+    }
+    ctx2d.clearRect(0, 0, 1, 1);
+    ctx2d.fillRect(0, 0, 1, 1);
+    const data = ctx2d.getImageData(0, 0, 1, 1).data;
+    return formatRgbOrRgba(data[0], data[1], data[2], data[3] / 255);
+  } catch {
+    return null;
+  }
+}
 
 function resolveCssColorExpr(
   expr: string,
   probe: HTMLElement,
+  ctx2d: CanvasRenderingContext2D | null,
   win: Window,
   cache: Map<string, string>
 ): string {
   const cached = cache.get(expr);
   if (cached !== undefined) return cached;
 
-  let resolved = 'rgba(0, 0, 0, 0)';
+  let resolved: string | null = null;
+  let computed = '';
   try {
     probe.style.color = '';
     probe.style.color = expr;
     if (probe.style.color) {
-      const computed = win.getComputedStyle(probe).color;
+      computed = win.getComputedStyle(probe).color || '';
       if (computed && /^rgba?\(/i.test(computed)) {
         resolved = computed;
       }
     }
   } catch {}
-  cache.set(expr, resolved);
-  return resolved;
+
+  if (!resolved) {
+    const candidate = computed || expr;
+    resolved =
+      parseModernColorFallback(candidate) ||
+      canvasColorToRgba(candidate, ctx2d) ||
+      parseModernColorFallback(expr) ||
+      canvasColorToRgba(expr, ctx2d);
+  }
+
+  const finalColor = resolved || 'rgba(0, 0, 0, 0)';
+  cache.set(expr, finalColor);
+  return finalColor;
 }
 
 function replaceUnsupportedColorFunctions(
   cssText: string,
   probe: HTMLElement,
+  ctx2d: CanvasRenderingContext2D | null,
   win: Window,
   cache: Map<string, string>
 ): string {
@@ -96,7 +262,7 @@ function replaceUnsupportedColorFunctions(
     if (endIdx === -1) break;
 
     const fullExpr = out.slice(fnStart, endIdx + 1);
-    const replacement = resolveCssColorExpr(fullExpr, probe, win, cache);
+    const replacement = resolveCssColorExpr(fullExpr, probe, ctx2d, win, cache);
     result += out.slice(lastIndex, fnStart) + replacement;
     lastIndex = endIdx + 1;
     UNSUPPORTED_CSS_COLOR_RE.lastIndex = lastIndex;
@@ -117,12 +283,23 @@ function sanitizeClonedStylesForHtml2Canvas(clonedDoc: Document, clonedElement: 
   probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none;';
   clonedElement.appendChild(probe);
 
+  let ctx2d: CanvasRenderingContext2D | null = null;
+  try {
+    const sampleCanvas = clonedDoc.createElement('canvas');
+    sampleCanvas.width = 1;
+    sampleCanvas.height = 1;
+    ctx2d = sampleCanvas.getContext('2d', { willReadFrequently: true });
+  } catch {
+    ctx2d = null;
+  }
+
   const cache = new Map<string, string>();
   const needsSanitize = (s: string | null | undefined): boolean =>
     Boolean(s && /(oklch|oklab|color-mix|\blab\(|\blch\(|\bcolor\(|\bin\s+(?:oklab|oklch|srgb|hsl|hwb|lab|lch))/i.test(s));
 
   try {
-    // 1. Convert accessible stylesheet <link> tags containing modern color spaces into sanitized inline <style>
+    // 1. Collect and sanitize all <link> & <style> rules BEFORE swapping DOM nodes so :root CSS vars stay live for color-mix()
+    const linkReplacements: Array<{ linkEl: HTMLLinkElement; cssText: string }> = [];
     const linkEls = Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]')) as HTMLLinkElement[];
     for (const linkEl of linkEls) {
       try {
@@ -135,34 +312,48 @@ function sanitizeClonedStylesForHtml2Canvas(clonedDoc: Document, clonedElement: 
           rawCss += rules[i].cssText + '\n';
         }
         if (needsSanitize(rawCss)) {
-          const styleEl = clonedDoc.createElement('style');
-          styleEl.textContent = replaceUnsupportedColorFunctions(rawCss, probe, win, cache);
-          linkEl.parentNode?.insertBefore(styleEl, linkEl);
-          linkEl.parentNode?.removeChild(linkEl);
+          linkReplacements.push({
+            linkEl,
+            cssText: replaceUnsupportedColorFunctions(rawCss, probe, ctx2d, win, cache),
+          });
         }
       } catch {
         // Cross-origin stylesheet (e.g., Google Fonts) - ignore safely
       }
     }
 
-    // 2. Sanitize all inline <style> blocks
-    const styleEls = Array.from(clonedDoc.querySelectorAll('style'));
+    const styleReplacements: Array<{ styleEl: HTMLStyleElement; cssText: string }> = [];
+    const styleEls = Array.from(clonedDoc.querySelectorAll('style')) as HTMLStyleElement[];
     for (const styleEl of styleEls) {
       const txt = styleEl.textContent;
       if (needsSanitize(txt)) {
-        styleEl.textContent = replaceUnsupportedColorFunctions(txt || '', probe, win, cache);
+        styleReplacements.push({
+          styleEl,
+          cssText: replaceUnsupportedColorFunctions(txt || '', probe, ctx2d, win, cache),
+        });
       }
     }
 
-    // 3. Sanitize inline styles and gradient-clipped text on clonedElement subtree
+    for (const { linkEl, cssText } of linkReplacements) {
+      const styleEl = clonedDoc.createElement('style');
+      styleEl.textContent = cssText;
+      linkEl.parentNode?.insertBefore(styleEl, linkEl);
+      linkEl.parentNode?.removeChild(linkEl);
+    }
+    for (const { styleEl, cssText } of styleReplacements) {
+      styleEl.textContent = cssText;
+    }
+
+    // 2. Sanitize inline styles, gradient-clipped text, and any remaining modern computed colors on clonedElement subtree
     const nodes: HTMLElement[] = [
       clonedElement,
       ...(Array.from(clonedElement.querySelectorAll('*')) as HTMLElement[]),
     ];
     for (const el of nodes) {
+      if (el === probe) continue;
       const inlineStyle = el.getAttribute('style');
       if (inlineStyle && needsSanitize(inlineStyle)) {
-        el.setAttribute('style', replaceUnsupportedColorFunctions(inlineStyle, probe, win, cache));
+        el.setAttribute('style', replaceUnsupportedColorFunctions(inlineStyle, probe, ctx2d, win, cache));
       }
       try {
         const cs = win.getComputedStyle(el);
@@ -176,6 +367,28 @@ function sanitizeClonedStylesForHtml2Canvas(clonedDoc: Document, clonedElement: 
           el.style.backgroundImage = 'none';
           el.style.backgroundColor = 'transparent';
           el.style.color = fallbackHex;
+        } else {
+          if (needsSanitize(cs.color)) {
+            el.style.color = resolveCssColorExpr(cs.color, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.backgroundColor)) {
+            el.style.backgroundColor = resolveCssColorExpr(cs.backgroundColor, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.borderTopColor)) {
+            el.style.borderTopColor = resolveCssColorExpr(cs.borderTopColor, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.borderRightColor)) {
+            el.style.borderRightColor = resolveCssColorExpr(cs.borderRightColor, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.borderBottomColor)) {
+            el.style.borderBottomColor = resolveCssColorExpr(cs.borderBottomColor, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.borderLeftColor)) {
+            el.style.borderLeftColor = resolveCssColorExpr(cs.borderLeftColor, probe, ctx2d, win, cache);
+          }
+          if (needsSanitize(cs.backgroundImage)) {
+            el.style.backgroundImage = replaceUnsupportedColorFunctions(cs.backgroundImage, probe, ctx2d, win, cache);
+          }
         }
       } catch {}
     }
@@ -215,7 +428,11 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
         latest.headerTextColor ||
         latest.totalBgColor ||
         latest.totalTextColor ||
-        latest.paperBgColor)
+        latest.paperBgColor ||
+        latest.receiptTextColor ||
+        latest.metaTextColor ||
+        latest.paymentTextColor ||
+        latest.footerTextColor)
   );
   const resolvedSignature =
     latest.signature && latest.signature.trim() !== ''
@@ -228,6 +445,10 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
   const brandTotalBg = hasLatestProfile ? cleanColor(latest.totalBgColor) : cleanColor(snapshot.totalBgColor);
   const brandTotalText = hasLatestProfile ? cleanColor(latest.totalTextColor) : cleanColor(snapshot.totalTextColor);
   const brandPaperBg = hasLatestProfile ? cleanColor(latest.paperBgColor) : cleanColor(snapshot.paperBgColor);
+  const brandReceiptText = hasLatestProfile ? cleanColor(latest.receiptTextColor) : cleanColor(snapshot.receiptTextColor);
+  const brandMetaText = hasLatestProfile ? cleanColor(latest.metaTextColor) : cleanColor(snapshot.metaTextColor);
+  const brandPaymentText = hasLatestProfile ? cleanColor(latest.paymentTextColor) : cleanColor(snapshot.paymentTextColor);
+  const brandFooterText = hasLatestProfile ? cleanColor(latest.footerTextColor) : cleanColor(snapshot.footerTextColor);
 
   return {
     name: effectiveName,
@@ -249,6 +470,10 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
     totalBgColor: cleanColor(receipt.customTheme?.totalBgColor) || brandTotalBg,
     totalTextColor: cleanColor(receipt.customTheme?.totalTextColor) || brandTotalText,
     paperBgColor: cleanColor(receipt.customTheme?.paperBgColor) || brandPaperBg,
+    receiptTextColor: cleanColor(receipt.customTheme?.receiptTextColor) || brandReceiptText,
+    metaTextColor: cleanColor(receipt.customTheme?.metaTextColor) || brandMetaText,
+    paymentTextColor: cleanColor(receipt.customTheme?.paymentTextColor) || brandPaymentText,
+    footerTextColor: cleanColor(receipt.customTheme?.footerTextColor) || brandFooterText,
     bankName: (latest.bankName && latest.bankName.trim() !== '') ? latest.bankName : (snapshot.bankName || ''),
     bankAccountNumber: (latest.bankAccountNumber && latest.bankAccountNumber.trim() !== '') ? latest.bankAccountNumber : (snapshot.bankAccountNumber || ''),
     bankAccountName: (latest.bankAccountName && latest.bankAccountName.trim() !== '') ? latest.bankAccountName : (snapshot.bankAccountName || ''),
@@ -384,6 +609,57 @@ export function calculateReceiptPageHeight(receipt: Receipt, template: ReceiptTe
   return Math.min(297, Math.max(130, Math.ceil(h)));
 }
 
+interface PdfSectionColors {
+  isDarkPaper: boolean;
+  metaRgb: [number, number, number];
+  metaSubRgb: [number, number, number];
+  bodyRgb: [number, number, number];
+  bodySubRgb: [number, number, number];
+  paymentRgb: [number, number, number];
+  paymentSubRgb: [number, number, number];
+  footerRgb: [number, number, number];
+  footerSubRgb: [number, number, number];
+  dividerRgb: [number, number, number];
+}
+
+function resolvePdfSectionColors(
+  customTheme?: TemplateCustomization,
+  pageBg?: [number, number, number]
+): PdfSectionColors {
+  const isDarkPaper = Boolean(pageBg && getLuminance(pageBg[0], pageBg[1], pageBg[2]) < 0.45);
+  const metaHex = extractPrimaryHex(customTheme?.metaTextColor);
+  const bodyHex = extractPrimaryHex(customTheme?.receiptTextColor);
+  const paymentHex = extractPrimaryHex(customTheme?.paymentTextColor);
+  const footerHex = extractPrimaryHex(customTheme?.footerTextColor);
+
+  const defaultStrong: [number, number, number] = isDarkPaper ? [248, 250, 252] : [15, 23, 42];
+  const defaultMuted: [number, number, number] = isDarkPaper ? [226, 232, 240] : [71, 85, 105];
+  const defaultSoft: [number, number, number] = isDarkPaper ? [203, 213, 225] : [100, 116, 139];
+
+  const metaRgb = metaHex ? hexToRgb(metaHex) : defaultStrong;
+  const metaSubRgb = metaHex ? hexToRgb(metaHex) : defaultMuted;
+  const bodyRgb = bodyHex ? hexToRgb(bodyHex) : defaultStrong;
+  const bodySubRgb = bodyHex ? hexToRgb(bodyHex) : defaultMuted;
+  const paymentRgb = paymentHex ? hexToRgb(paymentHex) : bodyRgb;
+  const paymentSubRgb = paymentHex ? hexToRgb(paymentHex) : bodySubRgb;
+  const footerRgb = footerHex ? hexToRgb(footerHex) : defaultStrong;
+  const footerSubRgb = footerHex ? hexToRgb(footerHex) : defaultSoft;
+  const dividerRgb: [number, number, number] = isDarkPaper ? [148, 163, 184] : [203, 213, 225];
+
+  return {
+    isDarkPaper,
+    metaRgb,
+    metaSubRgb,
+    bodyRgb,
+    bodySubRgb,
+    paymentRgb,
+    paymentSubRgb,
+    footerRgb,
+    footerSubRgb,
+    dividerRgb,
+  };
+}
+
 /**
  * High quality vector PDF generator for Brivu
  * Supports 15 professional templates with selectable text, business logos, and offline QR verification
@@ -392,7 +668,14 @@ export const PdfGenerator = {
   /**
    * Appends Financial details (Tax, Shipping, Balance Due/Change, Bank details, Amount in Words, and Custom Notes)
    */
-  appendFinancialInfo(doc: jsPDF, receipt: Receipt, startY: number, margin: number, pageWidth: number): number {
+  appendFinancialInfo(
+    doc: jsPDF,
+    receipt: Receipt,
+    startY: number,
+    margin: number,
+    pageWidth: number,
+    sectionColors?: PdfSectionColors
+  ): number {
     let y = startY;
     
     const isOwed = receipt.balance < 0;
@@ -405,6 +688,11 @@ export const PdfGenerator = {
 
     const totalsX = isCompact ? margin : Math.max(margin + 40, pageWidth - margin - 85);
     const rightMargin = isCompact ? pageWidth - margin : pageWidth - margin - 4;
+    const bodyRgb = sectionColors?.bodyRgb || [15, 23, 42];
+    const bodySubRgb = sectionColors?.bodySubRgb || [71, 85, 105];
+    const paymentRgb = sectionColors?.paymentRgb || [15, 23, 42];
+    const hasCustomPaymentColor = Boolean(receipt.customTheme?.paymentTextColor);
+    const isDarkPaper = Boolean(sectionColors?.isDarkPaper);
     
     y += 2;
 
@@ -412,7 +700,7 @@ export const PdfGenerator = {
     if (receipt.taxAmount && receipt.taxAmount > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
+      doc.setTextColor(bodySubRgb[0], bodySubRgb[1], bodySubRgb[2]);
       doc.text(`Tax / VAT (${receipt.taxRate || 0}%):`, totalsX, y);
       doc.text(`+${formatCurrency(receipt.taxAmount, currency)}`, rightMargin, y, { align: 'right' });
       y += 5;
@@ -422,7 +710,7 @@ export const PdfGenerator = {
     if (receipt.shippingFee && receipt.shippingFee > 0) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
+      doc.setTextColor(bodySubRgb[0], bodySubRgb[1], bodySubRgb[2]);
       doc.text('Shipping / Delivery:', totalsX, y);
       doc.text(`+${formatCurrency(receipt.shippingFee, currency)}`, rightMargin, y, { align: 'right' });
       y += 5;
@@ -431,12 +719,19 @@ export const PdfGenerator = {
     if (isOwed || hasChange) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
+      if (hasCustomPaymentColor) {
+        doc.setTextColor(paymentRgb[0], paymentRgb[1], paymentRgb[2]);
+      } else if (isOwed) {
+        if (isDarkPaper) doc.setTextColor(252, 211, 77);
+        else doc.setTextColor(217, 119, 6);
+      } else {
+        if (isDarkPaper) doc.setTextColor(110, 231, 183);
+        else doc.setTextColor(16, 185, 129);
+      }
       if (isOwed) {
-        doc.setTextColor(217, 119, 6); // amber-600
         doc.text(isBillStyle ? 'Balance Due to Pay:' : 'Balance Due:', totalsX, y);
         doc.text(formatCurrency(Math.abs(receipt.balance), currency), rightMargin, y, { align: 'right' });
       } else {
-        doc.setTextColor(16, 185, 129); // emerald-500
         doc.text('Change:', totalsX, y);
         doc.text(formatCurrency(Math.abs(receipt.balance), currency), rightMargin, y, { align: 'right' });
       }
@@ -447,7 +742,7 @@ export const PdfGenerator = {
       y += 1.5;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(paymentRgb[0], paymentRgb[1], paymentRgb[2]);
       doc.text(isBillStyle ? 'Amount in Words:' : 'Amount Paid in Words:', margin, y);
       doc.setFont('helvetica', 'italic');
       const wordsLines = doc.splitTextToSize(receipt.amountInWords.toUpperCase(), pageWidth - margin * 2 - 38);
@@ -460,10 +755,11 @@ export const PdfGenerator = {
       y += 1.5;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(79, 70, 229); // indigo-600
+      if (isDarkPaper) doc.setTextColor(165, 180, 252);
+      else doc.setTextColor(79, 70, 229);
       doc.text('Payment / Bank Details:', margin, y);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(30, 41, 59);
+      doc.setTextColor(bodyRgb[0], bodyRgb[1], bodyRgb[2]);
       const bankLines = doc.splitTextToSize(receipt.bankDetails.trim(), pageWidth - margin * 2 - 42);
       doc.text(bankLines, margin + 42, y);
       y += bankLines.length * 4.5 + 2;
@@ -475,7 +771,7 @@ export const PdfGenerator = {
       y += 1.5;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(bodyRgb[0], bodyRgb[1], bodyRgb[2]);
       doc.text('Notes:', margin, y);
       doc.setFont('helvetica', 'normal');
       const notesLines = doc.splitTextToSize(receipt.notes.trim(), pageWidth - margin * 2 - 15);
@@ -495,7 +791,8 @@ export const PdfGenerator = {
     startY: number,
     margin: number,
     pageWidth: number,
-    align: 'right' | 'center' = 'right'
+    align: 'right' | 'center' = 'right',
+    sectionColors?: PdfSectionColors
   ): number {
     const business = receipt.businessSnapshot;
     const hasSigImage = Boolean(business.signature && business.signature.startsWith('data:image'));
@@ -521,7 +818,9 @@ export const PdfGenerator = {
     }
 
     // Signature line
-    doc.setDrawColor(148, 163, 184);
+    const divRgb = sectionColors?.dividerRgb || [148, 163, 184];
+    const fSubRgb = sectionColors?.footerSubRgb || [100, 116, 139];
+    doc.setDrawColor(divRgb[0], divRgb[1], divRgb[2]);
     doc.setLineWidth(0.3);
     doc.line(lineX, y, lineX + lineW, y);
     y += 4;
@@ -529,7 +828,7 @@ export const PdfGenerator = {
     // Label
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
+    doc.setTextColor(fSubRgb[0], fSubRgb[1], fSubRgb[2]);
     doc.text('Authorized Signature', lineX + lineW / 2, y, { align: 'center' });
     y += 5;
 
@@ -544,7 +843,8 @@ export const PdfGenerator = {
     receipt: Receipt,
     startY: number,
     margin: number,
-    pageWidth: number
+    pageWidth: number,
+    sectionColors?: PdfSectionColors
   ): number {
     let y = startY;
     const hasThankYouInNotes = receipt.notes && receipt.notes.toLowerCase().includes('thank');
@@ -554,6 +854,8 @@ export const PdfGenerator = {
 
     const showNonReturnable = receipt.nonReturnable === true || (receipt.nonReturnable === undefined && !receipt.nonRefundable);
     const showNonRefundable = Boolean(receipt.nonRefundable);
+    const footerRgb = sectionColors?.footerRgb || [15, 23, 42];
+    const footerSubRgb = sectionColors?.footerSubRgb || [100, 116, 139];
 
     if (thankYouText || showNonReturnable || showNonRefundable) {
       y += 2;
@@ -562,7 +864,7 @@ export const PdfGenerator = {
       if (thankYouText) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10.5);
-        doc.setTextColor(15, 23, 42);
+        doc.setTextColor(footerRgb[0], footerRgb[1], footerRgb[2]);
         const thankLines = doc.splitTextToSize(thankYouText, pageWidth - margin * 2);
         doc.text(thankLines, pageWidth / 2, y, { align: 'center' });
         y += thankLines.length * 4.5 + 1;
@@ -571,7 +873,7 @@ export const PdfGenerator = {
       if (showNonReturnable) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(8);
-        doc.setTextColor(100, 116, 139);
+        doc.setTextColor(footerSubRgb[0], footerSubRgb[1], footerSubRgb[2]);
         doc.text('Goods once sold are not returnable.', pageWidth / 2, y, { align: 'center' });
         y += 4;
       }
@@ -579,7 +881,7 @@ export const PdfGenerator = {
       if (showNonRefundable) {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(8);
-        doc.setTextColor(100, 116, 139);
+        doc.setTextColor(footerSubRgb[0], footerSubRgb[1], footerSubRgb[2]);
         doc.text('Money paid are not refundable.', pageWidth / 2, y, { align: 'center' });
         y += 4;
       }
@@ -596,13 +898,15 @@ export const PdfGenerator = {
     receipt: Receipt,
     startY: number,
     pageWidth: number,
-    size: number = 22
+    size: number = 22,
+    sectionColors?: PdfSectionColors
   ): Promise<number> {
     // Single clean footer following naturally after receipt content
     const footerY = startY + 8;
+    const fSubRgb = sectionColors?.footerSubRgb || [148, 163, 184];
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
+    doc.setTextColor(fSubRgb[0], fSubRgb[1], fSubRgb[2]);
     doc.text('Powered by Brivu', pageWidth / 2, footerY, { align: 'center' });
     return footerY + 5;
   },
@@ -722,7 +1026,10 @@ export const PdfGenerator = {
               headerNameColor: receipt.customTheme?.headerNameColor || saved?.headerNameColor,
               headerDescColor: receipt.customTheme?.headerDescColor || saved?.headerDescColor,
               headerAddressColor: receipt.customTheme?.headerAddressColor || saved?.headerAddressColor,
-              receiptTextColor: receipt.customTheme?.receiptTextColor || saved?.receiptTextColor,
+              receiptTextColor: receipt.customTheme?.receiptTextColor || resolvedBiz.receiptTextColor || saved?.receiptTextColor,
+              metaTextColor: receipt.customTheme?.metaTextColor || resolvedBiz.metaTextColor || saved?.metaTextColor,
+              paymentTextColor: receipt.customTheme?.paymentTextColor || resolvedBiz.paymentTextColor || saved?.paymentTextColor,
+              footerTextColor: receipt.customTheme?.footerTextColor || resolvedBiz.footerTextColor || saved?.footerTextColor,
             };
           })(),
           isSample: false,
@@ -985,8 +1292,13 @@ export const PdfGenerator = {
       badgeText: effectiveBadge,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
     };
     const theme = resolveEffectiveTheme(receipt.template || 'modern', accentColor, customTheme);
+    const sc = resolvePdfSectionColors(customTheme, theme.pdf.pageBg);
 
     // Page background if theme specifies
     if (theme.pdf.pageBg) {
@@ -1165,21 +1477,25 @@ export const PdfGenerator = {
 
     // Details column (Invoice No / Quotation No / Receipt No)
     const col2X = margin + 92;
+    const cardMetaLabelRgb = customTheme.metaTextColor ? sc.metaSubRgb : ([100, 116, 139] as [number, number, number]);
+    const cardMetaValRgb = customTheme.metaTextColor ? sc.metaRgb : ([15, 23, 42] as [number, number, number]);
+    const cardMetaSubRgb = customTheme.metaTextColor ? sc.metaSubRgb : ([71, 85, 105] as [number, number, number]);
+    const cardPayRgb = customTheme.paymentTextColor ? sc.paymentRgb : ([71, 85, 105] as [number, number, number]);
 
     // Doc No (Row 1)
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
+    doc.setTextColor(cardMetaLabelRgb[0], cardMetaLabelRgb[1], cardMetaLabelRgb[2]);
     doc.text(isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:', col2X, y + 6.5);
     doc.setFont(theme.pdf.font, 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(cardMetaValRgb[0], cardMetaValRgb[1], cardMetaValRgb[2]);
     doc.text(receipt.receiptNumber, col2X + 26, y + 6.5);
 
     // Date & Time (Row 2)
     doc.setFont(theme.pdf.font, 'normal');
     doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(cardMetaSubRgb[0], cardMetaSubRgb[1], cardMetaSubRgb[2]);
     doc.text(`Date: ${formatDateTime(receipt.createdAt)}`, col2X, y + 12);
 
     // Row 3: Due Date / Valid Until / Payment Info
@@ -1191,6 +1507,7 @@ export const PdfGenerator = {
       doc.text(dueText, col2X, y + 17.5);
     } else {
       const statusNote = receipt.paymentStatus === 'paid' ? 'Paid' : receipt.paymentStatus === 'partial' ? 'Partial' : 'Pending';
+      doc.setTextColor(cardPayRgb[0], cardPayRgb[1], cardPayRgb[2]);
       doc.text(`Payment: ${receipt.paymentMethod} (${statusNote})`, col2X, y + 17.5);
     }
 
@@ -1199,7 +1516,7 @@ export const PdfGenerator = {
     // Items Table Header
     doc.setFillColor(241, 245, 249);
     doc.rect(margin, y, contentWidth, 9, 'F');
-    doc.setDrawColor(203, 213, 225);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.line(margin, y + 9, pageWidth - margin, y + 9);
 
     doc.setFont('helvetica', 'bold');
@@ -1217,27 +1534,27 @@ export const PdfGenerator = {
     doc.setFontSize(9);
 
     receipt.items.forEach((item, index) => {
-      if (index % 2 === 1) {
+      if (index % 2 === 1 && !sc.isDarkPaper) {
         doc.setFillColor(248, 250, 252);
         doc.rect(margin, y, contentWidth, 8.5, 'F');
       }
 
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       const itemName = item.name.length > 50 ? item.name.substring(0, 50) + '...' : item.name;
       doc.text(itemName, margin + 4, y + 6);
 
-      doc.setTextColor(71, 85, 105);
+      doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
       doc.text(String(item.quantity), margin + 105, y + 6, { align: 'center' });
       doc.text(formatCurrency(item.unitPrice, currency), margin + 140, y + 6, { align: 'right' });
 
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       doc.text(formatCurrency(item.subtotal, currency), pageWidth - margin - 4, y + 6, { align: 'right' });
       doc.setFont('helvetica', 'normal');
 
       y += 8.5;
 
-      doc.setDrawColor(241, 245, 249);
+      doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
       doc.line(margin, y, pageWidth - margin, y);
     });
 
@@ -1249,15 +1566,15 @@ export const PdfGenerator = {
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
+    doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
 
     doc.text('Subtotal:', totalsX, y);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text(formatCurrency(receipt.subtotal, currency), pageWidth - margin - 4, y, { align: 'right' });
     y += 6;
 
     if (receipt.discountAmount > 0) {
-      doc.setTextColor(225, 29, 72);
+      doc.setTextColor(sc.isDarkPaper ? 253 : 225, sc.isDarkPaper ? 164 : 29, sc.isDarkPaper ? 175 : 72);
       doc.text('Discount:', totalsX, y);
       doc.text(`-${formatCurrency(receipt.discountAmount, currency)}`, pageWidth - margin - 4, y, { align: 'right' });
       y += 6;
@@ -1277,38 +1594,38 @@ export const PdfGenerator = {
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(100, 116, 139);
+      doc.setTextColor(sc.paymentSubRgb[0], sc.paymentSubRgb[1], sc.paymentSubRgb[2]);
       doc.text(
         isBillStyle ? 'Amount Paid:' : `Amount Paid (${receipt.paymentMethod || 'Cash'}):`,
         totalsX,
         y
       );
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(sc.paymentRgb[0], sc.paymentRgb[1], sc.paymentRgb[2]);
       doc.text(formatCurrency(receipt.amountPaid, currency), pageWidth - margin - 4, y, { align: 'right' });
       y += 6;
     }
 
     // 1. Financial info & Amount in Words
-    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
+    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth, sc);
 
     // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
-    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right', sc);
 
     // 3. Thank You message and return policies BELOW Signature block
-    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth, sc);
 
     // 4. Centered clean bottom footer (Powered by Brivu) BELOW Thank You message
-    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
+    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22, sc);
 
     // Bottom footer (only if user explicitly provided a custom footer)
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       const footerY = y + 4;
-      doc.setDrawColor(226, 232, 240);
+      doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
       doc.line(margin, footerY - 4, pageWidth - margin, footerY - 4);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
+      doc.setTextColor(sc.footerSubRgb[0], sc.footerSubRgb[1], sc.footerSubRgb[2]);
       doc.text(business.customFooter, pageWidth / 2, footerY, { align: 'center' });
     }
 
@@ -1333,7 +1650,7 @@ export const PdfGenerator = {
 
     const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate('classic');
-    const classicTheme = resolveEffectiveTheme('classic', accentColor, {
+    const classicCustom: TemplateCustomization = {
       headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
       headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
       totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
@@ -1342,7 +1659,13 @@ export const PdfGenerator = {
       accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-    });
+      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+    };
+    const classicTheme = resolveEffectiveTheme('classic', accentColor, classicCustom);
+    const sc = resolvePdfSectionColors(classicCustom, classicTheme.pdf.pageBg);
     if (classicTheme.pdf.pageBg) {
       doc.setFillColor(classicTheme.pdf.pageBg[0], classicTheme.pdf.pageBg[1], classicTheme.pdf.pageBg[2]);
       doc.rect(0, 0, pageWidth, naturalHeight, 'F');
@@ -1426,7 +1749,7 @@ export const PdfGenerator = {
 
     // Double rule divider
     y += 3;
-    doc.setDrawColor(40, 40, 40);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.setLineWidth(0.6);
     doc.line(margin, y, pageWidth - margin, y);
     doc.setLineWidth(0.2);
@@ -1436,13 +1759,14 @@ export const PdfGenerator = {
     // Metadata Box
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.setTextColor(0, 0, 0);
+    doc.setTextColor(sc.metaRgb[0], sc.metaRgb[1], sc.metaRgb[2]);
     doc.text(`${isQuotation ? 'Quotation No' : isInvoice ? 'Invoice No' : 'Receipt No'}: ${receipt.receiptNumber}`, margin, y);
+    doc.setTextColor(sc.metaSubRgb[0], sc.metaSubRgb[1], sc.metaSubRgb[2]);
     doc.text(`Date & Time: ${formatDateTime(receipt.createdAt)}`, pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     doc.setFontSize(9.5);
-    doc.setTextColor(70, 70, 70);
+    doc.setTextColor(sc.metaSubRgb[0], sc.metaSubRgb[1], sc.metaSubRgb[2]);
     if (isQuotation) {
       doc.text(`Valid Until: ${receipt.dueDate || 'On Request'}`, margin, y);
       doc.text(`Terms: ${receipt.paymentTerms || 'Upon acceptance'}`, pageWidth - margin, y, { align: 'right' });
@@ -1451,6 +1775,7 @@ export const PdfGenerator = {
       doc.text(`Terms: ${receipt.paymentTerms || 'Due on receipt'}`, pageWidth - margin, y, { align: 'right' });
     } else {
       doc.text(`Date & Time: ${formatDateTime(receipt.createdAt)}`, margin, y);
+      doc.setTextColor(sc.paymentRgb[0], sc.paymentRgb[1], sc.paymentRgb[2]);
       doc.text(`Payment: ${receipt.paymentMethod}`, pageWidth - margin, y, { align: 'right' });
     }
     y += 6;
@@ -1458,13 +1783,13 @@ export const PdfGenerator = {
     const custPrefix = isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
-    doc.setTextColor(0, 0, 0);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text(`${custPrefix} ${receipt.customerName || (isBillStyle ? 'Valued Client' : 'General Customer')}`, margin, y);
     y += 5;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
-    doc.setTextColor(70, 70, 70);
+    doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
     if (receipt.customerPhone) {
       doc.text(`Phone: ${receipt.customerPhone}`, margin, y);
       y += 4.5;
@@ -1482,13 +1807,13 @@ export const PdfGenerator = {
 
     // Table Header
     doc.setLineWidth(0.4);
-    doc.setDrawColor(60, 60, 60);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.line(margin, y, pageWidth - margin, y);
     y += 5;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text(isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
     doc.text('QTY', margin + 110, y, { align: 'center' });
     doc.text('PRICE', margin + 140, y, { align: 'right' });
@@ -1500,6 +1825,7 @@ export const PdfGenerator = {
     // Items
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     receipt.items.forEach((item) => {
       doc.text(item.name, margin, y);
       doc.text(String(item.quantity), margin + 110, y, { align: 'center' });
@@ -1508,17 +1834,20 @@ export const PdfGenerator = {
       y += 7;
     });
 
-    doc.setDrawColor(180, 180, 180);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.line(margin, y, pageWidth - margin, y);
     y += 6;
 
     // Totals
     const tX = pageWidth - margin - 80;
+    doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
     doc.text('Subtotal:', tX, y);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text(formatCurrency(receipt.subtotal, currency), pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     if (receipt.discountAmount > 0) {
+      doc.setTextColor(sc.isDarkPaper ? 253 : 225, sc.isDarkPaper ? 164 : 29, sc.isDarkPaper ? 175 : 72);
       doc.text('Discount:', tX, y);
       doc.text(`-${formatCurrency(receipt.discountAmount, currency)}`, pageWidth - margin, y, { align: 'right' });
       y += 6;
@@ -1535,12 +1864,13 @@ export const PdfGenerator = {
       doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 1, { align: 'right' });
       y += 9;
     } else {
-      doc.setDrawColor(40, 40, 40);
+      doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
       doc.line(tX, y, pageWidth - margin, y);
       y += 6;
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       doc.text(isQuotation ? 'QUOTED TOTAL:' : 'TOTAL DUE:', tX, y);
       doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y, { align: 'right' });
       y += 2;
@@ -1552,6 +1882,7 @@ export const PdfGenerator = {
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
+      doc.setTextColor(sc.paymentRgb[0], sc.paymentRgb[1], sc.paymentRgb[2]);
       doc.text(
         isBillStyle ? 'Amount Paid:' : `Amount Paid (${receipt.paymentMethod || 'Cash'}):`,
         tX,
@@ -1562,20 +1893,21 @@ export const PdfGenerator = {
     }
 
     // 1. Financial info
-    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
+    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth, sc);
 
     // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
-    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right', sc);
 
     // 3. Thank You message BELOW Signature block
-    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth, sc);
 
     // 4. Centered clean bottom footer
-    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
+    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22, sc);
 
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFont('times', 'italic');
       doc.setFontSize(9.5);
+      doc.setTextColor(sc.footerSubRgb[0], sc.footerSubRgb[1], sc.footerSubRgb[2]);
       doc.text(business.customFooter, pageWidth / 2, y + 4, { align: 'center' });
     }
 
@@ -1600,7 +1932,7 @@ export const PdfGenerator = {
 
     const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate('minimal');
-    const minimalTheme = resolveEffectiveTheme('minimal', accentColor, {
+    const minimalCustom: TemplateCustomization = {
       headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
       headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
       totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
@@ -1609,7 +1941,13 @@ export const PdfGenerator = {
       accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-    });
+      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+    };
+    const minimalTheme = resolveEffectiveTheme('minimal', accentColor, minimalCustom);
+    const sc = resolvePdfSectionColors(minimalCustom, minimalTheme.pdf.pageBg);
     if (minimalTheme.pdf.pageBg) {
       doc.setFillColor(minimalTheme.pdf.pageBg[0], minimalTheme.pdf.pageBg[1], minimalTheme.pdf.pageBg[2]);
       doc.rect(0, 0, pageWidth, naturalHeight, 'F');
@@ -1693,11 +2031,11 @@ export const PdfGenerator = {
     // Large Document Number Display
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(17, 24, 39);
+    doc.setTextColor(sc.metaRgb[0], sc.metaRgb[1], sc.metaRgb[2]);
     doc.text(`${isQuotation ? 'Quotation' : isInvoice ? 'Invoice' : 'Receipt'} ${receipt.receiptNumber}`, margin, y);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(107, 114, 128);
+    doc.setTextColor(sc.metaSubRgb[0], sc.metaSubRgb[1], sc.metaSubRgb[2]);
     const rightMeta = isQuotation && receipt.dueDate ? `Valid Until: ${receipt.dueDate}` : isInvoice && receipt.dueDate ? `Due: ${receipt.dueDate}` : formatDateTime(receipt.createdAt);
     doc.text(rightMeta, pageWidth - margin, y, { align: 'right' });
     y += 6;
@@ -1706,13 +2044,13 @@ export const PdfGenerator = {
       const cLabel = isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:';
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
-      doc.setTextColor(17, 24, 39);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       doc.text(`${cLabel} ${receipt.customerName || (isBillStyle ? 'Valued Client' : 'Customer')}`, margin, y);
       y += 5;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(107, 114, 128);
+      doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
       if (receipt.customerPhone) {
         doc.text(`Phone: ${receipt.customerPhone}`, margin, y);
         y += 4.5;
@@ -1731,7 +2069,7 @@ export const PdfGenerator = {
     }
 
     // Hairline divider
-    doc.setDrawColor(229, 231, 235);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.setLineWidth(0.2);
     doc.line(margin, y, pageWidth - margin, y);
     y += 8;
@@ -1739,7 +2077,7 @@ export const PdfGenerator = {
     // Minimal table
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.setTextColor(156, 163, 175);
+    doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
     doc.text(isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR', margin, y);
     doc.text('QTY', margin + 110, y, { align: 'center' });
     doc.text('TOTAL', pageWidth - margin, y, { align: 'right' });
@@ -1747,7 +2085,7 @@ export const PdfGenerator = {
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9.5);
-    doc.setTextColor(31, 41, 55);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
 
     receipt.items.forEach((item) => {
       doc.text(item.name, margin, y);
@@ -1763,14 +2101,14 @@ export const PdfGenerator = {
     // Clean Right-Aligned Summary
     const sumX = pageWidth - margin - 70;
     doc.setFontSize(9);
-    doc.setTextColor(107, 114, 128);
+    doc.setTextColor(sc.bodySubRgb[0], sc.bodySubRgb[1], sc.bodySubRgb[2]);
     doc.text('Subtotal', sumX, y);
-    doc.setTextColor(31, 41, 55);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text(formatCurrency(receipt.subtotal, currency), pageWidth - margin, y, { align: 'right' });
     y += 6;
 
     if (receipt.discountAmount > 0) {
-      doc.setTextColor(239, 68, 68);
+      doc.setTextColor(sc.isDarkPaper ? 253 : 239, sc.isDarkPaper ? 164 : 68, sc.isDarkPaper ? 175 : 68);
       doc.text('Discount', sumX, y);
       doc.text(`-${formatCurrency(receipt.discountAmount, currency)}`, pageWidth - margin, y, { align: 'right' });
       y += 6;
@@ -1789,7 +2127,7 @@ export const PdfGenerator = {
     } else {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
-      doc.setTextColor(17, 24, 39);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       doc.text(isQuotation ? 'Quoted Total' : isInvoice ? 'Total Due' : 'Total', sumX, y + 2);
       doc.text(formatCurrency(receipt.total, currency), pageWidth - margin, y + 2, { align: 'right' });
       y += 10;
@@ -1798,7 +2136,7 @@ export const PdfGenerator = {
     if (!isBillStyle || (receipt.amountPaid && receipt.amountPaid > 0)) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      doc.setTextColor(107, 114, 128);
+      doc.setTextColor(sc.paymentRgb[0], sc.paymentRgb[1], sc.paymentRgb[2]);
       doc.text(
         isBillStyle ? 'Amount Paid' : `Paid via ${receipt.paymentMethod || 'Cash'}`,
         sumX,
@@ -1809,20 +2147,21 @@ export const PdfGenerator = {
     }
 
     // 1. Financial info
-    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
+    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth, sc);
 
     // 2. Authorized Signature block BELOW Amount Paid in Words (only if configured)
-    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right');
+    y = this.appendSignatureBlock(doc, receipt, y + 2, margin, pageWidth, 'right', sc);
 
     // 3. Thank You message BELOW Signature block
-    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth);
+    y = this.appendThankYouAndTerms(doc, receipt, y + 2, margin, pageWidth, sc);
 
     // 4. Centered clean bottom footer
-    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
+    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22, sc);
 
     // Minimal footer
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFontSize(8.5);
+      doc.setTextColor(sc.footerSubRgb[0], sc.footerSubRgb[1], sc.footerSubRgb[2]);
       doc.text(business.customFooter, margin, y + 4);
     }
 
@@ -1853,8 +2192,13 @@ export const PdfGenerator = {
       fontFamily: receipt.customTheme?.fontFamily || savedCustom?.fontFamily,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
     };
     const theme = resolveEffectiveTheme('business', accentColor, bizCustomTheme);
+    const sc = resolvePdfSectionColors(bizCustomTheme, theme.pdf.pageBg);
     if (theme.pdf.pageBg) {
       doc.setFillColor(theme.pdf.pageBg[0], theme.pdf.pageBg[1], theme.pdf.pageBg[2]);
       doc.rect(0, 0, pageWidth, naturalHeight, 'F');
@@ -2021,11 +2365,11 @@ export const PdfGenerator = {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     receipt.items.forEach((item, idx) => {
-      if (idx % 2 === 1) {
+      if (idx % 2 === 1 && !sc.isDarkPaper) {
         doc.setFillColor(248, 250, 252);
         doc.rect(margin, y, contentWidth, 8, 'F');
       }
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
       doc.text(item.name, margin + 3, y + 5.5);
       doc.text(String(item.quantity), margin + 105, y + 5.5, { align: 'center' });
       doc.text(formatCurrency(item.unitPrice, currency), margin + 140, y + 5.5, { align: 'right' });
@@ -2037,11 +2381,12 @@ export const PdfGenerator = {
     y += 4;
     const boxX = margin + 100;
     const boxW = contentWidth - 100;
-    doc.setDrawColor(203, 213, 225);
+    doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
     doc.rect(boxX, y, boxW, 30, 'S');
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
+    doc.setTextColor(sc.bodyRgb[0], sc.bodyRgb[1], sc.bodyRgb[2]);
     doc.text('Subtotal:', boxX + 4, y + 6);
     doc.text(formatCurrency(receipt.subtotal, currency), pageWidth - margin - 4, y + 6, { align: 'right' });
 
@@ -2059,7 +2404,7 @@ export const PdfGenerator = {
     // Official Stamp & Signature Area (only rendered if user has added a signature)
     const stampY = y;
     if (business.signature && business.signature.startsWith('data:image')) {
-      doc.setDrawColor(203, 213, 225);
+      doc.setDrawColor(sc.dividerRgb[0], sc.dividerRgb[1], sc.dividerRgb[2]);
       doc.rect(margin, stampY, 70, 30, 'S');
       try {
         let sigFormat = 'PNG';
@@ -2070,28 +2415,28 @@ export const PdfGenerator = {
       }
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
+      doc.setTextColor(sc.footerSubRgb[0], sc.footerSubRgb[1], sc.footerSubRgb[2]);
       doc.text('Official Stamp & Authorized Sign', margin + 35, stampY + 26, { align: 'center' });
     }
 
     y = Math.max(y + 34, stampY + 34);
 
     // 1. Financial info
-    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth);
+    y = this.appendFinancialInfo(doc, receipt, y, margin, pageWidth, sc);
 
     // Natural 30–50px spacing (approx 9mm) after Amount Paid in Words
     y += 9;
 
     // 2. Thank you message below signature
-    y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth);
+    y = this.appendThankYouAndTerms(doc, receipt, y, margin, pageWidth, sc);
 
     // 3. Centered clean bottom footer
-    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22);
+    y = await this.appendBottomCenteredQrCode(doc, receipt, y, pageWidth, 22, sc);
 
     // Legal Footer
     if (business.customFooter && business.customFooter.trim().length > 0 && !business.customFooter.includes('Please keep this receipt for warranty and returns')) {
       doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
+      doc.setTextColor(sc.footerSubRgb[0], sc.footerSubRgb[1], sc.footerSubRgb[2]);
       doc.text(business.customFooter, pageWidth / 2, y + 4, { align: 'center' });
     }
 

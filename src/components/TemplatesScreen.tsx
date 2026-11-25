@@ -83,6 +83,10 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
       totalTextColor: business.totalTextColor || savedCustomTheme?.totalTextColor,
       paperBgColor: business.paperBgColor || savedCustomTheme?.paperBgColor,
       accentColor: business.accentColor || savedCustomTheme?.accentColor,
+      receiptTextColor: business.receiptTextColor || savedCustomTheme?.receiptTextColor,
+      metaTextColor: business.metaTextColor || savedCustomTheme?.metaTextColor,
+      paymentTextColor: business.paymentTextColor || savedCustomTheme?.paymentTextColor,
+      footerTextColor: business.footerTextColor || savedCustomTheme?.footerTextColor,
     };
 
     return (
