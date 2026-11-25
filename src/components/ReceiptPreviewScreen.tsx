@@ -333,59 +333,64 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar flex-1">
-            {BRAND_COLOR_PRESETS.map((preset) => {
-              const currentAccent = receipt.accentColor || business.accentColor;
-              const isSelected =
-                currentAccent && normalizeHex(currentAccent) === normalizeHex(preset.hex);
+            {(() => {
+              const savedTemplate = StorageService.getCustomTemplate(effectiveTemplate);
+              const currentAccent = receipt.accentColor || savedTemplate?.accentColor;
               return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  id={`btn-preview-accent-${preset.id}`}
-                  onClick={() => handleAccentColorChange(preset.hex)}
-                  title={preset.name}
-                  className={`w-5 h-5 rounded-full shadow-xs flex items-center justify-center transition-transform shrink-0 ${
-                    isSelected ? 'ring-2 ring-slate-900 dark:ring-white scale-110' : 'hover:scale-105'
-                  }`}
-                  style={{ background: preset.hex }}
-                >
-                  {isSelected && (
-                    <Check
-                      className="w-3 h-3 stroke-[3]"
-                      style={{ color: getContrastTextHex(preset.hex) }}
+                <>
+                  {BRAND_COLOR_PRESETS.map((preset) => {
+                    const isSelected =
+                      currentAccent && normalizeHex(currentAccent) === normalizeHex(preset.hex);
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        id={`btn-preview-accent-${preset.id}`}
+                        onClick={() => handleAccentColorChange(preset.hex)}
+                        title={preset.name}
+                        className={`w-5 h-5 rounded-full shadow-xs flex items-center justify-center transition-transform shrink-0 ${
+                          isSelected ? 'ring-2 ring-slate-900 dark:ring-white scale-110' : 'hover:scale-105'
+                        }`}
+                        style={{ background: preset.hex }}
+                      >
+                        {isSelected && (
+                          <Check
+                            className="w-3 h-3 stroke-[3]"
+                            style={{ color: getContrastTextHex(preset.hex) }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Custom Eye Dropper */}
+                  <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0 border border-slate-300 dark:border-slate-600">
+                    <input
+                      id="input-preview-custom-accent"
+                      type="color"
+                      value={
+                        currentAccent && isValidHex(currentAccent)
+                          ? normalizeHex(currentAccent)
+                          : '#059669'
+                      }
+                      onChange={(e) => handleAccentColorChange(e.target.value)}
+                      className="absolute -top-1 -left-1 w-8 h-8 cursor-pointer border-0 p-0"
                     />
+                  </div>
+
+                  {receipt.accentColor && (
+                    <button
+                      type="button"
+                      id="btn-preview-reset-accent"
+                      onClick={() => handleAccentColorChange('')}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition underline shrink-0 ml-1"
+                    >
+                      Reset
+                    </button>
                   )}
-                </button>
+                </>
               );
-            })}
-
-            {/* Custom Eye Dropper */}
-            <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0 border border-slate-300 dark:border-slate-600">
-              <input
-                id="input-preview-custom-accent"
-                type="color"
-                value={
-                  receipt.accentColor && isValidHex(receipt.accentColor)
-                    ? normalizeHex(receipt.accentColor)
-                    : business.accentColor && isValidHex(business.accentColor)
-                    ? normalizeHex(business.accentColor)
-                    : '#059669'
-                }
-                onChange={(e) => handleAccentColorChange(e.target.value)}
-                className="absolute -top-1 -left-1 w-8 h-8 cursor-pointer border-0 p-0"
-              />
-            </div>
-
-            {(receipt.accentColor || business.accentColor) && (
-              <button
-                type="button"
-                id="btn-preview-reset-accent"
-                onClick={() => handleAccentColorChange('')}
-                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition underline shrink-0 ml-1"
-              >
-                Reset
-              </button>
-            )}
+            })()}
           </div>
         </div>
       </div>
@@ -433,7 +438,7 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
             nonRefundable: Boolean(receipt.nonRefundable),
             currency: currency,
             template: effectiveTemplate,
-            accentColor: business.accentColor || receipt.accentColor,
+            accentColor: receipt.accentColor || StorageService.getCustomTemplate(effectiveTemplate)?.accentColor,
             customTheme: (() => {
               const saved = StorageService.getCustomTemplate(effectiveTemplate);
               const defaultDocBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
@@ -445,12 +450,12 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
                   ? (!rawBadge || upperBadge === 'RECEIPT' ? 'INVOICE' : rawBadge)
                   : rawBadge || defaultDocBadge;
               return {
-                headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || saved?.headerBgColor,
-                headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || saved?.headerTextColor,
-                totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || saved?.totalBgColor,
-                totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || saved?.totalTextColor,
-                paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || saved?.paperBgColor,
-                accentColor: receipt.customTheme?.accentColor || business.accentColor || saved?.accentColor || receipt.accentColor,
+                headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
+                headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
+                totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor,
+                totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor,
+                paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
+                accentColor: receipt.customTheme?.accentColor || receipt.accentColor || saved?.accentColor,
                 fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
                 badgeText: resolvedBadge,
                 badgeBgColor: receipt.customTheme?.badgeBgColor || saved?.badgeBgColor,
@@ -458,10 +463,10 @@ export const ReceiptPreviewScreen: React.FC<ReceiptPreviewScreenProps> = ({
                 headerNameColor: receipt.customTheme?.headerNameColor || saved?.headerNameColor,
                 headerDescColor: receipt.customTheme?.headerDescColor || saved?.headerDescColor,
                 headerAddressColor: receipt.customTheme?.headerAddressColor || saved?.headerAddressColor,
-                receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || saved?.receiptTextColor,
-                metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || saved?.metaTextColor,
-                paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || saved?.paymentTextColor,
-                footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || saved?.footerTextColor,
+                receiptTextColor: receipt.customTheme?.receiptTextColor || saved?.receiptTextColor,
+                metaTextColor: receipt.customTheme?.metaTextColor || saved?.metaTextColor,
+                paymentTextColor: receipt.customTheme?.paymentTextColor || saved?.paymentTextColor,
+                footerTextColor: receipt.customTheme?.footerTextColor || saved?.footerTextColor,
               };
             })(),
             isSample: false,

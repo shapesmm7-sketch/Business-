@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Receipt, ThermalPrinterDevice, BusinessProfile } from '../types';
 import { resolveEffectiveBusinessProfile } from './pdfGenerator';
+import { StorageService } from './storage';
 
 export interface AndroidBluetoothPrinter {
   name: string;
@@ -610,9 +611,10 @@ export class BluetoothPrinterService {
       ? created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
 
+    const savedTemplateAccent = StorageService.getCustomTemplate(receipt.template || 'modern')?.accentColor;
     const accent =
       receipt.accentColor ||
-      biz.accentColor ||
+      savedTemplateAccent ||
       (receipt.documentType === 'invoice' || receipt.documentType === 'quotation' ? '#4f46e5' : '#059669');
 
     const bName = (biz.name || '').trim();

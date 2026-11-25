@@ -416,39 +416,17 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
 
   const effectiveName = cleanName(latest.name) || cleanName(snapshot.name) || '';
 
-  const cleanColor = (val?: string) => (val && typeof val === 'string' && val.trim() !== '' ? val.trim() : undefined);
   const hasLatestProfile = Boolean(
     latest &&
       (latest.name ||
         latest.phone ||
         latest.email ||
-        latest.address ||
-        latest.accentColor ||
-        latest.headerBgColor ||
-        latest.headerTextColor ||
-        latest.totalBgColor ||
-        latest.totalTextColor ||
-        latest.paperBgColor ||
-        latest.receiptTextColor ||
-        latest.metaTextColor ||
-        latest.paymentTextColor ||
-        latest.footerTextColor)
+        latest.address)
   );
   const resolvedSignature =
     latest.signature && latest.signature.trim() !== ''
       ? latest.signature
       : (hasLatestProfile ? undefined : snapshot.signature);
-
-  const brandAccent = hasLatestProfile ? cleanColor(latest.accentColor) : cleanColor(snapshot.accentColor);
-  const brandHeaderBg = hasLatestProfile ? cleanColor(latest.headerBgColor) : cleanColor(snapshot.headerBgColor);
-  const brandHeaderText = hasLatestProfile ? cleanColor(latest.headerTextColor) : cleanColor(snapshot.headerTextColor);
-  const brandTotalBg = hasLatestProfile ? cleanColor(latest.totalBgColor) : cleanColor(snapshot.totalBgColor);
-  const brandTotalText = hasLatestProfile ? cleanColor(latest.totalTextColor) : cleanColor(snapshot.totalTextColor);
-  const brandPaperBg = hasLatestProfile ? cleanColor(latest.paperBgColor) : cleanColor(snapshot.paperBgColor);
-  const brandReceiptText = hasLatestProfile ? cleanColor(latest.receiptTextColor) : cleanColor(snapshot.receiptTextColor);
-  const brandMetaText = hasLatestProfile ? cleanColor(latest.metaTextColor) : cleanColor(snapshot.metaTextColor);
-  const brandPaymentText = hasLatestProfile ? cleanColor(latest.paymentTextColor) : cleanColor(snapshot.paymentTextColor);
-  const brandFooterText = hasLatestProfile ? cleanColor(latest.footerTextColor) : cleanColor(snapshot.footerTextColor);
 
   return {
     name: effectiveName,
@@ -464,16 +442,6 @@ export function resolveEffectiveBusinessProfile(receipt: Receipt): BusinessProfi
     currency: (hasLatestProfile && latest.currency) ? latest.currency : (snapshot.currency || latest.currency || 'UGX'),
     language: latest.language || snapshot.language,
     customFooter: (latest.customFooter !== undefined && latest.customFooter !== null) ? latest.customFooter : (snapshot.customFooter || ''),
-    accentColor: cleanColor(receipt.accentColor) || cleanColor(receipt.customTheme?.accentColor) || brandAccent,
-    headerBgColor: cleanColor(receipt.customTheme?.headerBgColor) || brandHeaderBg,
-    headerTextColor: cleanColor(receipt.customTheme?.headerTextColor) || brandHeaderText,
-    totalBgColor: cleanColor(receipt.customTheme?.totalBgColor) || brandTotalBg,
-    totalTextColor: cleanColor(receipt.customTheme?.totalTextColor) || brandTotalText,
-    paperBgColor: cleanColor(receipt.customTheme?.paperBgColor) || brandPaperBg,
-    receiptTextColor: cleanColor(receipt.customTheme?.receiptTextColor) || brandReceiptText,
-    metaTextColor: cleanColor(receipt.customTheme?.metaTextColor) || brandMetaText,
-    paymentTextColor: cleanColor(receipt.customTheme?.paymentTextColor) || brandPaymentText,
-    footerTextColor: cleanColor(receipt.customTheme?.footerTextColor) || brandFooterText,
     bankName: (latest.bankName && latest.bankName.trim() !== '') ? latest.bankName : (snapshot.bankName || ''),
     bankAccountNumber: (latest.bankAccountNumber && latest.bankAccountNumber.trim() !== '') ? latest.bankAccountNumber : (snapshot.bankAccountNumber || ''),
     bankAccountName: (latest.bankAccountName && latest.bankAccountName.trim() !== '') ? latest.bankAccountName : (snapshot.bankAccountName || ''),
@@ -850,7 +818,7 @@ export const PdfGenerator = {
     const hasThankYouInNotes = receipt.notes && receipt.notes.toLowerCase().includes('thank');
     const thankYouText = hasThankYouInNotes 
       ? receipt.notes!.trim() 
-      : (!receipt.notes ? 'Thank you' : null);
+      : (!receipt.notes ? 'Thank you for your business!' : null);
 
     const showNonReturnable = receipt.nonReturnable === true || (receipt.nonReturnable === undefined && !receipt.nonRefundable);
     const showNonRefundable = Boolean(receipt.nonRefundable);
@@ -998,7 +966,7 @@ export const PdfGenerator = {
           nonRefundable: Boolean(receipt.nonRefundable),
           currency: currency,
           template: (receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId,
-          accentColor: resolvedBiz.accentColor || receipt.accentColor,
+          accentColor: receipt.accentColor || StorageService.getCustomTemplate((receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId)?.accentColor,
           customTheme: (() => {
             const effectiveTplId = (receipt.template || StorageService.getSettings().defaultTemplate || 'modern') as ReceiptTemplateId;
             const saved = StorageService.getCustomTemplate(effectiveTplId);
@@ -1013,12 +981,12 @@ export const PdfGenerator = {
                 : rawBadge
               : rawBadge || 'RECEIPT';
             return {
-              headerBgColor: receipt.customTheme?.headerBgColor || resolvedBiz.headerBgColor || saved?.headerBgColor,
-              headerTextColor: receipt.customTheme?.headerTextColor || resolvedBiz.headerTextColor || saved?.headerTextColor,
-              totalBgColor: receipt.customTheme?.totalBgColor || resolvedBiz.totalBgColor || saved?.totalBgColor,
-              totalTextColor: receipt.customTheme?.totalTextColor || resolvedBiz.totalTextColor || saved?.totalTextColor,
-              paperBgColor: receipt.customTheme?.paperBgColor || resolvedBiz.paperBgColor || saved?.paperBgColor,
-              accentColor: receipt.customTheme?.accentColor || resolvedBiz.accentColor || saved?.accentColor || receipt.accentColor,
+              headerBgColor: receipt.customTheme?.headerBgColor || saved?.headerBgColor,
+              headerTextColor: receipt.customTheme?.headerTextColor || saved?.headerTextColor,
+              totalBgColor: receipt.customTheme?.totalBgColor || saved?.totalBgColor,
+              totalTextColor: receipt.customTheme?.totalTextColor || saved?.totalTextColor,
+              paperBgColor: receipt.customTheme?.paperBgColor || saved?.paperBgColor,
+              accentColor: receipt.customTheme?.accentColor || receipt.accentColor || saved?.accentColor,
               fontFamily: receipt.customTheme?.fontFamily || saved?.fontFamily,
               badgeText: resolvedBadge,
               badgeBgColor: receipt.customTheme?.badgeBgColor || saved?.badgeBgColor,
@@ -1026,10 +994,10 @@ export const PdfGenerator = {
               headerNameColor: receipt.customTheme?.headerNameColor || saved?.headerNameColor,
               headerDescColor: receipt.customTheme?.headerDescColor || saved?.headerDescColor,
               headerAddressColor: receipt.customTheme?.headerAddressColor || saved?.headerAddressColor,
-              receiptTextColor: receipt.customTheme?.receiptTextColor || resolvedBiz.receiptTextColor || saved?.receiptTextColor,
-              metaTextColor: receipt.customTheme?.metaTextColor || resolvedBiz.metaTextColor || saved?.metaTextColor,
-              paymentTextColor: receipt.customTheme?.paymentTextColor || resolvedBiz.paymentTextColor || saved?.paymentTextColor,
-              footerTextColor: receipt.customTheme?.footerTextColor || resolvedBiz.footerTextColor || saved?.footerTextColor,
+              receiptTextColor: receipt.customTheme?.receiptTextColor || saved?.receiptTextColor,
+              metaTextColor: receipt.customTheme?.metaTextColor || saved?.metaTextColor,
+              paymentTextColor: receipt.customTheme?.paymentTextColor || saved?.paymentTextColor,
+              footerTextColor: receipt.customTheme?.footerTextColor || saved?.footerTextColor,
             };
           })(),
           isSample: false,
@@ -1173,13 +1141,18 @@ export const PdfGenerator = {
     const cleanNum = receipt.receiptNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${prefix}_${cleanNum}.png`;
 
-    // 1. Capture high-resolution DOM template directly at 3x DPI (works offline & preserves CSS gradients/layouts)
-    let canvas = await this.captureReceiptElementAsCanvas(receipt);
-
-    // 2. Fallback to PDF-to-Canvas rendering if DOM capture is unavailable
-    if (!canvas) {
+    // 1. Render the exact vector PDF document to high-DPI canvas so PNG and PDF match 100%
+    let canvas: HTMLCanvasElement | null = null;
+    try {
       const doc = await this.createPdfDoc(receipt);
       canvas = await this.convertPdfDocToCanvas(doc, 3.0);
+    } catch (err) {
+      console.warn('PDF-to-Canvas photo rendering note, falling back to DOM capture:', err);
+    }
+
+    // 2. Fallback to DOM capture if pdfjs rendering is unavailable
+    if (!canvas) {
+      canvas = await this.captureReceiptElementAsCanvas(receipt);
     }
 
     if (!canvas) {
@@ -1233,17 +1206,7 @@ export const PdfGenerator = {
       businessSnapshot: enrichedBusiness,
     };
 
-    // 1. Try pristine high-fidelity DOM snapshot matching the exact screen template
-    try {
-      const fidelityPdf = await this.captureReceiptElementAsPdf(enrichedReceipt);
-      if (fidelityPdf) {
-        return fidelityPdf;
-      }
-    } catch (err) {
-      console.warn('DOM capture note, falling back to direct vector generator:', err);
-    }
-
-    // 2. Fallback: Native vector jsPDF generator
+    // Use clean native vector jsPDF generator matching all templates and custom styles
     const template: ReceiptTemplateId =
       enrichedReceipt.template || StorageService.getSettings().defaultTemplate || 'modern';
 
@@ -1272,8 +1235,8 @@ export const PdfGenerator = {
     const isInvoice = receipt.documentType === 'invoice';
     const isQuotation = receipt.documentType === 'quotation';
     const isBillStyle = isInvoice || isQuotation;
-    const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate(receipt.template || 'modern');
+    const accentColor = receipt.accentColor || savedCustom?.accentColor;
     const defaultBadge = isQuotation ? 'QUOTATION' : isInvoice ? 'INVOICE' : 'RECEIPT';
     let effectiveBadge = receipt.customTheme?.badgeText || savedCustom?.badgeText || defaultBadge;
     if (isQuotation && (effectiveBadge.toUpperCase() === 'RECEIPT' || effectiveBadge.toUpperCase() === 'INVOICE')) {
@@ -1282,20 +1245,20 @@ export const PdfGenerator = {
       effectiveBadge = 'INVOICE';
     }
     const customTheme: TemplateCustomization = {
-      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
-      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
-      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
-      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
-      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
-      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      headerBgColor: receipt.customTheme?.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || receipt.accentColor || savedCustom?.accentColor,
       fontFamily: receipt.customTheme?.fontFamily || savedCustom?.fontFamily,
       badgeText: effectiveBadge,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
-      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
-      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
-      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || savedCustom?.footerTextColor,
     };
     const theme = resolveEffectiveTheme(receipt.template || 'modern', accentColor, customTheme);
     const sc = resolvePdfSectionColors(customTheme, theme.pdf.pageBg);
@@ -1648,21 +1611,21 @@ export const PdfGenerator = {
     const contentWidth = pageWidth - margin * 2;
     let y = 18;
 
-    const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate('classic');
+    const accentColor = receipt.accentColor || savedCustom?.accentColor;
     const classicCustom: TemplateCustomization = {
-      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
-      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
-      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
-      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
-      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
-      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      headerBgColor: receipt.customTheme?.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || receipt.accentColor || savedCustom?.accentColor,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
-      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
-      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
-      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || savedCustom?.footerTextColor,
     };
     const classicTheme = resolveEffectiveTheme('classic', accentColor, classicCustom);
     const sc = resolvePdfSectionColors(classicCustom, classicTheme.pdf.pageBg);
@@ -1853,7 +1816,7 @@ export const PdfGenerator = {
       y += 6;
     }
 
-    const hasCustomTotal = Boolean(receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor || accentColor);
+    const hasCustomTotal = Boolean(receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor || accentColor);
     if (hasCustomTotal && classicTheme.pdf.totalBg) {
       doc.setFillColor(classicTheme.pdf.totalBg[0], classicTheme.pdf.totalBg[1], classicTheme.pdf.totalBg[2]);
       doc.roundedRect(tX - 3, y - 5, pageWidth - margin - tX + 5, 9, 1.5, 1.5, 'F');
@@ -1930,21 +1893,21 @@ export const PdfGenerator = {
     const contentWidth = pageWidth - margin * 2;
     let y = 22;
 
-    const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate('minimal');
+    const accentColor = receipt.accentColor || savedCustom?.accentColor;
     const minimalCustom: TemplateCustomization = {
-      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
-      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
-      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
-      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
-      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
-      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      headerBgColor: receipt.customTheme?.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || receipt.accentColor || savedCustom?.accentColor,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
-      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
-      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
-      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || savedCustom?.footerTextColor,
     };
     const minimalTheme = resolveEffectiveTheme('minimal', accentColor, minimalCustom);
     const sc = resolvePdfSectionColors(minimalCustom, minimalTheme.pdf.pageBg);
@@ -2114,7 +2077,7 @@ export const PdfGenerator = {
       y += 6;
     }
 
-    const hasCustomMinTotal = Boolean(receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor || accentColor);
+    const hasCustomMinTotal = Boolean(receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor || accentColor);
     if (hasCustomMinTotal && minimalTheme.pdf.totalBg) {
       doc.setFillColor(minimalTheme.pdf.totalBg[0], minimalTheme.pdf.totalBg[1], minimalTheme.pdf.totalBg[2]);
       doc.roundedRect(sumX - 4, y - 3, pageWidth - margin - sumX + 6, 10, 2, 2, 'F');
@@ -2180,22 +2143,22 @@ export const PdfGenerator = {
     const isInvoice = receipt.documentType === 'invoice';
     const isQuotation = receipt.documentType === 'quotation';
     const isBillStyle = isInvoice || isQuotation;
-    const accentColor = business.accentColor || receipt.accentColor;
     const savedCustom = StorageService.getCustomTemplate('business');
+    const accentColor = receipt.accentColor || savedCustom?.accentColor;
     const bizCustomTheme: TemplateCustomization = {
-      headerBgColor: receipt.customTheme?.headerBgColor || business.headerBgColor || savedCustom?.headerBgColor,
-      headerTextColor: receipt.customTheme?.headerTextColor || business.headerTextColor || savedCustom?.headerTextColor,
-      totalBgColor: receipt.customTheme?.totalBgColor || business.totalBgColor || savedCustom?.totalBgColor,
-      totalTextColor: receipt.customTheme?.totalTextColor || business.totalTextColor || savedCustom?.totalTextColor,
-      paperBgColor: receipt.customTheme?.paperBgColor || business.paperBgColor || savedCustom?.paperBgColor,
-      accentColor: receipt.customTheme?.accentColor || business.accentColor || savedCustom?.accentColor || receipt.accentColor,
+      headerBgColor: receipt.customTheme?.headerBgColor || savedCustom?.headerBgColor,
+      headerTextColor: receipt.customTheme?.headerTextColor || savedCustom?.headerTextColor,
+      totalBgColor: receipt.customTheme?.totalBgColor || savedCustom?.totalBgColor,
+      totalTextColor: receipt.customTheme?.totalTextColor || savedCustom?.totalTextColor,
+      paperBgColor: receipt.customTheme?.paperBgColor || savedCustom?.paperBgColor,
+      accentColor: receipt.customTheme?.accentColor || receipt.accentColor || savedCustom?.accentColor,
       fontFamily: receipt.customTheme?.fontFamily || savedCustom?.fontFamily,
       badgeBgColor: receipt.customTheme?.badgeBgColor || savedCustom?.badgeBgColor,
       badgeTextColor: receipt.customTheme?.badgeTextColor || savedCustom?.badgeTextColor,
-      receiptTextColor: receipt.customTheme?.receiptTextColor || business.receiptTextColor || savedCustom?.receiptTextColor,
-      metaTextColor: receipt.customTheme?.metaTextColor || business.metaTextColor || savedCustom?.metaTextColor,
-      paymentTextColor: receipt.customTheme?.paymentTextColor || business.paymentTextColor || savedCustom?.paymentTextColor,
-      footerTextColor: receipt.customTheme?.footerTextColor || business.footerTextColor || savedCustom?.footerTextColor,
+      receiptTextColor: receipt.customTheme?.receiptTextColor || savedCustom?.receiptTextColor,
+      metaTextColor: receipt.customTheme?.metaTextColor || savedCustom?.metaTextColor,
+      paymentTextColor: receipt.customTheme?.paymentTextColor || savedCustom?.paymentTextColor,
+      footerTextColor: receipt.customTheme?.footerTextColor || savedCustom?.footerTextColor,
     };
     const theme = resolveEffectiveTheme('business', accentColor, bizCustomTheme);
     const sc = resolvePdfSectionColors(bizCustomTheme, theme.pdf.pageBg);

@@ -106,16 +106,6 @@ export interface BusinessProfile {
   currency: string;
   language?: string;
   customFooter?: string;
-  accentColor?: string; // Custom primary brand HEX/gradient color for PDFs and receipts
-  headerBgColor?: string; // Custom header banner background fill
-  headerTextColor?: string; // Custom header text color
-  totalBgColor?: string; // Custom total section background fill
-  totalTextColor?: string; // Custom total section text color
-  paperBgColor?: string; // Custom receipt paper canvas background fill
-  receiptTextColor?: string; // Custom receipt body & items text color
-  metaTextColor?: string; // Custom receipt number, date & time text color
-  paymentTextColor?: string; // Custom payment method, balance & amount paid text color
-  footerTextColor?: string; // Custom thank you, policy disclaimers & footer text color
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;

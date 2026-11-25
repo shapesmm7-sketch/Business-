@@ -152,6 +152,30 @@ function isQuotaError(err: unknown): boolean {
   return str.includes('quota') || str.includes('exceeded');
 }
 
+const LEGACY_PROFILE_COLOR_KEYS = [
+  'accentColor',
+  'headerBgColor',
+  'headerTextColor',
+  'totalBgColor',
+  'totalTextColor',
+  'paperBgColor',
+  'receiptTextColor',
+  'metaTextColor',
+  'paymentTextColor',
+  'footerTextColor',
+] as const;
+
+function stripLegacyProfileColors(profile: BusinessProfile): BusinessProfile {
+  if (!profile || typeof profile !== 'object') return profile;
+  const cleaned = { ...profile } as BusinessProfile & Record<string, unknown>;
+  for (const key of LEGACY_PROFILE_COLOR_KEYS) {
+    if (key in cleaned) {
+      delete cleaned[key];
+    }
+  }
+  return cleaned;
+}
+
 // Clean oversized base64 images from hosted pages to prevent quota overflow
 function sanitizeHostedPagesImages(pages: QRCodeHostedPage[], stripAllBase64 = false): QRCodeHostedPage[] {
   return pages.map((page) => ({
@@ -392,9 +416,11 @@ export const StorageService = {
   },
 
   getProfile(): BusinessProfile {
-    const profile = readFromStorage<BusinessProfile>(
-      STORAGE_KEYS.PROFILE,
-      DEFAULT_BUSINESS_PROFILE
+    const profile = stripLegacyProfileColors(
+      readFromStorage<BusinessProfile>(
+        STORAGE_KEYS.PROFILE,
+        DEFAULT_BUSINESS_PROFILE
+      )
     );
     if (profile && profile.customFooter && profile.customFooter.includes('Please keep this receipt for warranty and returns')) {
       profile.customFooter = '';
@@ -403,10 +429,11 @@ export const StorageService = {
   },
 
   saveProfile(profile: BusinessProfile): boolean {
-    const success = writeToStorage(STORAGE_KEYS.PROFILE, profile);
+    const cleanProfile = stripLegacyProfileColors(profile);
+    const success = writeToStorage(STORAGE_KEYS.PROFILE, cleanProfile);
     if (success) {
       // Auto-upload compressed logo to Cloudflare R2 (overwritten in place as logo.webp)
-      if (profile.logo && profile.logo.startsWith('data:image/')) {
+      if (cleanProfile.logo && cleanProfile.logo.startsWith('data:image/')) {
         import('../utils/imageCompressor')
           .then(({ compressLogo }) => compressLogo(profile.logo!))
           .then((compressed) => {
@@ -521,7 +548,7 @@ export const StorageService = {
     if (Array.isArray(rawReceipts) && rawReceipts.length > 0) {
       const updatedReceipts = rawReceipts.map((r) => {
         if (!r || typeof r !== 'object') return r;
-        const nextSnapshot: BusinessProfile = {
+        const nextSnapshot = stripLegacyProfileColors({
           ...(r.businessSnapshot || updatedProfile),
           name: updatedProfile.name || r.businessSnapshot?.name || '',
           description: updatedProfile.description ?? r.businessSnapshot?.description ?? '',
@@ -536,17 +563,7 @@ export const StorageService = {
           customFooter: updatedProfile.customFooter ?? r.businessSnapshot?.customFooter ?? '',
           logo: updatedProfile.logo || r.businessSnapshot?.logo,
           signature: updatedProfile.signature ?? r.businessSnapshot?.signature,
-          accentColor: updatedProfile.accentColor || undefined,
-          headerBgColor: updatedProfile.headerBgColor || undefined,
-          headerTextColor: updatedProfile.headerTextColor || undefined,
-          totalBgColor: updatedProfile.totalBgColor || undefined,
-          totalTextColor: updatedProfile.totalTextColor || undefined,
-          paperBgColor: updatedProfile.paperBgColor || undefined,
-          receiptTextColor: updatedProfile.receiptTextColor || undefined,
-          metaTextColor: updatedProfile.metaTextColor || undefined,
-          paymentTextColor: updatedProfile.paymentTextColor || undefined,
-          footerTextColor: updatedProfile.footerTextColor || undefined,
-        };
+        });
 
         const cleanedCustomTheme = r.customTheme
           ? {
@@ -1047,15 +1064,7 @@ export const StorageService = {
           backupData.profile.logo ||
           backupData.profile.signature ||
           (backupData.profile as any).logoBackupData ||
-          (backupData.profile as any).signatureBackupData ||
-          backupData.profile.accentColor ||
-          backupData.profile.headerBgColor ||
-          backupData.profile.totalBgColor ||
-          backupData.profile.paperBgColor ||
-          backupData.profile.receiptTextColor ||
-          backupData.profile.metaTextColor ||
-          backupData.profile.paymentTextColor ||
-          backupData.profile.footerTextColor
+          (backupData.profile as any).signatureBackupData
         )
     );
 

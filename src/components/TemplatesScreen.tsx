@@ -75,19 +75,6 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
   // Render Sample Receipt for each theme using its unique custom layout architecture
   const renderSampleReceipt = (id: ReceiptTemplateId, isModal: boolean = false) => {
     const savedCustomTheme = StorageService.getCustomTemplate(id);
-    const customTheme = {
-      ...savedCustomTheme,
-      headerBgColor: business.headerBgColor || savedCustomTheme?.headerBgColor,
-      headerTextColor: business.headerTextColor || savedCustomTheme?.headerTextColor,
-      totalBgColor: business.totalBgColor || savedCustomTheme?.totalBgColor,
-      totalTextColor: business.totalTextColor || savedCustomTheme?.totalTextColor,
-      paperBgColor: business.paperBgColor || savedCustomTheme?.paperBgColor,
-      accentColor: business.accentColor || savedCustomTheme?.accentColor,
-      receiptTextColor: business.receiptTextColor || savedCustomTheme?.receiptTextColor,
-      metaTextColor: business.metaTextColor || savedCustomTheme?.metaTextColor,
-      paymentTextColor: business.paymentTextColor || savedCustomTheme?.paymentTextColor,
-      footerTextColor: business.footerTextColor || savedCustomTheme?.footerTextColor,
-    };
 
     return (
       <ReceiptLayoutRenderer
@@ -117,8 +104,8 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
           balance: 9000,
           currency,
           template: id,
-          accentColor: business.accentColor,
-          customTheme,
+          accentColor: savedCustomTheme?.accentColor,
+          customTheme: savedCustomTheme,
           isSample: true,
         }}
       />

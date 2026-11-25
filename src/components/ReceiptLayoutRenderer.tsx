@@ -90,10 +90,10 @@ const renderSupplementaryInfo = (
           className="text-[11px] text-slate-600 dark:text-slate-400 pt-1 text-left"
           style={paymentStyle}
         >
-          <span className={paymentStyle?.color ? 'font-semibold' : 'font-semibold text-slate-900 dark:text-slate-200'}>
-            {t('amount_paid', lang)}:{' '}
+          <span className={paymentStyle?.color ? 'font-bold' : 'font-bold text-slate-900 dark:text-slate-200'}>
+            {isInvoice ? 'Amount in Words' : 'Amount Paid in Words'}:{' '}
           </span>
-          <span className="italic uppercase">{amountInWords}</span>
+          <span className="italic uppercase ml-1">{amountInWords}</span>
         </div>
       )}
       {notes && !hasThankYouInNotes && (
@@ -1866,112 +1866,170 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 15. MODERN SLATE (Original Clean Contemporary Layout with Emerald Banner)  */
+  /* 15. MODERN SLATE (Original Clean Contemporary Layout matching PDF)         */
   /* -------------------------------------------------------------------------- */
+  const statusNote = paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'partial' ? 'Partial' : 'Pending';
+  const contactSummary = [phone, email].filter(Boolean).join('  •  ');
+
   return (
-    <div className={`w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm ${theme.fontFamily} text-slate-900 dark:text-slate-100`} style={paperStyle}>
-      <div>
-        {/* Modern Slate Header Banner */}
-        <div className="bg-slate-900 text-white p-4 sm:p-5" style={headerStyle}>
-          <div className="text-center pb-1">
-            <span className="text-[10px] uppercase tracking-widest font-extrabold px-3 py-1 rounded-full inline-flex items-center justify-center leading-tight shadow-xs" style={receiptBadgeStyle}>
-              {effectiveBadgeText}
-            </span>
-          </div>
-          <div className="relative flex items-center justify-center min-h-[44px]">
-            {logo && (
-              <div className="absolute left-0 top-1/2 -translate-y-1/2">
-                <img src={logo} alt="Logo" className="max-h-12 w-auto max-w-[90px] sm:max-w-[110px] object-contain rounded-lg border border-slate-700 bg-white p-0.5" />
-              </div>
-            )}
-            <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
-              {cleanStoreName && (
-                <h3 className="text-base sm:text-lg font-extrabold text-white break-words leading-tight text-center" style={headerNameStyle}>
-                  {cleanStoreName}
-                </h3>
-              )}
-              {businessDescription && (
-                <p className="text-xs italic mt-0.5 opacity-90 text-center" style={headerDescStyle}>{businessDescription}</p>
-              )}
-              {address && (
-                <p className="text-xs text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address}</p>
-              )}
-            </div>
-          </div>
+    <div className={`w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-6 ${theme.fontFamily} text-slate-900 dark:text-slate-100`} style={paperStyle}>
+      {/* Modern Slate Header Banner */}
+      <div className="bg-slate-900 text-white rounded-md sm:rounded-lg p-4 sm:p-5" style={headerStyle}>
+        <div className="text-center pb-1.5">
+          <span className="text-[10px] uppercase tracking-widest font-extrabold px-3 py-0.5 rounded-sm inline-flex items-center justify-center leading-tight shadow-xs" style={receiptBadgeStyle}>
+            {effectiveBadgeText}
+          </span>
         </div>
-
-        <div className="p-4 sm:p-5 space-y-3">
-          <div
-            className="flex justify-between text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2"
-            style={{
-              ...(metaTextStyle || {}),
-              ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
-            }}
-          >
-            <span>{isQuotation ? 'Quotation:' : isInvoice ? 'Invoice:' : 'Receipt:'} #{receiptNumber}</span>
-            <span>{formattedDate}</span>
-          </div>
-
-          {(customerName || customerPhone || customerEmail || customerAddress) && (
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs flex flex-col gap-1">
-              <div className="font-bold text-slate-800 dark:text-slate-200">
-                {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'CUSTOMER:'} {customerName || (isQuotation || isInvoice ? 'Valued Client' : 'General Customer')}
-              </div>
-              {customerPhone && <div className="text-slate-600 dark:text-slate-400 text-[11px]">Phone: {customerPhone}</div>}
-              {customerEmail && <div className="text-slate-600 dark:text-slate-400 text-[11px]">Email: {customerEmail}</div>}
-              {customerAddress && <div className="text-slate-600 dark:text-slate-400 text-[11px]">Address: {customerAddress}</div>}
+        <div className="relative flex items-center justify-center min-h-[40px]">
+          {logo && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2">
+              <img src={logo} alt="Logo" className="max-h-12 w-auto max-w-[88px] sm:max-w-[105px] object-contain rounded-lg border border-slate-700 bg-white p-0.5" />
             </div>
           )}
-
-          {/* Items Table */}
-          <div className="space-y-2 py-1 text-xs" style={bodyTextStyle}>
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className={bodyTextStyle ? 'flex justify-between font-medium' : 'flex justify-between font-medium text-slate-700 dark:text-slate-200'}
-                style={bodyTextStyle}
-              >
-                <div>
-                  <span>{item.name}</span>
-                  <span className={bodyTextStyle ? 'ml-2 text-[11px] opacity-80' : 'text-slate-400 ml-2 text-[11px]'}>× {item.quantity}</span>
-                </div>
-                <span className={bodyTextStyle ? 'font-bold font-mono' : 'font-bold text-slate-900 dark:text-white font-mono'}>
-                  {formatCurrency(item.subtotal, currency)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Emerald / Custom Accent Total Banner */}
-          <div
-            className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800"
-            style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
-          >
-            <div
-              className="flex items-center justify-between p-3 rounded-xl text-white shadow-xs"
-              style={totalStyle}
-            >
-              <span className="font-bold text-xs uppercase tracking-wide">TOTAL AMOUNT</span>
-              <span className="font-extrabold text-base sm:text-lg font-mono">
-                {formatCurrency(total, currency)}
-              </span>
-            </div>
-            <div
-              className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mt-2 px-1"
-              style={paymentTextStyle}
-            >
-              <span>{isBillStyle ? `Amount Paid: ${formatCurrency(amountPaid, currency)}` : `Payment: ${paymentMethod || 'Cash'}`}</span>
-              <span>Balance: {formatCurrency(isBillStyle ? Math.max(0, total - amountPaid) : 0, currency)}</span>
-            </div>
+          <div className={`text-center ${logo ? 'px-14 sm:px-16' : 'px-2'}`}>
+            {cleanStoreName && (
+              <h3 className="text-base sm:text-lg font-extrabold text-white break-words leading-tight text-center" style={headerNameStyle}>
+                {cleanStoreName}
+              </h3>
+            )}
+            {businessDescription && (
+              <p className="text-xs italic mt-0.5 opacity-90 text-center" style={headerDescStyle}>{businessDescription}</p>
+            )}
+            {contactSummary && (
+              <p className="text-[11px] text-slate-300 mt-0.5 text-center" style={headerAddressStyle}>{contactSummary}</p>
+            )}
+            {address && (
+              <p className="text-[11px] text-slate-400 mt-0.5 text-center" style={headerAddressStyle}>{address}</p>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="p-4 sm:p-5 pt-1 mt-2">
-        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isInvoice, undefined, signature, suppStyleConfig)}
+      {/* 2-Column Info Card */}
+      <div className="mt-4 p-3 sm:p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div className="space-y-0.5 min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400" style={isCustomMetaText ? metaTextStyle : undefined}>
+            {isQuotation ? 'QUOTATION TO:' : isInvoice ? 'INVOICE TO:' : 'RECEIVED WITH THANKS FROM:'}
+          </div>
+          <div className="font-bold text-slate-900 dark:text-white text-xs sm:text-[13px] break-words">
+            {customerName || (isBillStyle ? 'Valued Client' : 'General Customer (Walk-in)')}
+          </div>
+          {customerPhone && <div className="text-slate-600 dark:text-slate-400 text-[11px] break-words">Phone: {customerPhone}</div>}
+          {customerEmail && <div className="text-slate-600 dark:text-slate-400 text-[11px] break-words">Email: {customerEmail}</div>}
+          {customerAddress && <div className="text-slate-600 dark:text-slate-400 text-[11px] break-words">Address: {customerAddress}</div>}
+        </div>
+
+        <div className="space-y-1 text-[11px] sm:pl-2" style={isCustomMetaText ? metaTextStyle : undefined}>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {isQuotation ? 'QUOTATION NO:' : isInvoice ? 'INVOICE NO:' : 'RECEIPT NO:'}
+            </span>
+            <span className="font-bold text-slate-900 dark:text-white font-mono">
+              {receiptNumber}
+            </span>
+          </div>
+          <div className="text-slate-600 dark:text-slate-300">
+            Date: {formattedDate}
+          </div>
+          {isQuotation ? (
+            <div className="text-slate-600 dark:text-slate-300">
+              {dueDate ? `Valid Until: ${dueDate}` : `Terms: ${paymentTerms || 'Upon acceptance'}`}
+            </div>
+          ) : isInvoice ? (
+            <div className="text-slate-600 dark:text-slate-300">
+              {dueDate ? `Due Date: ${dueDate}` : `Terms: ${paymentTerms || 'Due on receipt'}`}
+            </div>
+          ) : (
+            <div className="text-slate-600 dark:text-slate-300" style={isCustomPaymentText ? paymentTextStyle : undefined}>
+              Payment: {paymentMethod || 'Cash'} ({statusNote})
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Items Table */}
+      <div className="mt-4 text-xs">
+        <div
+          className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-2.5 sm:px-3 py-2 grid grid-cols-12 gap-1.5 font-bold uppercase text-[10px] text-slate-700 dark:text-slate-200"
+          style={paperDividerColor ? { borderColor: paperDividerColor } : undefined}
+        >
+          <span className="col-span-5">{isBillStyle ? 'ITEM DESCRIPTION' : 'PAID FOR'}</span>
+          <span className="col-span-2 text-center">QTY</span>
+          <span className="col-span-2 text-right">PRICE</span>
+          <span className="col-span-3 text-right">AMOUNT</span>
+        </div>
+
+        <div style={bodyTextStyle}>
+          {items.map((item, idx) => (
+            <div
+              key={item.id}
+              className={`px-2.5 sm:px-3 py-2 grid grid-cols-12 gap-1.5 items-center border-b border-slate-200/80 dark:border-slate-800 ${
+                idx % 2 === 1 && !isDarkPaper ? 'bg-slate-50/70 dark:bg-slate-800/30' : ''
+              }`}
+              style={{
+                ...(bodyTextStyle || {}),
+                ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
+              }}
+            >
+              <span className="col-span-5 font-medium break-words">{item.name}</span>
+              <span className={bodyTextStyle ? 'col-span-2 text-center opacity-85' : 'col-span-2 text-center text-slate-600 dark:text-slate-300'}>
+                {item.quantity}
+              </span>
+              <span className={bodyTextStyle ? 'col-span-2 text-right opacity-85 font-mono text-[11px]' : 'col-span-2 text-right text-slate-600 dark:text-slate-300 font-mono text-[11px]'}>
+                {formatCurrency(item.unitPrice, currency)}
+              </span>
+              <span className="col-span-3 text-right font-bold font-mono text-[11px] sm:text-xs">
+                {formatCurrency(item.subtotal, currency)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right-aligned Subtotal, Grand Total Pill & Amount Paid */}
+      <div className="mt-4 flex justify-end">
+        <div className="w-full sm:w-[58%] space-y-2 text-xs">
+          <div className="flex justify-between px-1 text-slate-600 dark:text-slate-300" style={bodyTextStyle}>
+            <span>Subtotal:</span>
+            <span className="font-mono">{formatCurrency(subtotal, currency)}</span>
+          </div>
+
+          {discountAmount > 0 && (
+            <div className="flex justify-between px-1 text-rose-600 font-medium">
+              <span>Discount:</span>
+              <span className="font-mono">-{formatCurrency(discountAmount, currency)}</span>
+            </div>
+          )}
+
+          <div
+            className="flex items-center justify-between px-3.5 py-2.5 rounded-lg text-white shadow-xs"
+            style={totalStyle}
+          >
+            <span className="font-bold text-xs uppercase tracking-wide">
+              {isQuotation ? 'QUOTED TOTAL:' : isInvoice ? 'TOTAL DUE:' : 'GRAND TOTAL:'}
+            </span>
+            <span className="font-extrabold text-sm sm:text-base font-mono">
+              {formatCurrency(total, currency)}
+            </span>
+          </div>
+
+          {(!isBillStyle || (amountPaid && amountPaid > 0)) && (
+            <div
+              className="flex justify-between px-1 text-[11px] text-slate-600 dark:text-slate-300"
+              style={paymentTextStyle}
+            >
+              <span>{isBillStyle ? 'Amount Paid:' : `Amount Paid (${paymentMethod || 'Cash'}):`}</span>
+              <span className="font-mono font-medium">{formatCurrency(amountPaid, currency)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-2">
+        {renderSupplementaryInfo(amountInWords, notes, balance, currency, nonReturnable, nonRefundable, isBillStyle, undefined, signature, suppStyleConfig)}
         {customFooter ? (
           <div
-            className="text-center text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800"
+            className="text-center text-[10px] text-slate-400 pt-2 mt-2 border-t border-slate-100 dark:border-slate-800"
             style={{
               ...(footerTextStyle || {}),
               ...(paperDividerColor ? { borderColor: paperDividerColor } : {}),
@@ -1980,7 +2038,7 @@ export const ReceiptLayoutRenderer: React.FC<{ data: ReceiptRenderData }> = ({ d
             {customFooter}
           </div>
         ) : null}
-        <div className="pt-2 flex flex-col items-center justify-center">
+        <div className="pt-3 flex flex-col items-center justify-center">
           <ReceiptQrCodeSection data={data} size={44} textStyle={footerTextStyle} />
         </div>
       </div>
