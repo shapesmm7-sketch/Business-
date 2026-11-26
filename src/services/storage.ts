@@ -67,6 +67,7 @@ const STORAGE_KEYS = {
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
   DELETED_EVENTS_QR: 'quickreceipt_deleted_events_qr_v1',
+  DELETED_QR_ASSETS: 'quickreceipt_deleted_qr_assets_v1',
   INITIAL_PROFILE_SETUP_DONE: 'quickreceipt_initial_profile_setup_done_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
@@ -85,6 +86,20 @@ export function isAdminLifetimeEmail(email?: string | null): boolean {
   const clean = String(email || '').toLowerCase().trim();
   if (!clean) return false;
   return (ADMIN_LIFETIME_EMAILS as readonly string[]).includes(clean);
+}
+
+function normalizeQrAssetKey(urlOrKey?: string): string {
+  if (!urlOrKey || typeof urlOrKey !== 'string') return '';
+  let clean = urlOrKey.trim();
+  if (!clean || clean.startsWith('data:')) return '';
+  if (clean.includes('/api/files/')) {
+    clean = clean.split('/api/files/')[1] || '';
+  }
+  clean = clean.split('?')[0].split('#')[0].replace(/^\/+/, '');
+  try {
+    clean = decodeURIComponent(clean);
+  } catch {}
+  return clean.replace(/%40/gi, '@').trim();
 }
 
 export const DEFAULT_BUSINESS_PROFILE: BusinessProfile = {
@@ -1588,6 +1603,7 @@ export const StorageService = {
         if (!p || typeof p !== 'object') return true;
         const hasMenu = Array.isArray(p.menuItems) && p.menuItems.length > 0;
         const hasPhotos = Array.isArray(p.photos) && p.photos.length > 0;
+        const hasMenuImages = Array.isArray(p.menuImages) && p.menuImages.length > 0;
         const hasCustomSocials = Array.isArray(p.customSocialLinks) && p.customSocialLinks.length > 0;
         const hasSocialLinks = Boolean(
           p.socialLinks &&
@@ -1608,7 +1624,7 @@ export const StorageService = {
           p.coverImage ||
           p.logo
         );
-        return !hasMenu && !hasPhotos && !hasCustomSocials && !hasSocialLinks && !hasExtraCats && !hasTextDetails;
+        return !hasMenu && !hasPhotos && !hasMenuImages && !hasCustomSocials && !hasSocialLinks && !hasExtraCats && !hasTextDetails;
       };
 
       const mergeBizQrPage = (base: any, incoming: any): any => {
@@ -1643,6 +1659,11 @@ export const StorageService = {
           : baseIsStrictlyNewer
           ? (Array.isArray(base?.photos) ? base.photos : [])
           : pickNonEmptyArr(incoming?.photos, base?.photos);
+        const finalMenuImages = incomingIsStrictlyNewer
+          ? (Array.isArray(incoming?.menuImages) ? incoming.menuImages : [])
+          : baseIsStrictlyNewer
+          ? (Array.isArray(base?.menuImages) ? base.menuImages : [])
+          : pickNonEmptyArr(incoming?.menuImages, base?.menuImages);
         const finalCustomSocials = incomingIsStrictlyNewer
           ? (Array.isArray(incoming?.customSocialLinks) ? incoming.customSocialLinks : [])
           : baseIsStrictlyNewer
@@ -1699,6 +1720,7 @@ export const StorageService = {
           socialLinks: mergedSocialLinks,
           customSocialLinks: finalCustomSocials,
           photos: finalPhotos,
+          menuImages: finalMenuImages,
           menuItems: finalMenu,
           menuCategories: Array.from(catsSet),
           qrDarkColor: incoming?.qrDarkColor || base?.qrDarkColor || '#000000',
@@ -1734,10 +1756,49 @@ export const StorageService = {
       if (Array.isArray(backupData.qrHostedPages)) {
         const incomingBizPages = backupData.qrHostedPages.filter((p: any) => !isNonBusinessQrPage(p));
         if (incomingBizPages.length > 0) {
+          const deletedAssetSet = new Set(
+            this.getDeletedQrAssetKeys().map((k) => k.toLowerCase())
+          );
+          const isDeletedAssetUrl = (val?: unknown): boolean => {
+            if (typeof val !== 'string' || !val.trim()) return false;
+            const norm = normalizeQrAssetKey(val);
+            if (!norm) return false;
+            if (deletedAssetSet.has(norm.toLowerCase())) return true;
+            try {
+              const dec = decodeURIComponent(norm).toLowerCase();
+              if (deletedAssetSet.has(dec)) return true;
+              if (deletedAssetSet.has(dec.replace(/%40/g, '@'))) return true;
+            } catch {}
+            return false;
+          };
+          const stripDeletedAssetsFromBizPage = (p: any) => {
+            if (!p || typeof p !== 'object') return p;
+            const nextPhotos = Array.isArray(p.photos)
+              ? p.photos.filter((ph: any) => !isDeletedAssetUrl(typeof ph === 'string' ? ph : ph?.url))
+              : p.photos;
+            const nextMenuImages = Array.isArray(p.menuImages)
+              ? p.menuImages.filter((mi: any) => !isDeletedAssetUrl(typeof mi === 'string' ? mi : mi?.url))
+              : p.menuImages;
+            const nextMenuItems = Array.isArray(p.menuItems)
+              ? p.menuItems.map((it: any) =>
+                  it && isDeletedAssetUrl(it.photoUrl) ? { ...it, photoUrl: undefined } : it
+                )
+              : p.menuItems;
+            return {
+              ...p,
+              photos: nextPhotos,
+              menuImages: nextMenuImages,
+              menuItems: nextMenuItems,
+              coverImage: isDeletedAssetUrl(p.coverImage) ? undefined : p.coverImage,
+              logo: isDeletedAssetUrl(p.logo) ? undefined : p.logo,
+            };
+          };
+          const cleanedIncomingBizPages = incomingBizPages.map(stripDeletedAssetsFromBizPage);
+
           const existing = this.getHostedQRPages();
           // Drop blank auto-created default page if cloud backup has real business pages
           const existingReal = existing.filter((p) => !isBlankDefaultBizPage(p));
-          const hasIncomingReal = incomingBizPages.some((p) => !isBlankDefaultBizPage(p));
+          const hasIncomingReal = cleanedIncomingBizPages.some((p) => !isBlankDefaultBizPage(p));
           const seedList = !hasIncomingReal || existingReal.length > 0 ? (existingReal.length > 0 ? existingReal : existing) : [];
 
           const qrMap = new Map<string, any>();
@@ -1745,7 +1806,7 @@ export const StorageService = {
             if (p && p.id) qrMap.set(p.id, p);
           });
 
-          incomingBizPages.forEach((incomingPage: any) => {
+          cleanedIncomingBizPages.forEach((incomingPage: any) => {
             if (!incomingPage || !incomingPage.id) return;
             const current = qrMap.get(incomingPage.id);
             if (current) {
@@ -1764,7 +1825,7 @@ export const StorageService = {
             }
           });
 
-          const finalBizPages = Array.from(qrMap.values());
+          const finalBizPages = Array.from(qrMap.values()).map(stripDeletedAssetsFromBizPage);
           if (finalBizPages.length > 0) {
             writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, finalBizPages);
           }
@@ -3141,6 +3202,23 @@ export const StorageService = {
       }
     }
     return success;
+  },
+
+  // --- DELETED BUSINESS QR ASSETS ---
+  getDeletedQrAssetKeys(): string[] {
+    const raw = readFromStorage<string[]>(STORAGE_KEYS.DELETED_QR_ASSETS, []);
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  markQrAssetDeleted(urlOrKey?: string): void {
+    if (!urlOrKey || typeof urlOrKey !== 'string') return;
+    const norm = normalizeQrAssetKey(urlOrKey).toLowerCase();
+    if (!norm) return;
+    const current = this.getDeletedQrAssetKeys().map((x) => String(x).trim().toLowerCase());
+    if (!current.includes(norm)) {
+      current.push(norm);
+      writeToStorage(STORAGE_KEYS.DELETED_QR_ASSETS, current.slice(-200));
+    }
   },
 
   // --- EVENTS QR ITEMS ---

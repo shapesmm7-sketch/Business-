@@ -43,7 +43,7 @@ interface QrQuickSectionsProps {
   activePage: QRCodeHostedPage;
   business: BusinessProfile;
   ownerEmail: string;
-  onUpdatePage: (updates: Partial<QRCodeHostedPage>, immediateSync?: boolean) => void;
+  onUpdatePage: (updates: Partial<QRCodeHostedPage>, immediateSync?: boolean, localOnly?: boolean) => void;
   showToast: (msg: string) => void;
 }
 
@@ -475,6 +475,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
 
         // If the replacement landed on a different R2 key (or legacy path), delete the old photo from R2/D1 immediately
         if (!sameKey && targetImg.url && (/^https?:\/\//i.test(targetImg.url) || targetImg.url.includes('/api/files/'))) {
+          StorageService.markQrAssetDeleted(targetImg.url);
           await CloudflareService.deleteFile(targetImg.url).catch(() => {});
         }
 
@@ -572,23 +573,46 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     setMenuImageToDelete(target);
   };
 
-  const handleConfirmDeleteMenuImage = () => {
+  const handleConfirmDeleteMenuImage = async () => {
     if (!menuImageToDelete) return;
-    const id = menuImageToDelete.id;
-    if (menuImageToDelete.url && (/^https?:\/\//i.test(menuImageToDelete.url) || menuImageToDelete.url.includes('/api/files/'))) {
-      CloudflareService.deleteFile(menuImageToDelete.url).catch(() => {});
+    const target = menuImageToDelete;
+    const id = target.id;
+    const targetUrl = target.url || '';
+    if (targetUrl) {
+      const stillUsedElsewhere = menuImages.some((img) => img.id !== id && img.url === targetUrl);
+      if (!stillUsedElsewhere) {
+        StorageService.markQrAssetDeleted(targetUrl);
+      }
     }
     const remaining = menuImages.filter((img) => img.id !== id);
     const updated = remaining.map((m, idx) => ({
       ...m,
       badge: idx === 0 ? 'active' : m.badge === 'active' ? undefined : m.badge,
     }));
-    onUpdatePage({ menuImages: updated }, true);
+    const updatedPage: QRCodeHostedPage = {
+      ...activePage,
+      menuImages: updated,
+      email: resolvedAuthEmail || activePage.email,
+      userEmail: resolvedAuthEmail || activePage.userEmail,
+      updatedAt: new Date().toISOString(),
+    };
+    onUpdatePage({ menuImages: updated }, false, true);
     if (selectedMenuImgId === id) {
       setSelectedMenuImgId(updated[0]?.id || null);
     }
     setMenuImageToDelete(null);
     showToast('Menu image deleted');
+
+    if (targetUrl && (/^https?:\/\//i.test(targetUrl) || targetUrl.includes('/api/files/'))) {
+      const stillUsedElsewhere = remaining.some((img) => img.url === targetUrl);
+      if (!stillUsedElsewhere) {
+        await CloudflareService.deleteFile(targetUrl).catch(() => {});
+      }
+    }
+    await Promise.allSettled([
+      CloudflareService.saveSingleQrPage(updatedPage, resolvedAuthEmail || undefined, { immediate: true }),
+      CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+    ]);
   };
 
   const handleSaveWifi = () => {

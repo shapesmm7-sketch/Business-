@@ -1617,6 +1617,206 @@ export function extractR2KeyFromFileUrl(raw: unknown): string {
   return '';
 }
 
+function expandR2KeyVariants(rawKey: string): string[] {
+  const k = String(rawKey || '').trim();
+  if (!k) return [];
+  const variants = new Set<string>([k]);
+  try {
+    variants.add(decodeURIComponent(k));
+  } catch {}
+  for (const item of Array.from(variants)) {
+    if (item.includes('%40')) variants.add(item.replace(/%40/gi, '@'));
+    if (item.includes('@')) variants.add(item.replace(/@/g, '%40'));
+  }
+  return Array.from(variants).filter(Boolean);
+}
+
+function isNonBusinessQrPageObj(p: any): boolean {
+  if (!p || typeof p !== 'object') return false;
+  const pid = String(p.id || '').toLowerCase();
+  const ptype = String(p.pageType || '').toLowerCase();
+  return (
+    ptype === 'websites_hub' ||
+    ptype === 'socials_hub' ||
+    ptype === 'events_hub' ||
+    ptype === 'event' ||
+    ptype === 'rooms_hub' ||
+    ptype === 'room' ||
+    pid.startsWith('event-') ||
+    pid.startsWith('events-hub') ||
+    pid.startsWith('room-') ||
+    pid.startsWith('rooms-hub') ||
+    pid.startsWith('websites-hub') ||
+    pid.startsWith('socials-hub')
+  );
+}
+
+async function stripDeletedFileFromBusinessQrRows(
+  db: any,
+  userEmail: string,
+  rawKeys: string[]
+): Promise<void> {
+  if (!db || !userEmail) return;
+  const cleanEmail = userEmail.toLowerCase().trim();
+  if (!cleanEmail || !cleanEmail.includes('@')) return;
+
+  const deletedSet = new Set<string>();
+  for (const rk of rawKeys) {
+    for (const v of expandR2KeyVariants(rk)) {
+      deletedSet.add(v);
+    }
+  }
+  if (deletedSet.size === 0) return;
+
+  const matchesDeleted = (val: unknown): boolean => {
+    if (typeof val !== 'string' || !val.trim()) return false;
+    const key = extractR2KeyFromFileUrl(val) || (!val.startsWith('http') && !val.startsWith('data:') ? val.trim() : '');
+    if (!key) return false;
+    return expandR2KeyVariants(key).some((v) => deletedSet.has(v));
+  };
+
+  const now = new Date().toISOString();
+
+  // 1. Prune from Business QR rows in D1 qr_pages
+  try {
+    const qrRows: any = await db
+      .prepare('SELECT id, page_json FROM qr_pages WHERE LOWER(user_email) = ? OR id = ? OR id LIKE ?')
+      .bind(cleanEmail, `user_${cleanEmail}_business`, `user_${cleanEmail}_biz_%`)
+      .all();
+
+    for (const row of qrRows?.results || []) {
+      if (!row?.id || !row?.page_json) continue;
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(row.page_json);
+      } catch {}
+      if (!parsed || isNonBusinessQrPageObj(parsed)) continue;
+
+      let changed = false;
+      if (Array.isArray(parsed.photos)) {
+        const nextPhotos = parsed.photos.filter((p: any) => !matchesDeleted(typeof p === 'string' ? p : p?.url));
+        if (nextPhotos.length !== parsed.photos.length) {
+          parsed.photos = nextPhotos;
+          changed = true;
+        }
+      }
+      if (Array.isArray(parsed.menuImages)) {
+        const nextMenuImages = parsed.menuImages.filter((p: any) => !matchesDeleted(typeof p === 'string' ? p : p?.url));
+        if (nextMenuImages.length !== parsed.menuImages.length) {
+          parsed.menuImages = nextMenuImages;
+          changed = true;
+        }
+      }
+      if (matchesDeleted(parsed.coverImage)) {
+        delete parsed.coverImage;
+        changed = true;
+      }
+      if (matchesDeleted(parsed.logo)) {
+        delete parsed.logo;
+        changed = true;
+      }
+      if (Array.isArray(parsed.menuItems)) {
+        let menuChanged = false;
+        const nextMenu = parsed.menuItems.map((it: any) => {
+          if (it && matchesDeleted(it.photoUrl)) {
+            menuChanged = true;
+            const { photoUrl, ...rest } = it;
+            return rest;
+          }
+          return it;
+        });
+        if (menuChanged) {
+          parsed.menuItems = nextMenu;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        parsed.updatedAt = now;
+        const nextJson = JSON.stringify(parsed);
+        const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nextJson));
+        const hashHex = Array.from(new Uint8Array(hashBuf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('')
+          .slice(0, 32);
+        await db
+          .prepare('UPDATE qr_pages SET page_json = ?, content_hash = ?, updated_at = ? WHERE id = ?')
+          .bind(nextJson, hashHex, now, row.id)
+          .run();
+        invalidateCachePattern('qrCache:');
+      }
+    }
+  } catch (err) {
+    console.warn('stripDeletedFileFromBusinessQrRows qr_pages note:', err);
+  }
+
+  // 2. Prune from Business qrHostedPages inside D1 backups
+  try {
+    const backupRow: any = await db
+      .prepare('SELECT id, backup_data FROM backups WHERE id = ? OR LOWER(user_email) = ? ORDER BY updated_at DESC LIMIT 1')
+      .bind(`user_${cleanEmail}`, cleanEmail)
+      .first();
+    if (backupRow?.id && backupRow?.backup_data) {
+      const bData = JSON.parse(backupRow.backup_data);
+      if (Array.isArray(bData?.qrHostedPages)) {
+        let backupChanged = false;
+        bData.qrHostedPages = bData.qrHostedPages.map((page: any) => {
+          if (!page || isNonBusinessQrPageObj(page)) return page;
+          let pageChanged = false;
+          const nextPage = { ...page };
+          if (Array.isArray(nextPage.photos)) {
+            const nextPhotos = nextPage.photos.filter((p: any) => !matchesDeleted(typeof p === 'string' ? p : p?.url));
+            if (nextPhotos.length !== nextPage.photos.length) {
+              nextPage.photos = nextPhotos;
+              pageChanged = true;
+            }
+          }
+          if (Array.isArray(nextPage.menuImages)) {
+            const nextMenuImages = nextPage.menuImages.filter((p: any) => !matchesDeleted(typeof p === 'string' ? p : p?.url));
+            if (nextMenuImages.length !== nextPage.menuImages.length) {
+              nextPage.menuImages = nextMenuImages;
+              pageChanged = true;
+            }
+          }
+          if (matchesDeleted(nextPage.coverImage)) {
+            delete nextPage.coverImage;
+            pageChanged = true;
+          }
+          if (matchesDeleted(nextPage.logo)) {
+            delete nextPage.logo;
+            pageChanged = true;
+          }
+          if (Array.isArray(nextPage.menuItems)) {
+            const nextMenu = nextPage.menuItems.map((it: any) => {
+              if (it && matchesDeleted(it.photoUrl)) {
+                pageChanged = true;
+                const { photoUrl, ...rest } = it;
+                return rest;
+              }
+              return it;
+            });
+            nextPage.menuItems = nextMenu;
+          }
+          if (pageChanged) {
+            nextPage.updatedAt = now;
+            backupChanged = true;
+          }
+          return nextPage;
+        });
+
+        if (backupChanged) {
+          await db
+            .prepare('UPDATE backups SET backup_data = ?, updated_at = ? WHERE id = ?')
+            .bind(JSON.stringify(bData), now, backupRow.id)
+            .run();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('stripDeletedFileFromBusinessQrRows backups note:', err);
+  }
+}
+
 export function isQrProtectedAssetKey(rawKey: string): boolean {
   const k = String(rawKey || '').toLowerCase();
   if (!k) return false;
@@ -5840,6 +6040,8 @@ export default {
         } catch {}
 
         const isPublicMenuAssetKey = key.startsWith('menu-public/') || decodedKey.startsWith('menu-public/');
+        let altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
+        let resolvedOwnerEmail = '';
         if (!isPublicMenuAssetKey) {
           const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx);
           if (!sessionCheck.ok && sessionCheck.response) {
@@ -5847,6 +6049,7 @@ export default {
           }
           if (sessionCheck.session) {
             const ownerEmail = sessionCheck.session.userEmail;
+            resolvedOwnerEmail = ownerEmail;
             const allowedPrefixes = [
               `users/${encodeURIComponent(ownerEmail)}/`,
               `users/${ownerEmail}/`,
@@ -5861,12 +6064,25 @@ export default {
             }
           }
         }
+        if (!resolvedOwnerEmail) {
+          const hdrEmail = (request.headers.get('X-User-Email') || request.headers.get('X-User-Id') || '').toLowerCase().trim();
+          if (hdrEmail && hdrEmail.includes('@')) {
+            resolvedOwnerEmail = hdrEmail;
+          } else {
+            const match = decodedKey.match(/^users\/([^/]+)\//i) || key.match(/^users\/([^/]+)\//i);
+            if (match?.[1]) {
+              try {
+                const decodedOwner = decodeURIComponent(match[1]).toLowerCase().trim();
+                if (decodedOwner.includes('@')) resolvedOwnerEmail = decodedOwner;
+              } catch {}
+            }
+          }
+        }
 
         if (bucket && key) {
           try {
             await bucket.delete(key);
             if (decodedKey !== key) await bucket.delete(decodedKey).catch(() => {});
-            const altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
             if (altKey && altKey !== key && altKey !== decodedKey) {
               await bucket.delete(altKey).catch(() => {});
             }
@@ -5876,13 +6092,18 @@ export default {
         if (db && key) {
           try {
             await ensureD1Tables(db);
-            const altKey = key.includes('%40') ? key.replace(/%40/gi, '@') : key.replace(/@/g, '%40');
             await db.prepare(`
               DELETE FROM files 
               WHERE id IN (?, ?, ?) OR r2_key IN (?, ?, ?)
             `).bind(key, decodedKey, altKey, key, decodedKey, altKey).run();
             deletedD1 = true;
           } catch {}
+          if (!resolvedOwnerEmail && isPublicMenuAssetKey) {
+            resolvedOwnerEmail = (await resolveOwnerEmailFromAssetKey(db, [key, decodedKey, altKey]).catch(() => '')) || '';
+          }
+          if (resolvedOwnerEmail) {
+            await stripDeletedFileFromBusinessQrRows(db, resolvedOwnerEmail, [key, decodedKey, altKey]);
+          }
         }
         return new Response(
           JSON.stringify({
@@ -5902,7 +6123,8 @@ export default {
         );
       }
 
-      // Get/Serve file
+      // Get/Serve file (supports HEAD & GET)
+      const isHeadRequest = request.method === 'HEAD';
       const rawKey = url.pathname.replace('/api/files/', '');
       const candidateKeys = Array.from(
         new Set(
@@ -5933,7 +6155,7 @@ export default {
           if (trialState?.isGracePeriodExpired) {
             await purgeUserQrAndCloudData(db, bucket, assetOwnerEmail);
             return new Response(
-              JSON.stringify({
+              isHeadRequest ? null : JSON.stringify({
                 ok: false,
                 expired: true,
                 graceExpired: true,
@@ -5955,7 +6177,7 @@ export default {
       if (bucket && candidateKeys.length > 0) {
         for (const k of candidateKeys) {
           try {
-            const object = await bucket.get(k);
+            const object = isHeadRequest ? await bucket.head(k) : await bucket.get(k);
             if (object) {
               const headers = new Headers(CORS_HEADERS);
               const contentType = object.httpMetadata?.contentType || 'application/octet-stream';
@@ -5973,14 +6195,17 @@ export default {
               } else {
                 headers.set('Cache-Control', 'public, max-age=3600');
               }
+              if (typeof object.size === 'number') {
+                headers.set('Content-Length', String(object.size));
+              }
+              if (isHeadRequest) {
+                return new Response(null, { status: 200, headers });
+              }
               // Buffer files up to 5 MB cleanly so Content-Length matches exact bytes and avoids chunked R2 stream resets on HTTP/3
               if (typeof object.size === 'number' && object.size <= 5 * 1024 * 1024) {
                 const buf = await object.arrayBuffer();
                 headers.set('Content-Length', String(buf.byteLength));
                 return new Response(buf, { status: 200, headers });
-              }
-              if (typeof object.size === 'number') {
-                headers.set('Content-Length', String(object.size));
               }
               return new Response(object.body, { status: 200, headers });
             }
@@ -5993,9 +6218,20 @@ export default {
           await ensureD1Tables(db);
           for (const k of candidateKeys) {
             const row: any = await db
-              .prepare('SELECT data_base64, mime_type FROM files WHERE id = ? OR r2_key = ?')
+              .prepare(isHeadRequest ? 'SELECT mime_type, size FROM files WHERE id = ? OR r2_key = ?' : 'SELECT data_base64, mime_type FROM files WHERE id = ? OR r2_key = ?')
               .bind(k, k)
               .first();
+            if (isHeadRequest && row) {
+              return new Response(null, {
+                status: 200,
+                headers: {
+                  ...CORS_HEADERS,
+                  'Content-Type': row.mime_type || 'application/octet-stream',
+                  ...(typeof row.size === 'number' ? { 'Content-Length': String(row.size) } : {}),
+                  'Cache-Control': 'public, max-age=3600',
+                },
+              });
+            }
             if (row && row.data_base64) {
               const buffer = decodeBase64ToUint8Array(row.data_base64);
               return new Response(buffer, {
@@ -6015,7 +6251,7 @@ export default {
       }
 
       return new Response(
-        JSON.stringify({ ok: false, error: 'File not found' }),
+        isHeadRequest ? null : JSON.stringify({ ok: false, error: 'File not found' }),
         {
           status: 404,
           headers: {
@@ -7025,7 +7261,22 @@ export default {
           );
         }
 
-        // 1. Attempt retrieving user-scoped backup from R2 under user email ID
+        // 1. Check D1 user backup first (updated on every /api/sync/push), then compare against legacy R2 backup JSON if present
+        let d1BackupData: any = null;
+        let d1BackupTs = 0;
+        if (db) {
+          try {
+            await ensureD1Tables(db);
+            const row: any = await db.prepare('SELECT backup_data, updated_at FROM backups WHERE id = ? OR LOWER(user_email) = ? ORDER BY updated_at DESC LIMIT 1').bind(`user_${userEmail}`, userEmail).first();
+            if (row && row.backup_data) {
+              d1BackupData = JSON.parse(row.backup_data);
+              d1BackupTs = new Date(row.updated_at || d1BackupData?.exportedAt || 0).getTime() || 0;
+            }
+          } catch (_) {}
+        }
+
+        let r2BackupData: any = null;
+        let r2BackupTs = 0;
         if (bucket) {
           try {
             const userKey = encodeURIComponent(userEmail);
@@ -7034,20 +7285,18 @@ export default {
               backupObj = await bucket.get(`users/${userKey}/backup.json`);
             }
             if (backupObj) {
-              backupData = JSON.parse(await backupObj.text());
+              r2BackupData = JSON.parse(await backupObj.text());
+              const objTs = backupObj.uploaded ? new Date(backupObj.uploaded).getTime() : 0;
+              const expTs = r2BackupData?.exportedAt ? new Date(r2BackupData.exportedAt).getTime() : 0;
+              r2BackupTs = Math.max(objTs || 0, expTs || 0);
             }
           } catch (_) {}
         }
 
-        // 2. If not found in R2, check D1 user backup strictly for this user email
-        if (!backupData && db) {
-          try {
-            await ensureD1Tables(db);
-            const row: any = await db.prepare('SELECT backup_data FROM backups WHERE id = ? OR LOWER(user_email) = ? ORDER BY updated_at DESC LIMIT 1').bind(`user_${userEmail}`, userEmail).first();
-            if (row && row.backup_data) {
-              backupData = JSON.parse(row.backup_data);
-            }
-          } catch (_) {}
+        if (d1BackupData && r2BackupData) {
+          backupData = r2BackupTs > d1BackupTs ? r2BackupData : d1BackupData;
+        } else {
+          backupData = d1BackupData || r2BackupData || null;
         }
 
         // 3. Enrich backupData with all live records in D1 (receipts, products, clients, staff, qr_pages, files)
@@ -7114,7 +7363,9 @@ export default {
                 photos: hasStrictlyNewerBiz
                   ? (Array.isArray(newer.photos) ? newer.photos : [])
                   : pickNonEmptyArr(newer.photos, older.photos),
-                menuImages: pickNonEmptyArr(newer.menuImages, older.menuImages),
+                menuImages: hasStrictlyNewerBiz
+                  ? (Array.isArray(newer.menuImages) ? newer.menuImages : [])
+                  : pickNonEmptyArr(newer.menuImages, older.menuImages),
                 menuCategories: hasStrictlyNewerBiz && Array.isArray(newer.menuCategories)
                   ? newer.menuCategories
                   : pickCats(older.menuCategories, newer.menuCategories),
@@ -7357,18 +7608,133 @@ export default {
             const allUserFiles = Array.from(fileMap.values());
             backupData.files = allUserFiles;
 
+            // D2. Prune deleted /api/files/ references from Business QR pages so deleted photos/cover/logo never resurrect as broken shadows
+            const liveFileKeySet = new Set<string>();
+            for (const f of allUserFiles) {
+              if (f?.key) {
+                for (const v of expandR2KeyVariants(String(f.key))) {
+                  liveFileKeySet.add(v);
+                }
+              }
+            }
+            const fileExistsCache = new Map<string, boolean>();
+            const isLiveBusinessFileUrl = async (rawUrl: unknown): Promise<boolean> => {
+              if (typeof rawUrl !== 'string' || !rawUrl.trim()) return false;
+              if (!rawUrl.includes('/api/files/')) return true;
+              const extracted = extractR2KeyFromFileUrl(rawUrl);
+              if (!extracted) return true;
+              const variants = expandR2KeyVariants(extracted);
+              const isManagedCloudKey = variants.some((v) => v.startsWith('users/') || v.startsWith('menu-public/'));
+              if (!isManagedCloudKey) return true;
+              if (variants.some((v) => liveFileKeySet.has(v))) return true;
+              const cacheKey = variants[0];
+              if (fileExistsCache.has(cacheKey)) {
+                return Boolean(fileExistsCache.get(cacheKey));
+              }
+              let exists = false;
+              if (bucket) {
+                for (const v of variants) {
+                  try {
+                    const headObj = await bucket.head(v);
+                    if (headObj) {
+                      exists = true;
+                      break;
+                    }
+                  } catch {}
+                }
+              }
+              if (!exists && db) {
+                try {
+                  const k0 = variants[0] || '';
+                  const k1 = variants[1] || k0;
+                  const k2 = variants[2] || k0;
+                  const fRow: any = await db
+                    .prepare('SELECT id FROM files WHERE id IN (?, ?, ?) OR r2_key IN (?, ?, ?) LIMIT 1')
+                    .bind(k0, k1, k2, k0, k1, k2)
+                    .first();
+                  if (fRow?.id) exists = true;
+                } catch {}
+              }
+              fileExistsCache.set(cacheKey, exists);
+              return exists;
+            };
+
+            if (Array.isArray(backupData.qrHostedPages)) {
+              const deadKeysForCleanup = new Set<string>();
+              const prunedPages: any[] = [];
+              for (const p of backupData.qrHostedPages) {
+                if (!p || isNonBusinessQrPageObj(p)) {
+                  prunedPages.push(p);
+                  continue;
+                }
+                const nextPage = { ...p };
+                if (Array.isArray(nextPage.photos)) {
+                  const keptPhotos: any[] = [];
+                  for (const ph of nextPage.photos) {
+                    const phUrl = typeof ph === 'string' ? ph : ph?.url;
+                    if (await isLiveBusinessFileUrl(phUrl)) {
+                      keptPhotos.push(ph);
+                    } else if (phUrl) {
+                      const ek = extractR2KeyFromFileUrl(phUrl);
+                      if (ek) deadKeysForCleanup.add(ek);
+                    }
+                  }
+                  nextPage.photos = keptPhotos;
+                }
+                if (Array.isArray(nextPage.menuImages)) {
+                  const keptMenuImages: any[] = [];
+                  for (const mi of nextPage.menuImages) {
+                    const miUrl = typeof mi === 'string' ? mi : mi?.url;
+                    if (await isLiveBusinessFileUrl(miUrl)) {
+                      keptMenuImages.push(mi);
+                    } else if (miUrl) {
+                      const ek = extractR2KeyFromFileUrl(miUrl);
+                      if (ek) deadKeysForCleanup.add(ek);
+                    }
+                  }
+                  nextPage.menuImages = keptMenuImages;
+                }
+                if (Array.isArray(nextPage.menuItems)) {
+                  const nextMenuItems: any[] = [];
+                  for (const it of nextPage.menuItems) {
+                    if (it && it.photoUrl && !(await isLiveBusinessFileUrl(it.photoUrl))) {
+                      const ek = extractR2KeyFromFileUrl(it.photoUrl);
+                      if (ek) deadKeysForCleanup.add(ek);
+                      const { photoUrl, ...rest } = it;
+                      nextMenuItems.push(rest);
+                    } else {
+                      nextMenuItems.push(it);
+                    }
+                  }
+                  nextPage.menuItems = nextMenuItems;
+                }
+                if (nextPage.coverImage && !(await isLiveBusinessFileUrl(nextPage.coverImage))) {
+                  const ek = extractR2KeyFromFileUrl(nextPage.coverImage);
+                  if (ek) deadKeysForCleanup.add(ek);
+                  delete nextPage.coverImage;
+                }
+                if (nextPage.logo && !(await isLiveBusinessFileUrl(nextPage.logo))) {
+                  const ek = extractR2KeyFromFileUrl(nextPage.logo);
+                  if (ek) deadKeysForCleanup.add(ek);
+                  delete nextPage.logo;
+                }
+                prunedPages.push(nextPage);
+              }
+              backupData.qrHostedPages = prunedPages;
+              if (deadKeysForCleanup.size > 0 && db) {
+                const cleanupWork = stripDeletedFileFromBusinessQrRows(db, userEmail, Array.from(deadKeysForCleanup));
+                if (ctx && typeof ctx.waitUntil === 'function') {
+                  ctx.waitUntil(cleanupWork);
+                } else {
+                  cleanupWork.catch(() => {});
+                }
+              }
+            }
+
             // E. Only auto-recover QR gallery photos from R2/D1 when NO Business QR page exists yet (never overwrite intentional deletions)
             const recoveredAssets = recoverQrPhotosFromFileRecords(allUserFiles, url.origin);
             const existingBizPages = Array.isArray(backupData.qrHostedPages)
-              ? backupData.qrHostedPages.filter((p: any) =>
-                  p &&
-                  p.pageType !== 'websites_hub' &&
-                  p.pageType !== 'socials_hub' &&
-                  p.pageType !== 'events_hub' &&
-                  p.pageType !== 'event' &&
-                  p.pageType !== 'rooms_hub' &&
-                  p.pageType !== 'room'
-                )
+              ? backupData.qrHostedPages.filter((p: any) => !isNonBusinessQrPageObj(p))
               : [];
             if (existingBizPages.length === 0 && recoveredAssets.photos.length > 0) {
               const basePages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];

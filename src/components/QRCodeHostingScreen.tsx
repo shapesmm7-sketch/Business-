@@ -486,6 +486,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       !activePage ||
       ((!activePage.menuItems || activePage.menuItems.length === 0) &&
         (!activePage.photos || activePage.photos.length === 0) &&
+        (!activePage.menuImages || activePage.menuImages.length === 0) &&
         (!activePage.customSocialLinks || activePage.customSocialLinks.length === 0) &&
         !activePage.description &&
         !activePage.openingHours &&
@@ -519,13 +520,162 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       if (!cancelled && isPageEmpty && !didPullBizPage) {
         const latestPages = StorageService.getHostedQRPages();
         const latestActive = latestPages.find((p) => p.id === activePageId) || latestPages[0];
-        if (!latestActive || (!latestActive.updatedAt && (!Array.isArray(latestActive.photos) || latestActive.photos.length === 0))) {
-          handleRecoverCloudPhotos(false, true).catch(() => {});
+        if (
+          !latestActive ||
+          (!latestActive.updatedAt &&
+            (!Array.isArray(latestActive.photos) || latestActive.photos.length === 0) &&
+            (!Array.isArray(latestActive.menuImages) || latestActive.menuImages.length === 0))
+        ) {
+          await handleRecoverCloudPhotos(false, true).catch(() => {});
         }
       }
     };
 
-    restoreMissingQrData().catch(() => {});
+    // Verify existing Business QR /api/files/ photos, menu images, cover, logo, and item photos are still live
+    // on Cloudflare R2 so deleted files never remain as broken image shadows after refresh.
+    const pruneDeadCloudAssets = async () => {
+      if (cancelled) return;
+      const currentPages = StorageService.getHostedQRPages();
+      const targetPage = currentPages.find((p) => p.id === activePageId) || currentPages[0];
+      if (!targetPage) return;
+
+      const isManagedCloudFile = (u?: string) =>
+        typeof u === 'string' && (u.includes('/api/files/users/') || u.includes('/api/files/menu-public/'));
+
+      const deletedSet = new Set(StorageService.getDeletedQrAssetKeys().map((k) => k.toLowerCase()));
+      const isTombstoned = (u?: string): boolean => {
+        if (!u || typeof u !== 'string') return false;
+        let clean = u.trim();
+        if (clean.includes('/api/files/')) {
+          clean = (clean.split('/api/files/')[1] || '').split('?')[0].split('#')[0];
+        }
+        try {
+          clean = decodeURIComponent(clean);
+        } catch {}
+        const normalized = clean.replace(/%40/gi, '@').toLowerCase().trim();
+        return Boolean(normalized && deletedSet.has(normalized));
+      };
+
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
+      const checkDead = async (u?: string): Promise<boolean> => {
+        if (!u || typeof u !== 'string') return false;
+        if (isTombstoned(u)) return true;
+        if (!isOnline || !isManagedCloudFile(u)) return false;
+        try {
+          const controller = new AbortController();
+          const tId = setTimeout(() => controller.abort(), 5000);
+          try {
+            const res = await fetch(u, {
+              method: 'HEAD',
+              cache: 'no-store',
+              signal: controller.signal,
+            });
+            return res.status === 404 || res.status === 410;
+          } finally {
+            clearTimeout(tId);
+          }
+        } catch {
+          return false;
+        }
+      };
+
+      const photos = Array.isArray(targetPage.photos) ? targetPage.photos : [];
+      const menuImgs = Array.isArray(targetPage.menuImages) ? targetPage.menuImages : [];
+      const menuItemsList = Array.isArray(targetPage.menuItems) ? targetPage.menuItems : [];
+      const hasAnyCloudAsset =
+        isManagedCloudFile(targetPage.coverImage) ||
+        isManagedCloudFile(targetPage.logo) ||
+        isTombstoned(targetPage.coverImage) ||
+        isTombstoned(targetPage.logo) ||
+        photos.some((ph) => isManagedCloudFile(ph?.url) || isTombstoned(ph?.url)) ||
+        menuImgs.some((mi) => isManagedCloudFile(mi?.url) || isTombstoned(mi?.url)) ||
+        menuItemsList.some((it) => isManagedCloudFile(it?.photoUrl) || isTombstoned(it?.photoUrl));
+      if (!hasAnyCloudAsset) return;
+
+      let changed = false;
+      const deadPhotoUrls = new Set<string>();
+      for (const ph of photos) {
+        if (ph?.url && (await checkDead(ph.url))) {
+          StorageService.markQrAssetDeleted(ph.url);
+          deadPhotoUrls.add(ph.url);
+          changed = true;
+        }
+      }
+
+      const deadMenuImageUrls = new Set<string>();
+      for (const mi of menuImgs) {
+        if (mi?.url && (await checkDead(mi.url))) {
+          StorageService.markQrAssetDeleted(mi.url);
+          deadMenuImageUrls.add(mi.url);
+          changed = true;
+        }
+      }
+
+      const deadItemPhotoUrls = new Set<string>();
+      for (const it of menuItemsList) {
+        if (it?.photoUrl && (await checkDead(it.photoUrl))) {
+          StorageService.markQrAssetDeleted(it.photoUrl);
+          deadItemPhotoUrls.add(it.photoUrl);
+          changed = true;
+        }
+      }
+
+      let nextCover = targetPage.coverImage;
+      if (targetPage.coverImage && (await checkDead(targetPage.coverImage))) {
+        StorageService.markQrAssetDeleted(targetPage.coverImage);
+        nextCover = undefined;
+        changed = true;
+      }
+
+      let nextLogo = targetPage.logo;
+      if (targetPage.logo && (await checkDead(targetPage.logo))) {
+        StorageService.markQrAssetDeleted(targetPage.logo);
+        nextLogo = undefined;
+        changed = true;
+      }
+
+      if (changed && !cancelled) {
+        const latestPages = StorageService.getHostedQRPages();
+        const latestTarget = latestPages.find((p) => p.id === targetPage.id);
+        if (!latestTarget) return;
+        const nextMenuImgs = Array.isArray(latestTarget.menuImages)
+          ? latestTarget.menuImages
+              .filter((mi) => !deadMenuImageUrls.has(mi.url))
+              .map((mi, idx) => ({
+                ...mi,
+                badge: idx === 0 ? 'active' : mi.badge === 'active' ? undefined : mi.badge,
+              }))
+          : latestTarget.menuImages;
+        const nextMenuItems = Array.isArray(latestTarget.menuItems)
+          ? latestTarget.menuItems.map((it) =>
+              it.photoUrl && deadItemPhotoUrls.has(it.photoUrl) ? { ...it, photoUrl: undefined } : it
+            )
+          : latestTarget.menuItems;
+
+        const cleanedPage: QRCodeHostedPage = {
+          ...latestTarget,
+          photos: (latestTarget.photos || []).filter((ph) => !deadPhotoUrls.has(ph.url)),
+          menuImages: nextMenuImgs,
+          menuItems: nextMenuItems,
+          coverImage: nextCover === undefined && latestTarget.coverImage === targetPage.coverImage ? undefined : latestTarget.coverImage,
+          logo: nextLogo === undefined && latestTarget.logo === targetPage.logo ? undefined : latestTarget.logo,
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedList = latestPages.map((p) => (p.id === cleanedPage.id ? cleanedPage : p));
+        setPages(updatedList);
+        StorageService.saveHostedQRPagesLocalOnly(updatedList);
+        await Promise.allSettled([
+          CloudflareService.saveSingleQrPage(cleanedPage, ownerEmail, { immediate: true }),
+          CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+        ]);
+      }
+    };
+
+    (async () => {
+      await restoreMissingQrData();
+      await pruneDeadCloudAssets();
+    })().catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -595,7 +745,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setShowQuickQrModal(true);
   };
 
-  const handleUpdateActivePage = (updates: Partial<QRCodeHostedPage>, immediate = false) => {
+  const handleUpdateActivePage = (updates: Partial<QRCodeHostedPage>, immediate = false, localOnly = false) => {
     if (!activePage) return;
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated = {
@@ -607,7 +757,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated, immediate ? { immediate: true } : undefined);
+    if (localOnly) {
+      StorageService.saveHostedQRPagesLocalOnly(newPages);
+    } else {
+      StorageService.saveHostedQRPage(updated, immediate ? { immediate: true } : undefined);
+    }
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -692,11 +846,8 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage) return;
     const oldLogo = activePage.logo;
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
-    if (oldLogo && oldLogo.includes('/api/files/')) {
-      await CloudflareService.deleteFile(oldLogo).catch(() => {});
-      if (oldLogo.toLowerCase().includes('logo.webp') && resolvedEmail) {
-        await CloudflareService.deleteFile(`users/${encodeURIComponent(resolvedEmail)}/logo.webp`).catch(() => {});
-      }
+    if (oldLogo) {
+      StorageService.markQrAssetDeleted(oldLogo);
     }
     const updated: QRCodeHostedPage = {
       ...activePage,
@@ -707,7 +858,17 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated, { immediate: true });
+    StorageService.saveHostedQRPagesLocalOnly(newPages);
+    if (oldLogo && oldLogo.includes('/api/files/')) {
+      await CloudflareService.deleteFile(oldLogo).catch(() => {});
+      if (oldLogo.toLowerCase().includes('logo.webp') && resolvedEmail) {
+        await CloudflareService.deleteFile(`users/${encodeURIComponent(resolvedEmail)}/logo.webp`).catch(() => {});
+      }
+    }
+    await Promise.allSettled([
+      CloudflareService.saveSingleQrPage(updated, resolvedEmail, { immediate: true }),
+      CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+    ]);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
     showToast('Business logo deleted');
@@ -720,8 +881,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const confirmRemoveCoverImage = async () => {
     if (!activePage) return;
-    if (activePage.coverImage && activePage.coverImage.includes('/api/files/')) {
-      await CloudflareService.deleteFile(activePage.coverImage).catch(() => {});
+    const oldCover = activePage.coverImage;
+    if (oldCover) {
+      StorageService.markQrAssetDeleted(oldCover);
     }
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated: QRCodeHostedPage = {
@@ -733,7 +895,14 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     };
     const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
     setPages(newPages);
-    StorageService.saveHostedQRPage(updated, { immediate: true });
+    StorageService.saveHostedQRPagesLocalOnly(newPages);
+    if (oldCover && oldCover.includes('/api/files/')) {
+      await CloudflareService.deleteFile(oldCover).catch(() => {});
+    }
+    await Promise.allSettled([
+      CloudflareService.saveSingleQrPage(updated, resolvedEmail, { immediate: true }),
+      CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+    ]);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
     showToast('Cover banner deleted');
@@ -1241,15 +1410,35 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage) return;
     const photoToDelete = activePage.photos.find((p) => p.id === photoId);
     const remainingPhotos = activePage.photos.filter((p) => p.id !== photoId);
+    const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
+    if (photoToDelete?.url) {
+      const stillUsed = remainingPhotos.some((p) => p.url === photoToDelete.url);
+      if (!stillUsed) {
+        StorageService.markQrAssetDeleted(photoToDelete.url);
+      }
+    }
+    const updated: QRCodeHostedPage = {
+      ...activePage,
+      photos: remainingPhotos,
+      email: resolvedEmail || activePage.email,
+      userEmail: resolvedEmail || activePage.userEmail,
+      updatedAt: new Date().toISOString(),
+    };
+    const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
+    setPages(newPages);
+    StorageService.saveHostedQRPagesLocalOnly(newPages);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
     if (photoToDelete?.url && photoToDelete.url.includes('/api/files/')) {
       const stillUsed = remainingPhotos.some((p) => p.url === photoToDelete.url);
       if (!stillUsed) {
         await CloudflareService.deleteFile(photoToDelete.url).catch(() => {});
       }
     }
-    handleUpdateActivePage({
-      photos: remainingPhotos,
-    }, true);
+    await Promise.allSettled([
+      CloudflareService.saveSingleQrPage(updated, resolvedEmail, { immediate: true }),
+      CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+    ]);
     showToast('Photo deleted');
   };
 
@@ -1369,6 +1558,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       editingItem.photoUrl !== itemPhotoUrl &&
       editingItem.photoUrl.includes('/api/files/')
     ) {
+      StorageService.markQrAssetDeleted(editingItem.photoUrl);
       CloudflareService.deleteFile(editingItem.photoUrl).catch(() => {});
     }
 
@@ -1426,36 +1616,71 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     if (!activePage) return;
     const targetItem = activePage.menuItems.find((i) => i.id === id);
     const remainingItems = activePage.menuItems.filter((i) => i.id !== id);
-    if (targetItem?.photoUrl && targetItem.photoUrl.includes('/api/files/')) {
-      const stillUsed =
-        remainingItems.some((i) => i.photoUrl === targetItem.photoUrl) ||
-        (activePage.photos || []).some((p) => p.url === targetItem.photoUrl);
-      if (!stillUsed) {
-        await CloudflareService.deleteFile(targetItem.photoUrl).catch(() => {});
-      }
+    const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
+    const stillUsedPhoto =
+      Boolean(targetItem?.photoUrl) &&
+      (remainingItems.some((i) => i.photoUrl === targetItem!.photoUrl) ||
+        (activePage.photos || []).some((p) => p.url === targetItem!.photoUrl));
+    if (targetItem?.photoUrl && !stillUsedPhoto) {
+      StorageService.markQrAssetDeleted(targetItem.photoUrl);
     }
-    handleUpdateActivePage({
+    const updated: QRCodeHostedPage = {
+      ...activePage,
       menuItems: remainingItems,
-    }, true);
+      email: resolvedEmail || activePage.email,
+      userEmail: resolvedEmail || activePage.userEmail,
+      updatedAt: new Date().toISOString(),
+    };
+    const newPages = pages.map((p) => (p.id === activePage.id ? updated : p));
+    setPages(newPages);
+    StorageService.saveHostedQRPagesLocalOnly(newPages);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
+    if (targetItem?.photoUrl && targetItem.photoUrl.includes('/api/files/') && !stillUsedPhoto) {
+      await CloudflareService.deleteFile(targetItem.photoUrl).catch(() => {});
+    }
+    await Promise.allSettled([
+      CloudflareService.saveSingleQrPage(updated, resolvedEmail, { immediate: true }),
+      CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+    ]);
     showToast('Item deleted');
   };
 
   const confirmRemoveItemPhoto = async () => {
     const removedUrl = itemPhotoUrl;
     setItemPhotoUrl('');
-    if (removedUrl && removedUrl.includes('/api/files/') && activePage) {
-      const stillUsedByOther =
-        activePage.menuItems.some((i) => (!editingItem || i.id !== editingItem.id) && i.photoUrl === removedUrl) ||
-        (activePage.photos || []).some((p) => p.url === removedUrl);
-      if (!stillUsedByOther) {
-        await CloudflareService.deleteFile(removedUrl).catch(() => {});
-      }
+    const stillUsedByOther =
+      Boolean(removedUrl && activePage) &&
+      (activePage.menuItems.some((i) => (!editingItem || i.id !== editingItem.id) && i.photoUrl === removedUrl) ||
+        (activePage.photos || []).some((p) => p.url === removedUrl));
+    if (removedUrl && !stillUsedByOther) {
+      StorageService.markQrAssetDeleted(removedUrl);
     }
+    let updatedPage: QRCodeHostedPage | null = null;
+    const resolvedEmail = ownerEmail || activePage?.email || activePage?.userEmail || business.email;
     if (editingItem && activePage) {
       const updatedEditingItem: QRMenuItem = { ...editingItem, photoUrl: '' };
       setEditingItem(updatedEditingItem);
       const updatedList = activePage.menuItems.map((i) => (i.id === editingItem.id ? updatedEditingItem : i));
-      handleUpdateActivePage({ menuItems: updatedList }, true);
+      updatedPage = {
+        ...activePage,
+        menuItems: updatedList,
+        email: resolvedEmail || activePage.email,
+        userEmail: resolvedEmail || activePage.userEmail,
+        updatedAt: new Date().toISOString(),
+      };
+      const newPages = pages.map((p) => (p.id === activePage.id ? updatedPage! : p));
+      setPages(newPages);
+      StorageService.saveHostedQRPagesLocalOnly(newPages);
+    }
+    if (removedUrl && removedUrl.includes('/api/files/') && !stillUsedByOther) {
+      await CloudflareService.deleteFile(removedUrl).catch(() => {});
+    }
+    if (updatedPage) {
+      await Promise.allSettled([
+        CloudflareService.saveSingleQrPage(updatedPage, resolvedEmail, { immediate: true }),
+        CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+      ]);
     }
     showToast('Item photo removed');
   };
