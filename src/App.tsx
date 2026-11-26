@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { HomeScreen } from './components/HomeScreen';
-import { CreateReceiptScreen } from './components/CreateReceiptScreen';
-import { CreateInvoiceScreen } from './components/CreateInvoiceScreen';
+import { DocumentWorkspaceScreen, DocumentWorkspaceTab } from './components/DocumentWorkspaceScreen';
 import { QuotationScreen, QuotationTab } from './components/QuotationScreen';
 import { ReceiptPreviewScreen } from './components/ReceiptPreviewScreen';
 import { ReceiptsHistoryScreen } from './components/ReceiptsHistoryScreen';
@@ -403,6 +402,8 @@ export function App() {
   // Current receipt or invoice for preview or editing
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
+  const [receiptTab, setReceiptTab] = useState<DocumentWorkspaceTab>('create');
+  const [invoiceTab, setInvoiceTab] = useState<DocumentWorkspaceTab>('create');
   const [quotationTab, setQuotationTab] = useState<QuotationTab>('create');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
   const [playUpdateInfo, setPlayUpdateInfo] = useState<PlayUpdateInfo | null>(null);
@@ -1319,7 +1320,9 @@ export function App() {
         } else if (
           [
             'create-receipt',
+            'receipts',
             'create-invoice',
+            'invoices',
             'create-quotation',
             'quotations',
             'preview-receipt',
@@ -1371,7 +1374,15 @@ export function App() {
       setInventoryShowAddInline(false);
       setInventoryCategory(null);
     }
-    if (screen === 'create-quotation') {
+    if (screen === 'create-receipt') {
+      setReceiptTab('create');
+    } else if (screen === 'receipts') {
+      setReceiptTab('list');
+    } else if (screen === 'create-invoice') {
+      setInvoiceTab('create');
+    } else if (screen === 'invoices') {
+      setInvoiceTab('list');
+    } else if (screen === 'create-quotation') {
       setQuotationTab('create');
     } else if (screen === 'quotations') {
       setQuotationTab('list');
@@ -1422,8 +1433,10 @@ export function App() {
       setQuotationTab('create');
       setActiveScreen('create-quotation');
     } else if (receipt.documentType === 'invoice') {
+      setInvoiceTab('create');
       setActiveScreen('create-invoice');
     } else {
+      setReceiptTab('create');
       setActiveScreen('create-receipt');
     }
   };
@@ -1436,8 +1449,10 @@ export function App() {
       setQuotationTab('create');
       setActiveScreen('create-quotation');
     } else if (receipt.documentType === 'invoice') {
+      setInvoiceTab('create');
       setActiveScreen('create-invoice');
     } else {
+      setReceiptTab('create');
       setActiveScreen('create-receipt');
     }
   };
@@ -1624,19 +1639,31 @@ export function App() {
           />
         )}
 
-        {activeScreen === 'create-receipt' && (
-          <CreateReceiptScreen
+        {(activeScreen === 'create-receipt' || activeScreen === 'receipts') && (
+          <DocumentWorkspaceScreen
+            docType="receipt"
+            activeTab={receiptTab}
+            onTabChange={(tab) => {
+              if (tab === 'list') {
+                setSelectedReceipt(null);
+                setDuplicateSeed(null);
+              }
+              setReceiptTab(tab);
+              setActiveScreen('create-receipt');
+            }}
             business={business}
             defaultTemplate={settings.defaultTemplate}
             defaultPaymentMethod={settings.defaultPaymentMethod}
-            editingReceipt={selectedReceipt}
-            duplicateFromReceipt={duplicateSeed}
+            receipts={receipts}
+            editingDocument={selectedReceipt}
+            duplicateFromDocument={duplicateSeed}
             onCancel={() => handleNavigate('home')}
             onSaveOnly={() => {
               refreshData();
               setSelectedReceipt(null);
               setDuplicateSeed(null);
-              setActiveScreen('receipts');
+              setReceiptTab('list');
+              setActiveScreen('create-receipt');
             }}
             onSaveAndPreview={handleReceiptSaved}
             onQuickDownload={async (rcpt) => {
@@ -1658,22 +1685,48 @@ export function App() {
               handleReceiptSaved(rcpt);
               await handleShareReceipt(rcpt);
             }}
+            onOpenReceipt={handleOpenReceipt}
+            onEditReceipt={handleEditReceipt}
+            onShareReceipt={handleShareReceipt}
+            onDuplicateReceipt={handleDuplicateReceipt}
+            onDownloadReceipt={handleDownloadReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
+            onCreateNewFromList={() => {
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setReceiptTab('create');
+              setActiveScreen('create-receipt');
+            }}
+            onOpenTemplates={() => handleNavigate('templates')}
+            onEditProfile={() => handleNavigate('profile')}
           />
         )}
 
-        {activeScreen === 'create-invoice' && (
-          <CreateInvoiceScreen
+        {(activeScreen === 'create-invoice' || activeScreen === 'invoices') && (
+          <DocumentWorkspaceScreen
+            docType="invoice"
+            activeTab={invoiceTab}
+            onTabChange={(tab) => {
+              if (tab === 'list') {
+                setSelectedReceipt(null);
+                setDuplicateSeed(null);
+              }
+              setInvoiceTab(tab);
+              setActiveScreen('create-invoice');
+            }}
             business={business}
             defaultTemplate={settings.defaultTemplate}
             defaultPaymentMethod={settings.defaultPaymentMethod}
-            editingInvoice={selectedReceipt}
-            duplicateFromInvoice={duplicateSeed}
+            receipts={receipts}
+            editingDocument={selectedReceipt}
+            duplicateFromDocument={duplicateSeed}
             onCancel={() => handleNavigate('home')}
             onSaveOnly={() => {
               refreshData();
               setSelectedReceipt(null);
               setDuplicateSeed(null);
-              setActiveScreen('invoices');
+              setInvoiceTab('list');
+              setActiveScreen('create-invoice');
             }}
             onSaveAndPreview={handleReceiptSaved}
             onQuickDownload={async (inv) => {
@@ -1695,6 +1748,20 @@ export function App() {
               handleReceiptSaved(inv);
               await handleShareReceipt(inv);
             }}
+            onOpenReceipt={handleOpenReceipt}
+            onEditReceipt={handleEditReceipt}
+            onShareReceipt={handleShareReceipt}
+            onDuplicateReceipt={handleDuplicateReceipt}
+            onDownloadReceipt={handleDownloadReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
+            onCreateNewFromList={() => {
+              setSelectedReceipt(null);
+              setDuplicateSeed(null);
+              setInvoiceTab('create');
+              setActiveScreen('create-invoice');
+            }}
+            onOpenTemplates={() => handleNavigate('templates')}
+            onEditProfile={() => handleNavigate('profile')}
           />
         )}
 
@@ -1791,58 +1858,12 @@ export function App() {
               onCreateNew={() => {
                 setSelectedReceipt(null);
                 setDuplicateSeed(null);
+                setReceiptTab('create');
                 setActiveScreen('create-receipt');
               }}
               onEditProfile={() => handleNavigate('profile')}
             />
           )
-        )}
-
-        {activeScreen === 'receipts' && (
-          <ReceiptsHistoryScreen
-            receipts={receipts}
-            business={business}
-            mode="receipts"
-            onOpenReceipt={handleOpenReceipt}
-            onEditReceipt={handleEditReceipt}
-            onShareReceipt={handleShareReceipt}
-            onDuplicateReceipt={handleDuplicateReceipt}
-            onDownloadReceipt={handleDownloadReceipt}
-            onDeleteReceipt={handleDeleteReceipt}
-            onOpenTemplates={() => handleNavigate('templates')}
-            onCreateNew={() => {
-              setSelectedReceipt(null);
-              setDuplicateSeed(null);
-              setActiveScreen('create-receipt');
-            }}
-            onEditProfile={() => handleNavigate('profile')}
-          />
-        )}
-
-        {activeScreen === 'invoices' && (
-          <ReceiptsHistoryScreen
-            receipts={receipts}
-            business={business}
-            mode="invoices"
-            onOpenReceipt={handleOpenReceipt}
-            onEditReceipt={handleEditReceipt}
-            onShareReceipt={handleShareReceipt}
-            onDuplicateReceipt={handleDuplicateReceipt}
-            onDownloadReceipt={handleDownloadReceipt}
-            onDeleteReceipt={handleDeleteReceipt}
-            onOpenTemplates={() => handleNavigate('templates')}
-            onCreateNew={() => {
-              setSelectedReceipt(null);
-              setDuplicateSeed(null);
-              setActiveScreen('create-invoice');
-            }}
-            onCreateInvoice={() => {
-              setSelectedReceipt(null);
-              setDuplicateSeed(null);
-              setActiveScreen('create-invoice');
-            }}
-            onEditProfile={() => handleNavigate('profile')}
-          />
         )}
 
         {activeScreen === 'onboarding-preferences' && (
@@ -1897,6 +1918,7 @@ export function App() {
                 total: item.unitPrice * item.quantity,
               };
               setDuplicateSeed(draftReceipt as Receipt);
+              setReceiptTab('create');
               setActiveScreen('create-receipt');
             }}
             onCreateInvoiceWithItem={(item) => {
@@ -1914,6 +1936,7 @@ export function App() {
                 total: item.unitPrice * item.quantity,
               };
               setDuplicateSeed(draftInvoice as Receipt);
+              setInvoiceTab('create');
               setActiveScreen('create-invoice');
             }}
           />
@@ -2099,14 +2122,14 @@ export function App() {
 
       {/* Android Bottom Navigation - Only displayed on primary tabs, hidden during creation/preview/customer view/onboarding/google-drive-sync */}
       {!(
-        ['create-receipt', 'create-invoice', 'preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) ||
-        (activeScreen === 'create-quotation' && quotationTab === 'create')
+        ['preview-receipt', 'qr-customer-view', 'app-lock-setup', 'onboarding-preferences', 'google-drive-sync'].includes(activeScreen) ||
+        ((activeScreen === 'create-receipt' || activeScreen === 'receipts') && receiptTab === 'create') ||
+        ((activeScreen === 'create-invoice' || activeScreen === 'invoices') && invoiceTab === 'create') ||
+        ((activeScreen === 'create-quotation' || activeScreen === 'quotations') && quotationTab === 'create')
       ) && (
         <BottomNav
           currentScreen={activeScreen}
           onNavigate={handleNavigate}
-          receiptsCount={receipts.filter((r) => (r.documentType || 'receipt') === 'receipt').length}
-          invoicesCount={receipts.filter((r) => r.documentType === 'invoice').length}
           inventoryCount={inventoryCount}
           lang={business.language}
         />
@@ -2155,6 +2178,7 @@ export function App() {
             total: item.unitPrice * item.quantity,
           };
           setDuplicateSeed(draftReceipt as Receipt);
+          setReceiptTab('create');
           setActiveScreen('create-receipt');
         }}
         onCreateInvoiceWithItem={(item) => {
@@ -2172,6 +2196,7 @@ export function App() {
             total: item.unitPrice * item.quantity,
           };
           setDuplicateSeed(draftInvoice as Receipt);
+          setInvoiceTab('create');
           setActiveScreen('create-invoice');
         }}
       />

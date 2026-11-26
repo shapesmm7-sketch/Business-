@@ -47,6 +47,7 @@ import { ClientPickerModal, ClientOption } from './ClientPickerModal';
 import { t, formatNumber } from '../utils/i18n';
 
 interface CreateReceiptScreenProps {
+  hideBackButton?: boolean;
   business: BusinessProfile;
   defaultTemplate: ReceiptTemplateId;
   defaultPaymentMethod: PaymentMethod;
@@ -69,6 +70,7 @@ const getLocalDatetimeString = (date: Date): string => {
 };
 
 export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
+  hideBackButton = false,
   business,
   defaultTemplate,
   defaultPaymentMethod,
@@ -563,27 +565,43 @@ export const CreateReceiptScreen: React.FC<CreateReceiptScreenProps> = ({
         document.body
       )}
 
-      {/* Top Bar with back button */}
-      <div className="flex items-center justify-between">
-        <button
-          id="btn-back-cancel-receipt"
-          onClick={onCancel}
-          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>{t('back', business?.language)}</span>
-        </button>
+      {/* Top Bar */}
+      {!hideBackButton ? (
+        <div className="flex items-center justify-between">
+          <button
+            id="btn-back-cancel-receipt"
+            onClick={onCancel}
+            className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>{t('back', business?.language)}</span>
+          </button>
 
-        <h1 className="text-base font-bold text-slate-900 dark:text-white">
-          {editingReceipt ? t('edit_receipt', business?.language) : t('new_receipt', business?.language)}
-        </h1>
+          <h1 className="text-base font-bold text-slate-900 dark:text-white">
+            {editingReceipt ? t('edit_receipt', business?.language) : t('new_receipt', business?.language)}
+          </h1>
 
-        <div className="w-12 text-right">
-          <span className="text-[10px] font-mono bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+          <div className="w-12 text-right">
+            <span className="text-[10px] font-mono bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+              {currency}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+              {editingReceipt ? t('edit_receipt', business?.language) : t('new_receipt', business?.language)}
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              RECEIPT
+            </span>
+          </div>
+          <span className="text-xs font-mono bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2.5 py-1 rounded-lg font-bold">
             {currency}
           </span>
         </div>
-      </div>
+      )}
 
       {errorMessage && (
         <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-center gap-2">
