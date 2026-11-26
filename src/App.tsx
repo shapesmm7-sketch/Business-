@@ -410,7 +410,7 @@ export function App() {
   const [isPlayUpdateModalOpen, setIsPlayUpdateModalOpen] = useState<boolean>(false);
   const [isLaunchingPlayUpdate, setIsLaunchingPlayUpdate] = useState<boolean>(false);
   const [playUpdateError, setPlayUpdateError] = useState<string | null>(null);
-  const [installedVersionName, setInstalledVersionName] = useState<string>('1.8.0');
+  const [installedVersionName, setInstalledVersionName] = useState<string>('1.9.0');
   const [appDownloadModal, setAppDownloadModal] = useState<{
     isOpen: boolean;
     fileName?: string;
@@ -1255,9 +1255,11 @@ export function App() {
     }
 
     // Validate persisted Brivu session and pre-warm Google Auth config on startup (non-blocking)
+    let stopSessionMonitor = () => {};
     if (!isCustomerPathFromUrl()) {
       BrivuAuthService.validateSession().catch(() => {});
       BrivuAuthService.getGoogleWebClientId().catch(() => {});
+      stopSessionMonitor = BrivuAuthService.startSessionMonitor();
     }
 
     const handleUserUpdatedSync = () => {
@@ -1292,6 +1294,7 @@ export function App() {
     document.addEventListener('click', handleFileInputClick, true);
 
     return () => {
+      stopSessionMonitor();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', handlePageHide);

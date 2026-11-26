@@ -1,8 +1,10 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { BrivuAuthSession, BrivuUser } from '../types';
+import { BrivuAuthSession, BrivuUser, BrivuActiveSessionInfo } from '../types';
 import { StorageService, isAdminLifetimeEmail } from './storage';
 import { CloudflareService } from './cloudflareService';
 import { PlayBillingService } from './playBillingService';
+
+const DEFAULT_SESSION_INACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface NativeGoogleSignInResult {
   success: boolean;
@@ -28,6 +30,12 @@ const WEB_CLIENT_ID_CACHE_KEY = 'brivu_google_web_client_id';
 let cachedWebClientId = '';
 let gsiScriptPromise: Promise<void> | null = null;
 let lastSessionCheckAt = 0;
+let lastUserActivityAt = Date.now();
+let sessionValidationInFlight: Promise<{
+  valid: boolean;
+  expired?: boolean;
+  user: BrivuUser | null;
+}> | null = null;
 
 function readCachedWebClientId(): string {
   if (cachedWebClientId) return cachedWebClientId;
@@ -366,7 +374,8 @@ export const BrivuAuthService = {
 
     const session: BrivuAuthSession = {
       sessionToken: authRes.sessionToken,
-      expiresAt: authRes.expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+      sessionId: authRes.sessionId,
+      expiresAt: authRes.expiresAt || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
       userEmail: authRes.user.email,
     };
 
@@ -404,7 +413,8 @@ export const BrivuAuthService = {
 
     const session: BrivuAuthSession = {
       sessionToken: res.sessionToken,
-      expiresAt: res.expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+      sessionId: res.sessionId,
+      expiresAt: res.expiresAt || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
       userEmail: res.user.email,
     };
 
@@ -443,7 +453,8 @@ export const BrivuAuthService = {
 
     const session: BrivuAuthSession = {
       sessionToken: res.sessionToken,
-      expiresAt: res.expiresAt || Date.now() + 30 * 24 * 60 * 60 * 1000,
+      sessionId: res.sessionId,
+      expiresAt: res.expiresAt || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
       userEmail: res.user.email,
     };
 
@@ -586,59 +597,135 @@ export const BrivuAuthService = {
     return cleanUser;
   },
 
+  recordUserActivity(): void {
+    lastUserActivityAt = Date.now();
+  },
+
   /**
-   * Checks Brivu session validity & sliding renewal without disrupting offline usage.
+   * Checks Brivu session validity & sliding inactivity renewal without disrupting offline usage
+   * or accidentally logging out sessions that are still valid on the server.
    */
   async validateSession(forceRemote = false): Promise<{
     valid: boolean;
     expired?: boolean;
     user: BrivuUser | null;
   }> {
-    const user = StorageService.getAuthUser();
-    const session = StorageService.getAuthSession();
+    if (sessionValidationInFlight && !forceRemote) {
+      return sessionValidationInFlight;
+    }
 
-    if (!session || !session.sessionToken) {
+    const runCheck = async (): Promise<{
+      valid: boolean;
+      expired?: boolean;
+      user: BrivuUser | null;
+    }> => {
+      const user = StorageService.getAuthUser();
+      const session = StorageService.getAuthSession();
+
+      if (!session || !session.sessionToken) {
+        return { valid: Boolean(user?.email), user };
+      }
+
+      const now = Date.now();
+      const isLocallyPastExpiry = Boolean(session.expiresAt && now > session.expiresAt);
+      const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+      if (isOffline) {
+        if (isLocallyPastExpiry) {
+          await this.signOut({ skipRemote: true, reason: 'expired' });
+          return { valid: false, expired: true, user: null };
+        }
+        return { valid: Boolean(user?.email), user };
+      }
+
+      if (!forceRemote && !isLocallyPastExpiry && now - lastSessionCheckAt < 5 * 60 * 1000) {
+        return { valid: Boolean(user?.email), user };
+      }
+
+      lastSessionCheckAt = now;
+      const remote = await CloudflareService.validateBrivuSession(session.sessionToken);
+
+      if (remote.valid && remote.user) {
+        const mergedUser: BrivuUser = {
+          ...user,
+          ...remote.user,
+          syncedToCloudflare: true,
+        };
+        StorageService.saveAuthUser(mergedUser);
+        StorageService.saveAuthSession({
+          ...session,
+          sessionId: remote.sessionId || session.sessionId,
+          expiresAt: remote.expiresAt || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
+          userEmail: mergedUser.email,
+        });
+        return { valid: true, user: mergedUser };
+      }
+
+      if (remote.expired) {
+        await this.signOut({ skipRemote: true, reason: 'expired' });
+        return { valid: false, expired: true, user: null };
+      }
+
+      // Offline / transient server issue -> keep local session intact unless already locally expired
+      if (isLocallyPastExpiry) {
+        await this.signOut({ skipRemote: true, reason: 'expired' });
+        return { valid: false, expired: true, user: null };
+      }
       return { valid: Boolean(user?.email), user };
+    };
+
+    const promise = runCheck().finally(() => {
+      if (sessionValidationInFlight === promise) {
+        sessionValidationInFlight = null;
+      }
+    });
+    sessionValidationInFlight = promise;
+    return promise;
+  },
+
+  startSessionMonitor(): () => void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return () => {};
     }
 
-    if (session.expiresAt && Date.now() > session.expiresAt) {
-      await this.signOut({ skipRemote: true, reason: 'expired' });
-      return { valid: false, expired: true, user: null };
-    }
+    const markActivity = () => {
+      lastUserActivityAt = Date.now();
+    };
 
-    const now = Date.now();
-    if (!forceRemote && now - lastSessionCheckAt < 5 * 60 * 1000) {
-      return { valid: Boolean(user?.email), user };
-    }
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      return { valid: Boolean(user?.email), user };
-    }
+    const handleRemoteExpired = () => {
+      void this.validateSession(true).catch(() => {});
+    };
 
-    lastSessionCheckAt = now;
-    const remote = await CloudflareService.validateBrivuSession(session.sessionToken);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        lastUserActivityAt = Date.now();
+        void this.validateSession(false).catch(() => {});
+      }
+    };
 
-    if (remote.valid && remote.user) {
-      const mergedUser: BrivuUser = {
-        ...user,
-        ...remote.user,
-        syncedToCloudflare: true,
-      };
-      StorageService.saveAuthUser(mergedUser);
-      StorageService.saveAuthSession({
-        ...session,
-        expiresAt: remote.expiresAt || session.expiresAt,
-        userEmail: mergedUser.email,
-      });
-      return { valid: true, user: mergedUser };
-    }
+    const intervalId = window.setInterval(() => {
+      const session = StorageService.getAuthSession();
+      if (!session?.sessionToken) return;
+      const now = Date.now();
+      const recentlyActive = now - lastUserActivityAt < 12 * 60 * 1000;
+      const approachingLocalExpiry = Boolean(session.expiresAt && session.expiresAt - now < 24 * 60 * 60 * 1000);
+      if (document.visibilityState === 'visible' && (recentlyActive || approachingLocalExpiry)) {
+        void this.validateSession(false).catch(() => {});
+      }
+    }, 10 * 60 * 1000);
 
-    if (remote.expired) {
-      await this.signOut({ skipRemote: true, reason: 'expired' });
-      return { valid: false, expired: true, user: null };
-    }
+    window.addEventListener('pointerdown', markActivity, { passive: true });
+    window.addEventListener('keydown', markActivity, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('brivu_session_expired_remote', handleRemoteExpired);
 
-    // Offline / transient server issue -> keep local session intact
-    return { valid: Boolean(user?.email), user };
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('pointerdown', markActivity);
+      window.removeEventListener('keydown', markActivity);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('brivu_session_expired_remote', handleRemoteExpired);
+    };
   },
 
   async syncUserData(): Promise<{ success: boolean; message: string }> {
@@ -677,12 +764,45 @@ export const BrivuAuthService = {
     };
   },
 
+  async getActiveSessions(): Promise<{
+    success: boolean;
+    sessions: BrivuActiveSessionInfo[];
+    message?: string;
+  }> {
+    const session = StorageService.getAuthSession();
+    if (!session?.sessionToken) {
+      return { success: false, sessions: [], message: 'Sign in to view active devices.' };
+    }
+    return CloudflareService.listActiveSessions(session.sessionToken);
+  },
+
+  async revokeDeviceSession(sessionId: string): Promise<{ success: boolean; message?: string }> {
+    const session = StorageService.getAuthSession();
+    if (!session?.sessionToken) {
+      return { success: false, message: 'No active session.' };
+    }
+    const res = await CloudflareService.revokeSessionById(session.sessionToken, sessionId);
+    if (res.success && res.isCurrent) {
+      await this.signOut({ skipRemote: true, reason: 'manual' });
+    }
+    return { success: res.success, message: res.message };
+  },
+
+  async signOutOtherDevices(): Promise<{ success: boolean; revokedCount: number }> {
+    const session = StorageService.getAuthSession();
+    if (!session?.sessionToken) {
+      return { success: false, revokedCount: 0 };
+    }
+    const res = await CloudflareService.logoutBrivuSession(session.sessionToken, { allOtherDevices: true });
+    return { success: res.ok, revokedCount: res.revokedCount || 0 };
+  },
+
   async signOut(options?: { skipRemote?: boolean; reason?: 'manual' | 'expired' }): Promise<void> {
     const session = StorageService.getAuthSession();
     const sessionToken = session?.sessionToken;
     lastSessionCheckAt = 0;
 
-    // Clear local session and update UI immediately so sign-out never waits on network or IPC
+    // Clear local session and update UI immediately so sign-out feels instant
     StorageService.clearAuthUser();
 
     if (typeof window !== 'undefined') {
@@ -691,15 +811,15 @@ export const BrivuAuthService = {
       if (options?.reason === 'expired') {
         window.dispatchEvent(
           new CustomEvent('brivu_auth_expired', {
-            detail: { message: 'Your Brivu session expired. Please sign in again.' },
+            detail: { message: 'Your Brivu session expired after inactivity. Please sign in again.' },
           })
         );
       }
     }
 
-    // Revoke remote Brivu session and clear native/web Google credential state in background
+    // Immediately invalidate server session (awaited with keepalive so reloads never drop it)
     if (!options?.skipRemote && sessionToken) {
-      void CloudflareService.logoutBrivuSession(sessionToken).catch(() => {});
+      await CloudflareService.logoutBrivuSession(sessionToken).catch(() => {});
     }
 
     if (Capacitor.isNativePlatform()) {

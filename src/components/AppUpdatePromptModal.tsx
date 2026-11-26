@@ -33,7 +33,7 @@ export const AppUpdatePromptModal: React.FC<AppUpdatePromptModalProps> = ({
   isOpen,
   updateInfo,
   updateState,
-  currentVersionName = '1.8.0',
+  currentVersionName = '1.9.0',
   onDismiss,
   onStartUpdate,
   onCompleteUpdate,

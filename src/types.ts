@@ -430,6 +430,7 @@ export interface AppBackupData {
   websitesQrItems?: WebsiteAppQrItem[];
   socialsQrItems?: SocialQrItem[];
   eventsQrItems?: EventQrItem[];
+  deletedEventIds?: string[];
   roomsQrItems?: RoomQrItem[];
 }
 
@@ -747,6 +748,16 @@ export interface BrivuAuthSession {
   sessionToken: string;
   expiresAt: number;
   userEmail: string;
+  sessionId?: string;
+}
+
+export interface BrivuActiveSessionInfo {
+  id: string;
+  deviceLabel: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+  isCurrent: boolean;
 }
 
 export interface BrivuAuthConfig {

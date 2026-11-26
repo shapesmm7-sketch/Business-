@@ -445,17 +445,13 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
     setPendingDelete({ type: 'event', item: itemToDelete });
   };
 
-  const confirmPendingEventDelete = (itemToDelete: EventQrItem) => {
+  const confirmPendingEventDelete = async (itemToDelete: EventQrItem) => {
     const id = itemToDelete.id;
-    if (itemToDelete.photos && Array.isArray(itemToDelete.photos)) {
-      for (const ph of itemToDelete.photos) {
-        if (ph) CloudflareService.deleteFile(ph).catch(() => {});
-      }
-    }
+    StorageService.addDeletedEventId(id);
     const remaining = items.filter((i) => i.id !== id);
-    shouldPersistRef.current = true;
+    shouldPersistRef.current = false;
+    StorageService.saveEventsQrItemsLocalOnly(remaining);
     setItems(remaining);
-    QRHostingService.removeEventPage(id, business);
     if (selectedItemId === id) {
       if (remaining[0]) {
         setSelectedItemId(remaining[0].id);
@@ -463,8 +459,16 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
         setSelectedItemId('');
       }
     }
-    CloudflareService.syncAllToCloudflare().catch(() => {});
     showToast('Event QR deleted.');
+
+    if (itemToDelete.photos && Array.isArray(itemToDelete.photos)) {
+      await Promise.all(
+        itemToDelete.photos
+          .filter(Boolean)
+          .map((ph) => CloudflareService.deleteFile(ph).catch(() => {}))
+      );
+    }
+    await QRHostingService.removeEventPage(id, business);
   };
 
   const handleCopyLink = async () => {

@@ -699,14 +699,23 @@ export class QRHostingService {
    */
   static async removeEventPage(eventId: string, business: BusinessProfile): Promise<void> {
     try {
+      const ownerEmail = this.resolveOwnerEmail(business.email);
       const allPages = StorageService.getHostedQRPages();
       const remainingPages = allPages.filter((p) => p.id !== eventId);
-      StorageService.saveHostedQRPages(remainingPages);
-      // Update Hub page
+      StorageService.saveHostedQRPagesLocalOnly(remainingPages);
+
+      await CloudflareService.deleteHostedQrPage(eventId).catch(() => {});
+
       const remainingEvents = StorageService.getEventsQrItems().filter((e) => e.id !== eventId);
-      const hubPage = this.convertEventsHubToHostedPage(remainingEvents, business);
-      StorageService.saveHostedQRPage(hubPage);
-      await CloudflareService.syncAllToCloudflare().catch(() => {});
+      if (remainingEvents.length === 0) {
+        await CloudflareService.deleteHostedQrPage('events').catch(() => {});
+        await CloudflareService.deleteHostedQrPage('events-hub-all').catch(() => {});
+      } else {
+        const hubPage = this.convertEventsHubToHostedPage(remainingEvents, business);
+        await CloudflareService.saveSingleQrPage(hubPage, ownerEmail, { immediate: true }).catch(() => {});
+      }
+
+      await CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => {});
     } catch (err) {
       console.warn('Failed to remove event page from Cloudflare:', err);
     }

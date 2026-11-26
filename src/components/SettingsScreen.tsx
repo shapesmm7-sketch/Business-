@@ -47,7 +47,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   }, [settings]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const [appVersionLabel, setAppVersionLabel] = useState<string>('1.8.0');
+  const [appVersionLabel, setAppVersionLabel] = useState<string>('1.9.0');
   const [isCheckingUpdate, setIsCheckingUpdate] = useState<boolean>(false);
 
   useEffect(() => {

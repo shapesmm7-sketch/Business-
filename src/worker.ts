@@ -82,9 +82,17 @@ export function getD1Database(env: any): any {
   return null;
 }
 
-// Brivu Session Duration (30 days)
-const BRIVU_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const BRIVU_SESSION_RENEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// Brivu Session Management Policy:
+// - 7-day inactivity timeout (sliding window updated on active usage)
+// - 90-day absolute max lifetime per session from creation
+// - 5-minute D1 write throttle for active session heartbeats
+// - 15 active devices max per account (oldest inactive evicted only above cap)
+const BRIVU_SESSION_INACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
+const BRIVU_SESSION_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+const BRIVU_SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_ACTIVE_SESSIONS_PER_USER = 15;
+const SESSION_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+let lastSessionCleanupAt = 0;
 
 export const ADMIN_LIFETIME_EMAILS = new Set([
   'shapesmm7@gmail.com',
@@ -281,18 +289,63 @@ async function sha256Hex(value: string): Promise<string> {
   return bytesToHex(new Uint8Array(digest));
 }
 
+function isValidBrivuSessionTokenFormat(token: string): boolean {
+  const clean = (token || '').trim();
+  if (!clean || clean.length < 32 || clean.length > 128) return false;
+  if (clean.includes('@') || /\s/.test(clean)) return false;
+  return /^[A-Za-z0-9_-]{32,128}$/.test(clean);
+}
+
 function extractBrivuSessionToken(request: Request): string {
-  const direct = request.headers.get('X-Brivu-Session');
-  if (direct && direct.trim()) return direct.trim();
+  const direct = (request.headers.get('X-Brivu-Session') || '').trim();
+  if (direct && isValidBrivuSessionTokenFormat(direct)) {
+    return direct;
+  }
   const authHeader = request.headers.get('Authorization') || '';
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     const token = authHeader.slice(7).trim();
     // Static email values stored in legacy apiKey field are not cryptographic session tokens
-    if (token && !token.includes('@') && token.length >= 32) {
+    if (token && isValidBrivuSessionTokenFormat(token)) {
       return token;
     }
   }
   return '';
+}
+
+function hasAnySessionCredentialHeader(request: Request): boolean {
+  const direct = (request.headers.get('X-Brivu-Session') || '').trim();
+  if (direct) return true;
+  const authHeader = request.headers.get('Authorization') || '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const candidate = authHeader.slice(7).trim();
+    if (candidate && !candidate.includes('@')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function parseDeviceLabel(userAgentHeader?: string | null): string {
+  const ua = String(userAgentHeader || '').trim();
+  if (!ua) return 'Brivu Device';
+  if (/Brivu|Capacitor|wv\)/i.test(ua) && /Android/i.test(ua)) return 'Brivu Android App';
+  let os = 'Device';
+  if (/iPhone/i.test(ua)) os = 'iPhone';
+  else if (/iPad/i.test(ua)) os = 'iPad';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Windows/i.test(ua)) os = 'Windows';
+  else if (/Mac OS X|Macintosh/i.test(ua)) os = 'Mac';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  let browser = '';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/OPR\//i.test(ua)) browser = 'Opera';
+  else if (/Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) browser = 'Safari';
+
+  const label = browser ? `${browser} on ${os}` : os;
+  return label.slice(0, 64);
 }
 
 const PBKDF2_ITERATIONS = 100000;
@@ -388,43 +441,103 @@ async function verifyPasswordPBKDF2(
   }
 }
 
+async function cleanupExpiredBrivuSessions(db: any, nowMs = Date.now()): Promise<number> {
+  if (!db) return 0;
+  try {
+    await ensureD1Tables(db);
+    const maxCreatedCutoff = nowMs - BRIVU_SESSION_MAX_AGE_MS;
+    const res: any = await db
+      .prepare(
+        `DELETE FROM brivu_sessions
+         WHERE revoked_at IS NOT NULL
+            OR expires_at <= ?
+            OR (created_at > 0 AND created_at <= ?)`
+      )
+      .bind(nowMs, maxCreatedCutoff)
+      .run()
+      .catch(() => null);
+    return Number(res?.meta?.changes || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function maybeCleanupExpiredSessions(db: any, ctx?: any, nowMs = Date.now()): void {
+  if (!db || nowMs - lastSessionCleanupAt < SESSION_CLEANUP_INTERVAL_MS) return;
+  lastSessionCleanupAt = nowMs;
+  const task = cleanupExpiredBrivuSessions(db, nowMs).catch(() => 0);
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(task);
+  }
+}
+
 async function issueBrivuSession(
   db: any,
   ctx: any,
   user: { id: string; email: string },
-  googleSub?: string | null
-): Promise<{ rawSessionToken: string; expiresAt: number }> {
+  googleSub?: string | null,
+  request?: Request
+): Promise<{ rawSessionToken: string; expiresAt: number; sessionId: string }> {
   const rawSessionToken = generateSecureToken(32);
   const nowMs = Date.now();
-  const expiresAt = nowMs + BRIVU_SESSION_TTL_MS;
+  const expiresAt = nowMs + BRIVU_SESSION_INACTIVITY_MS;
+  const sessionId = `bsess_${generateSecureToken(12)}`;
+  const deviceLabel = parseDeviceLabel(request?.headers?.get('User-Agent'));
+  const normalizedEmail = String(user.email || '').toLowerCase().trim();
 
   if (db) {
     try {
+      await ensureD1Tables(db);
       const tokenHash = await sha256Hex(rawSessionToken);
-      const sessionId = `bsess_${generateSecureToken(12)}`;
       await db.prepare(`
-        INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, created_at, expires_at, last_seen_at, revoked_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        INSERT INTO brivu_sessions (id, token_hash, user_id, user_email, google_sub, device_label, created_at, expires_at, last_seen_at, revoked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       `).bind(
         sessionId,
         tokenHash,
         user.id,
-        user.email,
+        normalizedEmail,
         googleSub || null,
+        deviceLabel,
         nowMs,
         expiresAt,
         nowMs
       ).run();
-      const prunePromise = db.prepare(`DELETE FROM brivu_sessions WHERE expires_at < ?`).bind(nowMs).run().catch(() => {});
+
+      // Background cleanup: purge expired rows + enforce multi-device active cap (newest 15 kept)
+      const maintenanceTask = (async () => {
+        await cleanupExpiredBrivuSessions(db, nowMs);
+        if (normalizedEmail) {
+          await db
+            .prepare(
+              `DELETE FROM brivu_sessions
+               WHERE LOWER(user_email) = ?
+                 AND id NOT IN (
+                   SELECT id FROM brivu_sessions
+                   WHERE LOWER(user_email) = ?
+                     AND revoked_at IS NULL
+                     AND expires_at > ?
+                   ORDER BY last_seen_at DESC, created_at DESC
+                   LIMIT ?
+                 )`
+            )
+            .bind(normalizedEmail, normalizedEmail, nowMs, MAX_ACTIVE_SESSIONS_PER_USER)
+            .run()
+            .catch(() => {});
+        }
+      })().catch(() => {});
+
       if (ctx?.waitUntil) {
-        ctx.waitUntil(prunePromise);
+        ctx.waitUntil(maintenanceTask);
+      } else {
+        await maintenanceTask;
       }
     } catch (sessErr) {
       console.warn('D1 brivu_sessions insert note:', sessErr);
     }
   }
 
-  return { rawSessionToken, expiresAt };
+  return { rawSessionToken, expiresAt, sessionId };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -473,15 +586,23 @@ function verifyAdminSecretRequest(request: Request, env: Env): { ok: boolean; st
   return { ok: true, status: 200 };
 }
 
-async function resolveAuthenticatedSession(
-  request: Request,
-  db: any
-): Promise<{
+interface AuthenticatedSessionResult {
   sessionId: string;
   userId: string;
   userEmail: string;
   googleSub?: string | null;
-} | null> {
+  deviceLabel?: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+}
+
+async function resolveAuthenticatedSession(
+  request: Request,
+  db: any,
+  ctx?: any,
+  options?: { forceTouch?: boolean }
+): Promise<AuthenticatedSessionResult | null> {
   if (!db) return null;
   const rawToken = extractBrivuSessionToken(request);
   if (!rawToken) return null;
@@ -489,24 +610,129 @@ async function resolveAuthenticatedSession(
     await ensureD1Tables(db);
     const tokenHash = await sha256Hex(rawToken);
     const sessionRow: any = await db
-      .prepare('SELECT id, user_id, user_email, google_sub, expires_at, revoked_at FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
+      .prepare(
+        'SELECT id, user_id, user_email, google_sub, device_label, created_at, expires_at, last_seen_at, revoked_at FROM brivu_sessions WHERE token_hash = ? LIMIT 1'
+      )
       .bind(tokenHash)
       .first()
       .catch(() => null);
     if (!sessionRow) return null;
+
     const nowMs = Date.now();
-    if (sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) return null;
+    const createdAt = Number(sessionRow.created_at) || nowMs;
+    const currentExpiresAt = Number(sessionRow.expires_at) || 0;
+    const lastSeenAt = Number(sessionRow.last_seen_at) || createdAt;
+    const maxExpiresAt = createdAt + BRIVU_SESSION_MAX_AGE_MS;
+
+    if (sessionRow.revoked_at || currentExpiresAt <= nowMs || nowMs >= maxExpiresAt) {
+      const removeExpired = db.prepare('DELETE FROM brivu_sessions WHERE id = ?').bind(sessionRow.id).run().catch(() => {});
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(removeExpired);
+      } else {
+        await removeExpired;
+      }
+      return null;
+    }
+
     const userEmail = String(sessionRow.user_email || sessionRow.user_id || '').toLowerCase().trim();
     if (!userEmail || !userEmail.includes('@')) return null;
+
+    const nextExpiresAt = Math.min(nowMs + BRIVU_SESSION_INACTIVITY_MS, maxExpiresAt);
+    const shouldTouch =
+      Boolean(options?.forceTouch) ||
+      nowMs - lastSeenAt >= BRIVU_SESSION_TOUCH_INTERVAL_MS ||
+      Math.abs(currentExpiresAt - nextExpiresAt) > 10 * 60 * 1000;
+
+    if (shouldTouch) {
+      const touchPromise = db
+        .prepare('UPDATE brivu_sessions SET last_seen_at = ?, expires_at = ? WHERE id = ? AND revoked_at IS NULL')
+        .bind(nowMs, nextExpiresAt, sessionRow.id)
+        .run()
+        .catch(() => {});
+      if (ctx?.waitUntil && !options?.forceTouch) {
+        ctx.waitUntil(touchPromise);
+      } else {
+        await touchPromise;
+      }
+    }
+
+    maybeCleanupExpiredSessions(db, ctx, nowMs);
+
     return {
       sessionId: String(sessionRow.id),
       userId: String(sessionRow.user_id || userEmail),
       userEmail,
       googleSub: sessionRow.google_sub || null,
+      deviceLabel: sessionRow.device_label ? String(sessionRow.device_label) : undefined,
+      createdAt,
+      lastSeenAt: shouldTouch ? nowMs : lastSeenAt,
+      expiresAt: shouldTouch ? nextExpiresAt : currentExpiresAt,
     };
   } catch {
     return null;
   }
+}
+
+async function verifySessionIfHeaderPresent(
+  request: Request,
+  db: any,
+  ctx?: any,
+  claimedEmail?: string
+): Promise<{
+  ok: boolean;
+  session: AuthenticatedSessionResult | null;
+  response?: Response;
+}> {
+  if (!hasAnySessionCredentialHeader(request)) {
+    return { ok: true, session: null };
+  }
+  const rawToken = extractBrivuSessionToken(request);
+  if (!rawToken) {
+    return {
+      ok: false,
+      session: null,
+      response: new Response(
+        JSON.stringify({
+          ok: false,
+          authenticated: false,
+          expired: true,
+          error: 'Invalid Brivu session credential. Please sign in again.',
+        }),
+        { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      ),
+    };
+  }
+  const session = await resolveAuthenticatedSession(request, db, ctx);
+  if (!session) {
+    return {
+      ok: false,
+      session: null,
+      response: new Response(
+        JSON.stringify({
+          ok: false,
+          authenticated: false,
+          expired: true,
+          error: 'Your Brivu session has expired. Please sign in again.',
+        }),
+        { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      ),
+    };
+  }
+  const normalizedClaim = (claimedEmail || '').toLowerCase().trim();
+  if (normalizedClaim && normalizedClaim.includes('@') && normalizedClaim !== session.userEmail) {
+    return {
+      ok: false,
+      session,
+      response: new Response(
+        JSON.stringify({
+          ok: false,
+          error: 'Forbidden: account email mismatch with active session.',
+        }),
+        { status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      ),
+    };
+  }
+  return { ok: true, session };
 }
 
 export interface UserTrialState {
@@ -961,6 +1187,7 @@ export function hasRealUserContent(data: any): boolean {
   if (Array.isArray(backup.roomsQrItems) && backup.roomsQrItems.length > 0) return true;
   if (Array.isArray(backup.websitesQrItems) && backup.websitesQrItems.length > 0) return true;
   if (Array.isArray(backup.socialsQrItems) && backup.socialsQrItems.length > 0) return true;
+  if (Array.isArray(backup.deletedEventIds) && backup.deletedEventIds.length > 0) return true;
   if (Array.isArray(backup.photos) && backup.photos.length > 0) return true;
   if (Array.isArray(backup.qrHostedPages) && backup.qrHostedPages.some(hasRealQrPageContent)) return true;
 
@@ -1203,6 +1430,7 @@ export async function ensureD1Tables(db: any): Promise<void> {
             user_id TEXT NOT NULL,
             user_email TEXT NOT NULL,
             google_sub TEXT,
+            device_label TEXT,
             created_at INTEGER NOT NULL,
             expires_at INTEGER NOT NULL,
             last_seen_at INTEGER NOT NULL,
@@ -1211,6 +1439,8 @@ export async function ensureD1Tables(db: any): Promise<void> {
         `),
         db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_brivu_sessions_token_hash ON brivu_sessions(token_hash)`),
         db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_user_email ON brivu_sessions(user_email)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_expires_at ON brivu_sessions(expires_at)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_last_seen ON brivu_sessions(last_seen_at)`),
         db.prepare(`
           CREATE TABLE IF NOT EXISTS business_profile (
             user_email TEXT PRIMARY KEY,
@@ -1352,6 +1582,15 @@ export async function ensureD1Tables(db: any): Promise<void> {
       } catch (_) {}
       try {
         await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub)`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`ALTER TABLE brivu_sessions ADD COLUMN device_label TEXT`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_expires_at ON brivu_sessions(expires_at)`).run();
+      } catch (_) {}
+      try {
+        await db.prepare(`CREATE INDEX IF NOT EXISTS idx_brivu_sessions_last_seen ON brivu_sessions(last_seen_at)`).run();
       } catch (_) {}
       d1SchemaReady = true;
     } catch (_) {
@@ -2895,15 +3134,25 @@ export async function resolveHostedQrPage(
         }
 
         if (category === 'events') {
+          const deletedEvtSet = new Set<string>(
+            Array.isArray(bData.deletedEventIds)
+              ? bData.deletedEventIds.map((id: any) => String(id || '').trim()).filter(Boolean)
+              : []
+          );
           const evtHubPage = hostedPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id || '').includes('events-hub')));
+          const hasExplicitEmptyEvents = Array.isArray(bData.eventsQrItems) && bData.eventsQrItems.length === 0;
           const topLevelEvents = Array.isArray(bData.eventsQrItems) ? bData.eventsQrItems : [];
-          const hubEvents = Array.isArray(evtHubPage?.eventsQrItems) ? evtHubPage.eventsQrItems : [];
-          const singleEventItems = hostedPages
-            .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
-            .flatMap((p: any) => p.eventsQrItems);
+          const hubEvents = hasExplicitEmptyEvents ? [] : (Array.isArray(evtHubPage?.eventsQrItems) ? evtHubPage.eventsQrItems : []);
+          const singleEventItems = hasExplicitEmptyEvents
+            ? []
+            : hostedPages
+                .filter((p: any) => p && p.pageType === 'event' && Array.isArray(p.eventsQrItems))
+                .flatMap((p: any) => p.eventsQrItems);
           const mergedEvtMap = new Map<string, any>();
           for (const e of [...topLevelEvents, ...hubEvents, ...singleEventItems]) {
-            if (e && e.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+            if (e && e.id && !deletedEvtSet.has(String(e.id).trim()) && !mergedEvtMap.has(e.id)) {
+              mergedEvtMap.set(e.id, e);
+            }
           }
           const evtItems = Array.from(mergedEvtMap.values());
 
@@ -2912,7 +3161,11 @@ export async function resolveHostedQrPage(
             if (matchedEvt) {
               return buildSingleEventPublicPage(matchedEvt, userEmail, profile);
             }
-            const matchedHostedEvt = hostedPages.find((p: any) => p && p.id === pageId && hasRealQrPageContent(p));
+            const matchedHostedEvt = hasExplicitEmptyEvents
+              ? null
+              : hostedPages.find(
+                  (p: any) => p && p.id === pageId && !deletedEvtSet.has(String(p.id || '').trim()) && hasRealQrPageContent(p)
+                );
             if (matchedHostedEvt) {
               return sanitizePublicQrPage({ ...matchedHostedEvt, userEmail });
             }
@@ -3050,14 +3303,14 @@ export async function resolveHostedQrPage(
           bizCandidates.find((p: any) => matchesBizPageId(p) && hasRealQrPageContent(p)) ||
           bizCandidates.find((p: any) => hasRealQrPageContent(p)) ||
           bizCandidates[0];
-        let photos = Array.isArray(hostedBiz?.photos) && hostedBiz.photos.length > 0
-          ? hostedBiz.photos
+        let photos = hostedBiz
+          ? (Array.isArray(hostedBiz.photos) ? hostedBiz.photos : [])
           : (Array.isArray(bData.photos) ? bData.photos : []);
 
-        // If photos are still empty, try recovering orphaned QR photos from D1 files table (bounded) or R2
-        let recoveredCover: string | undefined = hostedBiz?.coverImage;
-        let recoveredLogo: string | undefined = hostedBiz?.logo || profile.logo;
-        if (photos.length === 0 && userEmail) {
+        // Only auto-recover orphaned photos/logo/cover from D1/R2 when no Business QR page exists yet
+        let recoveredCover: string | undefined = hostedBiz ? hostedBiz.coverImage : undefined;
+        let recoveredLogo: string | undefined = hostedBiz ? hostedBiz.logo : profile.logo;
+        if (!hostedBiz && photos.length === 0 && userEmail) {
           try {
             if (db) {
               const fileRows: any = await db
@@ -3104,7 +3357,7 @@ export async function resolveHostedQrPage(
           accentColor: hostedBiz?.accentColor || profile.themeColor || '#059669',
           theme: hostedBiz?.theme || 'emerald',
           logo: recoveredLogo,
-          coverImage: recoveredCover || photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+          coverImage: hostedBiz ? recoveredCover : (recoveredCover || photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined)),
           phone: hostedBiz?.phone || profile.phone || '',
           whatsapp: hostedBiz?.whatsapp || cleanWa,
           email: hostedBiz?.email || profile.email || userEmail,
@@ -3402,7 +3655,7 @@ export default {
         }
 
         const user = await upsertVerifiedGoogleUser(db, claims);
-        const { rawSessionToken, expiresAt } = await issueBrivuSession(db, ctx, user, claims.sub);
+        const { rawSessionToken, expiresAt, sessionId } = await issueBrivuSession(db, ctx, user, claims.sub, request);
 
         return new Response(
           JSON.stringify({
@@ -3410,7 +3663,9 @@ export default {
             success: true,
             user,
             sessionToken: rawSessionToken,
+            sessionId,
             expiresAt,
+            inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
             storedInCloudflare: Boolean(db),
             message: 'Verified with Google and signed into Brivu.',
           }),
@@ -3427,14 +3682,20 @@ export default {
       }
     }
 
-    // 2c. Brivu Session Validation & Sliding Refresh (/api/auth/session)
+    // 2c. Brivu Session Validation & Sliding Inactivity Refresh (/api/auth/session)
     if (url.pathname === '/api/auth/session' && request.method === 'GET') {
       try {
         const db = getD1Database(env);
+        if (!hasAnySessionCredentialHeader(request)) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: false, error: 'Missing Brivu session token.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
         const rawToken = extractBrivuSessionToken(request);
         if (!rawToken) {
           return new Response(
-            JSON.stringify({ ok: false, authenticated: false, expired: false, error: 'Missing Brivu session token.' }),
+            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Invalid Brivu session token format.' }),
             { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
@@ -3446,51 +3707,27 @@ export default {
           );
         }
 
-        await ensureD1Tables(db);
-        const tokenHash = await sha256Hex(rawToken);
-        const sessionRow: any = await db
-          .prepare('SELECT * FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
-          .bind(tokenHash)
-          .first()
-          .catch(() => null);
-
-        if (!sessionRow) {
-          return new Response(
-            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Session not found or expired.' }),
-            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const nowMs = Date.now();
-        if (sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) {
+        const session = await resolveAuthenticatedSession(request, db, ctx, { forceTouch: true });
+        if (!session) {
           return new Response(
             JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Your Brivu session has expired. Please sign in again.' }),
             { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
 
-        let nextExpiresAt = Number(sessionRow.expires_at);
-        if (nextExpiresAt - nowMs < BRIVU_SESSION_RENEW_WINDOW_MS) {
-          nextExpiresAt = nowMs + BRIVU_SESSION_TTL_MS;
-        }
-        await db.prepare('UPDATE brivu_sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?')
-          .bind(nowMs, nextExpiresAt, sessionRow.id)
-          .run()
-          .catch(() => {});
-
         const userRow: any = await db
           .prepare('SELECT * FROM users WHERE id = ? OR LOWER(email) = ? LIMIT 1')
-          .bind(sessionRow.user_id, String(sessionRow.user_email || '').toLowerCase().trim())
+          .bind(session.userId, session.userEmail)
           .first()
           .catch(() => null);
 
         const user = userRow
           ? mapDbRowToBrivuUser(userRow)
           : {
-              id: sessionRow.user_id,
-              googleSub: sessionRow.google_sub || undefined,
-              email: sessionRow.user_email,
-              name: sessionRow.user_email,
+              id: session.userId,
+              googleSub: session.googleSub || undefined,
+              email: session.userEmail,
+              name: session.userEmail,
               emailVerified: true,
               provider: 'google',
               syncedToCloudflare: true,
@@ -3501,9 +3738,12 @@ export default {
             ok: true,
             authenticated: true,
             user,
-            expiresAt: nextExpiresAt,
+            sessionId: session.sessionId,
+            expiresAt: session.expiresAt,
+            lastSeenAt: session.lastSeenAt,
+            inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
           }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
         );
       } catch (err: any) {
         return new Response(
@@ -3513,23 +3753,164 @@ export default {
       }
     }
 
-    // 2c-logout. Brivu Session Logout (/api/auth/logout)
+    // 2c-logout. Brivu Session Immediate Invalidation (/api/auth/logout)
     if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
       try {
         const db = getD1Database(env);
         const body: any = await request.json().catch(() => ({}));
-        const rawToken = extractBrivuSessionToken(request) || String(body?.sessionToken || '').trim();
+        const headerToken = extractBrivuSessionToken(request);
+        const bodyToken =
+          typeof body?.sessionToken === 'string' && isValidBrivuSessionTokenFormat(body.sessionToken)
+            ? body.sessionToken.trim()
+            : '';
+        const rawToken = headerToken || bodyToken;
+        const revokeAllOthers = body?.allOtherDevices === true;
+        const revokeAll = body?.allDevices === true;
+
+        let revokedCount = 0;
         if (db && rawToken) {
           await ensureD1Tables(db);
           const tokenHash = await sha256Hex(rawToken);
-          await db.prepare('UPDATE brivu_sessions SET revoked_at = ? WHERE token_hash = ?')
-            .bind(Date.now(), tokenHash)
-            .run()
-            .catch(() => {});
+          const sessionRow: any = await db
+            .prepare('SELECT id, user_email, expires_at, revoked_at FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
+            .bind(tokenHash)
+            .first()
+            .catch(() => null);
+
+          if (sessionRow) {
+            const nowMs = Date.now();
+            const isValidOwnerSession = !sessionRow.revoked_at && Number(sessionRow.expires_at) > nowMs;
+            const ownerEmail = String(sessionRow.user_email || '').toLowerCase().trim();
+
+            if (isValidOwnerSession && ownerEmail && revokeAll) {
+              const res: any = await db
+                .prepare('DELETE FROM brivu_sessions WHERE LOWER(user_email) = ?')
+                .bind(ownerEmail)
+                .run()
+                .catch(() => null);
+              revokedCount = Number(res?.meta?.changes || 0);
+            } else if (isValidOwnerSession && ownerEmail && revokeAllOthers) {
+              const res: any = await db
+                .prepare('DELETE FROM brivu_sessions WHERE LOWER(user_email) = ? AND token_hash != ?')
+                .bind(ownerEmail, tokenHash)
+                .run()
+                .catch(() => null);
+              revokedCount = Number(res?.meta?.changes || 0);
+            } else {
+              const res: any = await db
+                .prepare('DELETE FROM brivu_sessions WHERE token_hash = ?')
+                .bind(tokenHash)
+                .run()
+                .catch(() => null);
+              revokedCount = Number(res?.meta?.changes || 0);
+            }
+          }
+          maybeCleanupExpiredSessions(db, ctx);
         }
+
         return new Response(
-          JSON.stringify({ ok: true, loggedOut: true }),
-          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          JSON.stringify({ ok: true, loggedOut: true, revokedCount }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // 2c-sessions. Multi-Device Active Sessions List & Individual Device Revocation (/api/auth/sessions)
+    if (url.pathname === '/api/auth/sessions' && request.method === 'GET') {
+      try {
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Database not bound.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        const session = await resolveAuthenticatedSession(request, db, ctx);
+        if (!session) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Authentication required.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        const nowMs = Date.now();
+        const maxCreatedCutoff = nowMs - BRIVU_SESSION_MAX_AGE_MS;
+        const rows: any = await db
+          .prepare(
+            `SELECT id, device_label, created_at, last_seen_at, expires_at
+             FROM brivu_sessions
+             WHERE LOWER(user_email) = ?
+               AND revoked_at IS NULL
+               AND expires_at > ?
+               AND (created_at = 0 OR created_at > ?)
+             ORDER BY last_seen_at DESC, created_at DESC
+             LIMIT ?`
+          )
+          .bind(session.userEmail, nowMs, maxCreatedCutoff, MAX_ACTIVE_SESSIONS_PER_USER)
+          .all()
+          .catch(() => ({ results: [] }));
+
+        const sessions = (rows?.results || []).map((r: any) => ({
+          id: String(r.id),
+          deviceLabel: String(r.device_label || 'Brivu Device'),
+          createdAt: Number(r.created_at) || 0,
+          lastSeenAt: Number(r.last_seen_at) || 0,
+          expiresAt: Number(r.expires_at) || 0,
+          isCurrent: String(r.id) === session.sessionId,
+        }));
+
+        return new Response(
+          JSON.stringify({ ok: true, sessions }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+        );
+      } catch (err: any) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String(err?.message || err) }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    if (url.pathname.startsWith('/api/auth/sessions/') && request.method === 'DELETE') {
+      try {
+        const db = getD1Database(env);
+        if (!db) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Database not bound.' }),
+            { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        const session = await resolveAuthenticatedSession(request, db, ctx);
+        if (!session) {
+          return new Response(
+            JSON.stringify({ ok: false, authenticated: false, expired: true, error: 'Authentication required.' }),
+            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+        const targetId = decodeURIComponent(url.pathname.replace('/api/auth/sessions/', '')).trim();
+        if (!targetId || !/^bsess_[a-f0-9]+$/i.test(targetId)) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Invalid session ID.' }),
+            { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const res: any = await db
+          .prepare('DELETE FROM brivu_sessions WHERE id = ? AND LOWER(user_email) = ?')
+          .bind(targetId, session.userEmail)
+          .run();
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            revoked: Number(res?.meta?.changes || 0) > 0,
+            isCurrent: targetId === session.sessionId,
+          }),
+          { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
         );
       } catch (err: any) {
         return new Response(
@@ -3606,11 +3987,12 @@ export default {
               { ...existingRow, updated_at: nowIso, last_login: nowIso },
               nowIso
             );
-            const { rawSessionToken, expiresAt } = await issueBrivuSession(
+            const { rawSessionToken, expiresAt, sessionId } = await issueBrivuSession(
               db,
               ctx,
               user,
-              existingRow.google_sub
+              existingRow.google_sub,
+              request
             );
             return new Response(
               JSON.stringify({
@@ -3618,7 +4000,9 @@ export default {
                 success: true,
                 user,
                 sessionToken: rawSessionToken,
+                sessionId,
                 expiresAt,
+                inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
                 linkedExistingGoogleAccount: Boolean(existingRow.google_sub),
                 message: 'Signed into your existing Brivu account.',
               }),
@@ -3656,11 +4040,12 @@ export default {
             },
             nowIso
           );
-          const { rawSessionToken, expiresAt } = await issueBrivuSession(
+          const { rawSessionToken, expiresAt, sessionId } = await issueBrivuSession(
             db,
             ctx,
             user,
-            existingRow.google_sub
+            existingRow.google_sub,
+            request
           );
 
           return new Response(
@@ -3669,7 +4054,9 @@ export default {
               success: true,
               user,
               sessionToken: rawSessionToken,
+              sessionId,
               expiresAt,
+              inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
               linkedExistingGoogleAccount: true,
               message: 'Password added to your existing Google account. All your data remains linked under this email.',
             }),
@@ -3718,7 +4105,7 @@ export default {
           },
           nowIso
         );
-        const { rawSessionToken, expiresAt } = await issueBrivuSession(db, ctx, user, null);
+        const { rawSessionToken, expiresAt, sessionId } = await issueBrivuSession(db, ctx, user, null, request);
 
         return new Response(
           JSON.stringify({
@@ -3726,7 +4113,9 @@ export default {
             success: true,
             user,
             sessionToken: rawSessionToken,
+            sessionId,
             expiresAt,
+            inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
             linkedExistingGoogleAccount: false,
             message: 'Account created and signed into Brivu.',
           }),
@@ -3818,11 +4207,12 @@ export default {
           { ...existingRow, updated_at: nowIso, last_login: nowIso },
           nowIso
         );
-        const { rawSessionToken, expiresAt } = await issueBrivuSession(
+        const { rawSessionToken, expiresAt, sessionId } = await issueBrivuSession(
           db,
           ctx,
           user,
-          existingRow.google_sub
+          existingRow.google_sub,
+          request
         );
 
         return new Response(
@@ -3831,7 +4221,9 @@ export default {
             success: true,
             user,
             sessionToken: rawSessionToken,
+            sessionId,
             expiresAt,
+            inactivityTimeoutMs: BRIVU_SESSION_INACTIVITY_MS,
             message: 'Signed into Brivu.',
           }),
           { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -3848,13 +4240,6 @@ export default {
     if (url.pathname === '/api/auth/set-password' && request.method === 'POST') {
       try {
         const db = getD1Database(env);
-        const rawToken = extractBrivuSessionToken(request);
-        if (!rawToken) {
-          return new Response(
-            JSON.stringify({ ok: false, success: false, error: 'Please sign in first to set a password.' }),
-            { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-          );
-        }
         if (!db) {
           return new Response(
             JSON.stringify({ ok: false, success: false, error: 'Database not bound on server.' }),
@@ -3862,18 +4247,10 @@ export default {
           );
         }
 
-        await ensureD1Tables(db);
-        const tokenHash = await sha256Hex(rawToken);
-        const sessionRow: any = await db
-          .prepare('SELECT * FROM brivu_sessions WHERE token_hash = ? LIMIT 1')
-          .bind(tokenHash)
-          .first()
-          .catch(() => null);
-
-        const nowMs = Date.now();
-        if (!sessionRow || sessionRow.revoked_at || Number(sessionRow.expires_at) <= nowMs) {
+        const session = await resolveAuthenticatedSession(request, db, ctx);
+        if (!session) {
           return new Response(
-            JSON.stringify({ ok: false, success: false, error: 'Your session expired. Please sign in again.' }),
+            JSON.stringify({ ok: false, success: false, expired: true, error: 'Your session expired. Please sign in again.' }),
             { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
           );
         }
@@ -3887,7 +4264,7 @@ export default {
           );
         }
 
-        const targetEmail = String(sessionRow.user_email || sessionRow.user_id || '').toLowerCase().trim();
+        const targetEmail = session.userEmail;
         const { hashHex, saltHex } = await hashPasswordPBKDF2(pwCheck.password);
         const nowIso = new Date().toISOString();
 
@@ -3895,11 +4272,11 @@ export default {
           UPDATE users
           SET password_hash = ?, password_salt = ?, updated_at = ?
           WHERE id = ? OR LOWER(email) = ?
-        `).bind(hashHex, saltHex, nowIso, sessionRow.user_id, targetEmail).run();
+        `).bind(hashHex, saltHex, nowIso, session.userId, targetEmail).run();
 
         const updatedRow: any = await db
           .prepare('SELECT * FROM users WHERE id = ? OR LOWER(email) = ? LIMIT 1')
-          .bind(sessionRow.user_id, targetEmail)
+          .bind(session.userId, targetEmail)
           .first()
           .catch(() => null);
 
@@ -3935,7 +4312,12 @@ export default {
           );
         }
 
-        const cleanEmail = user.email.toLowerCase().trim();
+        const requestedEmail = String(user.email || '').toLowerCase().trim();
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const cleanEmail = sessionCheck.session?.userEmail || requestedEmail;
         const nowIso = new Date().toISOString();
         const userPayload = {
           ...user,
@@ -4105,7 +4487,6 @@ export default {
         }
 
         await ensureD1Tables(db);
-        const session = await resolveAuthenticatedSession(request, db);
         const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
@@ -4114,6 +4495,11 @@ export default {
           ''
         ).toLowerCase().trim();
 
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const session = sessionCheck.session;
         const userEmail = session?.userEmail || requestedEmail;
         if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
           return new Response(
@@ -4759,13 +5145,19 @@ export default {
       try {
         const db = getD1Database(env);
         const receipt: any = await request.json().catch(() => ({}));
-        const userEmail = (
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           receipt?.userEmail ||
           url.searchParams.get('email') ||
           ''
-        ).toLowerCase().trim() || 'global';
+        ).toLowerCase().trim();
+
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail || 'global';
 
         if (receipt && receipt.id && db) {
           try {
@@ -4898,7 +5290,7 @@ export default {
           ownerKey,
         } = body;
 
-        const userEmail = (
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           body?.userEmail ||
@@ -4906,6 +5298,12 @@ export default {
           url.searchParams.get('email') ||
           ''
         ).toLowerCase().trim();
+
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail;
 
         const lowerFolder = (folder || '').toLowerCase().trim();
         const lowerFilename = (filename || '').toLowerCase().trim();
@@ -4987,7 +5385,7 @@ export default {
 
         // Fixed key for logo, signature, and replaceable menu photos to preserve a single permanent link
         const isSignature = lowerFolder === 'signatures' || lowerFilename.includes('signature');
-        const isLogo = lowerFolder === 'photos' && (lowerFilename.includes('logo') || lowerFilename === 'logo.webp');
+        const isLogo = lowerFolder === 'photos' && !lowerFilename.includes('qr_logo') && (lowerFilename.includes('logo') || lowerFilename === 'logo.webp');
 
         let cleanFilename = (filename || `file_${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
         let fileType = 'file';
@@ -5176,13 +5574,18 @@ export default {
     if ((url.pathname === '/api/files' || url.pathname === '/api/files/') && request.method === 'GET') {
       const bucket = getR2Bucket(env);
       const db = getD1Database(env);
-      const userEmail = (
+      const requestedEmail = (
         request.headers.get('X-User-Email') ||
         request.headers.get('X-User-Id') ||
         url.searchParams.get('email') ||
         url.searchParams.get('user_id') ||
         ''
       ).toLowerCase().trim();
+      const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+      if (!sessionCheck.ok && sessionCheck.response) {
+        return sessionCheck.response;
+      }
+      const userEmail = sessionCheck.session?.userEmail || requestedEmail;
       const prefixParam = url.searchParams.get('prefix') || '';
       const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 500);
 
@@ -5369,13 +5772,19 @@ export default {
     // 3c. Storage Quota endpoint (/api/storage/quota)
     if (url.pathname === '/api/storage/quota' && request.method === 'GET') {
       try {
-        const userEmail = (
+        const db = getD1Database(env);
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           url.searchParams.get('email') ||
           url.searchParams.get('user_id') ||
           ''
         ).toLowerCase().trim();
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail;
 
         const usedBytes = await getUserStorageUsageBytes(userEmail, env);
         const isUnlimited = isAdminLifetimeEmail(userEmail);
@@ -5429,6 +5838,29 @@ export default {
         try {
           decodedKey = decodeURIComponent(key);
         } catch {}
+
+        const isPublicMenuAssetKey = key.startsWith('menu-public/') || decodedKey.startsWith('menu-public/');
+        if (!isPublicMenuAssetKey) {
+          const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx);
+          if (!sessionCheck.ok && sessionCheck.response) {
+            return sessionCheck.response;
+          }
+          if (sessionCheck.session) {
+            const ownerEmail = sessionCheck.session.userEmail;
+            const allowedPrefixes = [
+              `users/${encodeURIComponent(ownerEmail)}/`,
+              `users/${ownerEmail}/`,
+            ];
+            const isOwned =
+              allowedPrefixes.some((p) => key.startsWith(p) || decodedKey.startsWith(p));
+            if (!isOwned) {
+              return new Response(
+                JSON.stringify({ ok: false, error: 'Forbidden: you can only delete your own files.' }),
+                { status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+        }
 
         if (bucket && key) {
           try {
@@ -5600,7 +6032,7 @@ export default {
       try {
         const db = getD1Database(env);
         const page: any = await request.json().catch(() => ({}));
-        const userEmail = (
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           url.searchParams.get('email') ||
@@ -5609,6 +6041,11 @@ export default {
           page?.email ||
           ''
         ).toLowerCase().trim();
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail;
 
         if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-')) {
           return new Response(
@@ -5828,10 +6265,10 @@ export default {
             );
           }
           await ensureD1Tables(db);
-          const session = await resolveAuthenticatedSession(request, db);
+          const session = await resolveAuthenticatedSession(request, db, ctx);
           if (!session) {
             return new Response(
-              JSON.stringify({ ok: false, error: 'Authentication required to delete QR pages.' }),
+              JSON.stringify({ ok: false, expired: true, error: 'Authentication required to delete QR pages.' }),
               { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
           }
@@ -5938,7 +6375,7 @@ export default {
         const body: any = await request.json().catch(() => ({}));
         const backupData = body?.backupData || body;
 
-        const userEmail = (
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           url.searchParams.get('email') ||
@@ -5950,6 +6387,12 @@ export default {
           backupData?.profile?.email ||
           ''
         ).toLowerCase().trim();
+
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail;
 
         // 1. REJECT UNAUTHENTICATED OR GUEST SYNC REQUESTS
         if (!userEmail || !userEmail.includes('@') || userEmail.startsWith('brivu-usr-') || userEmail.includes('default_user')) {
@@ -6313,10 +6756,18 @@ export default {
             await saveCanonicalQrPage(db, userEmail, 'socials', socPage, { preserveExistingIfEmpty: true });
           }
 
+          const deletedEventSet = new Set<string>(
+            Array.isArray(backupData.deletedEventIds)
+              ? backupData.deletedEventIds.map((id: any) => String(id || '').trim()).filter(Boolean)
+              : []
+          );
           const incomingEvtHub = incomingPages.find((p: any) => p && (p.pageType === 'events_hub' || String(p.id || '').includes('events-hub')));
-          const syncEvtItems = Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length > 0
+          const hasAuthoritativeEventsArray = Array.isArray(backupData.eventsQrItems);
+          const rawSyncEvtItems = hasAuthoritativeEventsArray
             ? backupData.eventsQrItems
             : (Array.isArray(incomingEvtHub?.eventsQrItems) ? incomingEvtHub.eventsQrItems : []);
+          const syncEvtItems = rawSyncEvtItems.filter((e: any) => e && e.id && !deletedEventSet.has(String(e.id).trim()));
+
           if (syncEvtItems.length > 0) {
             const evtPage = {
               ...(incomingEvtHub || {}),
@@ -6355,15 +6806,38 @@ export default {
                 };
               }),
             };
-            await saveCanonicalQrPage(db, userEmail, 'events', evtPage, { preserveExistingIfEmpty: true });
+            await saveCanonicalQrPage(db, userEmail, 'events', evtPage);
+            const expectedEventRowIds = new Set<string>([`user_${userEmail}_events`]);
             for (const singleEvt of syncEvtItems) {
               if (singleEvt && singleEvt.id) {
+                const singleKey = `user_${userEmail}_event_${String(singleEvt.id).trim()}`;
+                expectedEventRowIds.add(singleKey);
+                expectedEventRowIds.add(String(singleEvt.id).trim());
                 const singlePage = buildSingleEventPublicPage(singleEvt, userEmail, profile);
                 await saveCanonicalQrPage(db, userEmail, 'events', singlePage, {
-                  explicitId: `user_${userEmail}_event_${String(singleEvt.id).trim()}`,
+                  explicitId: singleKey,
                 });
               }
             }
+            try {
+              const existingEvtRows: any = await db
+                .prepare(`SELECT id FROM qr_pages WHERE LOWER(user_email) = ? AND (id LIKE ? OR id LIKE ?)`)
+                .bind(userEmail, `user_${userEmail}_event_%`, `event-%`)
+                .all();
+              for (const row of existingEvtRows?.results || []) {
+                if (row?.id && !expectedEventRowIds.has(String(row.id))) {
+                  await db.prepare('DELETE FROM qr_pages WHERE id = ?').bind(row.id).run();
+                }
+              }
+            } catch (_) {}
+          } else if (hasAuthoritativeEventsArray || deletedEventSet.size > 0) {
+            try {
+              await db
+                .prepare(`DELETE FROM qr_pages WHERE LOWER(user_email) = ? AND (id = ? OR id = ? OR id LIKE ? OR id LIKE ?)`)
+                .bind(userEmail, `user_${userEmail}_events`, 'events-hub-all', `user_${userEmail}_event_%`, `event-%`)
+                .run();
+              invalidateCachePattern('qrCache:');
+            } catch (_) {}
           }
 
           const incomingRoomsHub = incomingPages.find((p: any) => p && (p.pageType === 'rooms_hub' || String(p.id || '').includes('rooms-hub')));
@@ -6428,8 +6902,9 @@ export default {
             !String(p.id || '').startsWith('socials-hub')
           );
           const incomingBizPage = bizCandidates.find(hasRealQrPageContent) || bizCandidates[0];
-          const photos = Array.isArray(incomingBizPage?.photos) && incomingBizPage.photos.length > 0
-            ? incomingBizPage.photos
+          const hasIncomingBizPage = Boolean(incomingBizPage);
+          const photos = hasIncomingBizPage
+            ? (Array.isArray(incomingBizPage.photos) ? incomingBizPage.photos : [])
             : (Array.isArray(backupData.photos) ? backupData.photos : []);
 
           // Strict Separation: Business QR Digital Items MUST NEVER copy stock/inventory products
@@ -6441,12 +6916,14 @@ export default {
             ...(incomingBizPage || {}),
             title: incomingBizPage?.title || profile.name || (userEmail ? `${userEmail.split('@')[0]}'s Business` : 'Brivu Business'),
             tagline: incomingBizPage?.tagline || profile.description || 'Welcome to our official business page',
-            description: incomingBizPage?.description || profile.description || '',
+            description: hasIncomingBizPage ? (incomingBizPage?.description ?? '') : (profile.description || ''),
             pageType: incomingBizPage?.pageType || 'menu',
             accentColor: incomingBizPage?.accentColor || profile.themeColor || '#059669',
             theme: incomingBizPage?.theme || 'emerald',
-            logo: incomingBizPage?.logo || profile.logo,
-            coverImage: incomingBizPage?.coverImage || photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined),
+            logo: hasIncomingBizPage ? incomingBizPage.logo : profile.logo,
+            coverImage: hasIncomingBizPage
+              ? incomingBizPage.coverImage
+              : (photos[0]?.url || (typeof photos[0] === 'string' ? photos[0] : undefined)),
             phone: incomingBizPage?.phone || profile.phone || '',
             whatsapp: incomingBizPage?.whatsapp || cleanWa,
             email: incomingBizPage?.email || profile.email || userEmail,
@@ -6460,11 +6937,31 @@ export default {
               : ['All'],
             menuItems: bizMenuItems,
           };
-          if (hasRealQrPageContent(bizPage)) {
-            await saveCanonicalQrPage(db, userEmail, 'business', bizPage, {
-              preserveExistingPhotosIfEmpty: true,
-              preserveExistingIfEmpty: true,
-            });
+
+          let existingBizRow: any = null;
+          try {
+            existingBizRow = await db.prepare('SELECT id FROM qr_pages WHERE id = ? LIMIT 1').bind(`user_${userEmail}_business`).first();
+          } catch (_) {}
+
+          if (hasRealQrPageContent(bizPage) || (hasIncomingBizPage && existingBizRow)) {
+            await saveCanonicalQrPage(
+              db,
+              userEmail,
+              'business',
+              bizPage,
+              hasIncomingBizPage
+                ? undefined
+                : { preserveExistingPhotosIfEmpty: true, preserveExistingIfEmpty: true }
+            );
+            if (hasIncomingBizPage && incomingBizPage?.id && !String(incomingBizPage.id).startsWith('user_')) {
+              const specificBizKey = `user_${userEmail}_biz_${String(incomingBizPage.id).trim()}`;
+              try {
+                const existingSpecificBiz = await db.prepare('SELECT id FROM qr_pages WHERE id = ? LIMIT 1').bind(specificBizKey).first();
+                if (existingSpecificBiz) {
+                  await saveCanonicalQrPage(db, userEmail, 'business', bizPage, { explicitId: specificBizKey });
+                }
+              } catch (_) {}
+            }
           }
         }
 
@@ -6495,13 +6992,18 @@ export default {
       try {
         const bucket = getR2Bucket(env);
         const db = getD1Database(env);
-        const userEmail = (
+        const requestedEmail = (
           request.headers.get('X-User-Email') ||
           request.headers.get('X-User-Id') ||
           url.searchParams.get('email') ||
           url.searchParams.get('user_id') ||
           ''
         ).toLowerCase().trim();
+        const sessionCheck = await verifySessionIfHeaderPresent(request, db, ctx, requestedEmail);
+        if (!sessionCheck.ok && sessionCheck.response) {
+          return sessionCheck.response;
+        }
+        const userEmail = sessionCheck.session?.userEmail || requestedEmail;
 
         let backupData: any = null;
 
@@ -6576,12 +7078,22 @@ export default {
               const tsB = new Date(b.updatedAt || 0).getTime() || 0;
               const newer = tsB >= tsA ? b : a;
               const older = tsB >= tsA ? a : b;
+              const pType = String(newer.pageType || older.pageType || '').toLowerCase();
+              const isBusinessPage =
+                pType !== 'websites_hub' &&
+                pType !== 'socials_hub' &&
+                pType !== 'events_hub' &&
+                pType !== 'event' &&
+                pType !== 'rooms_hub' &&
+                pType !== 'room';
+              const hasStrictlyNewerBiz = isBusinessPage && Math.max(tsA, tsB) > 0 && tsA !== tsB && !newer.isEmptyFallback;
+
               return {
                 ...older,
                 ...newer,
                 title: !isGenericTitle(newer.title) ? newer.title : (!isGenericTitle(older.title) ? older.title : (newer.title || older.title)),
                 tagline: newer.tagline || older.tagline || '',
-                description: newer.description || older.description || '',
+                description: hasStrictlyNewerBiz ? (newer.description ?? '') : (newer.description || older.description || ''),
                 phone: newer.phone || older.phone || '',
                 whatsapp: newer.whatsapp || older.whatsapp || '',
                 email: newer.email || older.email || '',
@@ -6591,22 +7103,36 @@ export default {
                 wifiName: newer.wifiName || older.wifiName,
                 wifiPassword: newer.wifiPassword || older.wifiPassword,
                 wifiSecurity: newer.wifiSecurity || older.wifiSecurity,
-                openingHours: newer.openingHours || older.openingHours || '',
-                announcement: newer.announcement || older.announcement || '',
-                coverImage: newer.coverImage || older.coverImage,
-                logo: newer.logo || older.logo,
+                openingHours: hasStrictlyNewerBiz ? (newer.openingHours ?? '') : (newer.openingHours || older.openingHours || ''),
+                announcement: hasStrictlyNewerBiz ? (newer.announcement ?? '') : (newer.announcement || older.announcement || ''),
+                coverImage: hasStrictlyNewerBiz ? newer.coverImage : (newer.coverImage || older.coverImage),
+                logo: hasStrictlyNewerBiz ? newer.logo : (newer.logo || older.logo),
                 socialLinks: mergedSocialLinks,
-                customSocialLinks: pickNonEmptyArr(newer.customSocialLinks, older.customSocialLinks),
-                photos: pickNonEmptyArr(newer.photos, older.photos),
+                customSocialLinks: hasStrictlyNewerBiz
+                  ? (Array.isArray(newer.customSocialLinks) ? newer.customSocialLinks : [])
+                  : pickNonEmptyArr(newer.customSocialLinks, older.customSocialLinks),
+                photos: hasStrictlyNewerBiz
+                  ? (Array.isArray(newer.photos) ? newer.photos : [])
+                  : pickNonEmptyArr(newer.photos, older.photos),
                 menuImages: pickNonEmptyArr(newer.menuImages, older.menuImages),
-                menuCategories: pickCats(older.menuCategories, newer.menuCategories),
-                menuItems: pickNonEmptyArr(newer.menuItems, older.menuItems),
+                menuCategories: hasStrictlyNewerBiz && Array.isArray(newer.menuCategories)
+                  ? newer.menuCategories
+                  : pickCats(older.menuCategories, newer.menuCategories),
+                menuItems: hasStrictlyNewerBiz
+                  ? (Array.isArray(newer.menuItems) ? newer.menuItems : [])
+                  : pickNonEmptyArr(newer.menuItems, older.menuItems),
                 websitesQrItems: pickNonEmptyArr(newer.websitesQrItems, older.websitesQrItems),
                 socialsQrItems: pickNonEmptyArr(newer.socialsQrItems, older.socialsQrItems),
                 eventsQrItems: pickNonEmptyArr(newer.eventsQrItems, older.eventsQrItems),
                 roomsQrItems: pickNonEmptyArr(newer.roomsQrItems, older.roomsQrItems),
               };
             };
+
+            const deletedEventSet = new Set<string>(
+              Array.isArray(backupData.deletedEventIds)
+                ? backupData.deletedEventIds.map((id: any) => String(id || '').trim()).filter(Boolean)
+                : []
+            );
 
             // A. QR Pages
             const qrRows = await db.prepare('SELECT id, page_json, updated_at FROM qr_pages WHERE LOWER(user_email) = ? OR id LIKE ?').bind(userEmail, `user_${userEmail}_%`).all();
@@ -6617,6 +7143,12 @@ export default {
                   try {
                     const parsedPage = JSON.parse(r.page_json);
                     if (parsedPage && parsedPage.id && parsedPage.id !== 'default' && parsedPage.id !== 'latest') {
+                      if (
+                        (parsedPage.pageType === 'event' || String(parsedPage.id || '').startsWith('event-')) &&
+                        deletedEventSet.has(String(parsedPage.id).trim())
+                      ) {
+                        continue;
+                      }
                       if (!parsedPage.updatedAt && r.updated_at) parsedPage.updatedAt = r.updated_at;
                       hostedPages.push(parsedPage);
                     }
@@ -6628,11 +7160,25 @@ export default {
             const pageMap = new Map<string, any>();
             for (const p of [...existingPages, ...hostedPages]) {
               if (p?.id) {
+                if (
+                  (p.pageType === 'event' || String(p.id || '').startsWith('event-')) &&
+                  deletedEventSet.has(String(p.id).trim())
+                ) {
+                  continue;
+                }
                 const prev = pageMap.get(p.id);
                 pageMap.set(p.id, prev ? mergeQrPagesPreservingRich(prev, p) : p);
               }
             }
-            const combinedQrPages = Array.from(pageMap.values());
+            const combinedQrPages = Array.from(pageMap.values()).map((p: any) => {
+              if (p && (p.pageType === 'events_hub' || String(p.id || '').includes('events-hub')) && Array.isArray(p.eventsQrItems)) {
+                return {
+                  ...p,
+                  eventsQrItems: p.eventsQrItems.filter((e: any) => e && e.id && !deletedEventSet.has(String(e.id).trim())),
+                };
+              }
+              return p;
+            });
             if (combinedQrPages.length > 0) {
               backupData.qrHostedPages = combinedQrPages;
             }
@@ -6670,19 +7216,27 @@ export default {
               backupData.socialsQrItems = Array.from(mergedSocMap.values());
             }
 
+            const hasExplicitEmptyEvents = Array.isArray(backupData.eventsQrItems) && backupData.eventsQrItems.length === 0;
+            const hasEventsHubRowInD1 = hostedPages.some(
+              (p: any) => p && (p.pageType === 'events_hub' || String(p.id || '').includes('events'))
+            );
             const evtPages = combinedQrPages.filter((p: any) => p && (p.pageType === 'events_hub' || p.pageType === 'event' || String(p.id || '').includes('event')));
             const mergedEvtMap = new Map<string, any>();
             for (const e of (Array.isArray(backupData.eventsQrItems) ? backupData.eventsQrItems : [])) {
-              if (e?.id) mergedEvtMap.set(e.id, e);
+              if (e?.id && !deletedEventSet.has(String(e.id).trim())) mergedEvtMap.set(e.id, e);
             }
-            for (const ep of evtPages) {
-              if (Array.isArray(ep.eventsQrItems)) {
-                for (const e of ep.eventsQrItems) {
-                  if (e?.id && !mergedEvtMap.has(e.id)) mergedEvtMap.set(e.id, e);
+            if (!hasExplicitEmptyEvents || hasEventsHubRowInD1) {
+              for (const ep of evtPages) {
+                if (Array.isArray(ep.eventsQrItems)) {
+                  for (const e of ep.eventsQrItems) {
+                    if (e?.id && !deletedEventSet.has(String(e.id).trim()) && !mergedEvtMap.has(e.id)) {
+                      mergedEvtMap.set(e.id, e);
+                    }
+                  }
                 }
               }
             }
-            if (mergedEvtMap.size > 0) {
+            if (mergedEvtMap.size > 0 || hasExplicitEmptyEvents) {
               backupData.eventsQrItems = Array.from(mergedEvtMap.values());
             }
 
@@ -6757,12 +7311,8 @@ export default {
               backupData.inventoryProducts = Array.from(productMap.values());
             }
 
-            // D. Uploaded Files & Photos (D1 files + R2 bucket photos fallback)
-            const existingFiles = Array.isArray(backupData.files) ? backupData.files : [];
+            // D. Uploaded Files & Photos (strictly from live D1 files + live R2 bucket so deleted files never resurrect)
             const fileMap = new Map<string, any>();
-            for (const f of existingFiles) {
-              if (f?.key || f?.id) fileMap.set(f.key || f.id, f);
-            }
 
             const fileRows = await db.prepare('SELECT id, filename, mime_type, size, created_at FROM files WHERE user_email = ? OR id LIKE ? OR id LIKE ?').bind(userEmail, `users/${encodeURIComponent(userEmail)}/%`, `users/${userEmail}/%`).all();
             if (fileRows?.results && fileRows.results.length > 0) {
@@ -6805,26 +7355,12 @@ export default {
             }
 
             const allUserFiles = Array.from(fileMap.values());
-            if (allUserFiles.length > 0) {
-              backupData.files = allUserFiles;
-            }
+            backupData.files = allUserFiles;
 
-            // E. Protect and auto-recover QR gallery photos in qrHostedPages from R2/D1 files if any sync cleared them
+            // E. Only auto-recover QR gallery photos from R2/D1 when NO Business QR page exists yet (never overwrite intentional deletions)
             const recoveredAssets = recoverQrPhotosFromFileRecords(allUserFiles, url.origin);
-            if (Array.isArray(backupData.qrHostedPages) && backupData.qrHostedPages.length > 0) {
-              // Merge duplicate canonical `user_<email>_business` into real business page without losing photos
-              const bizPages = backupData.qrHostedPages.filter((p: any) =>
-                p &&
-                p.pageType !== 'websites_hub' &&
-                p.pageType !== 'socials_hub' &&
-                p.pageType !== 'events_hub' &&
-                p.pageType !== 'event' &&
-                p.pageType !== 'rooms_hub' &&
-                p.pageType !== 'room'
-              );
-              const populatedBiz = bizPages.find((p: any) => Array.isArray(p.photos) && p.photos.length > 0);
-              backupData.qrHostedPages = backupData.qrHostedPages.map((p: any) => {
-                if (
+            const existingBizPages = Array.isArray(backupData.qrHostedPages)
+              ? backupData.qrHostedPages.filter((p: any) =>
                   p &&
                   p.pageType !== 'websites_hub' &&
                   p.pageType !== 'socials_hub' &&
@@ -6832,24 +7368,10 @@ export default {
                   p.pageType !== 'event' &&
                   p.pageType !== 'rooms_hub' &&
                   p.pageType !== 'room'
-                ) {
-                  let photos = Array.isArray(p.photos) ? p.photos : [];
-                  if (photos.length === 0 && populatedBiz && populatedBiz.photos.length > 0) {
-                    photos = populatedBiz.photos;
-                  }
-                  if (photos.length === 0 && recoveredAssets.photos.length > 0) {
-                    photos = recoveredAssets.photos;
-                  }
-                  return {
-                    ...p,
-                    photos,
-                    coverImage: p.coverImage || recoveredAssets.coverImage || photos[0]?.url,
-                    logo: p.logo || recoveredAssets.logo,
-                  };
-                }
-                return p;
-              });
-            } else if (recoveredAssets.photos.length > 0) {
+                )
+              : [];
+            if (existingBizPages.length === 0 && recoveredAssets.photos.length > 0) {
+              const basePages = Array.isArray(backupData.qrHostedPages) ? backupData.qrHostedPages : [];
               backupData.qrHostedPages = [
                 {
                   id: `qr-${Date.now().toString(36)}`,
@@ -6873,6 +7395,7 @@ export default {
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 },
+                ...basePages,
               ];
             }
 
@@ -7365,12 +7888,20 @@ export default {
   },
 
   async scheduled(_event: any, env: Env, ctx?: { waitUntil?: (promise: Promise<any>) => void }): Promise<void> {
-    const task = runScheduledGracePurgeSweep(env, {
-      treatLegacyCreatedAtAsTrialStart: false,
-      limit: 300,
-    }).catch((err) => {
-      console.warn('Scheduled grace-period purge note:', err);
-    });
+    const db = getD1Database(env);
+    const task = Promise.all([
+      runScheduledGracePurgeSweep(env, {
+        treatLegacyCreatedAtAsTrialStart: false,
+        limit: 300,
+      }).catch((err) => {
+        console.warn('Scheduled grace-period purge note:', err);
+      }),
+      db
+        ? cleanupExpiredBrivuSessions(db).catch((err) => {
+            console.warn('Scheduled session cleanup note:', err);
+          })
+        : Promise.resolve(0),
+    ]);
     if (ctx?.waitUntil) {
       ctx.waitUntil(task);
     } else {

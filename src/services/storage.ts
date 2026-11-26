@@ -66,6 +66,7 @@ const STORAGE_KEYS = {
   APP_LOCKED_STATE: 'quickreceipt_app_locked_state_v1',
   CLOUDFLARE: 'quickreceipt_cloudflare_config_v1',
   DELETED_RECEIPTS: 'quickreceipt_deleted_receipt_ids_v1',
+  DELETED_EVENTS_QR: 'quickreceipt_deleted_events_qr_v1',
   INITIAL_PROFILE_SETUP_DONE: 'quickreceipt_initial_profile_setup_done_v1',
   INSTALL_DATE: 'quickreceipt_install_date_v1',
   BRIVU_USER_ID: 'quickreceipt_brivu_user_id_v1',
@@ -354,6 +355,25 @@ function writeToStorage<T>(key: string, value: T): boolean {
 }
 
 let systemActionExpiresAt = 0;
+const inFlightQrAssetUploads = new Map<string, Promise<string | null>>();
+
+function uploadQrDataUriDeduped(
+  dedupeKey: string,
+  uploadParams: { data: string; filename: string; mimeType: string; folder: string }
+): Promise<string | null> {
+  const existing = inFlightQrAssetUploads.get(dedupeKey);
+  if (existing) {
+    return existing;
+  }
+  const promise = CloudflareService.uploadFile(uploadParams)
+    .then((res) => (res.success && res.url ? res.url : null))
+    .catch(() => null)
+    .finally(() => {
+      inFlightQrAssetUploads.delete(dedupeKey);
+    });
+  inFlightQrAssetUploads.set(dedupeKey, promise);
+  return promise;
+}
 
 export const StorageService = {
   // Temporary marker for system intents (e.g. system file picker, native share sheet, camera)
@@ -1010,6 +1030,7 @@ export const StorageService = {
       websitesQrItems: this.getWebsitesQrItems(),
       socialsQrItems: this.getSocialsQrItems(),
       eventsQrItems: this.getEventsQrItems(),
+      deletedEventIds: this.getDeletedEventIds(),
       roomsQrItems: this.getRoomsQrItems(),
     };
   },
@@ -1602,13 +1623,41 @@ export const StorageService = {
         const hadStockStripped =
           (Array.isArray(base?.menuItems) && baseCleanMenu.length !== base.menuItems.length) ||
           (Array.isArray(incoming?.menuItems) && incomingCleanMenu.length !== incoming.menuItems.length);
-        const finalMenu = incomingCleanMenu.length > 0 ? incomingCleanMenu : baseCleanMenu;
+        const baseTs = base?.updatedAt ? new Date(base.updatedAt).getTime() || 0 : 0;
+        const incomingTs = incoming?.updatedAt ? new Date(incoming.updatedAt).getTime() || 0 : 0;
+        const incomingIsStrictlyNewer = incomingTs > baseTs && !isBlankDefaultBizPage(incoming);
+        const baseIsStrictlyNewer = baseTs > incomingTs && !isBlankDefaultBizPage(base);
+        const finalMenu = incomingIsStrictlyNewer
+          ? incomingCleanMenu
+          : baseIsStrictlyNewer
+          ? baseCleanMenu
+          : (incomingCleanMenu.length > 0 ? incomingCleanMenu : baseCleanMenu);
         const pickNonEmptyArr = (preferred: any, fallback: any) =>
           Array.isArray(preferred) && preferred.length > 0
             ? preferred
             : Array.isArray(fallback)
             ? fallback
             : [];
+        const finalPhotos = incomingIsStrictlyNewer
+          ? (Array.isArray(incoming?.photos) ? incoming.photos : [])
+          : baseIsStrictlyNewer
+          ? (Array.isArray(base?.photos) ? base.photos : [])
+          : pickNonEmptyArr(incoming?.photos, base?.photos);
+        const finalCustomSocials = incomingIsStrictlyNewer
+          ? (Array.isArray(incoming?.customSocialLinks) ? incoming.customSocialLinks : [])
+          : baseIsStrictlyNewer
+          ? (Array.isArray(base?.customSocialLinks) ? base.customSocialLinks : [])
+          : pickNonEmptyArr(incoming?.customSocialLinks, base?.customSocialLinks);
+        const finalCover = incomingIsStrictlyNewer
+          ? incoming?.coverImage
+          : baseIsStrictlyNewer
+          ? base?.coverImage
+          : (incoming?.coverImage || base?.coverImage);
+        const finalLogo = incomingIsStrictlyNewer
+          ? incoming?.logo
+          : baseIsStrictlyNewer
+          ? base?.logo
+          : (incoming?.logo || base?.logo);
         const catsSet = new Set<string>(['All']);
         for (const c of [...(Array.isArray(base?.menuCategories) ? base.menuCategories : []), ...(Array.isArray(incoming?.menuCategories) ? incoming.menuCategories : [])]) {
           if (typeof c === 'string' && c.trim() && c.trim() !== 'All') {
@@ -1645,11 +1694,11 @@ export const StorageService = {
           openingHours: incoming?.openingHours || base?.openingHours || '',
           announcement: incoming?.announcement || base?.announcement || '',
           currency: incoming?.currency || base?.currency || 'UGX',
-          coverImage: incoming?.coverImage || base?.coverImage,
-          logo: incoming?.logo || base?.logo,
+          coverImage: finalCover,
+          logo: finalLogo,
           socialLinks: mergedSocialLinks,
-          customSocialLinks: pickNonEmptyArr(incoming?.customSocialLinks, base?.customSocialLinks),
-          photos: pickNonEmptyArr(incoming?.photos, base?.photos),
+          customSocialLinks: finalCustomSocials,
+          photos: finalPhotos,
           menuItems: finalMenu,
           menuCategories: Array.from(catsSet),
           qrDarkColor: incoming?.qrDarkColor || base?.qrDarkColor || '#000000',
@@ -1744,15 +1793,39 @@ export const StorageService = {
         );
       }
 
-      const incomingEvtItems = [
+      if (Array.isArray(backupData.deletedEventIds) && backupData.deletedEventIds.length > 0) {
+        const mergedDeletedEvents = Array.from(
+          new Set([
+            ...(replaceExisting ? [] : this.getDeletedEventIds().map((s) => String(s).trim().toLowerCase())),
+            ...backupData.deletedEventIds.map((s) => String(s).trim().toLowerCase()),
+          ].filter(Boolean))
+        ).slice(-250);
+        writeToStorage(STORAGE_KEYS.DELETED_EVENTS_QR, mergedDeletedEvents);
+      } else if (replaceExisting) {
+        writeToStorage(STORAGE_KEYS.DELETED_EVENTS_QR, []);
+      }
+
+      const deletedEventIdSet = new Set(
+        this.getDeletedEventIds().map((s) => String(s).trim().toLowerCase())
+      );
+      const rawIncomingEvtItems = [
         ...(Array.isArray(backupData.eventsQrItems) ? backupData.eventsQrItems : []),
         ...extractedEvtFromPages,
       ];
+      const incomingEvtItems = rawIncomingEvtItems.filter(
+        (evt: any) => evt && evt.id && !deletedEventIdSet.has(String(evt.id).trim().toLowerCase())
+      );
       if (incomingEvtItems.length > 0) {
-        writeToStorage(
-          STORAGE_KEYS.EVENTS_QR,
-          mergeByIdPreservingLocalNonMatching(this.getEventsQrItems(), incomingEvtItems, replaceExisting)
-        );
+        const mergedEvents = mergeByIdPreservingLocalNonMatching(this.getEventsQrItems(), incomingEvtItems, replaceExisting)
+          .filter((evt: any) => evt && evt.id && !deletedEventIdSet.has(String(evt.id).trim().toLowerCase()));
+        writeToStorage(STORAGE_KEYS.EVENTS_QR, mergedEvents);
+      } else if (deletedEventIdSet.size > 0 || (replaceExisting && Array.isArray(backupData.eventsQrItems))) {
+        const filteredLocalEvents = replaceExisting
+          ? []
+          : this.getEventsQrItems().filter(
+              (evt: any) => evt && evt.id && !deletedEventIdSet.has(String(evt.id).trim().toLowerCase())
+            );
+        writeToStorage(STORAGE_KEYS.EVENTS_QR, filteredLocalEvents);
       }
 
       const incomingRoomsItems = [
@@ -2866,50 +2939,57 @@ export const StorageService = {
     if (success) {
       const pageId = updatedPage.id;
       const uploadPromises: Promise<any>[] = [];
+      let replacedAnyDataUri = false;
 
       // 1. Cover Image
       if (updatedPage.coverImage && updatedPage.coverImage.startsWith('data:image/')) {
-        const mime = updatedPage.coverImage.slice(5, updatedPage.coverImage.indexOf(';')) || 'image/jpeg';
+        const rawData = updatedPage.coverImage;
+        const mime = rawData.slice(5, rawData.indexOf(';')) || 'image/jpeg';
         const ext = mime.split('/')[1] || 'jpeg';
+        const dedupeKey = `${pageId}::cover::${rawData.length}::${rawData.slice(0, 64)}`;
         uploadPromises.push(
-          CloudflareService.uploadFile({
-            data: updatedPage.coverImage,
+          uploadQrDataUriDeduped(dedupeKey, {
+            data: rawData,
             filename: `qr_cover_${pageId}_${Date.now()}.${ext}`,
             mimeType: mime,
             folder: 'photos',
-          }).then((res) => {
-            if (res.success && res.url) {
+          }).then((url) => {
+            if (url) {
               const currentPages = this.getHostedQRPages();
               const pIdx = currentPages.findIndex((p) => p.id === pageId);
-              if (pIdx >= 0) {
-                currentPages[pIdx].coverImage = res.url;
+              if (pIdx >= 0 && currentPages[pIdx].coverImage === rawData) {
+                currentPages[pIdx].coverImage = url;
                 writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, currentPages);
+                replacedAnyDataUri = true;
               }
             }
-          }).catch(() => {})
+          })
         );
       }
 
       // 2. Business Logo
       if (updatedPage.logo && updatedPage.logo.startsWith('data:image/')) {
-        const mime = updatedPage.logo.slice(5, updatedPage.logo.indexOf(';')) || 'image/png';
+        const rawData = updatedPage.logo;
+        const mime = rawData.slice(5, rawData.indexOf(';')) || 'image/png';
         const ext = mime.split('/')[1] || 'png';
+        const dedupeKey = `${pageId}::logo::${rawData.length}::${rawData.slice(0, 64)}`;
         uploadPromises.push(
-          CloudflareService.uploadFile({
-            data: updatedPage.logo,
+          uploadQrDataUriDeduped(dedupeKey, {
+            data: rawData,
             filename: `qr_logo_${pageId}_${Date.now()}.${ext}`,
             mimeType: mime,
             folder: 'photos',
-          }).then((res) => {
-            if (res.success && res.url) {
+          }).then((url) => {
+            if (url) {
               const currentPages = this.getHostedQRPages();
               const pIdx = currentPages.findIndex((p) => p.id === pageId);
-              if (pIdx >= 0) {
-                currentPages[pIdx].logo = res.url;
+              if (pIdx >= 0 && currentPages[pIdx].logo === rawData) {
+                currentPages[pIdx].logo = url;
                 writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, currentPages);
+                replacedAnyDataUri = true;
               }
             }
-          }).catch(() => {})
+          })
         );
       }
 
@@ -2917,24 +2997,31 @@ export const StorageService = {
       if (Array.isArray(updatedPage.photos)) {
         updatedPage.photos.forEach((photo, photoIndex) => {
           if (photo.url && photo.url.startsWith('data:image/')) {
-            const mime = photo.url.slice(5, photo.url.indexOf(';')) || 'image/jpeg';
+            const rawData = photo.url;
+            const photoId = photo.id;
+            const mime = rawData.slice(5, rawData.indexOf(';')) || 'image/jpeg';
             const ext = mime.split('/')[1] || 'jpeg';
+            const dedupeKey = `${pageId}::photo::${photoId || photoIndex}::${rawData.length}::${rawData.slice(0, 64)}`;
             uploadPromises.push(
-              CloudflareService.uploadFile({
-                data: photo.url,
-                filename: `qr_photo_${pageId}_${photo.id || photoIndex}_${Date.now()}.${ext}`,
+              uploadQrDataUriDeduped(dedupeKey, {
+                data: rawData,
+                filename: `qr_photo_${pageId}_${photoId || photoIndex}_${Date.now()}.${ext}`,
                 mimeType: mime,
                 folder: 'photos',
-              }).then((res) => {
-                if (res.success && res.url) {
+              }).then((url) => {
+                if (url) {
                   const currentPages = this.getHostedQRPages();
                   const pIdx = currentPages.findIndex((p) => p.id === pageId);
-                  if (pIdx >= 0 && currentPages[pIdx].photos?.[photoIndex]) {
-                    currentPages[pIdx].photos[photoIndex].url = res.url;
+                  const targetIdx = pIdx >= 0 && Array.isArray(currentPages[pIdx].photos)
+                    ? currentPages[pIdx].photos.findIndex((p) => (photoId ? p.id === photoId : false) || p.url === rawData)
+                    : -1;
+                  if (pIdx >= 0 && targetIdx >= 0) {
+                    currentPages[pIdx].photos[targetIdx].url = url;
                     writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, currentPages);
+                    replacedAnyDataUri = true;
                   }
                 }
-              }).catch(() => {})
+              })
             );
           }
         });
@@ -2944,24 +3031,31 @@ export const StorageService = {
       if (Array.isArray(updatedPage.menuItems)) {
         updatedPage.menuItems.forEach((item, itemIndex) => {
           if (item.photoUrl && item.photoUrl.startsWith('data:image/')) {
-            const mime = item.photoUrl.slice(5, item.photoUrl.indexOf(';')) || 'image/jpeg';
+            const rawData = item.photoUrl;
+            const itemId = item.id;
+            const mime = rawData.slice(5, rawData.indexOf(';')) || 'image/jpeg';
             const ext = mime.split('/')[1] || 'jpeg';
+            const dedupeKey = `${pageId}::item::${itemId || itemIndex}::${rawData.length}::${rawData.slice(0, 64)}`;
             uploadPromises.push(
-              CloudflareService.uploadFile({
-                data: item.photoUrl,
-                filename: `qr_item_${pageId}_${item.id || itemIndex}_${Date.now()}.${ext}`,
+              uploadQrDataUriDeduped(dedupeKey, {
+                data: rawData,
+                filename: `qr_item_${pageId}_${itemId || itemIndex}_${Date.now()}.${ext}`,
                 mimeType: mime,
                 folder: 'photos',
-              }).then((res) => {
-                if (res.success && res.url) {
+              }).then((url) => {
+                if (url) {
                   const currentPages = this.getHostedQRPages();
                   const pIdx = currentPages.findIndex((p) => p.id === pageId);
-                  if (pIdx >= 0 && currentPages[pIdx].menuItems?.[itemIndex]) {
-                    currentPages[pIdx].menuItems[itemIndex].photoUrl = res.url;
+                  const targetIdx = pIdx >= 0 && Array.isArray(currentPages[pIdx].menuItems)
+                    ? currentPages[pIdx].menuItems.findIndex((it) => (itemId ? it.id === itemId : false) || it.photoUrl === rawData)
+                    : -1;
+                  if (pIdx >= 0 && targetIdx >= 0) {
+                    currentPages[pIdx].menuItems[targetIdx].photoUrl = url;
                     writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, currentPages);
+                    replacedAnyDataUri = true;
                   }
                 }
-              }).catch(() => {})
+              })
             );
           }
         });
@@ -2969,6 +3063,9 @@ export const StorageService = {
 
       if (uploadPromises.length > 0) {
         Promise.all(uploadPromises).then(() => {
+          if (replacedAnyDataUri && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
+          }
           const fresh = this.getHostedQRPage(pageId) || updatedPage;
           CloudflareService.saveSingleQrPage(fresh, undefined, { immediate: true }).catch(() => {});
           CloudflareService.syncAllToCloudflare(undefined, { immediate: true }).catch(() => {});
@@ -3047,11 +3144,36 @@ export const StorageService = {
   },
 
   // --- EVENTS QR ITEMS ---
+  getDeletedEventIds(): string[] {
+    const raw = readFromStorage<string[]>(STORAGE_KEYS.DELETED_EVENTS_QR, []);
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  addDeletedEventId(id: string): void {
+    const clean = String(id || '').trim().toLowerCase();
+    if (!clean) return;
+    const current = this.getDeletedEventIds().map((x) => String(x).trim().toLowerCase());
+    if (!current.includes(clean)) {
+      current.push(clean);
+      writeToStorage(STORAGE_KEYS.DELETED_EVENTS_QR, current.slice(-250));
+    }
+  },
+
+  removeDeletedEventId(id: string): void {
+    const clean = String(id || '').trim().toLowerCase();
+    if (!clean) return;
+    const next = this.getDeletedEventIds().filter((x) => String(x).trim().toLowerCase() !== clean);
+    writeToStorage(STORAGE_KEYS.DELETED_EVENTS_QR, next);
+  },
+
   getEventsQrItems(): EventQrItem[] {
     const raw = readFromStorage<EventQrItem[]>(STORAGE_KEYS.EVENTS_QR, []);
+    const deletedSet = new Set(this.getDeletedEventIds().map((x) => String(x).trim().toLowerCase()));
     return (raw || []).filter(
       (item) =>
         item &&
+        item.id &&
+        !deletedSet.has(String(item.id).trim().toLowerCase()) &&
         item.id !== 'event-default-1' &&
         !item.id.includes('default') &&
         !item.id.includes('sample') &&
@@ -3059,7 +3181,18 @@ export const StorageService = {
     );
   },
 
+  saveEventsQrItemsLocalOnly(items: EventQrItem[]): boolean {
+    return writeToStorage(STORAGE_KEYS.EVENTS_QR, items);
+  },
+
   saveEventsQrItems(items: EventQrItem[]): boolean {
+    if (Array.isArray(items) && items.length > 0) {
+      const activeIds = new Set(items.map((it) => String(it?.id || '').trim().toLowerCase()).filter(Boolean));
+      const remainingDeleted = this.getDeletedEventIds().filter(
+        (id) => !activeIds.has(String(id).trim().toLowerCase())
+      );
+      writeToStorage(STORAGE_KEYS.DELETED_EVENTS_QR, remainingDeleted);
+    }
     const success = writeToStorage(STORAGE_KEYS.EVENTS_QR, items);
     if (success) {
       try {
@@ -3617,8 +3750,9 @@ export const StorageService = {
         localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
       } else {
         const cleanEmail = (user.email || '').toLowerCase().trim();
+        const { sessionToken: _st, idToken: _it, tokenHash: _th, ...safeUser } = user as any;
         const updatedUser: BrivuUser = {
-          ...user,
+          ...safeUser,
           id: user.id || cleanEmail,
           email: cleanEmail,
           provider: user.provider || 'google',
@@ -3654,8 +3788,9 @@ export const StorageService = {
           STORAGE_KEYS.AUTH_SESSION,
           JSON.stringify({
             sessionToken: session.sessionToken,
-            expiresAt: Number(session.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+            expiresAt: Number(session.expiresAt) || Date.now() + 7 * 24 * 60 * 60 * 1000,
             userEmail: (session.userEmail || '').toLowerCase().trim(),
+            ...(session.sessionId ? { sessionId: session.sessionId } : {}),
           })
         );
       }
@@ -3714,7 +3849,8 @@ export const StorageService = {
     const cleanNewEmail = (newUserEmail || '').toLowerCase().trim();
 
     if (!cleanNewEmail) {
-      // User signed out: clear ONLY auth session credentials, keep all localStorage records intact!
+      // User signed out: clear auth session credentials and clear signed-in Business QR showcase items/photos/logo/cover
+      // while keeping receipts, invoices, quotations, inventory, Menu QR images, WiFi, Contacts, Location, Websites, Socials, Events & Rooms intact.
       try {
         this.clearAuthSession();
         localStorage.removeItem(STORAGE_KEYS.BRIVU_USER_ID);
@@ -3723,6 +3859,23 @@ export const StorageService = {
         if (cf) {
           cf.apiKey = '';
           writeToStorage(STORAGE_KEYS.CLOUDFLARE, cf);
+        }
+        const rawQrPages = readFromStorage<QRCodeHostedPage[]>(STORAGE_KEYS.QR_HOSTED_PAGES, []);
+        if (Array.isArray(rawQrPages) && rawQrPages.length > 0) {
+          const clearedBizShowcase = rawQrPages.map((p) => ({
+            ...p,
+            userEmail: '',
+            logo: undefined,
+            coverImage: undefined,
+            photos: [],
+            menuItems: [],
+            customSocialLinks: [],
+            description: '',
+            openingHours: '',
+            announcement: '',
+            updatedAt: new Date(0).toISOString(),
+          }));
+          writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, clearedBizShowcase);
         }
       } catch {}
       return;

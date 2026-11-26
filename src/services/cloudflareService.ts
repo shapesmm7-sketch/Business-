@@ -1,6 +1,23 @@
-import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, BrivuUser, BrivuAuthConfig } from '../types';
+import { AppBackupData, CloudflareConfig, CloudflareFileRecord, CloudflareSyncResponse, Receipt, BrivuUser, BrivuAuthConfig, BrivuActiveSessionInfo } from '../types';
 import { StorageService } from './storage';
 import { optimizeImageForR2 } from '../utils/imageCompressor';
+
+const DEFAULT_SESSION_INACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
+
+function emitSessionExpiredIfUnauthorized(status: number, parsedData: any): void {
+  if (
+    status === 401 &&
+    parsedData?.expired === true &&
+    typeof window !== 'undefined' &&
+    StorageService.getAuthSession()?.sessionToken
+  ) {
+    window.dispatchEvent(
+      new CustomEvent('brivu_session_expired_remote', {
+        detail: { message: parsedData?.error || 'Your Brivu session expired. Please sign in again.' },
+      })
+    );
+  }
+}
 
 export interface StorageQuotaInfo {
   usedBytes: number;
@@ -175,6 +192,7 @@ function sanitizeBackupForD1Sync(data: AppBackupData): AppBackupData {
       ...evt,
       photos: (evt.photos || []).filter((p) => Boolean(p)),
     })),
+    deletedEventIds: Array.isArray((data as any).deletedEventIds) ? (data as any).deletedEventIds : [],
     roomsQrItems: (data.roomsQrItems || []).map((room) => ({
       ...room,
       photos: (room.photos || []).filter((p) => Boolean(p)),
@@ -324,13 +342,17 @@ export const CloudflareService = {
     const config = this.getConfig();
     const key = apiKey !== undefined ? apiKey : config.apiKey;
     const headers: Record<string, string> = {};
-    if (key && key.trim() !== '') {
-      headers['X-Sync-Key'] = key.trim();
-      headers['Authorization'] = `Bearer ${key.trim()}`;
-    }
     const session = StorageService.getAuthSession();
     if (session?.sessionToken) {
       headers['X-Brivu-Session'] = session.sessionToken;
+      headers['Authorization'] = `Bearer ${session.sessionToken}`;
+    }
+    if (key && key.trim() !== '') {
+      const trimmedKey = key.trim();
+      headers['X-Sync-Key'] = trimmedKey;
+      if (!headers['Authorization'] && !trimmedKey.includes('@')) {
+        headers['Authorization'] = `Bearer ${trimmedKey}`;
+      }
     }
     const cleanEmail = this.getUserEmail();
     if (cleanEmail) {
@@ -504,10 +526,11 @@ export const CloudflareService = {
     const lowerFolderArg = String(options.folder || '').toLowerCase().trim();
     const lowerFilenameArg = String(options.filename || '').toLowerCase().trim();
     const isSharedProfileAsset =
-      lowerFolderArg === 'signatures' ||
-      lowerFilenameArg === 'logo.webp' ||
-      lowerFilenameArg.startsWith('logo_') ||
-      lowerFilenameArg.includes('signature');
+      !lowerFilenameArg.includes('qr_logo') &&
+      (lowerFolderArg === 'signatures' ||
+        lowerFilenameArg === 'logo.webp' ||
+        lowerFilenameArg.startsWith('logo_') ||
+        lowerFilenameArg.includes('signature'));
 
     if (trial.isExpired && !trial.subscribed && !isSharedProfileAsset) {
       return {
@@ -634,6 +657,7 @@ export const CloudflareService = {
       const parsed = parseWorkerResponse(rawText);
 
       if (!response.ok) {
+        emitSessionExpiredIfUnauthorized(response.status, parsed.data);
         let errorMsg = `HTTP ${response.status} upload failed`;
         const isStorageExceeded = Boolean(parsed.data?.storageLimitExceeded);
         const requiresSub = Boolean(parsed.data?.requiresSubscription || response.status === 402);
@@ -798,6 +822,7 @@ export const CloudflareService = {
         const parsed = parseWorkerResponse(rawText);
 
         if (!response.ok) {
+          emitSessionExpiredIfUnauthorized(response.status, parsed.data);
           if (isWorkerOverloadResponse(response.status, rawText)) {
             consecutiveSyncFailures += 1;
             const backoffMs = Math.min(300000, 30000 * Math.pow(2, consecutiveSyncFailures - 1));
@@ -938,6 +963,7 @@ export const CloudflareService = {
       const parsed = parseWorkerResponse(rawText);
 
       if (!response.ok) {
+        emitSessionExpiredIfUnauthorized(response.status, parsed.data);
         let errorMsg = `Pull failed with HTTP ${response.status}`;
         if (parsed.ok && parsed.data?.error) {
           errorMsg = parsed.data.error;
@@ -1007,16 +1033,27 @@ export const CloudflareService = {
         websitesQrItems: blockExpiredQrRestore ? undefined : rawBackupData.websitesQrItems,
         socialsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.socialsQrItems,
         eventsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.eventsQrItems,
+        deletedEventIds: blockExpiredQrRestore ? undefined : (rawBackupData as any).deletedEventIds,
         roomsQrItems: blockExpiredQrRestore ? undefined : rawBackupData.roomsQrItems,
         ...(Array.isArray((rawBackupData as any).files) && !blockExpiredQrRestore ? { files: (rawBackupData as any).files } : {}),
       };
 
       const importResult = StorageService.importBackup(qrOnlyBackup, false);
       if (importResult.success) {
-        // Recover QR gallery photos from Cloud storage asynchronously if business QR page photos are missing
-        const pages = StorageService.getHostedQRPages();
-        const needsPhotoRecovery = !blockExpiredQrRestore && pages.some((p) => !Array.isArray(p.photos) || p.photos.length === 0);
-        if (needsPhotoRecovery) {
+        // Recover QR gallery photos from Cloud storage only when no business QR page exists in the cloud backup
+        const incomingBizPages = Array.isArray(qrOnlyBackup.qrHostedPages)
+          ? qrOnlyBackup.qrHostedPages.filter(
+              (p: any) =>
+                p &&
+                !String(p.id || '').startsWith('event-') &&
+                !String(p.id || '').startsWith('events-hub') &&
+                !String(p.id || '').startsWith('room-') &&
+                !String(p.id || '').startsWith('rooms-hub') &&
+                !String(p.id || '').startsWith('websites-hub') &&
+                !String(p.id || '').startsWith('socials-hub')
+            )
+          : [];
+        if (!blockExpiredQrRestore && incomingBizPages.length === 0) {
           this.recoverQrPhotosFromCloud(email, false).catch(() => {});
         }
 
@@ -1143,7 +1180,7 @@ export const CloudflareService = {
         const fname = String(file.filename || file.key || '').toLowerCase();
         const keyLower = String(file.key || '').toLowerCase();
 
-        if (!recoveredLogoUrl && (fname === 'logo.webp' || fname.includes('qr_logo') || keyLower.endsWith('/logo.webp'))) {
+        if (!recoveredLogoUrl && (fname.includes('qr_logo') || (forceMergeMissing && (fname === 'logo.webp' || keyLower.endsWith('/logo.webp'))))) {
           recoveredLogoUrl = file.url;
           continue;
         }
@@ -1248,7 +1285,7 @@ export const CloudflareService = {
         headers['X-User-Email'] = userEmail;
         headers['X-User-Id'] = userEmail;
       }
-      const targetUrl = `${config.workerUrl}/api/files/${encodeURIComponent(cleanKey)}`;
+      const targetUrl = `${normalizeUrl(config.workerUrl)}/api/files/${encodeURIComponent(cleanKey)}`;
 
       const res = await fetch(targetUrl, {
         method: 'DELETE',
@@ -1861,6 +1898,7 @@ export const CloudflareService = {
     success: boolean;
     user?: BrivuUser;
     sessionToken?: string;
+    sessionId?: string;
     expiresAt?: number;
     message?: string;
   }> {
@@ -1894,7 +1932,8 @@ export const CloudflareService = {
           success: true,
           user: parsed.data.user as BrivuUser,
           sessionToken: String(parsed.data.sessionToken),
-          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          sessionId: parsed.data.sessionId ? String(parsed.data.sessionId) : undefined,
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
           message: parsed.data.message || 'Signed in to Brivu successfully.',
         };
       }
@@ -1924,6 +1963,7 @@ export const CloudflareService = {
     success: boolean;
     user?: BrivuUser;
     sessionToken?: string;
+    sessionId?: string;
     expiresAt?: number;
     linkedExistingGoogleAccount?: boolean;
     alreadyExists?: boolean;
@@ -1959,7 +1999,8 @@ export const CloudflareService = {
           success: true,
           user: parsed.data.user as BrivuUser,
           sessionToken: String(parsed.data.sessionToken),
-          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          sessionId: parsed.data.sessionId ? String(parsed.data.sessionId) : undefined,
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
           linkedExistingGoogleAccount: Boolean(parsed.data.linkedExistingGoogleAccount),
           message: parsed.data.message || 'Account created and signed into Brivu.',
         };
@@ -1991,6 +2032,7 @@ export const CloudflareService = {
     success: boolean;
     user?: BrivuUser;
     sessionToken?: string;
+    sessionId?: string;
     expiresAt?: number;
     needsPasswordSetup?: boolean;
     message?: string;
@@ -2025,7 +2067,8 @@ export const CloudflareService = {
           success: true,
           user: parsed.data.user as BrivuUser,
           sessionToken: String(parsed.data.sessionToken),
-          expiresAt: Number(parsed.data.expiresAt) || Date.now() + 30 * 24 * 60 * 60 * 1000,
+          sessionId: parsed.data.sessionId ? String(parsed.data.sessionId) : undefined,
+          expiresAt: Number(parsed.data.expiresAt) || Date.now() + DEFAULT_SESSION_INACTIVITY_MS,
           message: parsed.data.message || 'Signed into Brivu.',
         };
       }
@@ -2094,6 +2137,7 @@ export const CloudflareService = {
         };
       }
 
+      emitSessionExpiredIfUnauthorized(res.status, parsed.data);
       return {
         success: false,
         message: parsed.data?.error || parsed.error || `Could not save password (HTTP ${res.status}).`,
@@ -2117,6 +2161,7 @@ export const CloudflareService = {
     expired?: boolean;
     offline?: boolean;
     user?: BrivuUser;
+    sessionId?: string;
     expiresAt?: number;
     message?: string;
   }> {
@@ -2156,6 +2201,7 @@ export const CloudflareService = {
         return {
           valid: true,
           user: parsed.data.user as BrivuUser,
+          sessionId: parsed.data.sessionId ? String(parsed.data.sessionId) : undefined,
           expiresAt: Number(parsed.data.expiresAt),
         };
       }
@@ -2183,10 +2229,13 @@ export const CloudflareService = {
   },
 
   /**
-   * Revoke an active Brivu session on Cloudflare Worker
+   * Revoke an active Brivu session on Cloudflare Worker (token sent strictly via headers, never body)
    */
-  async logoutBrivuSession(sessionToken?: string): Promise<void> {
-    if (!sessionToken) return;
+  async logoutBrivuSession(
+    sessionToken?: string,
+    options?: { allOtherDevices?: boolean; allDevices?: boolean }
+  ): Promise<{ ok: boolean; revokedCount?: number }> {
+    if (!sessionToken) return { ok: false };
     const config = this.getConfig();
     const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const cleanUrl =
@@ -2197,21 +2246,147 @@ export const CloudflareService = {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
+      let res: Response;
       try {
-        await fetch(`${cleanUrl}/api/auth/logout`, {
+        const bodyPayload =
+          options?.allOtherDevices || options?.allDevices
+            ? JSON.stringify({
+                allOtherDevices: Boolean(options.allOtherDevices),
+                allDevices: Boolean(options.allDevices),
+              })
+            : '{}';
+        res = await fetch(`${cleanUrl}/api/auth/logout`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Brivu-Session': sessionToken,
+            Authorization: `Bearer ${sessionToken}`,
           },
+          keepalive: true,
           signal: controller.signal,
-          body: JSON.stringify({ sessionToken }),
+          body: bodyPayload,
         });
       } finally {
         clearTimeout(timeoutId);
       }
+      const text = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(text);
+      return {
+        ok: res.ok && parsed.ok,
+        revokedCount: Number(parsed.data?.revokedCount || 0),
+      };
     } catch {
-      // Best-effort remote revocation; local session is always cleared
+      return { ok: false };
+    }
+  },
+
+  /**
+   * List active devices/sessions for the currently signed-in account
+   */
+  async listActiveSessions(sessionToken: string): Promise<{
+    success: boolean;
+    sessions: BrivuActiveSessionInfo[];
+    message?: string;
+  }> {
+    if (!sessionToken) return { success: false, sessions: [], message: 'No active session.' };
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      isWorkerHostOrigin(currentOrigin)
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/sessions`, {
+          method: 'GET',
+          headers: {
+            'X-Brivu-Session': sessionToken,
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      const text = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(text);
+      if (res.ok && parsed.ok && Array.isArray(parsed.data?.sessions)) {
+        return {
+          success: true,
+          sessions: parsed.data.sessions as BrivuActiveSessionInfo[],
+        };
+      }
+      emitSessionExpiredIfUnauthorized(res.status, parsed.data);
+      return {
+        success: false,
+        sessions: [],
+        message: parsed.data?.error || parsed.error || 'Unable to load active devices.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        sessions: [],
+        message: err?.message || 'Unable to reach Brivu server.',
+      };
+    }
+  },
+
+  /**
+   * Revoke a specific device session by ID
+   */
+  async revokeSessionById(
+    sessionToken: string,
+    sessionId: string
+  ): Promise<{ success: boolean; isCurrent?: boolean; message?: string }> {
+    if (!sessionToken || !sessionId) {
+      return { success: false, message: 'Session details required.' };
+    }
+    const config = this.getConfig();
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanUrl =
+      isWorkerHostOrigin(currentOrigin)
+        ? normalizeUrl(currentOrigin)
+        : normalizeUrl(config.workerUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      let res: Response;
+      try {
+        res = await fetch(`${cleanUrl}/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Brivu-Session': sessionToken,
+            Authorization: `Bearer ${sessionToken}`,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      const text = await res.text().catch(() => '');
+      const parsed = parseWorkerResponse(text);
+      if (res.ok && parsed.ok) {
+        return {
+          success: true,
+          isCurrent: Boolean(parsed.data?.isCurrent),
+        };
+      }
+      emitSessionExpiredIfUnauthorized(res.status, parsed.data);
+      return {
+        success: false,
+        message: parsed.data?.error || parsed.error || 'Could not remove device session.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Network unavailable.',
+      };
     }
   },
 

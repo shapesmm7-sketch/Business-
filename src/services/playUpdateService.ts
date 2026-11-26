@@ -86,8 +86,8 @@ const PlayAppUpdatePlugin = registerPlugin<PlayAppUpdatePluginInterface>('PlayAp
   web: () => ({
     getAppVersionInfo: async () => ({
       packageName: 'com.brivu.myapp',
-      versionName: '1.8.0',
-      versionCode: 10,
+      versionName: '1.9.0',
+      versionCode: 11,
     }),
     checkForUpdate: async () => ({
       apiAvailable: false,
@@ -129,8 +129,8 @@ export const PlayUpdateService = {
     } catch {
       return {
         packageName: 'com.brivu.myapp',
-        versionName: '1.8.0',
-        versionCode: 10,
+        versionName: '1.9.0',
+        versionCode: 11,
       };
     }
   },

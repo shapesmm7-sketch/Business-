@@ -129,8 +129,10 @@ export async function optimizeImageForR2(
   folder: string,
   filename: string
 ): Promise<{ data: string; mimeType: string; filename: string }> {
-  const isLogo = folder === 'photos' && filename.toLowerCase().includes('logo');
-  const isSignature = folder === 'signatures' || filename.toLowerCase().includes('signature');
+  const lowerName = filename.toLowerCase();
+  const isQrLogo = folder === 'photos' && lowerName.includes('qr_logo');
+  const isLogo = folder === 'photos' && !isQrLogo && lowerName.includes('logo');
+  const isSignature = folder === 'signatures' || lowerName.includes('signature');
 
   let maxWidth = 1200;
   let maxHeight = 1200;
@@ -140,6 +142,10 @@ export async function optimizeImageForR2(
     maxWidth = 512;
     maxHeight = 512;
     targetFilename = 'logo.webp';
+  } else if (isQrLogo) {
+    maxWidth = 512;
+    maxHeight = 512;
+    targetFilename = filename.replace(/\.(png|jpe?g|gif|bmp)$/i, '.webp');
   } else if (isSignature) {
     maxWidth = 600;
     maxHeight = 200;

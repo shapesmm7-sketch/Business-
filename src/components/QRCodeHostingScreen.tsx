@@ -366,10 +366,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const rawActivePage: QRCodeHostedPage = (pages.find((p) => p.id === activePageId) || pages[0]) || fallbackPage;
   const activeCurrency = business.currency || rawActivePage.currency || 'UGX';
-  const activePage: QRCodeHostedPage = useMemo(
-    () => (rawActivePage.currency === activeCurrency ? rawActivePage : { ...rawActivePage, currency: activeCurrency }),
-    [rawActivePage, activeCurrency]
-  );
+  const activePage: QRCodeHostedPage = useMemo(() => {
+    const withCurrency = rawActivePage.currency === activeCurrency ? rawActivePage : { ...rawActivePage, currency: activeCurrency };
+    if (!isLoggedIn) {
+      return {
+        ...withCurrency,
+        logo: undefined,
+        coverImage: undefined,
+        photos: [],
+        menuItems: [],
+        customSocialLinks: [],
+        description: '',
+        openingHours: '',
+        announcement: '',
+      };
+    }
+    return withCurrency;
+  }, [rawActivePage, activeCurrency, isLoggedIn]);
 
   // Keep pages fresh when user logs in or out
   useEffect(() => {
@@ -479,6 +492,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         !activePage.wifiName);
 
     const restoreMissingQrData = async () => {
+      let didPullBizPage = false;
       if (isPageEmpty) {
         const pullRes = await CloudflareService.pullFromCloudflare(ownerEmail).catch(() => null);
         if (!cancelled && pullRes?.success) {
@@ -487,13 +501,25 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           if (freshPages.length > 0) {
             setActivePageId(freshPages[0].id);
           }
+          didPullBizPage = Boolean(
+            pullRes.data?.qrHostedPages?.some(
+              (p: any) =>
+                p &&
+                !String(p.id || '').startsWith('event-') &&
+                !String(p.id || '').startsWith('events-hub') &&
+                !String(p.id || '').startsWith('room-') &&
+                !String(p.id || '').startsWith('rooms-hub') &&
+                !String(p.id || '').startsWith('websites-hub') &&
+                !String(p.id || '').startsWith('socials-hub')
+            )
+          );
           window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
         }
       }
-      if (!cancelled) {
+      if (!cancelled && isPageEmpty && !didPullBizPage) {
         const latestPages = StorageService.getHostedQRPages();
         const latestActive = latestPages.find((p) => p.id === activePageId) || latestPages[0];
-        if (!latestActive || !Array.isArray(latestActive.photos) || latestActive.photos.length === 0) {
+        if (!latestActive || (!latestActive.updatedAt && (!Array.isArray(latestActive.photos) || latestActive.photos.length === 0))) {
           handleRecoverCloudPhotos(false, true).catch(() => {});
         }
       }
@@ -646,20 +672,31 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPageToDelete(null);
   };
 
+  const requireLoggedInForBusinessQr = (): boolean => {
+    if (isLoggedIn && StorageService.getAuthenticatedEmail()) {
+      return true;
+    }
+    showToast('Please log in first before adding Business QR items or uploading photos.');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('brivu_open_auth_modal'));
+    }
+    return false;
+  };
+
   const handleRemoveLogo = () => {
     if (!activePage) return;
     setPendingAssetDelete({ type: 'logo' });
   };
 
-  const confirmRemoveLogo = () => {
+  const confirmRemoveLogo = async () => {
     if (!activePage) return;
-    if (activePage.logo) {
-      CloudflareService.deleteFile(activePage.logo).catch(() => {});
-    }
+    const oldLogo = activePage.logo;
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
-    if (resolvedEmail) {
-      CloudflareService.deleteFile(`users/${resolvedEmail}/photos/logo.webp`).catch(() => {});
-      CloudflareService.deleteFile(`users/${encodeURIComponent(resolvedEmail)}/photos/logo.webp`).catch(() => {});
+    if (oldLogo && oldLogo.includes('/api/files/')) {
+      await CloudflareService.deleteFile(oldLogo).catch(() => {});
+      if (oldLogo.toLowerCase().includes('logo.webp') && resolvedEmail) {
+        await CloudflareService.deleteFile(`users/${encodeURIComponent(resolvedEmail)}/logo.webp`).catch(() => {});
+      }
     }
     const updated: QRCodeHostedPage = {
       ...activePage,
@@ -673,6 +710,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     StorageService.saveHostedQRPage(updated, { immediate: true });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
+    showToast('Business logo deleted');
   };
 
   const handleRemoveCoverImage = () => {
@@ -680,10 +718,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPendingAssetDelete({ type: 'cover' });
   };
 
-  const confirmRemoveCoverImage = () => {
+  const confirmRemoveCoverImage = async () => {
     if (!activePage) return;
-    if (activePage.coverImage) {
-      CloudflareService.deleteFile(activePage.coverImage).catch(() => {});
+    if (activePage.coverImage && activePage.coverImage.includes('/api/files/')) {
+      await CloudflareService.deleteFile(activePage.coverImage).catch(() => {});
     }
     const resolvedEmail = ownerEmail || activePage.email || activePage.userEmail || business.email;
     const updated: QRCodeHostedPage = {
@@ -698,6 +736,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     StorageService.saveHostedQRPage(updated, { immediate: true });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
+    showToast('Cover banner deleted');
   };
 
   const handleCopyLink = async () => {
@@ -1020,62 +1059,76 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!requireLoggedInForBusinessQr()) {
+      e.target.value = '';
+      return;
+    }
+
     const label = options.fileTypeLabel || 'Image';
+    const lowerLabel = label.toLowerCase();
+    const pageTag = activePage?.id || 'page';
+    const filePrefix = lowerLabel.includes('logo')
+      ? `qr_logo_${pageTag}`
+      : lowerLabel.includes('cover')
+      ? `qr_cover_${pageTag}`
+      : lowerLabel.includes('item')
+      ? `qr_item_${pageTag}`
+      : `qr_photo_${pageTag}`;
+    const ext = (file.type.split('/')[1] || 'webp').replace(/[^a-z0-9]/gi, '') || 'webp';
+
     setIsUploadingToCloudflare(true);
-    setUploadProgressText('Uploading...');
+    setUploadProgressText('Saving photo to Cloud...');
 
     try {
       // CloudflareService.uploadFile automatically runs optimizeImageForR2 on device before network upload
       const uploadRes = await CloudflareService.uploadFile({
         data: file,
-        filename: `qr_${label.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.${file.type.split('/')[1] || 'jpg'}`,
+        filename: `${filePrefix}_${Date.now()}.${ext}`,
         mimeType: file.type || 'image/jpeg',
-        folder: label.toLowerCase().includes('logo') ? 'logo' : label.toLowerCase().includes('item') ? 'product' : 'photos',
+        folder: 'photos',
       });
 
       if (uploadRes.success && uploadRes.url) {
         callback(uploadRes.url);
-        showToast('Saved');
+        showToast('Saved to Cloud');
         return;
       }
 
-      if (uploadRes.requiresSubscription) {
+      if (uploadRes.requiresSubscription || uploadRes.storageLimitExceeded) {
         showToast(uploadRes.message || 'Subscribe to Pro to upload QR photos.');
         return;
       }
 
-      // Local fallback with compressed WebP data URL
+      // Fallback with compressed WebP data URL so saveHostedQRPage retries cloud upload once online
       const compressed = await compressImageFile(file, {
         maxDimension: 1200,
         mimeType: 'image/webp',
-        maxBytes: label.toLowerCase().includes('logo') ? 100 * 1024 : 250 * 1024,
+        maxBytes: lowerLabel.includes('logo') ? 100 * 1024 : 250 * 1024,
       });
       callback(compressed);
-      showToast('Saved');
+      showToast(uploadRes.message || 'Saved locally — will sync to Cloud');
     } catch (err) {
       console.warn('Image compression failed, trying lightweight fallback:', err);
       try {
-        const reader = new FileReader();
-        reader.onload = async (uploadEvent) => {
-          const res = uploadEvent.target?.result as string;
-          if (res) {
-            try {
-              const uploadRes = await CloudflareService.uploadFile({
-                data: res,
-                filename: `qr_${Date.now()}.jpg`,
-                mimeType: 'image/jpeg',
-                folder: 'photos',
-              });
-              if (uploadRes.success && uploadRes.url) {
-                callback(uploadRes.url);
-                showToast('Saved');
-                return;
-              }
-            } catch {}
-            callback(res);
+        const compressedFallback = await compressImageFile(file, {
+          maxDimension: 1000,
+          mimeType: 'image/webp',
+          maxBytes: 200 * 1024,
+        });
+        if (compressedFallback) {
+          const uploadRes = await CloudflareService.uploadFile({
+            data: compressedFallback,
+            filename: `${filePrefix}_${Date.now()}.webp`,
+            mimeType: 'image/webp',
+            folder: 'photos',
+          });
+          if (uploadRes.success && uploadRes.url) {
+            callback(uploadRes.url);
+            showToast('Saved to Cloud');
+            return;
           }
-        };
-        reader.readAsDataURL(file);
+          callback(compressedFallback);
+        }
       } catch {}
     } finally {
       setIsUploadingToCloudflare(false);
@@ -1087,6 +1140,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   const MAX_ITEMS = 10;
 
   const handlePhotoUploadClick = () => {
+    if (!requireLoggedInForBusinessQr()) return;
     if (activePage && activePage.photos.length >= MAX_PHOTOS) {
       setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed. Please delete a photo to upload a new one.`);
       setTimeout(() => setToastMessage(null), 4000);
@@ -1100,6 +1154,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       setToastMessage(`Limit reached: Maximum ${MAX_PHOTOS} photos allowed. Please delete an existing photo.`);
       setTimeout(() => setToastMessage(null), 4000);
       return;
+    }
+    if (photoUrl && photoUrl !== url && photoUrl.includes('/api/files/') && (!editingPhoto || editingPhoto.url !== photoUrl)) {
+      CloudflareService.deleteFile(photoUrl).catch(() => {});
     }
     setPhotoUrl(url);
     if (!showPhotoModal) {
@@ -1137,6 +1194,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     const finalDesc = photoDescription.trim() || undefined;
 
     if (editingPhoto) {
+      if (editingPhoto.url && editingPhoto.url !== photoUrl && editingPhoto.url.includes('/api/files/')) {
+        CloudflareService.deleteFile(editingPhoto.url).catch(() => {});
+      }
       const updatedPhotos = activePage.photos.map((p) =>
         p.id === editingPhoto.id
           ? {
@@ -1177,14 +1237,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPendingAssetDelete({ type: 'photo', id: photoId, title: photoToDelete.title });
   };
 
-  const confirmDeletePhoto = (photoId: string) => {
+  const confirmDeletePhoto = async (photoId: string) => {
     if (!activePage) return;
     const photoToDelete = activePage.photos.find((p) => p.id === photoId);
-    if (photoToDelete?.url) {
-      CloudflareService.deleteFile(photoToDelete.url).catch(() => {});
+    const remainingPhotos = activePage.photos.filter((p) => p.id !== photoId);
+    if (photoToDelete?.url && photoToDelete.url.includes('/api/files/')) {
+      const stillUsed = remainingPhotos.some((p) => p.url === photoToDelete.url);
+      if (!stillUsed) {
+        await CloudflareService.deleteFile(photoToDelete.url).catch(() => {});
+      }
     }
     handleUpdateActivePage({
-      photos: activePage.photos.filter((p) => p.id !== photoId),
+      photos: remainingPhotos,
     }, true);
     showToast('Photo deleted');
   };
@@ -1238,6 +1302,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleOpenItemModal = (item?: QRMenuItem) => {
+    if (!item && !requireLoggedInForBusinessQr()) return;
     if (!item && activePage && activePage.menuItems.length >= MAX_ITEMS) {
       setToastMessage(`Limit reached: Maximum ${MAX_ITEMS} items allowed. Please delete an item to add a new one.`);
       setTimeout(() => setToastMessage(null), 4000);
@@ -1283,6 +1348,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   };
 
   const handleSaveMenuItem = () => {
+    if (!requireLoggedInForBusinessQr()) return;
     if (!itemName.trim() || !activePage) return;
     if (!editingItem && activePage.menuItems.length >= MAX_ITEMS) {
       setToastMessage(`Limit reached: Maximum ${MAX_ITEMS} items allowed. Please remove an item.`);
@@ -1296,6 +1362,15 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       .map((t) => t.trim())
       .filter(Boolean);
     const promoPriceNum = parseFloat(itemPromoPrice) || undefined;
+
+    if (
+      editingItem &&
+      editingItem.photoUrl &&
+      editingItem.photoUrl !== itemPhotoUrl &&
+      editingItem.photoUrl.includes('/api/files/')
+    ) {
+      CloudflareService.deleteFile(editingItem.photoUrl).catch(() => {});
+    }
 
     const newItem: QRMenuItem = {
       id: editingItem ? editingItem.id : `item-${Date.now()}`,
@@ -1347,12 +1422,42 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
     setPendingAssetDelete({ type: 'item', id, name: targetItem.name });
   };
 
-  const confirmDeleteMenuItem = (id: string) => {
+  const confirmDeleteMenuItem = async (id: string) => {
     if (!activePage) return;
+    const targetItem = activePage.menuItems.find((i) => i.id === id);
+    const remainingItems = activePage.menuItems.filter((i) => i.id !== id);
+    if (targetItem?.photoUrl && targetItem.photoUrl.includes('/api/files/')) {
+      const stillUsed =
+        remainingItems.some((i) => i.photoUrl === targetItem.photoUrl) ||
+        (activePage.photos || []).some((p) => p.url === targetItem.photoUrl);
+      if (!stillUsed) {
+        await CloudflareService.deleteFile(targetItem.photoUrl).catch(() => {});
+      }
+    }
     handleUpdateActivePage({
-      menuItems: activePage.menuItems.filter((i) => i.id !== id),
+      menuItems: remainingItems,
     }, true);
     showToast('Item deleted');
+  };
+
+  const confirmRemoveItemPhoto = async () => {
+    const removedUrl = itemPhotoUrl;
+    setItemPhotoUrl('');
+    if (removedUrl && removedUrl.includes('/api/files/') && activePage) {
+      const stillUsedByOther =
+        activePage.menuItems.some((i) => (!editingItem || i.id !== editingItem.id) && i.photoUrl === removedUrl) ||
+        (activePage.photos || []).some((p) => p.url === removedUrl);
+      if (!stillUsedByOther) {
+        await CloudflareService.deleteFile(removedUrl).catch(() => {});
+      }
+    }
+    if (editingItem && activePage) {
+      const updatedEditingItem: QRMenuItem = { ...editingItem, photoUrl: '' };
+      setEditingItem(updatedEditingItem);
+      const updatedList = activePage.menuItems.map((i) => (i.id === editingItem.id ? updatedEditingItem : i));
+      handleUpdateActivePage({ menuItems: updatedList }, true);
+    }
+    showToast('Item photo removed');
   };
 
   const handleToggleItemAvailability = (id: string) => {
@@ -1539,21 +1644,61 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (data) => setItemPhotoUrl(data), { maxDimension: 1200, fileTypeLabel: 'Item Photo' })}
+        onChange={(e) =>
+          handleFileUpload(
+            e,
+            (data) => {
+              if (
+                itemPhotoUrl &&
+                itemPhotoUrl !== data &&
+                itemPhotoUrl.includes('/api/files/') &&
+                (!editingItem || editingItem.photoUrl !== itemPhotoUrl)
+              ) {
+                CloudflareService.deleteFile(itemPhotoUrl).catch(() => {});
+              }
+              setItemPhotoUrl(data);
+            },
+            { maxDimension: 1200, fileTypeLabel: 'Item Photo' }
+          )
+        }
       />
       <input
         ref={coverInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ coverImage: url }, true), { maxDimension: 1200, fileTypeLabel: 'Cover Banner' })}
+        onChange={(e) =>
+          handleFileUpload(
+            e,
+            (url) => {
+              const oldCover = activePage?.coverImage;
+              if (oldCover && oldCover !== url && oldCover.includes('/api/files/')) {
+                CloudflareService.deleteFile(oldCover).catch(() => {});
+              }
+              handleUpdateActivePage({ coverImage: url }, true);
+            },
+            { maxDimension: 1200, fileTypeLabel: 'Cover Banner' }
+          )
+        }
       />
       <input
         ref={logoInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleFileUpload(e, (url) => handleUpdateActivePage({ logo: url }, true), { maxDimension: 1200, fileTypeLabel: 'Business Logo' })}
+        onChange={(e) =>
+          handleFileUpload(
+            e,
+            (url) => {
+              const oldLogo = activePage?.logo;
+              if (oldLogo && oldLogo !== url && oldLogo.includes('/api/files/') && !oldLogo.toLowerCase().endsWith('logo.webp')) {
+                CloudflareService.deleteFile(oldLogo).catch(() => {});
+              }
+              handleUpdateActivePage({ logo: url }, true);
+            },
+            { maxDimension: 1200, fileTypeLabel: 'Business Logo' }
+          )
+        }
       />
 
       {/* Uploading Overlay */}
@@ -2027,7 +2172,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         {activePage.coverImage && (
           <img
             src={activePage.coverImage}
-            alt="Cover background"
+            alt=""
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
             className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none mix-blend-overlay"
           />
         )}
@@ -2037,6 +2185,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               <img
                 src={activePage.logo}
                 alt="Business Logo"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = 'none';
+                }}
                 className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover bg-white/20 border-2 border-white/40 shadow-md shrink-0"
               />
             ) : null}
@@ -2526,7 +2677,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => logoInputRef.current?.click()}
+                            onClick={() => {
+                              if (!requireLoggedInForBusinessQr()) return;
+                              logoInputRef.current?.click();
+                            }}
                             className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition active:scale-95"
                           >
                             {t('change', business?.language) || 'Change'}
@@ -2546,7 +2700,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => logoInputRef.current?.click()}
+                      onClick={() => {
+                        if (!requireLoggedInForBusinessQr()) return;
+                        logoInputRef.current?.click();
+                      }}
                       className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10 text-center transition flex flex-col items-center justify-center gap-1.5"
                     >
                       <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -2588,7 +2745,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => coverInputRef.current?.click()}
+                            onClick={() => {
+                              if (!requireLoggedInForBusinessQr()) return;
+                              coverInputRef.current?.click();
+                            }}
                             className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition active:scale-95"
                           >
                             {t('change', business?.language) || 'Change'}
@@ -2608,7 +2768,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => coverInputRef.current?.click()}
+                      onClick={() => {
+                        if (!requireLoggedInForBusinessQr()) return;
+                        coverInputRef.current?.click();
+                      }}
                       className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10 text-center transition flex flex-col items-center justify-center gap-1.5"
                     >
                       <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
@@ -4672,11 +4835,11 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         confirmLabel="Delete"
         onConfirm={() => {
           if (!pendingAssetDelete) return;
-          if (pendingAssetDelete.type === 'logo') confirmRemoveLogo();
-          else if (pendingAssetDelete.type === 'cover') confirmRemoveCoverImage();
-          else if (pendingAssetDelete.type === 'photo') confirmDeletePhoto(pendingAssetDelete.id);
-          else if (pendingAssetDelete.type === 'item') confirmDeleteMenuItem(pendingAssetDelete.id);
-          else if (pendingAssetDelete.type === 'item_photo') setItemPhotoUrl('');
+          if (pendingAssetDelete.type === 'logo') void confirmRemoveLogo();
+          else if (pendingAssetDelete.type === 'cover') void confirmRemoveCoverImage();
+          else if (pendingAssetDelete.type === 'photo') void confirmDeletePhoto(pendingAssetDelete.id);
+          else if (pendingAssetDelete.type === 'item') void confirmDeleteMenuItem(pendingAssetDelete.id);
+          else if (pendingAssetDelete.type === 'item_photo') void confirmRemoveItemPhoto();
           else if (pendingAssetDelete.type === 'social') confirmDeleteSocial(pendingAssetDelete.id);
           else if (pendingAssetDelete.type === 'category') confirmDeleteCategory(pendingAssetDelete.name);
           setPendingAssetDelete(null);

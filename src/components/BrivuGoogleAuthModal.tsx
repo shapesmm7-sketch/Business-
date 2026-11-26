@@ -14,9 +14,11 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Smartphone,
+  Trash2,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { ActiveScreen, BrivuUser } from '../types';
+import { ActiveScreen, BrivuUser, BrivuActiveSessionInfo } from '../types';
 import { BrivuAuthService } from '../services/brivuAuthService';
 import { StorageService } from '../services/storage';
 import { PlayBillingService } from '../services/playBillingService';
@@ -59,18 +61,23 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
   const [isRestoringPlay, setIsRestoringPlay] = useState(false);
   const [showExpiredSignIn, setShowExpiredSignIn] = useState(false);
 
-  // Signed-in backup password state
+  // Signed-in backup password & multi-device sessions state
   const [isSettingBackupPassword, setIsSettingBackupPassword] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
   const [showBackupPassword, setShowBackupPassword] = useState(false);
   const [isSavingBackupPassword, setIsSavingBackupPassword] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<BrivuActiveSessionInfo[]>([]);
+  const [showDevicesPanel, setShowDevicesPanel] = useState(false);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
 
   const webButtonRef = useRef<HTMLDivElement | null>(null);
   const isBusy = isEmailLoading || isGoogleLoading || isSyncing || isSavingBackupPassword || isRestoringPlay;
 
   useEffect(() => {
     if (isOpen) {
-      setUser(BrivuAuthService.getCurrentUser());
+      const currentUser = BrivuAuthService.getCurrentUser();
+      setUser(currentUser);
       const latestTrial = StorageService.getTrialStatus();
       setTrialStatus(latestTrial);
       setError(initialNotice || null);
@@ -81,9 +88,22 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
       setShowPassword(false);
       setBackupPassword('');
       setIsSettingBackupPassword(false);
+      setShowDevicesPanel(false);
+      setActiveSessions([]);
       setImgError(false);
       setShowExpiredSignIn(false);
       setShowWebFallbackButton(!Capacitor.isNativePlatform());
+
+      if (currentUser) {
+        setIsLoadingDevices(true);
+        BrivuAuthService.getActiveSessions()
+          .then((res) => {
+            if (res.success) {
+              setActiveSessions(res.sessions);
+            }
+          })
+          .finally(() => setIsLoadingDevices(false));
+      }
 
       if (latestTrial.isExpired && !latestTrial.subscribed && PlayBillingService.isAndroid()) {
         PlayBillingService.syncActiveSubscriptionSilently(true)
@@ -298,6 +318,44 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
     }
   };
 
+  const handleRevokeDevice = async (sessionId: string) => {
+    if (isBusy || revokingSessionId) return;
+    setRevokingSessionId(sessionId);
+    setError(null);
+    try {
+      const res = await BrivuAuthService.revokeDeviceSession(sessionId);
+      if (res.success) {
+        setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        setStatusMessage('Device signed out.');
+      } else if (res.message) {
+        setError(res.message);
+      }
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
+  const handleSignOutOtherDevices = async () => {
+    if (isBusy || revokingSessionId) return;
+    setRevokingSessionId('others');
+    setError(null);
+    try {
+      const res = await BrivuAuthService.signOutOtherDevices();
+      if (res.success) {
+        setActiveSessions((prev) => prev.filter((s) => s.isCurrent));
+        setStatusMessage(
+          res.revokedCount > 0
+            ? `Signed out ${res.revokedCount} other device${res.revokedCount === 1 ? '' : 's'}.`
+            : 'Only this device is currently signed in.'
+        );
+      } else {
+        setError('Could not sign out other devices right now.');
+      }
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
   if (!isOpen || typeof document === 'undefined') return null;
 
   const modalContent = (
@@ -485,6 +543,79 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                   <span>{user.hasPassword ? 'Change Backup Password' : 'Add Backup Password for Email Login'}</span>
                 </button>
               )}
+
+              {/* Active Devices & Multi-Device Session Management */}
+              <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowDevicesPanel((prev) => !prev)}
+                  className="w-full min-h-[46px] px-4 py-3 flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-100 hover:bg-slate-100/70 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      Active Devices {activeSessions.length > 0 ? `(${activeSessions.length})` : ''}
+                    </span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    {showDevicesPanel ? 'Hide' : isLoadingDevices ? 'Loading...' : 'Manage'}
+                  </span>
+                </button>
+
+                {showDevicesPanel && (
+                  <div className="px-4 pb-3.5 pt-1 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Stay signed in securely across your devices. Inactive sessions automatically expire after 7 days.
+                    </p>
+                    {activeSessions.length === 0 ? (
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 py-1">
+                        {isLoadingDevices ? 'Checking active devices...' : 'Current session active.'}
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-0.5">
+                        {activeSessions.map((sess) => (
+                          <div
+                            key={sess.id}
+                            className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                {sess.deviceLabel}
+                                {sess.isCurrent ? ' · This device' : ''}
+                              </div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                Last active {sess.lastSeenAt ? new Date(sess.lastSeenAt).toLocaleDateString() : 'recently'}
+                              </div>
+                            </div>
+                            {!sess.isCurrent && (
+                              <button
+                                type="button"
+                                disabled={revokingSessionId !== null}
+                                onClick={() => handleRevokeDevice(sess.id)}
+                                aria-label={`Sign out ${sess.deviceLabel}`}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-[11px] font-bold flex items-center gap-1 shrink-0 transition cursor-pointer disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>{revokingSessionId === sess.id ? '...' : 'Sign out'}</span>
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {activeSessions.filter((s) => !s.isCurrent).length > 0 && (
+                      <button
+                        type="button"
+                        disabled={revokingSessionId !== null}
+                        onClick={handleSignOutOtherDevices}
+                        className="w-full min-h-[38px] px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-slate-200 dark:border-slate-700 text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
+                      >
+                        {revokingSessionId === 'others' ? 'Signing out others...' : 'Sign Out All Other Devices'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Actions */}
               <div className="grid grid-cols-1 gap-2.5">
