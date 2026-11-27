@@ -189,8 +189,13 @@ export async function parseScannedQrText(rawInput: string): Promise<ScannedQrRes
       const parts = text.split('/api/receipts/')[1]?.split('?')[0]?.split('#')[0];
       if (parts) receiptIdOrNum = decodeURIComponent(parts);
     } else if (text.includes('receiptId=')) {
-      const val = new URL(text).searchParams.get('receiptId');
-      if (val) receiptIdOrNum = val;
+      try {
+        const val = new URL(text).searchParams.get('receiptId');
+        if (val) receiptIdOrNum = val;
+      } catch {
+        const match = text.match(/receiptId=([^&\s#]+)/i);
+        if (match?.[1]) receiptIdOrNum = decodeURIComponent(match[1]);
+      }
     }
 
     const receipts = StorageService.getReceipts();

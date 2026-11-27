@@ -407,12 +407,20 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       }
 
       if (newlyUploaded.length > 0) {
+        newlyUploaded.forEach((img) => img.url && StorageService.unmarkQrAssetDeleted(img.url));
         const lastUploadedId = newlyUploaded[newlyUploaded.length - 1].id;
         const updatedList = [...menuImages, ...newlyUploaded].slice(0, MAX_MENU_IMAGES).map((m) => ({
           ...m,
           badge: m.id === lastUploadedId ? 'active' : undefined,
         }));
-        onUpdatePage({ menuImages: updatedList }, true);
+        const updatedPage: QRCodeHostedPage = {
+          ...activePage,
+          menuImages: updatedList,
+          email: resolvedAuthEmail || activePage.email,
+          userEmail: resolvedAuthEmail || activePage.userEmail,
+          updatedAt: new Date().toISOString(),
+        };
+        onUpdatePage({ menuImages: updatedList }, false, true);
         setSelectedMenuImgId(lastUploadedId);
         setPreviewCacheBust((prev) => ({
           ...prev,
@@ -420,6 +428,10 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         }));
         const hasPublicLink = newlyUploaded.some((img) => /^https?:\/\//i.test(img.url));
         if (hasPublicLink) {
+          await Promise.allSettled([
+            CloudflareService.saveSingleQrPage(updatedPage, resolvedAuthEmail || undefined, { immediate: true }),
+            CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+          ]);
           showToast(
             newlyUploaded.length === 1
               ? 'Menu photo hosted & direct image QR ready!'
@@ -480,6 +492,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         }
 
         const newPublicUrl = sameKey ? targetImg.url : returnedUrl;
+        StorageService.unmarkQrAssetDeleted(newPublicUrl);
         const replaceTs = Date.now();
         const updated = menuImages.map((m) =>
           m.id === targetImg.id
@@ -494,10 +507,21 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
                 badge: undefined,
               }
         );
+        const updatedPage: QRCodeHostedPage = {
+          ...activePage,
+          menuImages: updated,
+          email: resolvedAuthEmail || activePage.email,
+          userEmail: resolvedAuthEmail || activePage.userEmail,
+          updatedAt: new Date().toISOString(),
+        };
 
-        onUpdatePage({ menuImages: updated }, true);
+        onUpdatePage({ menuImages: updated }, false, true);
         setSelectedMenuImgId(targetImg.id);
         setPreviewCacheBust((prev) => ({ ...prev, [targetImg.id]: replaceTs }));
+        await Promise.allSettled([
+          CloudflareService.saveSingleQrPage(updatedPage, resolvedAuthEmail || undefined, { immediate: true }),
+          CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+        ]);
         showToast(
           sameKey
             ? 'Menu photo replaced! Your QR code & link stayed the same.'
@@ -534,13 +558,25 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
       });
       if (uploadRes.success && uploadRes.url) {
         const publicUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
+        StorageService.unmarkQrAssetDeleted(publicUrl);
         const hostTs = Date.now();
         const updated = menuImages.map((m) =>
           m.id === img.id ? { ...m, url: publicUrl, version: hostTs, badge: 'active' } : { ...m, badge: undefined }
         );
-        onUpdatePage({ menuImages: updated }, true);
+        const updatedPage: QRCodeHostedPage = {
+          ...activePage,
+          menuImages: updated,
+          email: resolvedAuthEmail || activePage.email,
+          userEmail: resolvedAuthEmail || activePage.userEmail,
+          updatedAt: new Date().toISOString(),
+        };
+        onUpdatePage({ menuImages: updated }, false, true);
         setSelectedMenuImgId(img.id);
         setPreviewCacheBust((prev) => ({ ...prev, [img.id]: hostTs }));
+        await Promise.allSettled([
+          CloudflareService.saveSingleQrPage(updatedPage, resolvedAuthEmail || undefined, { immediate: true }),
+          CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+        ]);
         showToast('Menu photo hosted online! Direct image QR is ready.');
       } else {
         const isAuthErr = /auth|sign in|logged/i.test(uploadRes.message || '');

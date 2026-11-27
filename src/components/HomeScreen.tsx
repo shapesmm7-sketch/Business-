@@ -146,8 +146,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </button>
         </div>
 
-        {/* Text-only Quotation link below the 3 boxes */}
-        <div className="pt-1 px-1 flex items-center gap-4">
+        {/* Text-only Quotation & Scan QR links below the 3 boxes */}
+        <div className="pt-1 px-1 flex items-center gap-5">
           <button
             id="btn-home-quotation"
             type="button"
@@ -157,6 +157,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
             <span>Quotation</span>
           </button>
+
+          {onOpenQrScanner && (
+            <button
+              id="btn-home-scan-qr"
+              type="button"
+              onClick={onOpenQrScanner}
+              className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-teal-700 dark:text-teal-300 hover:text-teal-600 dark:hover:text-teal-200 whitespace-nowrap cursor-pointer active:opacity-70 transition"
+            >
+              <Scan className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+              <span>{t('scan_qr', lang) || 'Scan QR'}</span>
+            </button>
+          )}
         </div>
       </div>
 

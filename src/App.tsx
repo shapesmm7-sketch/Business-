@@ -2111,6 +2111,7 @@ export function App() {
               setIsCustomerViewMode(false);
               setActiveScreen('qr-customer-view');
             }}
+            onOpenQrScanner={() => setIsQrScannerOpen(true)}
           />
         )}
       </main>

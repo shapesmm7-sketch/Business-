@@ -43,7 +43,7 @@ interface QrCodeScannerModalProps {
   onOpenReceipt?: (receipt: Receipt) => void;
   onOpenCustomerPage?: (
     page: QRCodeHostedPage,
-    tab?: 'menu' | 'photos' | 'about',
+    tab?: 'menu' | 'photos' | 'about' | 'menu-images',
     itemId?: string,
     photoId?: string
   ) => void;
@@ -108,12 +108,6 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
     try {
       const result = await parseScannedQrText(decodedText);
       if (isMountedRef.current) {
-        if (result.url) {
-          stopLiveScanner();
-          onClose();
-          window.open(result.url, '_blank');
-          return;
-        }
         setScanResult(result);
         stopLiveScanner();
       }
@@ -606,6 +600,42 @@ export const QrCodeScannerModal: React.FC<QrCodeScannerModalProps> = ({
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {(scanResult.type === 'url' || scanResult.type === 'text' || (scanResult.url && !scanResult.receipt)) && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-3 text-xs">
+                  <div className="text-slate-600 dark:text-slate-400 break-all font-mono text-[11px] bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-700/60">
+                    {scanResult.url || scanResult.rawText}
+                  </div>
+                  <div className={`grid gap-2 ${scanResult.url ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {scanResult.url && (
+                      <a
+                        href={scanResult.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => onClose()}
+                        className="py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 active:scale-[0.99] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Link</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(scanResult.url || scanResult.rawText);
+                          setCopiedField('raw');
+                          setTimeout(() => setCopiedField(null), 2000);
+                        } catch {}
+                      }}
+                      className="py-2.5 px-3 rounded-xl bg-slate-200/80 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      {copiedField === 'raw' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedField === 'raw' ? 'Copied' : scanResult.url ? 'Copy Link' : 'Copy Text'}</span>
+                    </button>
+                  </div>
                 </div>
               )}
 

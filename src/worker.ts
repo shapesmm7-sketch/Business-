@@ -7582,23 +7582,30 @@ export default {
               }
             }
 
-            // Also scan R2 photos prefix so R2-only photos are never missed
+            // Also scan R2 photos & menu prefixes so R2-only photos/menus are never missed
             if (bucket && typeof bucket.list === 'function') {
               try {
-                const listed = await bucket.list({ prefix: `users/${encodeURIComponent(userEmail)}/photos/`, limit: 200 });
-                if (listed && Array.isArray(listed.objects)) {
-                  for (const obj of listed.objects) {
-                    if (!fileMap.has(obj.key)) {
-                      const rawName = (obj.key.split('/').pop() || obj.key).replace(/^\d+_/, '');
-                      fileMap.set(obj.key, {
-                        key: obj.key,
-                        id: obj.key,
-                        filename: rawName,
-                        mimeType: obj.httpMetadata?.contentType || 'image/jpeg',
-                        size: obj.size || 0,
-                        uploadedAt: obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString(),
-                        url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
-                      });
+                const scanPrefixes = [
+                  `users/${encodeURIComponent(userEmail)}/photos/`,
+                  `users/${encodeURIComponent(userEmail)}/menu/`,
+                  `users/${userEmail}/menu/`,
+                ];
+                for (const pfx of scanPrefixes) {
+                  const listed = await bucket.list({ prefix: pfx, limit: 200 });
+                  if (listed && Array.isArray(listed.objects)) {
+                    for (const obj of listed.objects) {
+                      if (!fileMap.has(obj.key)) {
+                        const rawName = (obj.key.split('/').pop() || obj.key).replace(/^\d+_/, '');
+                        fileMap.set(obj.key, {
+                          key: obj.key,
+                          id: obj.key,
+                          filename: rawName,
+                          mimeType: obj.httpMetadata?.contentType || 'image/jpeg',
+                          size: obj.size || 0,
+                          uploadedAt: obj.uploaded ? new Date(obj.uploaded).toISOString() : new Date().toISOString(),
+                          url: `${url.origin}/api/files/${encodeURIComponent(obj.key)}`,
+                        });
+                      }
                     }
                   }
                 }

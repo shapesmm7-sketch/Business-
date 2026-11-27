@@ -517,15 +517,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           window.dispatchEvent(new CustomEvent('brivu_data_refreshed'));
         }
       }
-      if (!cancelled && isPageEmpty && !didPullBizPage) {
+      if (!cancelled && (!didPullBizPage || isPageEmpty)) {
         const latestPages = StorageService.getHostedQRPages();
         const latestActive = latestPages.find((p) => p.id === activePageId) || latestPages[0];
-        if (
-          !latestActive ||
-          (!latestActive.updatedAt &&
-            (!Array.isArray(latestActive.photos) || latestActive.photos.length === 0) &&
-            (!Array.isArray(latestActive.menuImages) || latestActive.menuImages.length === 0))
-        ) {
+        const missingPhotos = !latestActive || !Array.isArray(latestActive.photos) || latestActive.photos.length === 0;
+        const missingMenuImgs = !latestActive || !Array.isArray(latestActive.menuImages) || latestActive.menuImages.length === 0;
+        if (!latestActive || (!latestActive.updatedAt && missingPhotos) || missingMenuImgs) {
           await handleRecoverCloudPhotos(false, true).catch(() => {});
         }
       }
@@ -559,24 +556,29 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       const isOnline = typeof navigator === 'undefined' || navigator.onLine !== false;
       const checkDead = async (u?: string): Promise<boolean> => {
         if (!u || typeof u !== 'string') return false;
-        if (isTombstoned(u)) return true;
-        if (!isOnline || !isManagedCloudFile(u)) return false;
-        try {
-          const controller = new AbortController();
-          const tId = setTimeout(() => controller.abort(), 5000);
+        if (isOnline && isManagedCloudFile(u)) {
           try {
-            const res = await fetch(u, {
-              method: 'HEAD',
-              cache: 'no-store',
-              signal: controller.signal,
-            });
-            return res.status === 404 || res.status === 410;
-          } finally {
-            clearTimeout(tId);
+            const controller = new AbortController();
+            const tId = setTimeout(() => controller.abort(), 5000);
+            try {
+              const res = await fetch(u, {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: controller.signal,
+              });
+              if (res.ok) {
+                StorageService.unmarkQrAssetDeleted(u);
+                return false;
+              }
+              return res.status === 404 || res.status === 410;
+            } finally {
+              clearTimeout(tId);
+            }
+          } catch {
+            return false;
           }
-        } catch {
-          return false;
         }
+        return isTombstoned(u);
       };
 
       const photos = Array.isArray(targetPage.photos) ? targetPage.photos : [];
@@ -1964,15 +1966,18 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          {onOpenQrScanner && qrCategory === null && (
+          {onOpenQrScanner && (
             <button
+              id="btn-qr-screen-scanner"
               type="button"
               onClick={onOpenQrScanner}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 border border-teal-200 dark:border-teal-800/80 text-teal-700 dark:text-teal-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-2xs"
-              title="Scan QR Code using Capacitor Camera"
+              title="Scan QR Code"
             >
               <Scan className="w-3.5 h-3.5" />
-              <span>{t('scan_qr', business?.language)}</span>
+              <span className={qrCategory === 'business' ? 'hidden sm:inline' : ''}>
+                {t('scan_qr', business?.language)}
+              </span>
             </button>
           )}
 
@@ -2125,7 +2130,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="text-xs text-amber-950 dark:text-amber-100 leading-relaxed">
               <p className="font-bold">Login Required Before Creating QR Codes</p>
               <p className="text-amber-900/90 dark:text-amber-200/90 mt-0.5">
-                Please log in first before creating QR codes. QR codes, files, and images will not work if you create them before logging in.
+                Please log in first before creating QR codes. QR codes, files, and images will not work if you create them before logging in. You can still use the Scan QR scanner anytime without logging in.
               </p>
             </div>
           </div>

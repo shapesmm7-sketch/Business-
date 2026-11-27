@@ -684,6 +684,8 @@ export const CloudflareService = {
       }
 
       const result = parsed.data || {};
+      if (result.url) StorageService.unmarkQrAssetDeleted(result.url);
+      if (result.key) StorageService.unmarkQrAssetDeleted(result.key);
       return {
         success: true,
         url: result.url,
@@ -1173,7 +1175,9 @@ export const CloudflareService = {
       let recoveredCoverUrl: string | undefined;
       let recoveredLogoUrl: string | undefined;
       const r2GalleryPhotos: Array<{ id: string; url: string; title: string; description: string }> = [];
+      const r2MenuImages: Array<{ id: string; url: string; title: string; badge?: string; version?: number }> = [];
       const seenUrls = new Set<string>();
+      const seenMenuUrls = new Set<string>();
 
       for (const file of sorted) {
         if (!file?.url) continue;
@@ -1188,7 +1192,28 @@ export const CloudflareService = {
           recoveredCoverUrl = file.url;
           continue;
         }
-        if (isQrGalleryPhotoRecord(file) && !seenUrls.has(file.url)) {
+        if ((keyLower.includes('/menu/') || keyLower.startsWith('menu-public/')) && !seenMenuUrls.has(file.url)) {
+          const publicMenuUrl = String(file.url).replace(
+            /^https?:\/\/brivu\.shapesmm7\.workers\.dev(?=\/|$)/i,
+            'https://brivu.shapesmm.com'
+          );
+          if (!seenMenuUrls.has(publicMenuUrl)) {
+            seenMenuUrls.add(file.url);
+            seenMenuUrls.add(publicMenuUrl);
+            StorageService.unmarkQrAssetDeleted(publicMenuUrl);
+            const isMain = fname.includes('menu_main') || r2MenuImages.length === 0;
+            const upTs = file.uploadedAt ? new Date(file.uploadedAt).getTime() || Date.now() : Date.now();
+            r2MenuImages.push({
+              id: `menu-img-r2-${r2MenuImages.length}-${String(file.key || '').slice(-10).replace(/[^a-zA-Z0-9]/g, '')}`,
+              url: publicMenuUrl,
+              title: isMain ? 'Menu Photo' : `Menu Page ${r2MenuImages.length + 1}`,
+              badge: isMain ? 'active' : undefined,
+              version: upTs,
+            });
+          }
+          continue;
+        }
+        if (r2GalleryPhotos.length < 20 && isQrGalleryPhotoRecord(file) && !seenUrls.has(file.url)) {
           seenUrls.add(file.url);
           r2GalleryPhotos.push({
             id: `photo-r2-${r2GalleryPhotos.length}-${String(file.key || '').slice(-10).replace(/[^a-zA-Z0-9]/g, '')}`,
@@ -1196,11 +1221,10 @@ export const CloudflareService = {
             title: 'Business Photo',
             description: '',
           });
-          if (r2GalleryPhotos.length >= 20) break;
         }
       }
 
-      if (r2GalleryPhotos.length === 0 && !recoveredCoverUrl && !recoveredLogoUrl) {
+      if (r2GalleryPhotos.length === 0 && r2MenuImages.length === 0 && !recoveredCoverUrl && !recoveredLogoUrl) {
         return { recoveredCount: 0, updated: false };
       }
 
@@ -1231,6 +1255,14 @@ export const CloudflareService = {
           }
         }
 
+        const existingMenuImgs = Array.isArray(page.menuImages) ? page.menuImages.filter((m) => Boolean(m && m.url)) : [];
+        let nextMenuImages = existingMenuImgs;
+        if (existingMenuImgs.length === 0 && r2MenuImages.length > 0) {
+          nextMenuImages = r2MenuImages.slice(0, 5);
+          totalRecovered += nextMenuImages.length;
+          didUpdate = true;
+        }
+
         const nextCover = page.coverImage || recoveredCoverUrl;
         const nextLogo = page.logo || recoveredLogoUrl;
         if ((!page.coverImage && nextCover) || (!page.logo && nextLogo)) {
@@ -1240,6 +1272,7 @@ export const CloudflareService = {
         return {
           ...page,
           photos: nextPhotos,
+          menuImages: nextMenuImages,
           coverImage: nextCover,
           logo: nextLogo,
           updatedAt: didUpdate ? new Date().toISOString() : page.updatedAt,

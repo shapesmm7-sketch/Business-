@@ -1759,13 +1759,30 @@ export const StorageService = {
           const deletedAssetSet = new Set(
             this.getDeletedQrAssetKeys().map((k) => k.toLowerCase())
           );
+          const liveCloudFileKeySet = new Set<string>();
+          if (Array.isArray((backupData as any).files)) {
+            for (const f of (backupData as any).files) {
+              const rawKey = typeof f === 'string' ? f : (f?.key || f?.id || f?.url || '');
+              const normLive = normalizeQrAssetKey(rawKey).toLowerCase();
+              if (normLive) liveCloudFileKeySet.add(normLive);
+            }
+          }
           const isDeletedAssetUrl = (val?: unknown): boolean => {
             if (typeof val !== 'string' || !val.trim()) return false;
-            const norm = normalizeQrAssetKey(val);
+            const norm = normalizeQrAssetKey(val).toLowerCase();
             if (!norm) return false;
-            if (deletedAssetSet.has(norm.toLowerCase())) return true;
+            // If Cloudflare sync/pull reports this exact key as live in R2/D1 files, never treat it as deleted
+            if (liveCloudFileKeySet.has(norm)) {
+              this.unmarkQrAssetDeleted(val);
+              return false;
+            }
+            if (deletedAssetSet.has(norm)) return true;
             try {
               const dec = decodeURIComponent(norm).toLowerCase();
+              if (liveCloudFileKeySet.has(dec) || liveCloudFileKeySet.has(dec.replace(/%40/g, '@'))) {
+                this.unmarkQrAssetDeleted(val);
+                return false;
+              }
               if (deletedAssetSet.has(dec)) return true;
               if (deletedAssetSet.has(dec.replace(/%40/g, '@'))) return true;
             } catch {}
@@ -2996,8 +3013,20 @@ export const StorageService = {
     }
     const success = writeToStorage(STORAGE_KEYS.QR_HOSTED_PAGES, pages);
 
-    // Asynchronously upload any base64 images (cover image, logo, gallery photos, menu item photos) to Cloudflare R2
+    // Clear stale deletion tombstones for any live URLs present on this saved page (e.g. re-uploaded menu_main.webp or logo.webp)
     if (success) {
+      if (updatedPage.coverImage) this.unmarkQrAssetDeleted(updatedPage.coverImage);
+      if (updatedPage.logo) this.unmarkQrAssetDeleted(updatedPage.logo);
+      if (Array.isArray(updatedPage.photos)) {
+        updatedPage.photos.forEach((ph) => ph?.url && this.unmarkQrAssetDeleted(ph.url));
+      }
+      if (Array.isArray(updatedPage.menuImages)) {
+        updatedPage.menuImages.forEach((mi) => mi?.url && this.unmarkQrAssetDeleted(mi.url));
+      }
+      if (Array.isArray(updatedPage.menuItems)) {
+        updatedPage.menuItems.forEach((it) => it?.photoUrl && this.unmarkQrAssetDeleted(it.photoUrl));
+      }
+
       const pageId = updatedPage.id;
       const uploadPromises: Promise<any>[] = [];
       let replacedAnyDataUri = false;
@@ -3218,6 +3247,20 @@ export const StorageService = {
     if (!current.includes(norm)) {
       current.push(norm);
       writeToStorage(STORAGE_KEYS.DELETED_QR_ASSETS, current.slice(-200));
+    }
+  },
+
+  unmarkQrAssetDeleted(urlOrKey?: string): void {
+    if (!urlOrKey || typeof urlOrKey !== 'string') return;
+    const norm = normalizeQrAssetKey(urlOrKey).toLowerCase();
+    if (!norm) return;
+    const current = this.getDeletedQrAssetKeys();
+    const filtered = current.filter((x) => {
+      const cleanX = normalizeQrAssetKey(String(x || '')).toLowerCase() || String(x || '').trim().toLowerCase();
+      return cleanX !== norm;
+    });
+    if (filtered.length !== current.length) {
+      writeToStorage(STORAGE_KEYS.DELETED_QR_ASSETS, filtered);
     }
   },
 

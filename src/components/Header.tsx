@@ -311,9 +311,23 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </button>
 
-          {/* Right Action Tools: PWA, Google Sign-In, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right Action Tools: PWA, Scan QR, Google Sign-In, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <PWAInstallButton />
+
+            {onOpenQrScanner && (
+              <button
+                id="btn-header-qr-scanner"
+                type="button"
+                onClick={onOpenQrScanner}
+                className="w-8.5 h-8.5 sm:w-auto sm:px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/80 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-xs font-bold cursor-pointer"
+                aria-label="Scan QR Code"
+                title="Scan QR Code"
+              >
+                <Scan className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline text-[11px]">{t('scan_qr', lang) || 'Scan QR'}</span>
+              </button>
+            )}
 
             {/* Sign-In / Account Button in Header Bar */}
             <button
@@ -534,6 +548,31 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-1 pt-1">
                 {t('sections_and_management', lang)}
               </div>
+
+              {onOpenQrScanner && (
+                <button
+                  id="btn-menu-qr-scanner"
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    onOpenQrScanner();
+                  }}
+                  className="w-full text-left p-3 rounded-2xl border border-teal-200 dark:border-teal-800/80 bg-teal-50/70 dark:bg-teal-950/40 hover:bg-teal-100/80 dark:hover:bg-teal-900/60 transition-all flex items-center gap-3.5 group active:scale-[0.99] cursor-pointer"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                    <Scan className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-extrabold text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                      {t('scan_qr', lang) || 'Scan QR Code'}
+                    </span>
+                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 truncate">
+                      Scan any QR code, menu, link, Wi-Fi, or receipt
+                    </p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-all shrink-0" />
+                </button>
+              )}
 
               {/* Google Drive Text Sync Button */}
               {onOpenGoogleDriveSync && (
