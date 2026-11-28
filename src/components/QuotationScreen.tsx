@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { CreateInvoiceScreen } from './CreateInvoiceScreen';
 import { ReceiptsHistoryScreen } from './ReceiptsHistoryScreen';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 export type QuotationTab = 'create' | 'list';
 
@@ -118,6 +119,15 @@ export const QuotationScreen: React.FC<QuotationScreenProps> = ({
             )}
           </button>
         </div>
+
+        <SetDefaultPageButton
+          compact
+          config={{
+            screen: 'create-quotation',
+            docTab: activeTab,
+            label: activeTab === 'list' ? 'Quotations List' : 'Create Quotation',
+          }}
+        />
       </div>
 
       {activeTab === 'create' ? (

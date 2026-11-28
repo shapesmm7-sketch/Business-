@@ -30,6 +30,7 @@ import {
 } from '../services/googleDriveService';
 import { StorageService } from '../services/storage';
 import { PlayBillingService } from '../services/playBillingService';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface SyncToGoogleDriveScreenProps {
   onBack: () => void;
@@ -211,7 +212,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
       setShowSubscriptionPrompt(true);
       showToast(
         'error',
-        'Your 7-day free trial has ended. Please subscribe to Brivu Pro to continue saving your files to Google Drive.'
+        'Your 7-day free trial has ended. Please subscribe to Brivu Basic to continue saving your files to Google Drive.'
       );
       return;
     }
@@ -355,18 +356,26 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col pb-20">
       {/* Top Navigation Bar */}
-      <div className="sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3.5 flex items-center gap-3 shadow-xs">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="p-1.5 -ml-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="text-lg font-bold text-slate-900 dark:text-white">
-          Sync to Google Drive
-        </h1>
+      <div className="sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3.5 flex items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="p-1.5 -ml-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shrink-0"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg font-bold text-slate-900 dark:text-white truncate">
+            Sync to Google Drive
+          </h1>
+        </div>
+        <SetDefaultPageButton
+          config={{
+            screen: 'google-drive-sync',
+            label: 'Google Drive Sync',
+          }}
+        />
       </div>
 
       <div className="p-4 max-w-lg mx-auto w-full space-y-4">
@@ -400,7 +409,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                   Subscription Required for Google Drive Sync
                 </h3>
                 <p className="text-xs text-rose-900/85 dark:text-rose-200/85 mt-1 leading-relaxed">
-                  Your 1-week free trial has ended. Please subscribe to a Brivu Pro plan to connect and continue saving your files and photos to Google Drive. Your local files stay completely safe on your device.
+                  Your 1-week free trial has ended. Please subscribe to a Brivu Basic plan to connect and continue saving your files and photos to Google Drive. Your local files stay completely safe on your device.
                 </p>
               </div>
             </div>
@@ -427,7 +436,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                 onClick={onUpgrade}
                 className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shrink-0 hover:bg-emerald-700 transition cursor-pointer"
               >
-                Go Pro
+                Upgrade
               </button>
             )}
           </div>
@@ -1107,7 +1116,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
             </div>
 
             <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-xs text-rose-900 dark:text-rose-100 leading-relaxed font-medium">
-              Google Drive sync is available for subscribed users after the 7-day free trial ends. Please subscribe to Brivu Pro in order to continue saving your files and photos to Google Drive.
+              Google Drive sync is available for subscribed users after the 7-day free trial ends. Please subscribe to Brivu Basic in order to continue saving your files and photos to Google Drive.
             </div>
 
             <div className="flex flex-col gap-2">
@@ -1122,7 +1131,7 @@ export const SyncToGoogleDriveScreen: React.FC<SyncToGoogleDriveScreenProps> = (
                   className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs shadow-lg flex items-center justify-center gap-2 active:scale-[0.98] transition cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>Subscribe to Pro Plan</span>
+                  <span>Subscribe to Basic Plan</span>
                 </button>
               )}
               <button

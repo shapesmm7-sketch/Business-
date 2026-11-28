@@ -35,6 +35,7 @@ import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
+import { FlyerQrPosterModal } from './FlyerQrPosterModal';
 import { t } from '../utils/i18n';
 
 export type { WebsiteAppQrItem };
@@ -107,6 +108,7 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
+  const [showFlyerPosterModal, setShowFlyerPosterModal] = useState<boolean>(false);
 
   const isAllSelected = selectedItemId === 'all';
   const activeItem = items.find((i) => i.id === selectedItemId) || null;
@@ -859,6 +861,16 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
                 </button>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFlyerPosterModal(true)}
+              disabled={!activeQrDataUrl}
+              className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-900 border border-blue-300 dark:border-blue-700 hover:bg-blue-100/70 dark:hover:bg-blue-950/60 text-blue-800 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition active:scale-98 disabled:opacity-50 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+            </button>
           </div>
         </div>
       ) : (
@@ -1097,6 +1109,21 @@ export const WebsitesAppsQrSection: React.FC<WebsitesAppsQrSectionProps> = ({
         confirmLabel="Delete QR Code"
         onConfirm={handleConfirmDeleteItem}
         onCancel={() => setItemToDelete(null)}
+      />
+      <FlyerQrPosterModal
+        isOpen={showFlyerPosterModal}
+        onClose={() => setShowFlyerPosterModal(false)}
+        qrValue={activeUrl}
+        qrDataUrl={activeQrDataUrl}
+        title={isAllSelected ? (business.name || 'Websites') : (activeItem?.title || business.name || 'Website')}
+        defaultLabel={tableNumberForPrint}
+        accentColor={activeDarkColor}
+        qrColor={{
+          dark: activeDarkColor,
+          light: activeLightColor,
+          eyeColor: activeEyeColor,
+        }}
+        onToast={showToast}
       />
     </div>
   );

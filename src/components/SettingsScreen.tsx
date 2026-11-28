@@ -23,6 +23,7 @@ import { StorageService } from '../services/storage';
 import { PlayUpdateService, PLAY_INSTALL_STATUS } from '../services/playUpdateService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { BluetoothPrinterSettings } from './BluetoothPrinterSettings';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface SettingsScreenProps {
   settings: AppSettings;
@@ -146,13 +147,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       )}
 
       {/* Title */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">
-          Settings & Preferences
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Appearance, membership, data backup & restore, and application information
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            Settings & Preferences
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Appearance, membership, data backup & restore, and application information
+          </p>
+        </div>
+        <SetDefaultPageButton
+          config={{
+            screen: 'settings',
+            label: 'Settings',
+          }}
+        />
       </div>
 
       {/* Pro Membership Card */}
@@ -167,23 +176,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-black text-white">Brivu Pro Membership</span>
+              <span className="text-sm font-black text-white">Brivu Subscription Plans</span>
               {subscription && subscription.status === 'active' ? (
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white">
                   Active ({subscription.planName})
                 </span>
               ) : (
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
-                  From $3.6/mo
+                  Basic • Growth • Enterprise
                 </span>
               )}
             </div>
             <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
               {StorageService.isCurrentUserAdmin()
-                ? 'Lifetime Unlimited Pro & Cloud Storage'
+                ? 'Basic (Lifetime Unlimited & Cloud Storage)'
                 : subscription && subscription.status === 'active'
                 ? `Expires on ${new Date(subscription.expiresAt).toLocaleDateString()}`
-                : '1 Month $3.6 • 6 Months $19.2 • 1 Year $31.9'}
+                : 'Basic: 1 Month $5.6 • 6 Months $30.0 • 1 Year $55.9'}
             </p>
           </div>
         </div>

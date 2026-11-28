@@ -9,6 +9,7 @@ import {
 import { CreateReceiptScreen } from './CreateReceiptScreen';
 import { CreateInvoiceScreen } from './CreateInvoiceScreen';
 import { ReceiptsHistoryScreen } from './ReceiptsHistoryScreen';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 export type DocumentWorkspaceTab = 'create' | 'list';
 
@@ -126,6 +127,21 @@ export const DocumentWorkspaceScreen: React.FC<DocumentWorkspaceScreenProps> = (
             )}
           </button>
         </div>
+
+        <SetDefaultPageButton
+          compact
+          config={{
+            screen: isInvoice ? 'create-invoice' : 'create-receipt',
+            docTab: activeTab,
+            label: isInvoice
+              ? activeTab === 'list'
+                ? 'Invoices List'
+                : 'Create Invoice'
+              : activeTab === 'list'
+              ? 'Receipts List'
+              : 'Create Receipt',
+          }}
+        />
       </div>
 
       {activeTab === 'create' ? (

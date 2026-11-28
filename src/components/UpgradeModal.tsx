@@ -23,7 +23,8 @@ import {
 import { StorageService } from '../services/storage';
 import { PlayBillingService, GOOGLE_PLAY_PRODUCTS } from '../services/playBillingService';
 import { ExchangeRateService, UsdExchangeRatesSnapshot } from '../services/exchangeRateService';
-import { SubscriptionPlanId, UserSubscription } from '../types';
+import { SubscriptionPlanId, SubscriptionTierId, UserSubscription } from '../types';
+import { SUBSCRIPTION_TIERS, SUBSCRIPTION_PLANS_BY_TIER } from './UpgradeScreen';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
     monthlyEquivalent: '$4.66/mo',
     badge: 'BEST VALUE • SAVE 17%',
     badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black',
-    description: 'Billed $55.90 annually. Maximum savings and full premium access.',
+    description: 'Billed $55.90 annually. Maximum savings and full Basic access.',
     monthsCount: 12,
     googlePlayProductId: 'brivu_pro_yearly',
   },
@@ -96,6 +97,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   currentSubscription,
   onSubscriptionChange,
 }) => {
+  const [selectedTierId, setSelectedTierId] = useState<SubscriptionTierId>('basic');
   const [selectedPlanId, setSelectedPlanId] = useState<SubscriptionPlanId>('1-year');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isRestoring, setIsRestoring] = useState<boolean>(false);
@@ -144,9 +146,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
   const liveRateLabel = ExchangeRateService.formatUsdRateLabel(businessCurrency, ratesSnapshot.rates);
 
-  const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
+  const selectedTier = SUBSCRIPTION_TIERS.find((t) => t.id === selectedTierId) || SUBSCRIPTION_TIERS[0];
+  const activeTierPlans = SUBSCRIPTION_PLANS_BY_TIER[selectedTierId] || SUBSCRIPTION_PLANS;
+  const selectedPlan = activeTierPlans.find((p) => p.id === selectedPlanId) || activeTierPlans[2];
   const selectedPlanLocal = formatPlanAmount(selectedPlan.price);
   const isCurrentlyActive = currentSubscription && currentSubscription.status === 'active';
+  const activeTierName =
+    currentSubscription?.tierId === 'growth'
+      ? 'Growth'
+      : currentSubscription?.tierId === 'enterprise'
+      ? 'Enterprise'
+      : 'Basic';
 
   const handleSubscribe = async () => {
     setIsProcessing(true);
@@ -154,13 +164,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
     const result = await PlayBillingService.purchaseSubscription(
       selectedPlan.id,
-      selectedPaymentMethod
+      selectedPaymentMethod,
+      selectedTierId
     );
 
     setIsProcessing(false);
     if (result.success && result.subscription) {
       onSubscriptionChange(result.subscription);
-      setActionSuccessMessage(`Successfully subscribed to Brivu Pro ${selectedPlan.name} for ${selectedPlanLocal.formatted} via Google Play Billing!`);
+      setActionSuccessMessage(`Successfully subscribed to Brivu ${selectedTier.name} (${selectedPlan.name}) for ${selectedPlanLocal.formatted} via Google Play Billing!`);
       setPaymentStep('success');
     } else if (!result.userCancelled) {
       setRestoreFeedback({
@@ -252,9 +263,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black tracking-tight text-white">Brivu Pro</h2>
+                <h2 className="text-lg font-black tracking-tight text-white">Brivu Plans</h2>
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 tracking-wider">
-                  Premium
+                  Basic • Growth • Enterprise
                 </span>
               </div>
               <p className="text-xs text-indigo-200/90 font-medium">
@@ -271,7 +282,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 <span>
                   <strong>Active Plan:</strong>{' '}
                   {StorageService.isCurrentUserAdmin()
-                    ? 'Lifetime Admin Pro (Unlimited)'
+                    ? 'Basic (Lifetime Admin)'
                     : `${currentSubscription?.planName} (Expires: ${
                         currentSubscription?.expiresAt
                           ? new Date(currentSubscription.expiresAt).toLocaleDateString()
@@ -280,7 +291,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 </span>
               </div>
               <span className="text-[10px] uppercase font-extrabold bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded">
-                PRO
+                {activeTierName.toUpperCase()}
               </span>
             </div>
           )}
@@ -295,10 +306,10 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               </div>
               <div>
                 <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  Welcome to Brivu Pro!
+                  Welcome to Brivu {selectedTier.name}!
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
-                  {actionSuccessMessage || 'Your subscription is now active. All pro features, unlimited stock, and custom templates are unlocked.'}
+                  {actionSuccessMessage || `Your ${selectedTier.name} subscription is now active. All cloud sync, QR hosting, and ad-free features are unlocked.`}
                 </p>
               </div>
 
@@ -327,11 +338,42 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             </div>
           ) : (
             <>
+              {/* Plan Tier Switcher: Basic, Growth, Enterprise */}
+              <div className="grid grid-cols-3 gap-2">
+                {SUBSCRIPTION_TIERS.map((tier) => {
+                  const isTierSelected = selectedTierId === tier.id;
+                  const tierMonthlyPlan = (SUBSCRIPTION_PLANS_BY_TIER[tier.id] || SUBSCRIPTION_PLANS)[0];
+                  const tierStartingLocal = formatPlanAmount(tierMonthlyPlan.price);
+                  return (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTierId(tier.id);
+                        setRestoreFeedback(null);
+                      }}
+                      className={`p-2.5 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-1 ${
+                        isTierSelected
+                          ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-sm'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {tier.name}
+                      </span>
+                      <span className="text-[10px] font-bold leading-tight text-emerald-700 dark:text-emerald-400 truncate">
+                        {tierStartingLocal.formatted}/mo
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Data Loss Warning & Cloud Sync Notice */}
               <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/80 space-y-2 text-xs">
                 <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-black">
                   <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span>Pro Membership Benefits & Notice</span>
+                  <span>{selectedTier.name} Plan Benefits &amp; Notice</span>
                 </div>
                 <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-[11px]">
                   ⚠️ <strong>Without subscription:</strong> All receipts, inventory, and ledger records remain <strong>only on your local phone storage</strong> and can be lost if browser cache or apps are cleared.
@@ -351,7 +393,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
                   <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Select Your Subscription Plan
+                    Select Your {selectedTier.name} Plan
                   </span>
                   <div className="flex items-center gap-2">
                     {liveRateLabel && (
@@ -372,13 +414,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 gap-2.5">
-                  {SUBSCRIPTION_PLANS.map((plan) => {
+                  {activeTierPlans.map((plan) => {
                     const isSelected = selectedPlanId === plan.id;
                     const localPlanPrice = formatPlanAmount(plan.price);
-                    const localMonthlyEq = formatPlanAmount(plan.price / plan.monthsCount);
                     return (
                       <button
-                        key={plan.id}
+                        key={`${selectedTierId}-${plan.id}`}
                         type="button"
                         onClick={() => setSelectedPlanId(plan.id)}
                         className={`w-full text-left p-3.5 rounded-2xl border-2 transition-all relative flex items-center justify-between gap-3 cursor-pointer ${
@@ -418,7 +459,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                               {plan.id === '6-months'
                                 ? `Billed ${localPlanPrice.formatted} every 6 months.`
                                 : plan.id === '1-year'
-                                ? `Billed ${localPlanPrice.formatted} annually. Full Pro access.`
+                                ? `Billed ${localPlanPrice.formatted} annually. Full ${selectedTier.name} access.`
                                 : plan.description}
                             </p>
                           </div>
@@ -434,9 +475,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                               {plan.periodLabel}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 block font-semibold">
-                            {localMonthlyEq.formatted}/mo{businessCurrency !== 'USD' ? ` • ${plan.formattedPrice}` : ''}
-                          </span>
+                          {businessCurrency !== 'USD' && (
+                            <span className="text-[10px] text-slate-400 font-semibold block">
+                              {plan.formattedPrice} USD
+                            </span>
+                          )}
                         </div>
                       </button>
                     );
@@ -447,7 +490,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               {/* What is Included Checklist */}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block mb-2.5">
-                  Everything Included in Pro
+                  Everything Included in {selectedTier.name}
                 </span>
                 <div className="space-y-2">
                   {features.map((item, idx) => {

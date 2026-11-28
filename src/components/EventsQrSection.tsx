@@ -39,6 +39,7 @@ import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
+import { FlyerQrPosterModal } from './FlyerQrPosterModal';
 import { t } from '../utils/i18n';
 
 export type { EventQrItem };
@@ -87,6 +88,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
+  const [showFlyerPosterModal, setShowFlyerPosterModal] = useState<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<
     | { type: 'event'; item: EventQrItem }
     | { type: 'photo'; index: number }
@@ -307,7 +309,7 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
             if (uploadRes.success && uploadRes.url) {
               photoUrl = uploadRes.url;
             } else if (uploadRes.requiresSubscription) {
-              showToast(uploadRes.message || 'Subscribe to Pro to upload event photos.');
+              showToast(uploadRes.message || 'Subscribe to Basic to upload event photos.');
               break;
             }
           } catch (cfErr) {
@@ -1081,6 +1083,16 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
                 </button>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFlyerPosterModal(true)}
+              disabled={!activeQrDataUrl}
+              className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 hover:bg-purple-100/70 dark:hover:bg-purple-950/60 text-purple-800 dark:text-purple-300 font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition active:scale-98 disabled:opacity-50 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+            </button>
           </div>
         </div>
       ) : (
@@ -1479,6 +1491,21 @@ export const EventsQrSection: React.FC<EventsQrSectionProps> = ({
           setPendingDelete(null);
         }}
         onCancel={() => setPendingDelete(null)}
+      />
+      <FlyerQrPosterModal
+        isOpen={showFlyerPosterModal}
+        onClose={() => setShowFlyerPosterModal(false)}
+        qrValue={activeUrl}
+        qrDataUrl={activeQrDataUrl}
+        title={isAllSelected ? (business.name || 'Events') : (activeItem?.title || business.name || 'Event')}
+        defaultLabel={tableNumberForPrint}
+        accentColor={activeDarkColor}
+        qrColor={{
+          dark: activeDarkColor,
+          light: activeLightColor,
+          eyeColor: activeEyeColor,
+        }}
+        onToast={showToast}
       />
     </div>
   );

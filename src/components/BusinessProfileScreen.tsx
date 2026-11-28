@@ -33,6 +33,7 @@ import { PhoneInputField } from './PhoneInputField';
 import { getLanguageByCode } from '../data/languages';
 import { COUNTRY_CODES, getCurrencyForCountry, CountryCodeItem, getLocalizedCountryName } from '../data/countryCodes';
 import { t, formatNumber } from '../utils/i18n';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface BusinessProfileScreenProps {
   initialProfile: BusinessProfile;
@@ -470,17 +471,28 @@ export const BusinessProfileScreen: React.FC<BusinessProfileScreenProps> = ({
           <span>{isInitialOnboarding ? (t('skip_for_now', profile.language) || 'Skip for Now') : (t('back', profile.language) || 'Back')}</span>
         </button>
 
-        <h1 className="text-base font-bold text-slate-900 dark:text-white">
+        <h1 className="text-base font-bold text-slate-900 dark:text-white truncate">
           {t('business_profile', profile.language) || 'Business Profile'}
         </h1>
 
-        <button
-          id="btn-profile-save-top"
-          onClick={handleSave}
-          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
-        >
-          {isInitialOnboarding ? (t('save_and_continue', profile.language) || 'Save & Continue') : (t('save', profile.language) || 'Save')}
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {!isInitialOnboarding && (
+            <SetDefaultPageButton
+              compact
+              config={{
+                screen: 'profile',
+                label: 'Business Profile',
+              }}
+            />
+          )}
+          <button
+            id="btn-profile-save-top"
+            onClick={handleSave}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
+          >
+            {isInitialOnboarding ? (t('save_and_continue', profile.language) || 'Save & Continue') : (t('save', profile.language) || 'Save')}
+          </button>
+        </div>
       </div>
 
       {/* Main Profile Form Card */}

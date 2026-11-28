@@ -129,6 +129,12 @@ export const Header: React.FC<HeaderProps> = ({
     }
   }, [isMenuOpen]);
   const currentSubscription = StorageService.getSubscription();
+  const activeTierLabel =
+    currentSubscription?.tierId === 'growth'
+      ? 'Growth'
+      : currentSubscription?.tierId === 'enterprise'
+      ? 'Enterprise'
+      : 'Basic';
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const currentLang = getLanguageByCode(business.language || 'en');
@@ -263,20 +269,23 @@ export const Header: React.FC<HeaderProps> = ({
     },
   ];
 
+  const displayBrandName = business.name || 'Brivu';
+  const brandInitial = displayBrandName.trim().charAt(0).toUpperCase() || 'B';
+
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 transition-colors">
+      <header className="sticky top-0 z-40 bg-[#F7F9F7]/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/70 dark:border-slate-800/80 transition-colors">
         <div className="max-w-2xl mx-auto px-4 py-2.5">
         {/* Top Header Row */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2.5">
           {/* Brand & Business Identity on the Left */}
           <button
             id="btn-header-home"
             onClick={onNavigateHome}
-            className="flex items-center gap-3 text-left focus:outline-hidden group min-w-0"
+            className="flex items-center gap-2.5 sm:gap-3 text-left focus:outline-hidden group min-w-0 cursor-pointer"
           >
-            {/* Business Logo or High-End Receipt Monogram */}
-            <div className="relative w-9 h-9 shrink-0 rounded-xl overflow-hidden bg-slate-900 dark:bg-slate-800 text-emerald-400 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+            {/* Business Logo or Deep Green Brand Monogram */}
+            <div className="relative w-10 h-10 shrink-0 rounded-xl overflow-hidden bg-[#0E6A33] text-white flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
               {business.logo ? (
                 <img
                   src={business.logo}
@@ -284,69 +293,57 @@ export const Header: React.FC<HeaderProps> = ({
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <ReceiptIcon className="w-5 h-5 text-emerald-500 dark:text-emerald-400 stroke-[2.2]" />
+                <span className="text-xl font-black tracking-tight leading-none text-white select-none">
+                  {brandInitial}
+                </span>
               )}
             </div>
 
             {/* Typography with clean visual hierarchy */}
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-base font-bold text-slate-900 dark:text-white tracking-tight leading-none truncate max-w-[140px] xs:max-w-[180px] sm:max-w-[240px]">
-                  {business.name || 'Brivu'}
+                <span className="text-[18px] sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-none truncate max-w-[130px] sm:max-w-[230px]">
+                  {displayBrandName}
                 </span>
                 {currentSubscription && currentSubscription.status === 'active' && (
                   <span
                     id="header-pro-badge"
-                    title={`Brivu Pro Account (${currentSubscription.planName})`}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 text-slate-950 shadow-xs shrink-0 ring-1 ring-amber-400/50"
+                    title={`Brivu Account (${currentSubscription.planName})`}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/70 text-[#0E6A33] dark:text-emerald-300 shrink-0 ring-1 ring-emerald-300/60 dark:ring-emerald-700/60"
                   >
-                    <Gem className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
-                    <span>PRO</span>
+                    <Gem className="w-2.5 h-2.5 text-[#0E6A33] dark:text-emerald-300" />
+                    <span>{activeTierLabel.toUpperCase()}</span>
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate max-w-[150px] xs:max-w-[200px]">
-                <span>Business Manager</span>
+              <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-tight mt-0.5 truncate max-w-[140px] sm:max-w-[220px]">
+                Business Manager
               </div>
             </div>
           </button>
 
-          {/* Right Action Tools: PWA, Scan QR, Google Sign-In, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* Right Action Tools: PWA, Google Sign-In, Upgrade, Notifications, & 3-line Hamburger Menu Trigger */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <PWAInstallButton />
-
-            {onOpenQrScanner && (
-              <button
-                id="btn-header-qr-scanner"
-                type="button"
-                onClick={onOpenQrScanner}
-                className="w-8.5 h-8.5 sm:w-auto sm:px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/80 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-xs font-bold cursor-pointer"
-                aria-label="Scan QR Code"
-                title="Scan QR Code"
-              >
-                <Scan className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline text-[11px]">{t('scan_qr', lang) || 'Scan QR'}</span>
-              </button>
-            )}
 
             {/* Sign-In / Account Button in Header Bar */}
             <button
               id="btn-header-google-auth"
               type="button"
               onClick={handleOpenAuthModal}
-              className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-bold cursor-pointer ${
+              className={`w-10 h-10 sm:w-auto sm:px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-2xs border active:scale-95 text-xs font-bold cursor-pointer ${
                 authUser
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
-                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-[#0E6A33] dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200/90 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
               aria-label={authUser ? 'Account & Cloud Sync' : 'Sign In or Create Account'}
             >
               {authUser ? (
-                <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                <UserIcon className="w-4.5 h-4.5 shrink-0 stroke-[2]" />
               ) : (
-                <LogIn className="w-3.5 h-3.5 shrink-0" />
+                <LogIn className="w-4.5 h-4.5 shrink-0 stroke-[2]" />
               )}
-              <span className="hidden xs:inline sm:inline text-[11px]">
+              <span className="hidden sm:inline text-[11px]">
                 {authUser ? 'Account' : 'Sign In'}
               </span>
             </button>
@@ -356,31 +353,29 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-header-upgrade"
               type="button"
               onClick={() => onNavigate('upgrade')}
-              className={`px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-black cursor-pointer ${
+              className={`w-10 h-10 sm:w-auto sm:px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 text-xs font-black cursor-pointer ${
                 currentSubscription && currentSubscription.status === 'active'
                   ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-400/50 shadow-emerald-500/20'
                   : 'bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-amber-400/40 shadow-amber-500/20'
               }`}
-              aria-label="Upgrade to Pro"
+              aria-label="Subscription Plans"
             >
-              <Crown className="w-3.5 h-3.5 fill-white text-white shrink-0" />
-              <span className="hidden xs:inline sm:inline">
-                {currentSubscription && currentSubscription.status === 'active' ? 'PRO' : 'Upgrade'}
+              <Crown className="w-4 h-4 fill-white text-white shrink-0" />
+              <span className="hidden sm:inline">
+                {currentSubscription && currentSubscription.status === 'active' ? activeTierLabel : 'Upgrade'}
               </span>
             </button>
-
-
 
             {/* Notifications Button with numeric badge */}
             <button
               id="btn-header-notifications"
               onClick={() => setIsNotificationOpen(true)}
-              className="px-2.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-xs border active:scale-95 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 relative"
+              className="w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-2xs border active:scale-95 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200/90 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 relative cursor-pointer"
               aria-label={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
             >
-              <Bell className="w-4 h-4 stroke-[2.5]" />
+              <Bell className="w-4.5 h-4.5 stroke-[2]" />
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white leading-none shadow-xs">
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-extrabold bg-[#0E6A33] text-white flex items-center justify-center leading-none shadow-xs border-2 border-[#F7F9F7] dark:border-slate-950">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
@@ -392,16 +387,16 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               aria-expanded={isMenuOpen}
               aria-label="Open menu"
-              className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center transition-all shadow-xs border active:scale-95 relative ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-2xs border active:scale-95 relative cursor-pointer ${
                 isMenuOpen
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white'
-                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-200/90 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
               {isMenuOpen ? (
-                <X className="w-4 h-4 stroke-[2.5]" />
+                <X className="w-4.5 h-4.5 stroke-[2.2]" />
               ) : (
-                <MenuIcon className="w-4 h-4 stroke-[2.5]" />
+                <MenuIcon className="w-4.5 h-4.5 stroke-[2.2]" />
               )}
             </button>
           </div>
@@ -411,7 +406,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* TOP MENU SECTION DROPDOWN / OVERLAY (When Menu is clicked) */}
       {isMenuOpen && (
-        <div className="fixed inset-0 top-[53px] z-50 bg-slate-950/60 backdrop-blur-xs transition-opacity animate-fadeIn">
+        <div className="fixed inset-0 top-[61px] z-50 bg-slate-950/60 backdrop-blur-xs transition-opacity animate-fadeIn">
           <div
             ref={menuRef}
             className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-2xl rounded-b-3xl overflow-hidden max-h-[85vh] flex flex-col animate-slideDown"
@@ -425,7 +420,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {currentSubscription && currentSubscription.status === 'active' && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white leading-none shadow-xs">
                     <Gem className="w-2.5 h-2.5 fill-white text-white" />
-                    <span>PRO ACTIVE</span>
+                    <span>{activeTierLabel.toUpperCase()} ACTIVE</span>
                   </span>
                 )}
               </div>
@@ -514,18 +509,15 @@ export const Header: React.FC<HeaderProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-sm font-black text-white tracking-tight">
-                          {currentSubscription && currentSubscription.status === 'active' ? 'Brivu Pro Member' : 'Upgrade to Pro'}
+                          {currentSubscription && currentSubscription.status === 'active'
+                            ? `Brivu ${activeTierLabel} Member`
+                            : 'Brivu Subscription Plans'}
                         </span>
-                        {(!currentSubscription || currentSubscription.status !== 'active') && (
-                          <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 text-slate-950 leading-none">
-                            Save 26%
-                          </span>
-                        )}
                       </div>
                       <p className="text-[11px] text-indigo-200/90 font-medium truncate mt-0.5">
                         {currentSubscription && currentSubscription.status === 'active'
-                          ? `Active Tier: ${currentSubscription.planName}`
-                          : '1 Mo $3.6 • 6 Mos $19.2 • 1 Yr $31.9'}
+                          ? `Active Plan: ${currentSubscription.planName}`
+                          : 'Basic • Growth • Enterprise'}
                       </p>
                     </div>
                   </div>

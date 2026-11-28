@@ -23,17 +23,21 @@ import {
   Lock,
   RefreshCw,
   Printer,
+  Layers,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { BusinessProfile, QRBusinessPhoto, QRCodeHostedPage } from '../types';
 import { QRHostingService } from '../services/qrHostingService';
 import { CloudflareService } from '../services/cloudflareService';
-import { compressImageFile } from '../utils/imageCompressor';
+import { compressImageFile, stitchMenuImagesToSingleWebP } from '../utils/imageCompressor';
 import { saveFile, shareContent } from '../services/fileSaver';
 import { StorageService } from '../services/storage';
 import { QRCodeColorEditorScreen } from './QRCodeColorEditorScreen';
 import { PhoneInputField } from './PhoneInputField';
 import { TouchZoomLightbox } from './TouchZoomLightbox';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
+import { FlyerQrPosterModal } from './FlyerQrPosterModal';
 import { t } from '../utils/i18n';
 
 export type QuickSectionMode = 'menu' | 'wifi' | 'contacts' | 'location';
@@ -62,6 +66,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   showToast,
 }) => {
   const menuFileInputRef = useRef<HTMLInputElement | null>(null);
+  const stitchFileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const replacingTargetRef = useRef<QRBusinessPhoto | null>(null);
 
@@ -70,6 +75,11 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   const [selectedMenuImgId, setSelectedMenuImgId] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isUploadingMenu, setIsUploadingMenu] = useState<boolean>(false);
+  const [menuUploadMode, setMenuUploadMode] = useState<'single' | 'stitch'>('single');
+  const [stagedStitchPages, setStagedStitchPages] = useState<
+    Array<{ id: string; file: File; previewUrl: string; name: string }>
+  >([]);
+  const [stitchMenuTitle, setStitchMenuTitle] = useState<string>('');
   const [reuploadingId, setReuploadingId] = useState<string | null>(null);
   const [previewCacheBust, setPreviewCacheBust] = useState<Record<string, number>>({});
   const [isEditingColors, setIsEditingColors] = useState<boolean>(false);
@@ -78,6 +88,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
   const [menuImageToDelete, setMenuImageToDelete] = useState<QRBusinessPhoto | null>(null);
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [showFlyerPosterModal, setShowFlyerPosterModal] = useState<boolean>(false);
 
   // Local editable drafts synced cleanly with activePage
   const [wifiName, setWifiName] = useState<string>(activePage.wifiName || '');
@@ -125,6 +136,14 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     business.whatsapp,
     business.address,
   ]);
+
+  const stagedStitchPagesRef = useRef(stagedStitchPages);
+  stagedStitchPagesRef.current = stagedStitchPages;
+  useEffect(() => {
+    return () => {
+      stagedStitchPagesRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+    };
+  }, []);
 
   const menuImages: QRBusinessPhoto[] = useMemo(
     () => (Array.isArray(activePage.menuImages) ? activePage.menuImages : []),
@@ -377,7 +396,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
           if (uploadRes.success && uploadRes.url) {
             imageUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
           } else if (uploadRes.requiresSubscription) {
-            lastUploadError = uploadRes.message || 'Subscribe to Pro to upload menu photos.';
+            lastUploadError = uploadRes.message || 'Subscribe to Basic to upload menu photos.';
             showToast(lastUploadError);
             break;
           } else if (uploadRes.message) {
@@ -452,6 +471,194 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     } finally {
       setIsUploadingMenu(false);
       e.target.value = '';
+    }
+  };
+
+  // Stage 2–5 menu photos locally before stitching into ONE scrollable WebP page
+  const handleSelectStitchPages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    const remaining = MAX_MENU_IMAGES - stagedStitchPages.length;
+    if (remaining <= 0) {
+      showToast(`Maximum ${MAX_MENU_IMAGES} photos can be combined onto 1 menu page.`);
+      return;
+    }
+
+    const accepted = files.slice(0, remaining);
+    if (files.length > remaining) {
+      showToast(`Only ${remaining} more photo${remaining === 1 ? '' : 's'} can fit on this page (Max ${MAX_MENU_IMAGES}).`);
+    }
+
+    const baseTs = Date.now();
+    const added = accepted.map((file, idx) => ({
+      id: `stitch-${baseTs}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      name: file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim() || `Page ${stagedStitchPages.length + idx + 1}`,
+    }));
+    setStagedStitchPages((prev) => [...prev, ...added].slice(0, MAX_MENU_IMAGES));
+  };
+
+  const handleMoveStagedPage = (index: number, direction: -1 | 1) => {
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= stagedStitchPages.length) return;
+    setStagedStitchPages((prev) => {
+      const copy = [...prev];
+      const [item] = copy.splice(index, 1);
+      copy.splice(targetIdx, 0, item);
+      return copy;
+    });
+  };
+
+  const handleRemoveStagedPage = (id: string) => {
+    setStagedStitchPages((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const handleClearStagedPages = () => {
+    stagedStitchPages.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+    setStagedStitchPages([]);
+    setStitchMenuTitle('');
+  };
+
+  const handleStitchAndUploadMenu = async () => {
+    if (stagedStitchPages.length === 0) {
+      showToast('Select 2 to 5 menu photos first.');
+      return;
+    }
+    if (menuImages.length >= MAX_MENU_IMAGES) {
+      showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu entries allowed. Delete an existing menu card first.`);
+      return;
+    }
+
+    setIsUploadingMenu(true);
+    const uploadTs = Date.now();
+    const pageCount = stagedStitchPages.length;
+    const isCombined = pageCount >= 2;
+
+    try {
+      const slotId =
+        menuImages.length === 0
+          ? 'menu_main'
+          : `${isCombined ? 'menu_stitched' : 'menu'}_${uploadTs}`;
+
+      let uploadData: Blob | File | string = stagedStitchPages[0].file;
+      let uploadMime = stagedStitchPages[0].file.type || 'image/jpeg';
+      let fallbackDataUri = '';
+      let sizeKb = 0;
+
+      if (isCombined) {
+        const stitched = await stitchMenuImagesToSingleWebP(
+          stagedStitchPages.map((p) => p.file)
+        );
+        uploadData = stitched.blob;
+        uploadMime = stitched.mimeType;
+        fallbackDataUri = stitched.dataUri;
+        sizeKb = Math.round(stitched.sizeBytes / 1024);
+      }
+
+      let imageUrl = '';
+      let lastUploadError = '';
+
+      try {
+        const uploadRes = await CloudflareService.uploadFile({
+          data: uploadData,
+          filename: `${slotId}.webp`,
+          mimeType: uploadMime,
+          folder: 'menu',
+          force: true,
+          slotId,
+          ownerKey: activePage.id,
+          skipOptimization: isCombined,
+        });
+        if (uploadRes.success && uploadRes.url) {
+          imageUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
+        } else if (uploadRes.requiresSubscription) {
+          lastUploadError = uploadRes.message || 'Subscribe to Basic to upload menu photos.';
+          showToast(lastUploadError);
+          setIsUploadingMenu(false);
+          return;
+        } else if (uploadRes.message) {
+          lastUploadError = uploadRes.message;
+        }
+      } catch (err: any) {
+        lastUploadError = err?.message || 'Upload failed';
+      }
+
+      if (!imageUrl) {
+        if (fallbackDataUri) {
+          imageUrl = fallbackDataUri;
+        } else {
+          imageUrl = await compressImageFile(stagedStitchPages[0].file, {
+            maxDimension: 1400,
+            mimeType: 'image/webp',
+            maxBytes: 320 * 1024,
+          });
+        }
+      }
+
+      if (imageUrl) {
+        StorageService.unmarkQrAssetDeleted(imageUrl);
+        const newId = `menu-img-${uploadTs}`;
+        const defaultTitle = isCombined
+          ? `Full Menu (${pageCount} Pages)`
+          : stagedStitchPages[0].name || `Menu Page ${menuImages.length + 1}`;
+        const newEntry: QRBusinessPhoto = {
+          id: newId,
+          url: imageUrl,
+          title: stitchMenuTitle.trim() || defaultTitle,
+          category: isCombined ? `${pageCount}-in-1 Page` : undefined,
+          version: uploadTs,
+          badge: 'active',
+        };
+        const updatedList = [
+          ...menuImages.map((m) => ({ ...m, badge: undefined })),
+          newEntry,
+        ].slice(0, MAX_MENU_IMAGES);
+
+        const updatedPage: QRCodeHostedPage = {
+          ...activePage,
+          menuImages: updatedList,
+          email: resolvedAuthEmail || activePage.email,
+          userEmail: resolvedAuthEmail || activePage.userEmail,
+          updatedAt: new Date().toISOString(),
+        };
+
+        onUpdatePage({ menuImages: updatedList }, false, true);
+        setSelectedMenuImgId(newId);
+        setPreviewCacheBust((prev) => ({ ...prev, [newId]: uploadTs }));
+        handleClearStagedPages();
+
+        const hasPublicLink = /^https?:\/\//i.test(imageUrl);
+        if (hasPublicLink) {
+          await Promise.allSettled([
+            CloudflareService.saveSingleQrPage(updatedPage, resolvedAuthEmail || undefined, { immediate: true }),
+            CloudflareService.syncAllToCloudflare(undefined, { immediate: true }),
+          ]);
+          showToast(
+            isCombined
+              ? `${pageCount} pages stitched (${sizeKb} KB) & hosted on 1 QR link!`
+              : 'Menu photo hosted & direct image QR ready!'
+          );
+        } else {
+          const isAuthErr = /auth|sign in|logged/i.test(lastUploadError);
+          showToast(
+            isAuthErr
+              ? 'Stitched locally! Sign in with Google at top bar to host & get your QR link.'
+              : lastUploadError || 'Stitched locally. Connect to internet & tap Host Photo Online.'
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Stitch & upload failed:', err);
+      showToast('Could not combine selected photos. Please try smaller images or fewer pages.');
+    } finally {
+      setIsUploadingMenu(false);
     }
   };
 
@@ -547,6 +754,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
     if (!img.url || /^https?:\/\//i.test(img.url)) return;
     setReuploadingId(img.id);
     try {
+      const isStitchedLocal = Boolean(img.category && img.category.includes('in-1'));
       const uploadRes = await CloudflareService.uploadFile({
         data: img.url,
         filename: `${(img.title || 'menu').replace(/[^a-zA-Z0-9]/g, '_')}.webp`,
@@ -555,6 +763,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         force: true,
         slotId: img.id || 'menu_main',
         ownerKey: activePage.id,
+        skipOptimization: isStitchedLocal,
       });
       if (uploadRes.success && uploadRes.url) {
         const publicUrl = resolvePublicImageUrl(uploadRes.url) || uploadRes.url;
@@ -873,7 +1082,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
 
   return (
     <div className="space-y-4 animate-fadeIn">
-      {/* Hidden file inputs for Menu Images (upload & single-link replacement) */}
+      {/* Hidden file inputs for Menu Images (upload, stitch multi-page & single-link replacement) */}
       <input
         ref={menuFileInputRef}
         type="file"
@@ -881,6 +1090,14 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         multiple
         className="hidden"
         onChange={handleMenuImagesSelected}
+      />
+      <input
+        ref={stitchFileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleSelectStitchPages}
       />
       <input
         ref={replaceFileInputRef}
@@ -902,59 +1119,230 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
                 <h2 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                   Menu
                 </h2>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                   {menuImages.length}/{MAX_MENU_IMAGES} Max
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Upload up to {MAX_MENU_IMAGES} hotel or restaurant menu photos so guests can view them from a QR scan
+                Upload up to {MAX_MENU_IMAGES} menu photos one by one, or combine up to {MAX_MENU_IMAGES} pages onto 1 scrollable QR page
               </p>
             </div>
           </div>
 
-          {/* Clickable Upload Zone */}
-          <button
-            type="button"
-            onClick={() => {
-              if (menuImages.length >= MAX_MENU_IMAGES) {
-                showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu photos allowed. Delete or replace a menu photo below.`);
-                return;
-              }
-              menuFileInputRef.current?.click();
-            }}
-            disabled={isUploadingMenu || menuImages.length >= MAX_MENU_IMAGES}
-            className={`w-full p-6 rounded-2xl border-2 border-dashed transition flex flex-col items-center justify-center gap-2 text-center ${
-              menuImages.length >= MAX_MENU_IMAGES
-                ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 opacity-70 cursor-not-allowed'
-                : 'border-amber-300 dark:border-amber-800/80 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 hover:border-amber-500 cursor-pointer disabled:opacity-60'
-            }`}
-          >
-            <div className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center shadow-md ${
-              menuImages.length >= MAX_MENU_IMAGES
-                ? 'bg-slate-400 dark:bg-slate-700 shadow-none'
-                : 'bg-amber-500 shadow-amber-500/20'
-            }`}>
-              {isUploadingMenu ? (
-                <Loader2 className="w-6 h-6 animate-spin" />
-              ) : (
-                <Upload className="w-6 h-6" />
+          {/* Mode Toggle: Upload One by One vs Combine 2-5 Photos on 1 Page */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setMenuUploadMode('single')}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                menuUploadMode === 'single'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">One by One</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuUploadMode('stitch')}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                menuUploadMode === 'stitch'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">All on 1 Page (2–5)</span>
+            </button>
+          </div>
+
+          {menuUploadMode === 'single' ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (menuImages.length >= MAX_MENU_IMAGES) {
+                  showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu photos allowed. Delete or replace a menu photo below.`);
+                  return;
+                }
+                menuFileInputRef.current?.click();
+              }}
+              disabled={isUploadingMenu || menuImages.length >= MAX_MENU_IMAGES}
+              className={`w-full p-6 rounded-2xl border-2 border-dashed transition flex flex-col items-center justify-center gap-2 text-center ${
+                menuImages.length >= MAX_MENU_IMAGES
+                  ? 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 opacity-70 cursor-not-allowed'
+                  : 'border-amber-300 dark:border-amber-800/80 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50 dark:hover:bg-amber-950/35 hover:border-amber-500 cursor-pointer disabled:opacity-60'
+              }`}
+            >
+              <div className={`w-12 h-12 rounded-2xl text-white flex items-center justify-center shadow-md ${
+                menuImages.length >= MAX_MENU_IMAGES
+                  ? 'bg-slate-400 dark:bg-slate-700 shadow-none'
+                  : 'bg-amber-500 shadow-amber-500/20'
+              }`}>
+                {isUploadingMenu ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  <Upload className="w-6 h-6" />
+                )}
+              </div>
+              <span className="text-sm font-black text-slate-900 dark:text-white">
+                {isUploadingMenu
+                  ? 'Uploading menu image...'
+                  : menuImages.length >= MAX_MENU_IMAGES
+                    ? `Menu Limit Reached (${MAX_MENU_IMAGES}/${MAX_MENU_IMAGES})`
+                    : menuImages.length > 0
+                      ? `Upload Another Menu Image (${MAX_MENU_IMAGES - menuImages.length} left)`
+                      : 'Click to Upload Hotel Menu Image'}
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                {menuImages.length >= MAX_MENU_IMAGES
+                  ? `Maximum ${MAX_MENU_IMAGES} menu photos reached. Delete or replace an existing menu photo below.`
+                  : `Supports PNG, JPG or WEBP · Upload up to ${MAX_MENU_IMAGES} menu photos`}
+              </span>
+            </button>
+          ) : (
+            <div className="rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/15 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-slate-900 dark:text-white">
+                    Combine 2–5 Menu Pages into 1 Scrollable Page
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                    Stitched on your device into 1 compact image &amp; 1 QR link — customers scroll smoothly to view all pages without logging in.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
+                  {stagedStitchPages.length}/{MAX_MENU_IMAGES}
+                </span>
+              </div>
+
+              {stagedStitchPages.length < MAX_MENU_IMAGES && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (menuImages.length >= MAX_MENU_IMAGES) {
+                      showToast(`Limit reached: Maximum ${MAX_MENU_IMAGES} menu entries allowed. Delete an existing menu below first.`);
+                      return;
+                    }
+                    stitchFileInputRef.current?.click();
+                  }}
+                  disabled={isUploadingMenu || menuImages.length >= MAX_MENU_IMAGES}
+                  className="w-full py-4 px-4 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-900 dark:text-white font-bold text-xs flex flex-col items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <span>
+                    {stagedStitchPages.length === 0
+                      ? `Select 2–${MAX_MENU_IMAGES} Menu Photos at Once (or Add Page by Page)`
+                      : `Add More Pages (${MAX_MENU_IMAGES - stagedStitchPages.length} left)`}
+                  </span>
+                </button>
+              )}
+
+              {stagedStitchPages.length > 0 && (
+                <div className="space-y-2.5 pt-1">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Menu Title (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={stitchMenuTitle}
+                      onChange={(e) => setStitchMenuTitle(e.target.value)}
+                      placeholder={`Full Menu (${stagedStitchPages.length} Pages)`}
+                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+                    {stagedStitchPages.map((pg, idx) => (
+                      <div
+                        key={pg.id}
+                        className="flex items-center gap-2.5 p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                      >
+                        <img
+                          src={pg.previewUrl}
+                          alt={pg.name}
+                          className="w-11 h-14 rounded-lg object-cover bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-black text-amber-700 dark:text-amber-300">
+                            Page {idx + 1}
+                          </p>
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                            {pg.name}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStagedPage(idx, -1)}
+                            disabled={idx === 0 || isUploadingMenu}
+                            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-35 cursor-pointer"
+                            title="Move Up"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveStagedPage(idx, 1)}
+                            disabled={idx === stagedStitchPages.length - 1 || isUploadingMenu}
+                            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-35 cursor-pointer"
+                            title="Move Down"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStagedPage(pg.id)}
+                            disabled={isUploadingMenu}
+                            className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 cursor-pointer"
+                            title="Remove page"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleClearStagedPages}
+                      disabled={isUploadingMenu}
+                      className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStitchAndUploadMenu}
+                      disabled={isUploadingMenu || stagedStitchPages.length === 0}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-60"
+                    >
+                      {isUploadingMenu ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Combining &amp; Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Layers className="w-4 h-4" />
+                          <span>
+                            {stagedStitchPages.length >= 2
+                              ? `Combine ${stagedStitchPages.length} Pages into 1 QR Link`
+                              : 'Upload 1 Menu Photo'}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
-            <span className="text-sm font-black text-slate-900 dark:text-white">
-              {isUploadingMenu
-                ? 'Uploading menu image...'
-                : menuImages.length >= MAX_MENU_IMAGES
-                  ? `Menu Limit Reached (${MAX_MENU_IMAGES}/${MAX_MENU_IMAGES})`
-                  : menuImages.length > 0
-                    ? `Upload Another Menu Image (${MAX_MENU_IMAGES - menuImages.length} left)`
-                    : 'Click to Upload Hotel Menu Image'}
-            </span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              {menuImages.length >= MAX_MENU_IMAGES
-                ? `Maximum ${MAX_MENU_IMAGES} menu photos reached. Delete or replace an existing menu photo below.`
-                : `Supports PNG, JPG or WEBP · Upload up to ${MAX_MENU_IMAGES} menu photos`}
-            </span>
-          </button>
+          )}
 
           {/* Uploaded Menu Images List */}
           {menuImages.length > 0 && (
@@ -991,11 +1379,16 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
                         <img
                           src={getMenuPreviewSrc(img)}
                           alt={img.title || `Menu ${idx + 1}`}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
                         />
                         {isSelectedForQr && (
                           <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black shadow-xs">
                             Active QR
+                          </span>
+                        )}
+                        {img.category && (
+                          <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-bold backdrop-blur-xs">
+                            {img.category}
                           </span>
                         )}
                         <button
@@ -1556,7 +1949,7 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
             />
           </div>
 
-          <div className="flex items-end">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
             <button
               type="button"
               onClick={handleDownloadTableStandPdf}
@@ -1572,6 +1965,16 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
             </button>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowFlyerPosterModal(true)}
+          disabled={!qrDataUrl}
+          className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition active:scale-98 disabled:opacity-50 cursor-pointer"
+        >
+          <Upload className="w-4 h-4 shrink-0" />
+          <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+        </button>
       </div>
 
       {/* Fullscreen Lightbox for Menu Image preview */}
@@ -1594,6 +1997,23 @@ export const QrQuickSections: React.FC<QrQuickSectionsProps> = ({
         confirmLabel="Delete Menu Photo"
         onConfirm={handleConfirmDeleteMenuImage}
         onCancel={() => setMenuImageToDelete(null)}
+      />
+
+      {/* Custom Flyer & Poster Builder (Local Only, Zero Cloud Upload) */}
+      <FlyerQrPosterModal
+        isOpen={showFlyerPosterModal}
+        onClose={() => setShowFlyerPosterModal(false)}
+        qrValue={qrPayload}
+        qrDataUrl={qrDataUrl}
+        title={business.name || activePage.title || mode}
+        defaultLabel={tableNumberForPrint || qrLabel}
+        accentColor="#059669"
+        qrColor={{
+          dark: activeDarkColor,
+          light: activeLightColor,
+          eyeColor: activeEyeColor,
+        }}
+        onToast={showToast}
       />
     </div>
   );

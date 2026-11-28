@@ -648,15 +648,39 @@ export type ActiveScreen =
   | 'templates'
   | 'settings'
   | 'qr-hosting'
+  | 'hotel-menu'
   | 'qr-customer-view'
   | 'upgrade'
   | 'app-lock-setup'
   | 'cloud-backup'
   | 'google-drive-sync';
 
+export type QrCategoryId =
+  | 'business'
+  | 'websites'
+  | 'socials'
+  | 'events'
+  | 'rooms'
+  | 'menu'
+  | 'wifi'
+  | 'contacts'
+  | 'location';
+
+export interface DefaultStartPageConfig {
+  screen: ActiveScreen;
+  docTab?: 'create' | 'list';
+  inventoryTab?: InventoryTab;
+  inventoryCategory?: 'products' | 'money' | 'people' | null;
+  qrCategory?: QrCategoryId | null;
+  label: string;
+}
+
+export type SubscriptionTierId = 'basic' | 'growth' | 'enterprise';
+
 export type SubscriptionPlanId = '1-month' | '6-months' | '1-year';
 
 export interface UserSubscription {
+  tierId?: SubscriptionTierId;
   planId: SubscriptionPlanId;
   planName: string;
   status: 'active' | 'expired' | 'canceled';

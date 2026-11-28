@@ -12,6 +12,7 @@ import { StorageService } from '../services/storage';
 import { TEMPLATES_CONFIG } from '../utils/templates';
 import { ReceiptLayoutRenderer } from './ReceiptLayoutRenderer';
 import { TemplateCustomizerModal } from './TemplateCustomizerModal';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface TemplatesScreenProps {
   currentDefault: ReceiptTemplateId;
@@ -139,7 +140,13 @@ export const TemplatesScreen: React.FC<TemplatesScreenProps> = ({
           </h1>
         </div>
 
-        <div className="w-12" aria-hidden="true" />
+        <SetDefaultPageButton
+          compact
+          config={{
+            screen: 'templates',
+            label: 'Templates',
+          }}
+        />
       </div>
 
       {/* Visual Sample Receipts Grid */}

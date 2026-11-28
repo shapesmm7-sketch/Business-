@@ -1,7 +1,7 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { StorageService } from './storage';
 import { CloudflareService } from './cloudflareService';
-import { SubscriptionPlanId, UserSubscription } from '../types';
+import { SubscriptionPlanId, SubscriptionTierId, UserSubscription } from '../types';
 
 /**
  * Google Play Console Product & Base Plan Definitions
@@ -27,14 +27,14 @@ export const GOOGLE_PLAY_PRODUCTS: Record<SubscriptionPlanId, GooglePlaySubscrip
   '1-month': {
     productId: 'brivu_pro_monthly',
     basePlanId: 'brivu-pro-monthly-base',
-    name: 'Brivu Pro 1 Month',
+    name: 'Basic - 1 Month',
     planId: '1-month',
     priceAmountMicros: 5600000,
     priceCurrencyCode: 'USD',
     formattedPrice: '$5.6',
     billingPeriod: 'P1M',
     billingPeriodLabel: '1 Month',
-    description: 'Brivu Pro Monthly Plan - Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
+    description: 'Brivu Basic Monthly Plan - Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
     monthsCount: 1,
     gracePeriodDays: 7,
     accountHoldDays: 30,
@@ -42,14 +42,14 @@ export const GOOGLE_PLAY_PRODUCTS: Record<SubscriptionPlanId, GooglePlaySubscrip
   '6-months': {
     productId: 'brivu_pro_semi_annual_v2',
     basePlanId: 'brivu-pro-6months-base-v2',
-    name: 'Brivu Pro 6 Months (Semi-Annual)',
+    name: 'Basic - 6 Months (Semi-Annual)',
     planId: '6-months',
     priceAmountMicros: 30000000,
     priceCurrencyCode: 'USD',
     formattedPrice: '$30.0',
     billingPeriod: 'P6M',
     billingPeriodLabel: '6 Months',
-    description: 'Brivu Pro 6 Months Plan - Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
+    description: 'Brivu Basic 6 Months Plan - Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
     monthsCount: 6,
     gracePeriodDays: 14,
     accountHoldDays: 30,
@@ -57,17 +57,118 @@ export const GOOGLE_PLAY_PRODUCTS: Record<SubscriptionPlanId, GooglePlaySubscrip
   '1-year': {
     productId: 'brivu_pro_yearly',
     basePlanId: 'brivu-pro-yearly-base',
-    name: 'Brivu Pro 1 Year',
+    name: 'Basic - 1 Year',
     planId: '1-year',
     priceAmountMicros: 55900000,
     priceCurrencyCode: 'USD',
     formattedPrice: '$55.9',
     billingPeriod: 'P1Y',
     billingPeriodLabel: '1 Year',
-    description: 'Brivu Pro Annual Plan - Best Value. Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
+    description: 'Brivu Basic Annual Plan - Best Value. Cloud sync, 100% ad-free, online QR hosting & unlimited receipts.',
     monthsCount: 12,
     gracePeriodDays: 14,
     accountHoldDays: 30,
+  },
+};
+
+export const GOOGLE_PLAY_TIER_PRODUCTS: Record<
+  SubscriptionTierId,
+  Record<SubscriptionPlanId, GooglePlaySubscriptionProduct>
+> = {
+  basic: GOOGLE_PLAY_PRODUCTS,
+  growth: {
+    '1-month': {
+      productId: 'brivu_growth_monthly',
+      basePlanId: 'brivu-growth-monthly-base',
+      name: 'Growth - 1 Month',
+      planId: '1-month',
+      priceAmountMicros: 15990000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$15.99',
+      billingPeriod: 'P1M',
+      billingPeriodLabel: '1 Month',
+      description: 'Brivu Growth Monthly Plan - Expanded business tools, cloud sync, ad-free & live QR hosting.',
+      monthsCount: 1,
+      gracePeriodDays: 7,
+      accountHoldDays: 30,
+    },
+    '6-months': {
+      productId: 'brivu_growth_semi_annual',
+      basePlanId: 'brivu-growth-6months-base',
+      name: 'Growth - 6 Months',
+      planId: '6-months',
+      priceAmountMicros: 91140000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$91.14',
+      billingPeriod: 'P6M',
+      billingPeriodLabel: '6 Months',
+      description: 'Brivu Growth 6 Months Plan - Expanded business tools, cloud sync, ad-free & live QR hosting.',
+      monthsCount: 6,
+      gracePeriodDays: 14,
+      accountHoldDays: 30,
+    },
+    '1-year': {
+      productId: 'brivu_growth_yearly',
+      basePlanId: 'brivu-growth-yearly-base',
+      name: 'Growth - 1 Year',
+      planId: '1-year',
+      priceAmountMicros: 172690000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$172.69',
+      billingPeriod: 'P1Y',
+      billingPeriodLabel: '1 Year',
+      description: 'Brivu Growth Annual Plan - Best Value. Expanded business tools, cloud sync & live QR hosting.',
+      monthsCount: 12,
+      gracePeriodDays: 14,
+      accountHoldDays: 30,
+    },
+  },
+  enterprise: {
+    '1-month': {
+      productId: 'brivu_enterprise_monthly',
+      basePlanId: 'brivu-enterprise-monthly-base',
+      name: 'Enterprise - 1 Month',
+      planId: '1-month',
+      priceAmountMicros: 120000000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$120',
+      billingPeriod: 'P1M',
+      billingPeriodLabel: '1 Month',
+      description: 'Brivu Enterprise Monthly Plan - Full-scale business capabilities, cloud sync & live QR hosting.',
+      monthsCount: 1,
+      gracePeriodDays: 7,
+      accountHoldDays: 30,
+    },
+    '6-months': {
+      productId: 'brivu_enterprise_semi_annual',
+      basePlanId: 'brivu-enterprise-6months-base',
+      name: 'Enterprise - 6 Months',
+      planId: '6-months',
+      priceAmountMicros: 684000000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$684',
+      billingPeriod: 'P6M',
+      billingPeriodLabel: '6 Months',
+      description: 'Brivu Enterprise 6 Months Plan - Full-scale business capabilities, cloud sync & live QR hosting.',
+      monthsCount: 6,
+      gracePeriodDays: 14,
+      accountHoldDays: 30,
+    },
+    '1-year': {
+      productId: 'brivu_enterprise_yearly',
+      basePlanId: 'brivu-enterprise-yearly-base',
+      name: 'Enterprise - 1 Year',
+      planId: '1-year',
+      priceAmountMicros: 1296000000,
+      priceCurrencyCode: 'USD',
+      formattedPrice: '$1,296',
+      billingPeriod: 'P1Y',
+      billingPeriodLabel: '1 Year',
+      description: 'Brivu Enterprise Annual Plan - Best Value. Full-scale business capabilities & live QR hosting.',
+      monthsCount: 12,
+      gracePeriodDays: 14,
+      accountHoldDays: 30,
+    },
   },
 };
 
@@ -141,10 +242,12 @@ export class PlayBillingService {
    */
   public static async purchaseSubscription(
     planId: SubscriptionPlanId,
-    _paymentMethod: 'google_play' | 'card' | 'gpay' | 'momo' = 'google_play'
+    _paymentMethod: 'google_play' | 'card' | 'gpay' | 'momo' = 'google_play',
+    tierId: SubscriptionTierId = 'basic'
   ): Promise<{ success: boolean; userCancelled?: boolean; subscription?: UserSubscription; error?: string }> {
     try {
-      const product = GOOGLE_PLAY_PRODUCTS[planId];
+      const tierProducts = GOOGLE_PLAY_TIER_PRODUCTS[tierId] || GOOGLE_PLAY_PRODUCTS;
+      const product = tierProducts[planId];
       if (!product) {
         return { success: false, error: `Unknown product plan: ${planId}` };
       }
@@ -186,6 +289,7 @@ export class PlayBillingService {
       expiresAt.setMonth(expiresAt.getMonth() + product.monthsCount);
 
       const subscription: UserSubscription = {
+        tierId,
         planId: product.planId,
         planName: product.name,
         status: 'active',
@@ -236,7 +340,14 @@ export class PlayBillingService {
         const purchase = res.purchases[0];
         const purchasedProductIds: string[] = purchase.products || [];
 
-        // Match against known product definitions
+        // Match against known tier & product definitions
+        let matchedTierId: SubscriptionTierId = 'basic';
+        if (purchasedProductIds.some((id: string) => id.includes('enterprise'))) {
+          matchedTierId = 'enterprise';
+        } else if (purchasedProductIds.some((id: string) => id.includes('growth'))) {
+          matchedTierId = 'growth';
+        }
+
         let matchedPlanKey: SubscriptionPlanId = '1-month';
         if (purchasedProductIds.some((id: string) => id.includes('year') || id.includes('annual'))) {
           matchedPlanKey = '1-year';
@@ -244,7 +355,7 @@ export class PlayBillingService {
           matchedPlanKey = '6-months';
         }
 
-        const product = GOOGLE_PLAY_PRODUCTS[matchedPlanKey];
+        const product = (GOOGLE_PLAY_TIER_PRODUCTS[matchedTierId] || GOOGLE_PLAY_PRODUCTS)[matchedPlanKey];
         const now = new Date();
         const purchaseDate = purchase.purchaseTime ? new Date(purchase.purchaseTime) : now;
         const expiresAt = new Date(purchaseDate);
@@ -261,6 +372,7 @@ export class PlayBillingService {
         }
 
         const restoredSubscription: UserSubscription = {
+          tierId: matchedTierId,
           planId: product.planId,
           planName: product.name,
           status: 'active',

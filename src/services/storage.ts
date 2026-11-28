@@ -1,6 +1,8 @@
 import {
   AppBackupData,
   AppSettings,
+  ActiveScreen,
+  DefaultStartPageConfig,
   BusinessProfile,
   Receipt,
   ReceiptTemplateId,
@@ -3383,13 +3385,30 @@ export const StorageService = {
 
   getSubscription(): UserSubscription | null {
     const sub = readFromStorage<UserSubscription | null>(STORAGE_KEYS.SUBSCRIPTION, null);
-    if (this.isCurrentUserAdmin()) {
-      if (sub && sub.status === 'active') {
-        return sub;
+    const normalizeSubDisplay = (item: UserSubscription): UserSubscription => {
+      const rawName = String(item.planName || '').trim();
+      let planName = rawName;
+      if (rawName === 'Lifetime Admin Pro') {
+        planName = 'Basic (Lifetime Admin)';
+      } else if (/^Brivu Pro\b/i.test(rawName)) {
+        const suffix = rawName.replace(/^Brivu Pro\s*/i, '').trim();
+        planName = suffix ? `Basic - ${suffix}` : 'Brivu Basic';
       }
       return {
+        ...item,
+        tierId: item.tierId || 'basic',
+        planName,
+      };
+    };
+
+    if (this.isCurrentUserAdmin()) {
+      if (sub && sub.status === 'active') {
+        return normalizeSubDisplay(sub);
+      }
+      return {
+        tierId: 'basic',
         planId: '1-year',
-        planName: 'Lifetime Admin Pro',
+        planName: 'Basic (Lifetime Admin)',
         status: 'active',
         price: 0,
         formattedPrice: '$0',
@@ -3401,12 +3420,12 @@ export const StorageService = {
     // Check if expired
     if (sub.status === 'active' && sub.expiresAt) {
       if (new Date(sub.expiresAt).getTime() < Date.now()) {
-        const expiredSub: UserSubscription = { ...sub, status: 'expired' };
+        const expiredSub: UserSubscription = normalizeSubDisplay({ ...sub, status: 'expired' });
         writeToStorage(STORAGE_KEYS.SUBSCRIPTION, expiredSub);
         return expiredSub;
       }
     }
-    return sub;
+    return normalizeSubDisplay(sub);
   },
 
   saveSubscription(subscription: UserSubscription): boolean {
@@ -3759,8 +3778,9 @@ export const StorageService = {
         if (!purgeRes.ok || !purgeJson || purgeJson.isSubscribed || purgeJson.skipped || !purgeJson.ok) {
           if (purgeJson?.isSubscribed && !this.isSubscribed()) {
             this.saveSubscription({
+              tierId: 'basic',
               planId: '1-month',
-              planName: 'Brivu Pro',
+              planName: 'Brivu Basic',
               status: 'active',
               startedAt: new Date().toISOString(),
               expiresAt: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString(),
@@ -4378,5 +4398,53 @@ export const StorageService = {
         emitRefresh();
       }
     }
+  },
+
+  getDefaultStartPage(): DefaultStartPageConfig | null {
+    try {
+      const raw = localStorage.getItem('brivu_default_start_page_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as DefaultStartPageConfig;
+      const allowedScreens: ActiveScreen[] = [
+        'home',
+        'receipts-invoices',
+        'create-receipt',
+        'create-invoice',
+        'create-quotation',
+        'receipts',
+        'invoices',
+        'quotations',
+        'inventory',
+        'qr-hosting',
+        'profile',
+        'templates',
+        'settings',
+        'cloud-backup',
+        'google-drive-sync',
+        'app-lock-setup',
+        'upgrade',
+      ];
+      if (!parsed || !parsed.screen || !allowedScreens.includes(parsed.screen)) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
+  setDefaultStartPage(config: DefaultStartPageConfig | null): void {
+    try {
+      if (!config || config.screen === 'home') {
+        localStorage.removeItem('brivu_default_start_page_v1');
+      } else {
+        localStorage.setItem('brivu_default_start_page_v1', JSON.stringify(config));
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('brivu_default_page_changed', { detail: config })
+        );
+      }
+    } catch {}
   },
 };

@@ -9,6 +9,7 @@ import { ActiveScreen, BusinessProfile, Receipt } from '../types';
 import { t } from '../utils/i18n';
 import { AdMobNativeAd } from './AdMobNativeAd';
 import { ADMOB_UNITS } from '../services/admobService';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface ReceiptsInvoicesScreenProps {
   business: BusinessProfile;
@@ -36,26 +37,32 @@ export const ReceiptsInvoicesScreen: React.FC<ReceiptsInvoicesScreenProps> = ({
   return (
     <div className="space-y-6 pt-2 pb-36 sm:pb-40 animate-fadeIn max-w-2xl mx-auto">
       {/* Top Header Row with Back Button */}
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             id="btn-back-to-home"
             type="button"
             onClick={onNavigateHome}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition active:scale-95 flex items-center justify-center"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition active:scale-95 flex items-center justify-center shrink-0"
             aria-label="Back to home"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:white tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">
               {t('receipts_and_invoices', lang)}
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               {t('issue_receipts_invoices', lang)}
             </p>
           </div>
         </div>
+        <SetDefaultPageButton
+          config={{
+            screen: 'receipts-invoices',
+            label: 'Receipts & Invoices',
+          }}
+        />
       </div>
 
       {/* Main Two Action Buttons (Identical to original home page card styling) */}

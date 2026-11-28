@@ -60,7 +60,15 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
         "brivu_pro_1year",
         "brivu_yearly",
         "brivu_annual",
-        "brivu_1year"
+        "brivu_1year",
+        // Growth tier candidates
+        "brivu_growth_monthly",
+        "brivu_growth_semi_annual",
+        "brivu_growth_yearly",
+        // Enterprise tier candidates
+        "brivu_enterprise_monthly",
+        "brivu_enterprise_semi_annual",
+        "brivu_enterprise_yearly"
     };
 
     private BillingClient billingClient;

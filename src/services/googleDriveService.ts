@@ -279,7 +279,7 @@ export const GoogleDriveService = {
         if (!preAllowed && !isAdminLifetimeEmail(res.email)) {
           await GoogleDriveNative.disconnectGoogleDrive().catch(() => {});
           throw new Error(
-            'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.'
+            'Your 7-day free trial has ended. Please subscribe to Brivu Basic in order to continue saving your files to Google Drive.'
           );
         }
 
@@ -349,7 +349,7 @@ export const GoogleDriveService = {
               const realEmail = userInfo.email;
               if (!preAllowed && !isAdminLifetimeEmail(realEmail)) {
                 throw new Error(
-                  'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.'
+                  'Your 7-day free trial has ended. Please subscribe to Brivu Basic in order to continue saving your files to Google Drive.'
                 );
               }
               const displayName = userInfo.name || realEmail.split('@')[0];
@@ -408,7 +408,7 @@ export const GoogleDriveService = {
         if (!preAllowed && !isAdminLifetimeEmail(res.email)) {
           await GoogleDriveNative.disconnectGoogleDrive().catch(() => {});
           throw new Error(
-            'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.'
+            'Your 7-day free trial has ended. Please subscribe to Brivu Basic in order to continue saving your files to Google Drive.'
           );
         }
 
@@ -654,7 +654,7 @@ export const GoogleDriveService = {
         success: false,
         requiresSubscription: true,
         error:
-          'Your 7-day free trial has ended. Please subscribe to Brivu Pro in order to continue saving your files to Google Drive.',
+          'Your 7-day free trial has ended. Please subscribe to Brivu Basic in order to continue saving your files to Google Drive.',
       };
     }
 

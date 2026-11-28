@@ -12,6 +12,7 @@ import { TemplatesScreen } from './components/TemplatesScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { InventoryScreen } from './components/InventoryScreen';
 import { QRCodeHostingScreen } from './components/QRCodeHostingScreen';
+import { HotelMenuScreen } from './components/HotelMenuScreen';
 import { QRCustomerViewScreen } from './components/QRCustomerViewScreen';
 import { ReceiptsInvoicesScreen } from './components/ReceiptsInvoicesScreen';
 import { UpgradeScreen } from './components/UpgradeScreen';
@@ -44,6 +45,8 @@ import {
   ActiveScreen,
   AppSettings,
   BusinessProfile,
+  DefaultStartPageConfig,
+  QrCategoryId,
   Receipt,
   ReceiptTemplateId,
   InventoryTab,
@@ -191,6 +194,10 @@ export function App() {
     return StorageService.isAppLocked();
   });
 
+  const [startupDefaultPage] = useState<DefaultStartPageConfig | null>(() =>
+    StorageService.getDefaultStartPage()
+  );
+
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
     if (isCustomerPathFromUrl()) {
       return 'qr-customer-view';
@@ -201,13 +208,35 @@ export function App() {
     if (!StorageService.hasFilledBusinessDetails()) {
       return 'profile';
     }
-    return 'home';
+    const saved = StorageService.getDefaultStartPage();
+    return saved?.screen || 'home';
   });
   const [previousScreen, setPreviousScreen] = useState<ActiveScreen>('home');
   const [appLockInitialMode, setAppLockInitialMode] = useState<'view' | 'form'>('view');
-  const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>('stock');
+  const [inventoryInitialTab, setInventoryInitialTab] = useState<InventoryTab>(() =>
+    startupDefaultPage?.screen === 'inventory' && startupDefaultPage.inventoryTab
+      ? startupDefaultPage.inventoryTab
+      : 'stock'
+  );
   const [inventoryShowAddInline, setInventoryShowAddInline] = useState<boolean>(false);
-  const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(null);
+  const [inventoryInitialCategory, setInventoryInitialCategory] = useState<'products' | 'money' | 'people' | null>(() =>
+    startupDefaultPage?.screen === 'inventory'
+      ? (startupDefaultPage.inventoryCategory ?? null)
+      : null
+  );
+  const [inventoryCategory, setInventoryCategory] = useState<'products' | 'money' | 'people' | null>(() =>
+    startupDefaultPage?.screen === 'inventory'
+      ? (startupDefaultPage.inventoryCategory ?? null)
+      : null
+  );
+  const [inventoryEntryOrigin, setInventoryEntryOrigin] = useState<'home' | 'inventory'>('inventory');
+  const [inventoryNavKey, setInventoryNavKey] = useState<number>(0);
+  const [qrInitialCategory, setQrInitialCategory] = useState<QrCategoryId | null>(() =>
+    startupDefaultPage?.screen === 'qr-hosting'
+      ? (startupDefaultPage.qrCategory ?? null)
+      : null
+  );
+  const [qrReturnToHotelMenu, setQrReturnToHotelMenu] = useState<boolean>(false);
 
   const [isCustomerDataResolving, setIsCustomerDataResolving] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -402,9 +431,27 @@ export function App() {
   // Current receipt or invoice for preview or editing
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [duplicateSeed, setDuplicateSeed] = useState<Receipt | null>(null);
-  const [receiptTab, setReceiptTab] = useState<DocumentWorkspaceTab>('create');
-  const [invoiceTab, setInvoiceTab] = useState<DocumentWorkspaceTab>('create');
-  const [quotationTab, setQuotationTab] = useState<QuotationTab>('create');
+  const [receiptTab, setReceiptTab] = useState<DocumentWorkspaceTab>(() =>
+    startupDefaultPage?.screen === 'receipts'
+      ? 'list'
+      : startupDefaultPage?.screen === 'create-receipt' && startupDefaultPage.docTab
+      ? startupDefaultPage.docTab
+      : 'create'
+  );
+  const [invoiceTab, setInvoiceTab] = useState<DocumentWorkspaceTab>(() =>
+    startupDefaultPage?.screen === 'invoices'
+      ? 'list'
+      : startupDefaultPage?.screen === 'create-invoice' && startupDefaultPage.docTab
+      ? startupDefaultPage.docTab
+      : 'create'
+  );
+  const [quotationTab, setQuotationTab] = useState<QuotationTab>(() =>
+    startupDefaultPage?.screen === 'quotations'
+      ? 'list'
+      : startupDefaultPage?.screen === 'create-quotation' && startupDefaultPage.docTab
+      ? startupDefaultPage.docTab
+      : 'create'
+  );
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
   const [playUpdateInfo, setPlayUpdateInfo] = useState<PlayUpdateInfo | null>(null);
   const [playUpdateState, setPlayUpdateState] = useState<PlayUpdateStateEvent | null>(null);
@@ -421,7 +468,7 @@ export function App() {
   }>({ isOpen: false });
   const [graceExpiredNoticeOpen, setGraceExpiredNoticeOpen] = useState<boolean>(false);
   const [graceExpiredMessage, setGraceExpiredMessage] = useState<string>(
-    'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.'
+    'Your trial ended. Please you are advised to upgrade to a Basic plan to continue hosting your QR codes info. Thank you.'
   );
 
   // Check URL params for QR Code scanning (e.g. ?qr=page-id&tab=events...)
@@ -998,7 +1045,7 @@ export function App() {
         localStorage.setItem('quickreceipt_grace_purged_notice_shown_v1', 'true');
         const msg =
           customMessage ||
-          'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.';
+          'Your trial ended. Please you are advised to upgrade to a Basic plan to continue hosting your QR codes info. Thank you.';
         setGraceExpiredMessage(msg);
         setGraceExpiredNoticeOpen(true);
         PushNotificationService.triggerBusinessAlert({
@@ -1142,7 +1189,7 @@ export function App() {
           handleNavigate('inventory');
         } else if (url.includes('receipt') || url.includes('invoice')) {
           handleNavigate('receipts');
-        } else if (url.includes('upgrade') || url.includes('pro')) {
+        } else if (url.includes('upgrade') || url.includes('pro') || url.includes('basic')) {
           handleNavigate('upgrade');
         } else if (url.includes('setting')) {
           handleNavigate('settings');
@@ -1317,6 +1364,8 @@ export function App() {
       CapApp.addListener('backButton', () => {
         if (activeScreen === 'home') {
           CapApp.exitApp();
+        } else if (activeScreen === 'qr-hosting' && qrReturnToHotelMenu) {
+          handleNavigate('hotel-menu');
         } else if (
           [
             'create-receipt',
@@ -1330,6 +1379,7 @@ export function App() {
             'settings',
             'profile',
             'inventory',
+            'hotel-menu',
             'qr-hosting',
             'upgrade',
             'app-lock-setup',
@@ -1358,7 +1408,7 @@ export function App() {
         backListenerHandle.remove();
       }
     };
-  }, [activeScreen, previousScreen]);
+  }, [activeScreen, previousScreen, qrReturnToHotelMenu]);
 
   // Handler to navigate
   const handleNavigate = (screen: ActiveScreen) => {
@@ -1372,7 +1422,16 @@ export function App() {
     if (screen === 'inventory') {
       setInventoryInitialTab('stock');
       setInventoryShowAddInline(false);
+      setInventoryInitialCategory(null);
       setInventoryCategory(null);
+      setInventoryEntryOrigin('inventory');
+      setInventoryNavKey((prev) => prev + 1);
+    }
+    if (screen === 'qr-hosting') {
+      setQrInitialCategory(null);
+      setQrReturnToHotelMenu(false);
+    } else if (screen !== 'qr-customer-view') {
+      setQrReturnToHotelMenu(false);
     }
     if (screen === 'create-receipt') {
       setReceiptTab('create');
@@ -1391,21 +1450,44 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNavigateToInventory = (tab: InventoryTab = 'stock', showAddInline: boolean = false) => {
+  const handleNavigateToInventory = (
+    tab: InventoryTab = 'stock',
+    showAddInline: boolean = false,
+    explicitCategory?: 'products' | 'money' | 'people' | null
+  ) => {
     setInventoryInitialTab(tab);
     setInventoryShowAddInline(showAddInline);
     setSelectedReceipt(null);
     setDuplicateSeed(null);
-    if (tab === 'expense' || tab === 'debts' || tab === 'report') {
+    setInventoryEntryOrigin(activeScreen === 'home' ? 'home' : 'inventory');
+    setInventoryNavKey((prev) => prev + 1);
+    if (explicitCategory !== undefined) {
+      setInventoryInitialCategory(explicitCategory);
+      setInventoryCategory(explicitCategory);
+    } else if (tab === 'expense' || tab === 'debts' || tab === 'report') {
+      setInventoryInitialCategory('money');
       setInventoryCategory('money');
     } else if (tab === 'customers' || tab === 'agents' || tab === 'workers') {
+      setInventoryInitialCategory('people');
       setInventoryCategory('people');
-    } else if (tab === 'sales' || tab === 'shoppingList') {
+    } else if (tab === 'stock' || tab === 'sales' || tab === 'shoppingList') {
+      setInventoryInitialCategory('products');
       setInventoryCategory('products');
     } else {
+      setInventoryInitialCategory(null);
       setInventoryCategory(null);
     }
     setActiveScreen('inventory');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleNavigateToQrCategory = (category: QrCategoryId) => {
+    if (activeScreen !== 'qr-hosting' && activeScreen !== 'upgrade') {
+      setPreviousScreen(activeScreen);
+    }
+    setQrReturnToHotelMenu(activeScreen === 'hotel-menu');
+    setQrInitialCategory(category);
+    setActiveScreen('qr-hosting');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1587,9 +1669,9 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
-      {/* Header - shown on all screens except Inventory, QR Customer View, and Google Drive Sync */}
-      {activeScreen !== 'inventory' && activeScreen !== 'qr-customer-view' && activeScreen !== 'google-drive-sync' && (
+    <div className="min-h-screen bg-[#F7F9F7] dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
+      {/* Header - shown on all screens except Inventory, Hotel & menu, QR Customer View, and Google Drive Sync */}
+      {activeScreen !== 'inventory' && activeScreen !== 'hotel-menu' && activeScreen !== 'qr-customer-view' && activeScreen !== 'google-drive-sync' && (
         <Header
           business={business}
           darkMode={settings.darkMode}
@@ -1611,7 +1693,7 @@ export function App() {
       )}
 
       {/* Main Screen Content */}
-      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'qr-customer-view' || activeScreen === 'google-drive-sync' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-6'}`}>
+      <main className={`flex-1 w-full ${activeScreen === 'inventory' || activeScreen === 'hotel-menu' || activeScreen === 'qr-customer-view' || activeScreen === 'google-drive-sync' ? 'max-w-none p-0' : 'max-w-2xl mx-auto px-4 pt-4 sm:pt-5'}`}>
         {activeScreen === 'home' && (
           <HomeScreen
             business={business}
@@ -1619,6 +1701,7 @@ export function App() {
             activeTemplate={settings.defaultTemplate}
             onNavigate={handleNavigate}
             onNavigateToInventory={handleNavigateToInventory}
+            onNavigateToQrCategory={handleNavigateToQrCategory}
             onSelectReceipt={handleOpenReceipt}
             onShareReceipt={handleShareReceipt}
             onOpenCustomerView={(page) => {
@@ -1900,7 +1983,10 @@ export function App() {
           <InventoryScreen
             business={business}
             initialTab={inventoryInitialTab}
+            initialCategory={inventoryInitialCategory}
             initialShowAddInline={inventoryShowAddInline}
+            entryOrigin={inventoryEntryOrigin}
+            resetTick={inventoryNavKey}
             onNavigateHome={() => handleNavigate('home')}
             onCategoryChange={setInventoryCategory}
             onCreateReceiptWithItem={(item) => {
@@ -1985,12 +2071,24 @@ export function App() {
           />
         )}
 
+        {activeScreen === 'hotel-menu' && (
+          <HotelMenuScreen
+            business={business}
+            onNavigateHome={() => handleNavigate('home')}
+            onOpenQrCategory={handleNavigateToQrCategory}
+          />
+        )}
+
         {activeScreen === 'qr-hosting' && (
           <QRCodeHostingScreen
             business={business}
+            initialCategory={qrInitialCategory}
             onNavigateHome={() => handleNavigate('home')}
+            onBackFromInitialCategory={qrReturnToHotelMenu ? () => handleNavigate('hotel-menu') : undefined}
+            backLabel={qrReturnToHotelMenu ? 'Hotel & menu' : undefined}
             onNavigateUpgrade={() => handleNavigate('upgrade')}
             onOpenCustomerView={(page, initialTab, initialItemId, initialPhotoId) => {
+              setPreviousScreen('qr-hosting');
               setActiveCustomerPage(page);
               setCustomerInitialTab(initialTab || 'menu');
               setCustomerInitialItemId(initialItemId);
@@ -2028,6 +2126,8 @@ export function App() {
                   }
                   setIsCustomerViewMode(false);
                   handleNavigate('home');
+                } else if (previousScreen === 'hotel-menu') {
+                  handleNavigate('hotel-menu');
                 } else {
                   handleNavigate('qr-hosting');
                 }
@@ -2092,6 +2192,7 @@ export function App() {
           'templates',
           'settings',
           'qr-hosting',
+          'hotel-menu',
           'qr-customer-view',
           'upgrade',
           'app-lock-setup',
@@ -2271,7 +2372,7 @@ export function App() {
                     Trial Ended
                   </h3>
                   <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-                    Upgrade to Pro to continue hosting
+                    Upgrade to Basic to continue hosting
                   </p>
                 </div>
               </div>
@@ -2299,7 +2400,7 @@ export function App() {
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-xs transition cursor-pointer"
               >
                 <Crown className="w-4 h-4" />
-                <span>Upgrade to Pro</span>
+                <span>Upgrade to Basic</span>
               </button>
               <button
                 type="button"

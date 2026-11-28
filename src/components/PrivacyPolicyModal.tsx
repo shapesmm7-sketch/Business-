@@ -71,7 +71,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
               </h3>
             </div>
             <p className="text-[11.5px] text-slate-700 dark:text-slate-200 leading-relaxed">
-              <strong>All user data is stored strictly on your device&apos;s local storage unless you upgrade to Premium.</strong> In the standard version, your receipts, inventory, customer lists, and business transactions never leave your phone or browser. When you upgrade to a Premium subscription, encrypted Cloud Backup & automated cloud storage are unlocked for multi-device sync and disaster recovery.
+              <strong>All user data is stored strictly on your device&apos;s local storage unless you subscribe to a paid plan (Basic, Growth, or Enterprise).</strong> In free local mode, your receipts, inventory, customer lists, and business transactions never leave your phone or browser. When you subscribe to a paid plan such as Basic, encrypted Cloud Backup &amp; automated cloud storage are unlocked for multi-device sync and disaster recovery.
             </p>
           </div>
 
@@ -88,7 +88,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Premium cloud backup option</span>
+                <span>Optional cloud backup plans</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -111,7 +111,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
               Welcome to <strong>Brivu</strong> (&quot;the Application&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). Brivu is built as a fast, reliable business management and digital receipt platform designed for small enterprises, retail shops, salons, contractors, restaurants, and freelancers.
             </p>
             <p>
-              We respect your privacy and are committed to protecting the confidential business data, receipts, invoices, and customer records you manage inside Brivu. This Privacy Policy explains how data is saved on your device and how cloud features operate for Premium subscribers.
+              We respect your privacy and are committed to protecting the confidential business data, receipts, invoices, and customer records you manage inside Brivu. This Privacy Policy explains how data is saved on your device and how cloud features operate for paid subscribers (Basic, Growth, and Enterprise plans).
             </p>
           </div>
 
@@ -133,7 +133,7 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
             </ul>
           </div>
 
-          {/* Section 3: Local Storage (Free / Standard Tier) */}
+          {/* Section 3: Local Storage (Free Local Mode) */}
           <div className="space-y-2.5">
             <h3 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 inline-flex items-center justify-center text-[10px] font-bold">3</span>
@@ -143,30 +143,30 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({
               <div className="flex items-center gap-2">
                 <EyeOff className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span className="font-bold text-slate-900 dark:text-white text-[11px]">
-                  Zero Server Uploads on Standard Plan
+                  Zero Server Uploads Without a Subscription
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-slate-300">
-                By default, all user data is stored <strong>exclusively inside your device&apos;s local storage sandbox</strong>. No receipts, prices, or customer identities are sent over the network to external databases unless you intentionally upgrade to Premium. You can create receipts, track stock, and run your business 100% offline.
+                By default, all user data is stored <strong>exclusively inside your device&apos;s local storage sandbox</strong>. No receipts, prices, or customer identities are sent over the network to external databases unless you intentionally subscribe to a paid plan (starting with Basic). You can create receipts, track stock, and run your business 100% offline.
               </p>
             </div>
           </div>
 
-          {/* Section 4: Premium Cloud Backup & Synchronization */}
+          {/* Section 4: Cloud Backup & Synchronization */}
           <div className="space-y-2.5">
             <h3 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
               <span className="w-5 h-5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 inline-flex items-center justify-center text-[10px] font-bold">4</span>
-              <span>Cloud Backup & Sync for Premium Users</span>
+              <span>Cloud Backup &amp; Sync for Subscribers</span>
             </h3>
             <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-300/70 dark:border-amber-800/70 space-y-2">
               <div className="flex items-center gap-2">
                 <Crown className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="font-bold text-amber-900 dark:text-amber-200 text-[11px]">
-                  Premium Cloud Backup Upgrade
+                  Basic, Growth &amp; Enterprise Cloud Backup
                 </span>
               </div>
               <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                When you <strong>upgrade to Premium</strong>, Brivu activates automated encrypted Cloud Backup and file storage to protect your business against lost devices, accidental cache clearing, or device upgrades:
+                When you <strong>subscribe to a Brivu plan</strong> (starting with Basic), Brivu activates automated encrypted Cloud Backup and file storage to protect your business against lost devices, accidental cache clearing, or device upgrades:
               </p>
               <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-700 dark:text-slate-300">
                 <li><strong>Cloud Database (D1 SQL):</strong> Backs up receipts, customer accounts, and stock levels securely.</li>

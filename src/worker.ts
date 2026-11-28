@@ -4746,7 +4746,7 @@ export default {
                 purged: purgeRes.ok,
                 purgeDetails: purgeRes,
                 trialInfo: computeUserTrialState({ ...existingRow, grace_purged_at: purgeRes.ok ? purgeRes.purgedAt : existingRow.grace_purged_at }, nowMs),
-                message: 'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.',
+                message: 'Your trial ended. Please you are advised to upgrade to a Basic plan to continue hosting your QR codes info. Thank you.',
               }),
               { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
@@ -4870,7 +4870,7 @@ export default {
                 trialPhase: purgeRes.ok ? 'grace_expired_purged' : trialInfo.trialPhase,
               },
               message: purgeRes.ok
-                ? 'Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.'
+                ? 'Your trial ended. Please you are advised to upgrade to a Basic plan to continue hosting your QR codes info. Thank you.'
                 : 'Subscription status verified.',
             }),
             { status: 200, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -5575,8 +5575,8 @@ export default {
                 requiresSubscription: true,
                 gracePeriodExpired: trialState.isGracePeriodExpired,
                 error: trialState.isGracePeriodExpired
-                  ? 'Your grace period has ended without a subscription. QR files were removed from cloud. Subscribe to Pro to upload again.'
-                  : 'Your 7-day free trial has ended. Subscribe to Pro to upload QR photos or menu images.',
+                  ? 'Your grace period has ended without a subscription. QR files were removed from cloud. Subscribe to Basic to upload again.'
+                  : 'Your 7-day free trial has ended. Subscribe to Basic to upload QR photos or menu images.',
               }),
               { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
@@ -6306,7 +6306,7 @@ export default {
                 gracePeriodExpired: trialState.isGracePeriodExpired,
                 error: trialState.isGracePeriodExpired
                   ? 'Your grace period has ended without a subscription. QR data has been removed from cloud.'
-                  : 'Your 7-day free trial has ended. Subscribe to Pro to save or host QR pages.',
+                  : 'Your 7-day free trial has ended. Subscribe to Basic to save or host QR pages.',
               }),
               { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );
@@ -6678,7 +6678,7 @@ export default {
                 gracePeriodExpired: syncTrialState.isGracePeriodExpired,
                 error: syncTrialState.isGracePeriodExpired
                   ? 'Your grace period has ended without a subscription. Cloud QR data has been purged.'
-                  : 'Your 7-day free trial has ended. Subscribe to Pro to use cloud sync.',
+                  : 'Your 7-day free trial has ended. Subscribe to Basic to use cloud sync.',
               }),
               { status: 402, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
             );

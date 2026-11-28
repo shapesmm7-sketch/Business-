@@ -64,6 +64,10 @@ import {
   EyeOff,
   RotateCcw,
   List,
+  Layers,
+  Wallet,
+  ChevronLeft,
+  BarChart2,
 } from 'lucide-react';
 import { BusinessProfile, InventoryProduct, InventorySale, InventoryExpense, InventoryDebt, InventoryTab, ShoppingListItem, ShoppingCategory, ProductCategory, Customer, BusinessAgent, BusinessWorker, StaffSaleRecord, AgentLedgerRecord } from '../types';
 import { StorageService } from '../services/storage';
@@ -75,11 +79,16 @@ import { StaffManageModal } from './StaffManageModal';
 import { AgentManageModal } from './AgentManageModal';
 import { PhoneInputField } from './PhoneInputField';
 import { jsPDF } from 'jspdf';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
+import { CategoryPhotoIcon, CategoryPhotoKind } from './CategoryPhotoIcon';
 
 interface InventoryScreenProps {
   business: BusinessProfile;
   initialTab?: InventoryTab;
+  initialCategory?: 'products' | 'money' | 'people' | null;
   initialShowAddInline?: boolean;
+  entryOrigin?: 'home' | 'inventory';
+  resetTick?: number;
   onNavigateHome: () => void;
   onCategoryChange?: (category: 'products' | 'money' | 'people' | null) => void;
   onCreateReceiptWithItem?: (item: { name: string; unitPrice: number; quantity: number }) => void;
@@ -91,7 +100,10 @@ const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL'];
 export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   business,
   initialTab = 'stock',
+  initialCategory,
   initialShowAddInline = false,
+  entryOrigin = 'inventory',
+  resetTick = 0,
   onNavigateHome,
   onCategoryChange,
   onCreateReceiptWithItem,
@@ -100,12 +112,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
   const currency = business.currency || 'UGX';
 
-  const [currentCategory, setCurrentCategory] = useState<'products' | 'money' | 'people' | null>(() => {
-    if (initialTab === 'expense' || initialTab === 'debts' || initialTab === 'report') return 'money';
-    if (initialTab === 'customers' || initialTab === 'agents' || initialTab === 'workers') return 'people';
-    if (initialTab === 'sales' || initialTab === 'shoppingList') return 'products';
+  const resolveCategoryFromTab = (
+    tab: InventoryTab,
+    explicitCat?: 'products' | 'money' | 'people' | null
+  ): 'products' | 'money' | 'people' | null => {
+    if (explicitCat !== undefined) return explicitCat;
+    if (tab === 'expense' || tab === 'debts' || tab === 'report') return 'money';
+    if (tab === 'customers' || tab === 'agents' || tab === 'workers') return 'people';
+    if (tab === 'stock' || tab === 'sales' || tab === 'shoppingList') return 'products';
     return null;
-  });
+  };
+
+  const [currentCategory, setCurrentCategory] = useState<'products' | 'money' | 'people' | null>(() =>
+    resolveCategoryFromTab(initialTab, initialCategory)
+  );
+  const [localEntryOrigin, setLocalEntryOrigin] = useState<'home' | 'inventory'>(entryOrigin);
 
   useEffect(() => {
     onCategoryChange?.(currentCategory);
@@ -113,12 +134,78 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
   useEffect(() => {
     setActiveTab(initialTab);
-    let cat: 'products' | 'money' | 'people' | null = null;
-    if (initialTab === 'expense' || initialTab === 'debts' || initialTab === 'report') cat = 'money';
-    else if (initialTab === 'customers' || initialTab === 'agents' || initialTab === 'workers') cat = 'people';
-    else if (initialTab === 'sales' || initialTab === 'shoppingList') cat = 'products';
-    setCurrentCategory(cat);
-  }, [initialTab]);
+    setCurrentCategory(resolveCategoryFromTab(initialTab, initialCategory));
+    setLocalEntryOrigin(entryOrigin);
+  }, [initialTab, initialCategory, entryOrigin, resetTick]);
+
+  const getSectionMeta = (
+    tab: InventoryTab
+  ): { title: string; subtitle: string; photoKind: CategoryPhotoKind } => {
+    const lang = business?.language;
+    switch (tab) {
+      case 'stock':
+        return {
+          title: t('stock', lang) || 'Stock',
+          subtitle: 'Manage products & stock levels',
+          photoKind: 'stock',
+        };
+      case 'sales':
+        return {
+          title: t('sales_record', lang) || 'Sales',
+          subtitle: 'Record & track daily sales',
+          photoKind: 'sales',
+        };
+      case 'shoppingList':
+        return {
+          title: t('shopping_list', lang) || 'Shopping List',
+          subtitle: 'Items to buy & budget',
+          photoKind: 'shopping-list',
+        };
+      case 'expense':
+        return {
+          title: t('expenses', lang) || 'Expenses',
+          subtitle: 'Track business spending',
+          photoKind: 'expenses',
+        };
+      case 'debts':
+        return {
+          title: t('debtors', lang) || 'Debts',
+          subtitle: 'Customer credits & demands',
+          photoKind: 'debts',
+        };
+      case 'report':
+        return {
+          title: t('reports', lang) || 'Report',
+          subtitle: 'Sales, profit & business summaries',
+          photoKind: 'report',
+        };
+      case 'customers':
+        return {
+          title: t('clients', lang) || 'Clients',
+          subtitle: 'Customer contacts & addresses',
+          photoKind: 'clients',
+        };
+      case 'agents':
+        return {
+          title: t('agents', lang) || 'Agent',
+          subtitle: 'Sales agents & item ledgers',
+          photoKind: 'agent',
+        };
+      case 'workers':
+        return {
+          title: t('staff', lang) || 'Staff',
+          subtitle: 'Team members & records',
+          photoKind: 'staff',
+        };
+      default:
+        return {
+          title: t('inventory', lang) || 'Inventory',
+          subtitle: 'Products, money and people',
+          photoKind: 'inventory',
+        };
+    }
+  };
+  const openedSectionMeta = getSectionMeta(activeTab);
 
   // Data states
   const [products, setProducts] = useState<InventoryProduct[]>(() => StorageService.getInventoryProducts());
@@ -923,6 +1010,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
     setSellingPrice(String(prod.sellingPrice));
     setTaxPercent(String(prod.taxPercent || 0));
     setShowAddProductInline(true);
+    setCurrentCategory('products');
     setActiveTab('stock');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -4898,7 +4986,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             <button
               id="btn-inventory-save-product"
               type="submit"
-              className="w-full py-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-sky-600/30 active:scale-[0.99] transition"
+              className="w-full py-4 rounded-2xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/15 active:scale-[0.99] transition"
             >
               {editingProductId ? 'UPDATE PRODUCT' : 'SAVE'}
             </button>
@@ -4909,7 +4997,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   };
 
   return (
-    <div className={`min-h-screen ${currentCategory === null ? 'bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 pb-36 sm:pb-40' : 'bg-[#0284c7] text-slate-900 dark:text-slate-100 pb-24'} flex flex-col transition-colors`}>
+    <div className="min-h-screen bg-[#F7F9F7] dark:bg-slate-950 text-slate-900 dark:text-slate-100 pb-36 sm:pb-40 flex flex-col transition-colors">
       {/* Toast alert (Centered prominently in screen) */}
       {toastMessage && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 pointer-events-none z-[99999] flex items-center justify-center p-4">
@@ -4924,307 +5012,346 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       )}
 
       {/* TOP APP BAR */}
-      <div className="bg-[#0284c7] text-white pt-3 pb-2 px-4">
-        <div className="max-w-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => {
-                if (currentCategory !== null) {
-                  setCurrentCategory(null);
-                } else {
-                  onNavigateHome();
-                }
-              }}
-              className="p-1 -ml-1 rounded-full hover:bg-white/10 transition text-white"
-              title={currentCategory !== null ? 'Back to Inventory' : 'Return to Home'}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-xs">
-              {currentCategory === 'products' && <Package className="w-4 h-4" />}
-              {currentCategory === 'money' && <DollarSign className="w-4 h-4" />}
-              {currentCategory === 'people' && <Users className="w-4 h-4" />}
-              {currentCategory === null && <User className="w-4 h-4" />}
+      {currentCategory === null ? (
+        <div className="sticky top-0 z-30 bg-[#F7F9F7]/95 dark:bg-slate-950/95 backdrop-blur-md pt-3 pb-3 px-4 border-b border-slate-200/60 dark:border-slate-800/70">
+          <div className="max-w-xl mx-auto flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                id="btn-inventory-back"
+                type="button"
+                onClick={onNavigateHome}
+                className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs text-slate-800 dark:text-slate-100 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition shrink-0 cursor-pointer"
+                title="Return to Home"
+                aria-label="Return to Home"
+              >
+                <ChevronLeft className="w-5 h-5 stroke-[2.2]" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-[22px] font-extrabold text-slate-900 dark:text-white tracking-tight leading-none truncate">
+                  {t('inventory', business?.language)}
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                  Products, money and people
+                </p>
+              </div>
             </div>
-            <span className="font-bold text-base tracking-tight truncate max-w-[180px] sm:max-w-xs">
-              {currentCategory === 'products'
-                ? t('products_category', business?.language)
-                : currentCategory === 'money'
-                ? t('money_category', business?.language)
-                : currentCategory === 'people'
-                ? t('people_category', business?.language)
-                : t('inventory', business?.language)}
-            </span>
-          </div>
 
-          <div className="flex items-center gap-2">
-            {isLoggedIn && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <SetDefaultPageButton
+                variant="light"
+                compact
+                config={{
+                  screen: 'inventory',
+                  inventoryCategory: null,
+                  label: 'Inventory',
+                }}
+              />
+              {isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    refreshData();
+                    showToast('All inventory sections synced with Cloud Storage!');
+                  }}
+                  className="h-9 px-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title={t('cloud_sync', business?.language)}
+                >
+                  <Cloud className="w-3.5 h-3.5 text-[#0E6A33] dark:text-emerald-400" />
+                  <span className="hidden sm:inline">{t('cloud_sync', business?.language)}</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  refreshData();
-                  showToast('All inventory sections synced with Cloud Storage!');
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition active:scale-95 border border-white/30 shadow-xs"
+                onClick={onNavigateHome}
+                className="h-9 px-4 rounded-full bg-[#EAF6EC] dark:bg-emerald-950/80 hover:bg-[#DCF0DF] dark:hover:bg-emerald-900/80 text-[#0E6A33] dark:text-emerald-300 text-xs sm:text-sm font-extrabold transition active:scale-95 cursor-pointer"
               >
-                <Cloud className="w-3.5 h-3.5 text-sky-100" />
-                <span>{t('cloud_sync', business?.language)}</span>
+                {t('home', business?.language)}
               </button>
-            )}
-            <button
-              onClick={onNavigateHome}
-              className="text-xs bg-white/15 hover:bg-white/25 px-2.5 py-1 rounded-lg font-medium transition"
-            >
-              {t('home', business?.language)}
-            </button>
+            </div>
           </div>
         </div>
-
-        {/* SINGLE TAB BAR ROW (EXACTLY ONE ROW PER SCREEN, ONLY SHOWN INSIDE A CATEGORY) */}
-        {currentCategory !== null && (
-          <div className="max-w-xl mx-auto mt-3 pb-1">
-            {/* 1. PRODUCTS PAGE: ONLY 3 TABS (STOCK, SALES, LIST) - MONEY & PEOPLE ARE HIDDEN */}
-            {currentCategory === 'products' && (
-              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
-                <button
-                  id="tab-inventory-stock"
-                  type="button"
-                  onClick={() => setActiveTab('stock')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'stock'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('stock', business?.language)}</span>
-                </button>
-
-                <button
-                  id="tab-inventory-sales"
-                  type="button"
-                  onClick={() => setActiveTab('sales')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'sales'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <Tag className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('sales_record', business?.language)}</span>
-                </button>
-
-                <button
-                  id="tab-inventory-shopping-list"
-                  type="button"
-                  onClick={() => setActiveTab('shoppingList')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'shoppingList'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('shopping_list', business?.language)}</span>
-                </button>
+      ) : (
+        <div className="sticky top-0 z-30 bg-[#F7F9F7]/95 dark:bg-slate-950/95 backdrop-blur-md pt-3 pb-3 px-4 border-b border-slate-200/60 dark:border-slate-800/70">
+          <div className="max-w-xl mx-auto flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                id="btn-inventory-section-back"
+                type="button"
+                onClick={() => {
+                  if (localEntryOrigin === 'home') {
+                    onNavigateHome();
+                  } else {
+                    setCurrentCategory(null);
+                  }
+                }}
+                className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs text-slate-800 dark:text-slate-100 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition shrink-0 cursor-pointer"
+                title={localEntryOrigin === 'home' ? 'Back to Home' : 'Back to Inventory'}
+                aria-label={localEntryOrigin === 'home' ? 'Back to Home' : 'Back to Inventory'}
+              >
+                <ChevronLeft className="w-5 h-5 stroke-[2.2]" />
+              </button>
+              <CategoryPhotoIcon
+                kind={openedSectionMeta.photoKind}
+                className="w-10 h-10 rounded-xl shrink-0 border border-slate-200/70 dark:border-slate-700/70 bg-white shadow-2xs"
+                alt={openedSectionMeta.title}
+              />
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-none truncate">
+                  {openedSectionMeta.title}
+                </h1>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                  {openedSectionMeta.subtitle}
+                </p>
               </div>
-            )}
+            </div>
 
-            {/* 2. MONEY PAGE: ONLY 3 TABS (EXPENSES, DEBTS, REPORT) - PRODUCTS & PEOPLE ARE HIDDEN */}
-            {currentCategory === 'money' && (
-              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <SetDefaultPageButton
+                variant="light"
+                compact
+                config={{
+                  screen: 'inventory',
+                  inventoryCategory: currentCategory,
+                  inventoryTab: activeTab,
+                  label: `Inventory · ${openedSectionMeta.title}`,
+                }}
+              />
+              {isLoggedIn && (
                 <button
-                  id="tab-inventory-expense"
                   type="button"
-                  onClick={() => setActiveTab('expense')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'expense'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
+                  onClick={() => {
+                    refreshData();
+                    showToast('All inventory sections synced with Cloud Storage!');
+                  }}
+                  className="h-9 px-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition active:scale-95 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title={t('cloud_sync', business?.language)}
                 >
-                  <ReceiptIcon className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('expenses', business?.language)}</span>
+                  <Cloud className="w-3.5 h-3.5 text-[#0E6A33] dark:text-emerald-400" />
+                  <span className="hidden sm:inline">{t('cloud_sync', business?.language)}</span>
                 </button>
-
-                <button
-                  id="tab-inventory-debts"
-                  type="button"
-                  onClick={() => setActiveTab('debts')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'debts'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <DollarSign className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('debtors', business?.language)}</span>
-                </button>
-
-                <button
-                  id="tab-inventory-report"
-                  type="button"
-                  onClick={() => setActiveTab('report')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'report'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <ClipboardList className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('reports', business?.language)}</span>
-                </button>
-              </div>
-            )}
-
-            {/* 3. PEOPLE PAGE: ONLY 3 TABS (CLIENT, AGENT, STAFF) - PRODUCTS & MONEY ARE HIDDEN */}
-            {currentCategory === 'people' && (
-              <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/15 dark:bg-black/25 rounded-2xl border border-white/20 shadow-inner animate-fadeIn">
-                <button
-                  id="tab-inventory-clients"
-                  type="button"
-                  onClick={() => setActiveTab('customers')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'customers'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('clients', business?.language)}</span>
-                </button>
-
-                <button
-                  id="tab-inventory-agents"
-                  type="button"
-                  onClick={() => setActiveTab('agents')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'agents'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <Briefcase className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('agents', business?.language)}</span>
-                </button>
-
-                <button
-                  id="tab-inventory-workers"
-                  type="button"
-                  onClick={() => setActiveTab('workers')}
-                  className={`py-2 px-1 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    activeTab === 'workers'
-                      ? 'bg-white text-sky-950 shadow-sm'
-                      : 'text-sky-100 hover:bg-white/15 hover:text-white'
-                  }`}
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span className="tracking-wider uppercase text-[10px] sm:text-xs">{t('staff', business?.language)}</span>
-                </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                className="h-9 px-4 rounded-full bg-[#EAF6EC] dark:bg-emerald-950/80 hover:bg-[#DCF0DF] dark:hover:bg-emerald-900/80 text-[#0E6A33] dark:text-emerald-300 text-xs sm:text-sm font-extrabold transition active:scale-95 cursor-pointer"
+              >
+                {t('home', business?.language)}
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* TAB CONTENT CONTAINER */}
       <div className="max-w-xl mx-auto w-full px-4 pt-4 flex-1">
-        {/* MAIN INVENTORY SCREEN BODY: 3 BIG ACTION BUTTONS */}
+        {/* MAIN INVENTORY SCREEN BODY: PRODUCTS, MONEY, PEOPLE */}
         {currentCategory === null && (
-          <div className="space-y-4 py-2 animate-fadeIn pb-8">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-              {/* BUTTON 1: PRODUCTS */}
-              <button
-                id="btn-main-products"
-                type="button"
-                onClick={() => {
-                  setCurrentCategory('products');
-                  setActiveTab('stock');
-                }}
-                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-sky-600 hover:bg-sky-500 text-white font-bold shadow-sm shadow-sky-600/20 active:scale-[0.99] transition-all overflow-hidden border border-sky-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
-              >
-                <div className="flex items-start justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
-                    <Package className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
-                  </div>
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-sky-100 group-hover:bg-white/25 transition">
-                    <span>{t('open_category', business?.language)}</span>
-                    <ArrowUpRight className="w-3 h-3 text-white" />
-                  </div>
-                </div>
+          <div className="space-y-5 py-1 animate-fadeIn pb-8">
+            {/* SECTION 1: PRODUCTS */}
+            <div className="space-y-2.5">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-0.5">
+                {t('products_category', business?.language) || 'PRODUCTS'}
+              </h2>
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                <button
+                  id="btn-inv-card-stock"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('products');
+                    setActiveTab('stock');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="stock"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt={t('stock', business?.language) || 'Stock'}
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    {t('stock', business?.language) || 'Stock'}
+                  </span>
+                </button>
 
-                <div>
-                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    {t('products_category', business?.language)}
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-sky-100/90 font-normal mt-0.5 leading-snug">
-                    {t('products_category_sub', business?.language)}
-                  </p>
-                </div>
-              </button>
+                <button
+                  id="btn-inv-card-sales"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('products');
+                    setActiveTab('sales');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="sales"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt="Sales"
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    Sales
+                  </span>
+                </button>
 
-              {/* BUTTON 2: MONEY */}
-              <button
-                id="btn-main-money"
-                type="button"
-                onClick={() => {
-                  setCurrentCategory('money');
-                  setActiveTab('expense');
-                }}
-                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 via-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold shadow-sm shadow-emerald-600/20 active:scale-[0.99] transition-all overflow-hidden border border-emerald-500/40 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
-              >
-                <div className="flex items-start justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
-                    <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
-                  </div>
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/20 text-[10px] sm:text-xs font-semibold text-white group-hover:bg-white/30 transition">
-                    <span>{t('open_category', business?.language)}</span>
-                    <ArrowUpRight className="w-3 h-3 text-white" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    {t('money_category', business?.language)}
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-emerald-100/90 font-normal mt-0.5 leading-snug">
-                    {t('money_category_sub', business?.language)}
-                  </p>
-                </div>
-              </button>
-
-              {/* BUTTON 3: PEOPLE */}
-              <button
-                id="btn-main-people"
-                type="button"
-                onClick={() => {
-                  setCurrentCategory('people');
-                  setActiveTab('customers');
-                }}
-                className="group relative flex flex-col justify-between p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow-sm shadow-teal-600/20 active:scale-[0.99] transition-all overflow-hidden border border-teal-500/50 text-left min-h-[96px] sm:min-h-[108px] cursor-pointer"
-              >
-                <div className="flex items-start justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-2xs">
-                    <Users className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5] text-white" />
-                  </div>
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md sm:rounded-lg bg-white/15 text-[10px] sm:text-xs font-semibold text-teal-100 group-hover:bg-white/25 transition">
-                    <span>{t('open_category', business?.language)}</span>
-                    <ArrowUpRight className="w-3 h-3 text-white" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-sm sm:text-base font-bold tracking-tight text-white leading-tight uppercase">
-                    {t('people_category', business?.language)}
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-teal-100/90 font-normal mt-0.5 leading-snug">
-                    {t('people_category_sub', business?.language)}
-                  </p>
-                </div>
-              </button>
+                <button
+                  id="btn-inv-card-list"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('products');
+                    setActiveTab('shoppingList');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="shopping-list"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt="List"
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    List
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* Native Advanced Ad below main inventory boxes */}
+            {/* SECTION 2: MONEY */}
+            <div className="space-y-2.5">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-0.5">
+                {t('money_category', business?.language) || 'MONEY'}
+              </h2>
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                <button
+                  id="btn-inv-card-expenses"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('money');
+                    setActiveTab('expense');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="expenses"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt={t('expenses', business?.language) || 'Expenses'}
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    {t('expenses', business?.language) || 'Expenses'}
+                  </span>
+                </button>
+
+                <button
+                  id="btn-inv-card-debts"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('money');
+                    setActiveTab('debts');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="debts"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt={t('debtors', business?.language) || 'Debts'}
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    {t('debtors', business?.language) || 'Debts'}
+                  </span>
+                </button>
+
+                <button
+                  id="btn-inv-card-report"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('money');
+                    setActiveTab('report');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="report"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt="Report"
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    Report
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* SECTION 3: PEOPLE */}
+            <div className="space-y-2.5">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-0.5">
+                {t('people_category', business?.language) || 'PEOPLE'}
+              </h2>
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                <button
+                  id="btn-inv-card-clients"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('people');
+                    setActiveTab('customers');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="clients"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt={t('clients', business?.language) || 'Clients'}
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    {t('clients', business?.language) || 'Clients'}
+                  </span>
+                </button>
+
+                <button
+                  id="btn-inv-card-agent"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('people');
+                    setActiveTab('agents');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="agent"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt="Agent"
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    Agent
+                  </span>
+                </button>
+
+                <button
+                  id="btn-inv-card-staff"
+                  type="button"
+                  onClick={() => {
+                    setLocalEntryOrigin('inventory');
+                    setCurrentCategory('people');
+                    setActiveTab('workers');
+                  }}
+                  className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-3 min-h-[112px] flex flex-col items-center justify-center gap-2 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <CategoryPhotoIcon
+                    kind="staff"
+                    className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                    alt={t('staff', business?.language) || 'Staff'}
+                  />
+                  <span className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                    {t('staff', business?.language) || 'Staff'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Native Advanced Ad below main inventory grids */}
             <div className="pt-2">
               <AdMobNativeAd
                 context="inventory"
@@ -5244,10 +5371,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               id="btn-add-sale"
               type="button"
               onClick={() => setShowSaleForm((prev) => !prev)}
-              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-md transition active:scale-[0.99] ${
+              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99] cursor-pointer ${
                 showSaleForm
-                  ? 'bg-white/20 dark:bg-slate-800 text-white border border-white/30 hover:bg-white/30'
-                  : 'bg-white text-[#0284c7] hover:bg-sky-50 shadow-sky-900/10'
+                  ? 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                  : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
               }`}
             >
               {showSaleForm ? (
@@ -5256,7 +5383,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_sale', business?.language)}
+                  <Plus className="w-4 h-4 text-white" /> {t('add_sale', business?.language)}
                 </>
               )}
             </button>
@@ -5914,7 +6041,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <button
                     id="btn-record-sold"
                     type="submit"
-                    className="w-full py-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-sky-600/30 active:scale-[0.99] transition"
+                    className="w-full py-4 rounded-2xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/15 active:scale-[0.99] transition"
                   >
                     SOLD
                   </button>
@@ -5926,7 +6053,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {sales.length > 0 && (
               <>
                 {/* Timeframe Filter Buttons: Today | This Week | This Month | This Year | All Time */}
-            <div className="bg-white/10 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-white/20 dark:border-slate-800 flex items-center gap-1 overflow-x-auto no-scrollbar">
+            <div className="bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center gap-1 overflow-x-auto no-scrollbar">
               {[
                 { id: 'today', label: 'Today' },
                 { id: 'week', label: 'This Week' },
@@ -5943,8 +6070,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     onClick={() => setSaleDateFilter(f.id as any)}
                     className={`flex-1 min-w-[72px] py-2 px-2.5 rounded-xl font-bold text-xs text-center transition whitespace-nowrap ${
                       active
-                        ? 'bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 shadow-md scale-[1.02]'
-                        : 'text-white/80 dark:text-slate-400 hover:text-white dark:hover:text-slate-200 hover:bg-white/10 dark:hover:bg-slate-800/50'
+                        ? 'bg-[#0E6A33] dark:bg-emerald-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                     }`}
                   >
                     {f.label}
@@ -5954,7 +6081,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             </div>
 
             {/* Sales Stats Summary Card */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-around gap-2">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 shadow-sm border border-slate-200/80 dark:border-slate-800 flex items-center justify-around gap-2">
               <div className="text-center flex-1">
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                   Total Sale
@@ -5970,7 +6097,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                   Items Sold
                 </span>
-                <span className="text-xs sm:text-sm font-extrabold font-mono text-sky-600 dark:text-sky-400">
+                <span className="text-xs sm:text-sm font-extrabold font-mono text-[#0E6A33] dark:text-emerald-400">
                   {totalItemsSoldForPeriod} {totalItemsSoldForPeriod === 1 ? 'unit' : 'units'}
                 </span>
               </div>
@@ -5978,7 +6105,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
             {/* Bottom Section: Dynamic Header • X sales (From Screenshot 2) */}
             <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between text-xs text-white px-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-800 dark:text-slate-100 px-1">
                 <span className="font-extrabold text-sm">
                   {saleDateFilter === 'today' && "Today's Sales"}
                   {saleDateFilter === 'week' && "This Week's Sales"}
@@ -5987,7 +6114,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {saleDateFilter === 'custom' && `Sales for ${new Date(saleCustomFilterDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                   {saleDateFilter === 'all' && 'All Sales'} • {filteredSalesList.length} records
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <div className="relative">
                     <input
                       type="date"
@@ -6001,10 +6128,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     />
                     <button
                       type="button"
-                      className={`px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition ${
+                      className={`px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition border ${
                         saleDateFilter === 'custom'
-                          ? 'bg-white text-sky-700 shadow-sm'
-                          : 'bg-white/15 hover:bg-white/25 text-white'
+                          ? 'bg-[#0E6A33] text-white border-[#0E6A33] shadow-xs'
+                          : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700 shadow-2xs'
                       }`}
                     >
                       <Calendar className="w-3 h-3" />
@@ -6014,7 +6141,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => setSaleSortOrder(saleSortOrder === 'latest' ? 'amount' : 'latest')}
-                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition"
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                   >
                     <ArrowUpDown className="w-3 h-3" />
                     <span>Sort</span>
@@ -6022,19 +6149,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => handleExportReport('sales')}
-                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                     title="Export Sales Report (PDF)"
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                     <span>Export</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSaveReportPhoto('sales')}
-                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                     title="Save Sales Report as Image"
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                     <span>Image</span>
                   </button>
                 </div>
@@ -6042,7 +6169,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
               {/* Filtered Sales List */}
               {filteredSalesList.length === 0 ? (
-                <div className="bg-white/10 rounded-2xl p-6 text-center text-white/80 border border-white/15">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 text-center text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
                   <p className="text-xs">
                     {saleDateFilter === 'today' && 'No sales recorded yet today.'}
                     {saleDateFilter === 'week' && 'No sales recorded this week.'}
@@ -6163,11 +6290,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {showAddProductInline && (
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2 px-1">
-                  <h3 className="text-sm font-extrabold text-white">Add New Product</h3>
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Add New Product</h3>
                   <button
                     type="button"
                     onClick={() => setShowAddProductInline(false)}
-                    className="text-xs font-bold text-sky-100 hover:underline"
+                    className="text-xs font-bold text-[#0E6A33] dark:text-emerald-400 hover:underline"
                   >
                     Hide
                   </button>
@@ -6179,16 +6306,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {products.length === 0 ? (
               /* Show empty state message only if add form is closed */
               !showAddProductInline && (
-                <div className="flex flex-col items-center justify-center py-20 text-center text-white">
-                  <div className="w-20 h-20 rounded-full bg-white/10 flex items-center justify-center mb-4">
-                    <LayoutGrid className="w-10 h-10 text-white" />
+                <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                  <div className="w-20 h-20 rounded-full bg-[#EAF6EC] dark:bg-emerald-950/60 flex items-center justify-center mb-4">
+                    <LayoutGrid className="w-10 h-10 text-[#0E6A33] dark:text-emerald-400" />
                   </div>
-                  <h3 className="text-xl font-extrabold text-white">{t('no_products_yet', business?.language)}</h3>
-                  <p className="text-xs text-sky-100 mt-1">{t('tap_to_add_first_product', business?.language)}</p>
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">{t('no_products_yet', business?.language)}</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t('tap_to_add_first_product', business?.language)}</p>
                   <button
                     type="button"
                     onClick={() => setShowAddProductInline(true)}
-                    className="mt-5 px-6 py-3 rounded-2xl bg-white text-sky-700 font-extrabold text-xs shadow-lg hover:bg-sky-50 active:scale-95 transition"
+                    className="mt-5 px-6 py-3 rounded-2xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-xs shadow-sm active:scale-95 transition cursor-pointer"
                   >
                     {t('add_first_product', business?.language)}
                   </button>
@@ -6913,10 +7040,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               id="btn-add-expense"
               type="button"
               onClick={() => setShowExpenseForm((prev) => !prev)}
-              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-md transition active:scale-[0.99] ${
+              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99] cursor-pointer ${
                 showExpenseForm
-                  ? 'bg-white/20 dark:bg-slate-800 text-white border border-white/30 hover:bg-white/30'
-                  : 'bg-white text-[#0284c7] hover:bg-sky-50 shadow-sky-900/10'
+                  ? 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                  : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
               }`}
             >
               {showExpenseForm ? (
@@ -6925,7 +7052,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_expense', business?.language)}
+                  <Plus className="w-4 h-4 text-white" /> {t('add_expense', business?.language)}
                 </>
               )}
             </button>
@@ -7013,7 +7140,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="flex gap-2">
                     <button
                       type="submit"
-                      className="flex-1 py-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-sky-600/30 active:scale-[0.99] transition"
+                      className="flex-1 py-4 rounded-2xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/15 active:scale-[0.99] transition"
                     >
                       {editingExpenseId ? 'UPDATE EXPENSE' : 'RECORD EXPENSE'}
                     </button>
@@ -7035,7 +7162,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {expenses.length > 0 && (
               <>
                 {/* Top Summary Banner for Expenses */}
-                <div className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 shadow-lg border border-sky-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                   <div>
                     <span className="text-xs text-slate-400 font-medium block">
                       {expenseFilter === 'today' && "Today's Expenses"}
@@ -7059,7 +7186,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
 
                 {/* Timeframe Filter Buttons: Today | This Week | This Month | This Year | All Time */}
-                <div className="bg-white/10 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-white/20 dark:border-slate-800 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                <div className="bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {[
                     { id: 'today', label: 'Today' },
                     { id: 'week', label: 'This Week' },
@@ -7076,8 +7203,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         onClick={() => setExpenseFilter(f.id as any)}
                         className={`flex-1 min-w-[72px] py-2 px-2.5 rounded-xl font-bold text-xs text-center transition whitespace-nowrap ${
                           active
-                            ? 'bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 shadow-md scale-[1.02]'
-                            : 'text-white/80 dark:text-slate-400 hover:text-white dark:hover:text-slate-200 hover:bg-white/10 dark:hover:bg-slate-800/50'
+                            ? 'bg-[#0E6A33] dark:bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                         }`}
                       >
                         {f.label}
@@ -7088,7 +7215,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                 {/* Expenses History List */}
                 <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between text-xs text-white px-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-800 dark:text-slate-100 px-1">
                     <span className="font-extrabold text-sm">
                       {expenseFilter === 'today' && "Today's Expenses"}
                       {expenseFilter === 'week' && "This Week's Expenses"}
@@ -7096,33 +7223,33 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       {expenseFilter === 'year' && "This Year's Expenses"}
                       {expenseFilter === 'all' && 'All Expenses'} • {filteredExpenses.length} records
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-xs bg-white/15 px-2.5 py-1 rounded-lg">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-xs bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded-lg shadow-2xs">
                         Total: {currency} {filteredExpensesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <button
                         type="button"
                         onClick={() => handleExportReport('expense')}
-                        className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                         title="Export Expenses Report (PDF)"
                       >
-                        <Download className="w-3 h-3" />
+                        <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                         <span>Export</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSaveReportPhoto('expense')}
-                        className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                         title="Save Expenses Report as Image"
                       >
-                        <Download className="w-3 h-3" />
+                        <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                         <span>Image</span>
                       </button>
                     </div>
                   </div>
 
                   {filteredExpenses.length === 0 ? (
-                    <div className="bg-white/10 rounded-2xl p-6 text-center text-white/80 border border-white/15">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 text-center text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
                       <p className="text-xs">
                         {expenseFilter === 'all'
                           ? 'No expenses recorded yet. Click "+ Add expense" above to log business expenditures.'
@@ -7140,7 +7267,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         <button
                           type="button"
                           onClick={() => setExpenseFilter('all')}
-                          className="mt-2 text-xs font-bold text-white underline hover:text-sky-200 transition"
+                          className="mt-2 text-xs font-bold text-[#0E6A33] dark:text-emerald-400 underline hover:opacity-80 transition"
                         >
                           Show all time expenses
                         </button>
@@ -7222,10 +7349,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   setShowDebtForm(true);
                 }
               }}
-              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-md transition active:scale-[0.99] ${
+              className={`w-full py-3 px-4 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99] cursor-pointer ${
                 showDebtForm || editingDebtId
-                  ? 'bg-white/20 dark:bg-slate-800 text-white border border-white/30 hover:bg-white/30'
-                  : 'bg-white text-[#0284c7] hover:bg-sky-50 shadow-sky-900/10'
+                  ? 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                  : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
               }`}
             >
               {showDebtForm || editingDebtId ? (
@@ -7234,7 +7361,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 text-[#0284c7]" /> {t('add_debt', business?.language)}
+                  <Plus className="w-4 h-4 text-white" /> {t('add_debt', business?.language)}
                 </>
               )}
             </button>
@@ -7569,7 +7696,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {/* Submit Button */}
                   <button
                     type="submit"
-                    className="w-full py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-xs uppercase tracking-wider shadow-md active:scale-[0.99] transition"
+                    className="w-full py-2.5 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-xs uppercase tracking-wider shadow-md active:scale-[0.99] transition"
                   >
                     {editingDebtId ? 'UPDATE DEBT RECORD' : 'SAVE DEBT / DEMAND'}
                   </button>
@@ -7581,7 +7708,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {debts.length > 0 && (
               <>
                 {/* Timeframe Filter Buttons: Today | This Week | This Month | This Year | All Time */}
-                <div className="bg-white/10 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-white/20 dark:border-slate-800 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                <div className="bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {[
                     { id: 'today', label: 'Today' },
                     { id: 'week', label: 'This Week' },
@@ -7598,8 +7725,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         onClick={() => setDebtTimeFilter(f.id as any)}
                         className={`flex-1 min-w-[72px] py-2 px-2.5 rounded-xl font-bold text-xs text-center transition whitespace-nowrap ${
                           active
-                            ? 'bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 shadow-md scale-[1.02]'
-                            : 'text-white/80 dark:text-slate-400 hover:text-white dark:hover:text-slate-200 hover:bg-white/10 dark:hover:bg-slate-800/50'
+                            ? 'bg-[#0E6A33] dark:bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                         }`}
                       >
                         {f.label}
@@ -7609,7 +7736,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
 
             {/* Dashboard: Total Demanded & Total Paid in Debts */}
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 shadow-sm border border-sky-100 dark:border-slate-800 flex items-center justify-around gap-2">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 shadow-sm border border-slate-200/80 dark:border-slate-800 flex items-center justify-around gap-2">
               <div className="text-center flex-1">
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
                   Total Demanded
@@ -7636,7 +7763,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             {/* Debts & Demands History List Section */}
             <div className="space-y-2 pt-1">
               {/* Dynamic Header with Specific Date Filter Button (as in Sales) */}
-              <div className="flex items-center justify-between text-xs text-white px-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-800 dark:text-slate-100 px-1">
                 <span className="font-extrabold text-sm">
                   {debtTimeFilter === 'today' && "Today's Debts"}
                   {debtTimeFilter === 'week' && "This Week's Debts"}
@@ -7645,7 +7772,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   {debtTimeFilter === 'custom' && `Debts for ${new Date(debtCustomFilterDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
                   {debtTimeFilter === 'all' && 'All Debts'} • {timeFilteredDebts.length} records
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <div className="relative">
                     <input
                       type="date"
@@ -7659,10 +7786,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     />
                     <button
                       type="button"
-                      className={`px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition ${
+                      className={`px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition border ${
                         debtTimeFilter === 'custom'
-                          ? 'bg-white text-sky-700 shadow-sm'
-                          : 'bg-white/15 hover:bg-white/25 text-white'
+                          ? 'bg-[#0E6A33] text-white border-[#0E6A33] shadow-xs'
+                          : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700 shadow-2xs'
                       }`}
                     >
                       <Calendar className="w-3 h-3" />
@@ -7672,19 +7799,19 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => handleExportReport('debts')}
-                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                     title="Export Debts Report (PDF)"
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                     <span>Export</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSaveReportPhoto('debts')}
-                    className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 flex items-center gap-1 font-semibold transition text-white"
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/90 dark:border-slate-700 shadow-2xs flex items-center gap-1 font-semibold transition"
                     title="Save Debts Report as Image"
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3 h-3 text-[#0E6A33] dark:text-emerald-400" />
                     <span>Image</span>
                   </button>
                 </div>
@@ -7751,7 +7878,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
               {/* High-Density Compact Debt Cards: Fits 5+ records on screen before scrolling */}
               {filteredDebts.length === 0 ? (
-                <div className="bg-white/10 dark:bg-slate-900/50 rounded-2xl p-5 text-center text-white/90 border border-white/15 dark:border-slate-800">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 text-center text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
                   <p className="text-xs font-medium">
                     {debtTimeFilter === 'all'
                       ? debtSearchQuery
@@ -7777,7 +7904,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => setDebtTimeFilter('all')}
-                      className="mt-2 text-xs font-bold text-white underline hover:text-sky-200 transition"
+                      className="mt-2 text-xs font-bold text-[#0E6A33] dark:text-emerald-400 underline hover:opacity-80 transition"
                     >
                       View all time records
                     </button>
@@ -8119,7 +8246,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                     setShowShoppingForm(true);
                   }
                 }}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-sm shadow-md transition flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-2xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
               >
                 {showShoppingForm ? (
                   <>
@@ -8204,7 +8331,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                       className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-sm transition ${
                         showShoppingForm
                           ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200'
-                          : 'bg-[#0284c7] hover:bg-[#0369a1] text-white'
+                          : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
                       }`}
                     >
                       {showShoppingForm ? (
@@ -8561,7 +8688,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <div className="flex gap-2 pt-1.5">
                     <button
                       type="submit"
-                      className="flex-1 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition"
+                      className="flex-1 py-2 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-extrabold text-xs uppercase tracking-wider shadow-md transition"
                     >
                       {editingShoppingId ? 'Update Item' : 'Add To List'}
                     </button>
@@ -8767,7 +8894,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
                 {/* Items List */}
                 {filteredShoppingList.length === 0 ? (
-                  <div className="bg-white/10 dark:bg-slate-900/50 rounded-2xl p-5 text-center text-white/90 border border-white/15 dark:border-slate-800">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 text-center text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
                     <p className="text-xs font-medium">
                       {shoppingSearchQuery
                         ? 'No shopping items match your search.'
@@ -8931,7 +9058,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => startEditShoppingItem(item)}
-                                  className="p-1 text-slate-400 hover:text-[#0284c7] transition rounded-lg"
+                                  className="p-1 text-slate-400 hover:text-[#0E6A33] dark:hover:text-emerald-400 transition rounded-lg"
                                   title="Edit item"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
@@ -8986,10 +9113,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setCurrentCategory('products');
                     setActiveTab('sales');
                     setShowSaleForm(true);
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold text-xs shadow-md transition inline-flex items-center gap-1.5"
+                  className="px-4 py-2.5 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white font-bold text-xs shadow-sm transition inline-flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" /> {t('go_to_sales_record', business?.language)}
                 </button>
@@ -8997,7 +9125,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
             ) : (
               <>
                 {/* Timeframe Filter Buttons: Today | This Week | This Month | This Year | All Time */}
-                <div className="bg-white/10 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-white/20 dark:border-slate-800 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                <div className="bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-2xs flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {[
                     { id: 'today', label: t('today', business?.language) },
                     { id: 'week', label: t('this_week', business?.language) },
@@ -9014,8 +9142,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                         onClick={() => setReportTimeFilter(f.id as any)}
                         className={`flex-1 min-w-[72px] py-2 px-2.5 rounded-xl font-bold text-xs text-center transition whitespace-nowrap ${
                           active
-                            ? 'bg-white dark:bg-slate-800 text-sky-700 dark:text-sky-300 shadow-md scale-[1.02]'
-                            : 'text-white/80 dark:text-slate-400 hover:text-white dark:hover:text-slate-200 hover:bg-white/10 dark:hover:bg-slate-800/50'
+                            ? 'bg-[#0E6A33] dark:bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                         }`}
                       >
                         {f.label}
@@ -9025,7 +9153,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 </div>
 
             {/* Top Period Header & Action Controls */}
-            <div className="flex items-center justify-between text-xs text-white px-1 gap-2">
+            <div className="flex flex-wrap items-center justify-between text-xs text-slate-800 dark:text-slate-100 px-1 gap-2">
               <span className="font-extrabold text-sm truncate">
                 {getReportPeriodTitle()} • {periodSales.length} records
               </span>
@@ -9045,10 +9173,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   />
                   <button
                     type="button"
-                    className={`px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-semibold text-xs transition shadow-xs ${
+                    className={`px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-semibold text-xs transition border shadow-2xs ${
                       reportTimeFilter === 'custom'
-                        ? 'bg-white text-sky-700 shadow-sm'
-                        : 'bg-white/15 hover:bg-white/25 text-white'
+                        ? 'bg-[#0E6A33] text-white border-[#0E6A33] shadow-xs'
+                        : 'bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-slate-700'
                     }`}
                   >
                     <Calendar className="w-3.5 h-3.5" />
@@ -9493,7 +9621,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-[0.98] ${
                     showAddAgentForm
                       ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white'
+                      : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
                   }`}
                 >
                   {showAddAgentForm ? (
@@ -9766,7 +9894,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddAgentForm(true)}
-                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold shadow-sm transition"
+                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white text-xs font-extrabold shadow-sm transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('add_first_agent', business?.language)}</span>
@@ -9991,7 +10119,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm ${
                     showAddWorkerForm
                       ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-sky-600/20'
+                      : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white shadow-emerald-900/15'
                   }`}
                 >
                   {showAddWorkerForm ? (
@@ -10401,7 +10529,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAddWorkerForm(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-sm transition"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white text-xs font-bold shadow-sm transition"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>{t('add_first_staff', business?.language)}</span>
@@ -10707,7 +10835,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition active:scale-[0.98] ${
                     showAddCustomerForm
                       ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white'
+                      : 'bg-[#0E6A33] hover:bg-[#0B592B] text-white'
                   }`}
                 >
                   {showAddCustomerForm ? (
@@ -10963,7 +11091,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddCustomerForm(true)}
-                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold shadow-sm transition"
+                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0E6A33] hover:bg-[#0B592B] text-white text-xs font-extrabold shadow-sm transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('add_first_client', business?.language)}</span>

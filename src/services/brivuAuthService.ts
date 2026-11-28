@@ -368,7 +368,7 @@ export const BrivuAuthService = {
     if (!hasAccess) {
       return {
         success: false,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to sign in and sync with Cloudflare.',
       };
     }
 
@@ -398,7 +398,7 @@ export const BrivuAuthService = {
     if (!(await this.hasAuthAccess(email))) {
       return {
         success: false,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to sign in and sync with Cloudflare.',
       };
     }
 
@@ -438,7 +438,7 @@ export const BrivuAuthService = {
     if (!(await this.hasAuthAccess(email))) {
       return {
         success: false,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to sign in and sync with Cloudflare.',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to sign in and sync with Cloudflare.',
       };
     }
 
@@ -736,7 +736,7 @@ export const BrivuAuthService = {
     if (!(await this.hasAuthAccess())) {
       return {
         success: false,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to resume automatic cloud sync!',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to resume automatic cloud sync!',
       };
     }
     const profileRes = await CloudflareService.syncUserProfile(user, StorageService.getProfile());

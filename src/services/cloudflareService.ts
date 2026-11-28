@@ -512,6 +512,7 @@ export const CloudflareService = {
     customKey?: string;
     slotId?: string;
     ownerKey?: string;
+    skipOptimization?: boolean;
   }): Promise<{
     success: boolean;
     requiresSubscription?: boolean;
@@ -537,8 +538,8 @@ export const CloudflareService = {
         success: false,
         requiresSubscription: true,
         message: trial.isGracePeriodExpired
-          ? 'Your grace period has expired without a subscription. Subscribe to Pro to upload QR photos to cloud.'
-          : 'Your 7-day free trial has ended. Subscribe to Pro to upload QR photos to cloud.',
+          ? 'Your grace period has expired without a subscription. Subscribe to Basic to upload QR photos to cloud.'
+          : 'Your 7-day free trial has ended. Subscribe to Basic to upload QR photos to cloud.',
       };
     }
 
@@ -594,7 +595,7 @@ export const CloudflareService = {
       /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(filename) ||
       (typeof data === 'string' && data.startsWith('data:image/'));
 
-    if (isImage) {
+    if (isImage && !options.skipOptimization) {
       try {
         const optimized = await optimizeImageForR2(data, folder, filename);
         data = optimized.data;
@@ -721,7 +722,7 @@ export const CloudflareService = {
     if (trial.isExpired && !trial.subscribed) {
       return {
         success: false,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to use cloud sync.',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to use cloud sync.',
       };
     }
 
@@ -1517,7 +1518,7 @@ export const CloudflareService = {
       return {
         success: false,
         requiresSubscription: true,
-        message: 'Your 7-day free trial has ended. Subscribe to Pro to sync QR pages to the cloud.',
+        message: 'Your 7-day free trial has ended. Subscribe to Basic to sync QR pages to the cloud.',
       };
     }
 
@@ -1763,8 +1764,9 @@ export const CloudflareService = {
         if (!StorageService.isSubscribed()) {
           const fallbackExp = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
           StorageService.saveSubscription({
+            tierId: 'basic',
             planId: '1-month',
-            planName: 'Brivu Pro',
+            planName: 'Brivu Basic',
             status: 'active',
             startedAt: data.trialInfo?.trialStartedAt || new Date().toISOString(),
             expiresAt: data.trialInfo?.subscriptionExpiresAt || fallbackExp,

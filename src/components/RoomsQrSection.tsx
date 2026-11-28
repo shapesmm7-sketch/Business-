@@ -33,6 +33,7 @@ import { PhoneInputField } from './PhoneInputField';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
+import { FlyerQrPosterModal } from './FlyerQrPosterModal';
 import { t, formatNumber } from '../utils/i18n';
 
 interface RoomsQrSectionProps {
@@ -90,6 +91,7 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
   const [qrLabelForPrint, setQrLabelForPrint] = useState<string>('');
   const [isEditingQrColors, setIsEditingQrColors] = useState<boolean>(false);
+  const [showFlyerPosterModal, setShowFlyerPosterModal] = useState<boolean>(false);
   const [pendingDelete, setPendingDelete] = useState<
     | { type: 'room'; item: RoomQrItem }
     | { type: 'photo'; index: number }
@@ -323,7 +325,7 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
             finalUrl = resolveOnlinePhotoUrl(uploadRes.url) || uploadRes.url;
             cloudUploadedCount++;
           } else if (uploadRes.requiresSubscription) {
-            showToast(uploadRes.message || 'Subscribe to Pro to upload room photos.');
+            showToast(uploadRes.message || 'Subscribe to Basic to upload room photos.');
             break;
           }
         } catch (err) {
@@ -942,6 +944,16 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
                     <Printer className="w-3.5 h-3.5" />
                     <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Table & Wall Poster (PDF)'}</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowFlyerPosterModal(true)}
+                    disabled={!activeQrDataUrl}
+                    className="col-span-2 sm:col-span-2 p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 font-bold text-xs active:scale-95 transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1374,6 +1386,21 @@ export const RoomsQrSection: React.FC<RoomsQrSectionProps> = ({
           }
           setPendingDelete(null);
         }}
+      />
+      <FlyerQrPosterModal
+        isOpen={showFlyerPosterModal}
+        onClose={() => setShowFlyerPosterModal(false)}
+        qrValue={activeUrl}
+        qrDataUrl={activeQrDataUrl}
+        title={isAllSelected ? (business.name || 'Rooms') : (activeRoom?.name || business.name || 'Room')}
+        defaultLabel={qrLabelForPrint}
+        accentColor={activeDarkColor}
+        qrColor={{
+          dark: activeDarkColor,
+          light: activeLightColor,
+          eyeColor: activeEyeColor,
+        }}
+        onToast={showToast}
       />
     </div>
   );

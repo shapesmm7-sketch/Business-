@@ -39,19 +39,14 @@ import {
   RotateCcw,
   Cloud,
   Loader2,
-  Globe,
-  Smartphone,
-  Store,
-  ArrowUpRight,
   Scan,
   RefreshCw,
   Mail,
   AlertTriangle,
-  BedDouble,
   Crown,
   LogIn,
 } from 'lucide-react';
-import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile } from '../types';
+import { QRCodeHostedPage, QRMenuItem, QRBusinessPhoto, QRBusinessSocialLink, BusinessProfile, QrCategoryId } from '../types';
 import { StorageService } from '../services/storage';
 import { CloudflareService } from '../services/cloudflareService';
 import { QRHostingService } from '../services/qrHostingService';
@@ -67,10 +62,16 @@ import { EventsQrSection } from './EventsQrSection';
 import { RoomsQrSection } from './RoomsQrSection';
 import { QrQuickSections } from './QrQuickSections';
 import { QrDeleteConfirmModal } from './QrDeleteConfirmModal';
+import { FlyerQrPosterModal } from './FlyerQrPosterModal';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
+import { CategoryPhotoIcon } from './CategoryPhotoIcon';
 
 interface QRCodeHostingScreenProps {
   business: BusinessProfile;
+  initialCategory?: QrCategoryId | null;
   onNavigateHome: () => void;
+  onBackFromInitialCategory?: () => void;
+  backLabel?: string;
   onNavigateUpgrade?: () => void;
   onOpenCustomerView: (
     page: QRCodeHostedPage,
@@ -178,13 +179,20 @@ const BOX_BORDER_PRESETS = [
 
 export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
   business,
+  initialCategory = null,
   onNavigateHome,
+  onBackFromInitialCategory,
+  backLabel,
   onNavigateUpgrade,
   onOpenCustomerView,
   onOpenQrScanner,
 }) => {
   // Main Category Selector: 'business' | 'websites' | 'socials' | 'events' | 'rooms' | 'menu' | 'wifi' | 'contacts' | 'location' | null
-  const [qrCategory, setQrCategory] = useState<'business' | 'websites' | 'socials' | 'events' | 'rooms' | 'menu' | 'wifi' | 'contacts' | 'location' | null>(null);
+  const [qrCategory, setQrCategory] = useState<QrCategoryId | null>(initialCategory);
+
+  useEffect(() => {
+    setQrCategory(initialCategory ?? null);
+  }, [initialCategory]);
   const [roomsCount, setRoomsCount] = useState<number>(() => StorageService.getRoomsQrItems().length);
 
   const [pages, setPages] = useState<QRCodeHostedPage[]>(() => StorageService.getHostedQRPages());
@@ -247,6 +255,12 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
 
   const [tableNumberForPrint, setTableNumberForPrint] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+  const [flyerPosterTarget, setFlyerPosterTarget] = useState<{
+    qrValue: string;
+    qrDataUrl: string;
+    title: string;
+    defaultLabel?: string;
+  } | null>(null);
 
   // Quick QR Modal state for per-page generation
   const [showQuickQrModal, setShowQuickQrModal] = useState<boolean>(false);
@@ -1266,7 +1280,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       }
 
       if (uploadRes.requiresSubscription || uploadRes.storageLimitExceeded) {
-        showToast(uploadRes.message || 'Subscribe to Pro to upload QR photos.');
+        showToast(uploadRes.message || 'Subscribe to Basic to upload QR photos.');
         return;
       }
 
@@ -1958,15 +1972,57 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between">
         <button
-          onClick={qrCategory ? () => setQrCategory(null) : onNavigateHome}
+          onClick={() => {
+            if (qrCategory && onBackFromInitialCategory && qrCategory === initialCategory) {
+              onBackFromInitialCategory();
+            } else if (qrCategory) {
+              setQrCategory(null);
+            } else {
+              onNavigateHome();
+            }
+          }}
           className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>{t('home', business?.language)}</span>
+          <span>
+            {qrCategory && onBackFromInitialCategory && qrCategory === initialCategory
+              ? (backLabel || 'Back')
+              : t('home', business?.language)}
+          </span>
         </button>
 
-        <div className="flex items-center gap-2">
-          {onOpenQrScanner && (
+        <div className="flex items-center gap-1.5">
+          <SetDefaultPageButton
+            compact
+            onFeedback={showToast}
+            config={{
+              screen: 'qr-hosting',
+              qrCategory,
+              label: qrCategory
+                ? `QR Code · ${
+                    qrCategory === 'business'
+                      ? 'Website'
+                      : qrCategory === 'websites'
+                      ? 'Links / URL'
+                      : qrCategory === 'socials'
+                      ? 'Socials'
+                      : qrCategory === 'events'
+                      ? 'Events'
+                      : qrCategory === 'rooms'
+                      ? 'Rooms'
+                      : qrCategory === 'menu'
+                      ? 'Menu'
+                      : qrCategory === 'wifi'
+                      ? 'Wi-Fi'
+                      : qrCategory === 'contacts'
+                      ? 'Contacts'
+                      : 'Location'
+                  }`
+                : 'QR Code',
+            }}
+          />
+
+          {onOpenQrScanner && qrCategory === null && (
             <button
               id="btn-qr-screen-scanner"
               type="button"
@@ -1975,7 +2031,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               title="Scan QR Code"
             >
               <Scan className="w-3.5 h-3.5" />
-              <span className={qrCategory === 'business' ? 'hidden sm:inline' : ''}>
+              <span>
                 {t('scan_qr', business?.language)}
               </span>
             </button>
@@ -1997,7 +2053,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                   setTrialStatus(latestTrial);
 
                   if (latestTrial.isExpired && !latestTrial.subscribed) {
-                    showToast('Your 7-day free trial has ended. Subscribe to Pro to use QR Cloud Sync.');
+                    showToast('Your 7-day free trial has ended. Subscribe to Basic to use QR Cloud Sync.');
                     return;
                   }
 
@@ -2103,7 +2159,7 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
             <div className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed">
               <p className="font-bold">Trial Ended</p>
               <p className="text-rose-800/90 dark:text-rose-300/90 mt-0.5">
-                Your trial ended. Please you are advised to upgrade to a Pro plan to continue hosting your QR codes info. Thank you.
+                Your trial ended. Please you are advised to upgrade to a Basic plan to continue hosting your QR codes info. Thank you.
               </p>
             </div>
           </div>
@@ -2148,152 +2204,143 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
         </div>
       )}
 
-      {/* OVERVIEW SCREEN: When qrCategory is null, show the clean Quick Actions dashboard matching screenshot */}
+      {/* OVERVIEW SCREEN: When qrCategory is null, show Home-matched Quick Actions layout */}
       {qrCategory === null && (
         <div className="space-y-3 pt-1 animate-fadeIn">
-
-
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              {t('quick_actions', business?.language) || 'QUICK ACTIONS'}
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="text-[17px] sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+              {t('quick_actions', business?.language) || 'Quick actions'}
             </h2>
-            <span className="text-[11px] font-medium text-slate-400">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
               {t('select_option', business?.language) || 'Select an option below'}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-            {/* 1. BUSINESS QR BUTTON */}
+          {/* TWO FEATURED PRIMARY CARDS MATCHING HOME RECEIPTS & INVENTORY */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* 1. WEBSITE (MATCHING HOME RECEIPTS & INVOICES CARD) */}
             <button
               id="btn-main-qr-business"
               type="button"
               onClick={() => setQrCategory('business')}
-              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#059669] to-[#047857] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+              className="group flex flex-col justify-between p-4 rounded-2xl bg-[#0B2817] hover:bg-[#10341F] dark:bg-[#0D2E1B] dark:hover:bg-[#133C24] border border-[#174128] text-white active:scale-[0.985] transition-all text-left min-h-[126px] shadow-xs cursor-pointer"
             >
-              <div className="flex items-start justify-between w-full mb-0.5">
-                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                  <Store className="w-3.5 h-3.5 stroke-[2.5]" />
+              <CategoryPhotoIcon
+                kind="qr-host"
+                className="w-11 h-11 rounded-xl bg-white/10 border-white/15 group-hover:scale-105 transition-transform"
+                alt="Website"
+              />
+
+              <div className="mt-2.5">
+                <div className="text-[15px] sm:text-base font-extrabold tracking-tight text-white leading-tight">
+                  Website
                 </div>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>{t('hub', business?.language)}</span>
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                </div>
-              </div>
-              <div className="mt-1.5">
-                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  {t('business_qr_code', business?.language)}
-                </div>
-                <p className="text-[10px] sm:text-[11px] font-normal text-emerald-100/90 mt-0.5 leading-snug line-clamp-2">
-                  {t('business_qr_desc', business?.language)}
+                <p className="text-[11px] sm:text-xs text-slate-300/90 font-normal mt-1 leading-snug">
+                  Create items or add photos &amp; files to launch a live website via link or QR code
                 </p>
               </div>
             </button>
 
-            {/* 2. WEBSITES / APPS QR BUTTON */}
-            <button
-              id="btn-main-qr-websites"
-              type="button"
-              onClick={() => setQrCategory('websites')}
-              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#2563eb] via-[#3b82f6] to-[#4338ca] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
-            >
-              <div className="flex items-start justify-between w-full mb-0.5">
-                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                  <Globe className="w-3.5 h-3.5 stroke-[2.5]" />
-                </div>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>{t('links', business?.language)}</span>
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                </div>
-              </div>
-              <div className="mt-1.5">
-                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  {t('websites_apps_qr_code', business?.language)}
-                </div>
-                <p className="text-[10px] sm:text-[11px] font-normal text-blue-100/90 mt-0.5 leading-snug line-clamp-2">
-                  {t('websites_apps_desc', business?.language)}
-                </p>
-              </div>
-            </button>
-
-            {/* 3. SOCIALS QR BUTTON */}
-            <button
-              id="btn-main-qr-socials"
-              type="button"
-              onClick={() => setQrCategory('socials')}
-              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#0d9488] to-[#064e3b] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
-            >
-              <div className="flex items-start justify-between w-full mb-0.5">
-                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                  <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" />
-                </div>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>{t('socials', business?.language)}</span>
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                </div>
-              </div>
-              <div className="mt-1.5">
-                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
-                  {t('socials_qr_code', business?.language)}
-                </div>
-                <p className="text-[10px] sm:text-[11px] font-normal text-teal-100/90 mt-0.5 leading-snug line-clamp-2">
-                  {t('socials_qr_desc', business?.language)}
-                </p>
-              </div>
-            </button>
-
-            {/* 4. HOST EVENTS QR BUTTON */}
+            {/* 2. EVENTS (MATCHING HOME INVENTORY CARD) */}
             <button
               id="btn-main-qr-events"
               type="button"
               onClick={() => setQrCategory('events')}
-              className="group relative flex flex-col justify-between p-3 rounded-2xl bg-gradient-to-br from-[#9333ea] via-[#7c3aed] to-[#4c1d95] text-white shadow-md hover:shadow-lg transition-all overflow-hidden text-left min-h-[82px] sm:min-h-[90px] cursor-pointer active:scale-98"
+              className="group flex flex-col justify-between p-4 rounded-2xl bg-[#E4F3E7] hover:bg-[#D7EDDC] dark:bg-emerald-950/70 dark:hover:bg-emerald-900/70 border border-[#CBE7D1] dark:border-emerald-800/70 active:scale-[0.985] transition-all text-left min-h-[126px] shadow-xs cursor-pointer"
             >
-              <div className="flex items-start justify-between w-full mb-0.5">
-                <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                  <Calendar className="w-3.5 h-3.5 stroke-[2.5]" />
-                </div>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white">
-                  <span>{t('events', business?.language)}</span>
-                  <ArrowUpRight className="w-2.5 h-2.5" />
-                </div>
-              </div>
-              <div className="mt-1.5">
-                <div className="text-xs sm:text-sm font-bold tracking-tight text-white leading-tight">
+              <CategoryPhotoIcon
+                kind="events"
+                className="w-14 h-11 rounded-xl border-[#BCE0C4] dark:border-emerald-700/70 group-hover:scale-105 transition-transform"
+                alt={t('host_events', business?.language)}
+              />
+
+              <div className="mt-2.5">
+                <div className="text-[15px] sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
                   {t('host_events', business?.language)}
                 </div>
-                <p className="text-[10px] sm:text-[11px] font-normal text-purple-100/90 mt-0.5 leading-snug line-clamp-2">
+                <p className="text-[11px] sm:text-xs text-slate-600 dark:text-emerald-100/80 font-normal mt-1 leading-snug">
                   {t('host_events_desc', business?.language)}
                 </p>
               </div>
             </button>
           </div>
 
-          {/* Horizontal text-only Quick Sections on the same line from left to right below the 4 boxes */}
-          <div className="pt-3 px-1 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          {/* SMALL COMPACT BUTTONS MATCHING HOME STOCK & SALES CARDS */}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 sm:gap-3 pt-0.5">
             <button
-              id="btn-text-qr-menu"
+              id="btn-main-qr-websites"
               type="button"
-              onClick={() => setQrCategory('menu')}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+              onClick={() => setQrCategory('websites')}
+              className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-2.5 min-h-[104px] flex flex-col items-center justify-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
             >
-              <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>
-                Menu
-                {(activePage?.menuImages?.length || 0) > 0 && (
-                  <span className="ml-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
-                    ({activePage.menuImages!.length})
-                  </span>
-                )}
+              <CategoryPhotoIcon
+                kind="websites"
+                className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                alt="Links / URL"
+              />
+              <span className="text-[12px] sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                Links / URL
               </span>
             </button>
 
             <button
+              id="btn-main-qr-socials"
+              type="button"
+              onClick={() => setQrCategory('socials')}
+              className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-2.5 min-h-[104px] flex flex-col items-center justify-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <CategoryPhotoIcon
+                kind="socials"
+                className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                alt="Socials"
+              />
+              <span className="text-[12px] sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                {t('socials', business?.language) || 'Socials'}
+              </span>
+            </button>
+
+            <button
+              id="btn-text-qr-rooms"
+              type="button"
+              onClick={() => setQrCategory('rooms')}
+              className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-2.5 min-h-[104px] flex flex-col items-center justify-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <CategoryPhotoIcon
+                kind="hotel-rooms"
+                className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                alt="Rooms"
+              />
+              <span className="text-[12px] sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                Rooms{roomsCount > 0 ? ` (${roomsCount})` : ''}
+              </span>
+            </button>
+
+            <button
+              id="btn-text-qr-menu"
+              type="button"
+              onClick={() => setQrCategory('menu')}
+              className="group bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl px-2 py-2.5 min-h-[104px] flex flex-col items-center justify-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50/30 dark:hover:bg-slate-800/80 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <CategoryPhotoIcon
+                kind="menu-photos"
+                className="w-[72px] h-[54px] sm:w-[80px] sm:h-[60px] group-hover:scale-105 transition-transform"
+                alt="Menu"
+              />
+              <span className="text-[12px] sm:text-[13px] font-bold text-slate-900 dark:text-slate-100 text-center leading-tight truncate max-w-full px-0.5">
+                Menu{(activePage?.menuImages?.length || 0) > 0 ? ` (${activePage.menuImages!.length})` : ''}
+              </span>
+            </button>
+          </div>
+
+          {/* BOTTOM TEXT-ICON LINKS: WIFI, EMAIL & CONTACTS, LOCATION */}
+          <div className="pt-2 px-1 flex items-center flex-wrap gap-5">
+            <button
               id="btn-text-qr-wifi"
               type="button"
               onClick={() => setQrCategory('wifi')}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+              className="inline-flex items-center gap-1.5 min-h-[40px] text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 hover:text-[#0E6A33] dark:hover:text-emerald-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
             >
-              <Wifi className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <Wifi className="w-4 h-4 text-[#0E6A33] dark:text-emerald-400 shrink-0" />
               <span>WiFi</span>
             </button>
 
@@ -2301,9 +2348,9 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               id="btn-text-qr-contacts"
               type="button"
               onClick={() => setQrCategory('contacts')}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+              className="inline-flex items-center gap-1.5 min-h-[40px] text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
             >
-              <Mail className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <span>Email and contacts</span>
             </button>
 
@@ -2311,30 +2358,10 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
               id="btn-text-qr-location"
               type="button"
               onClick={() => setQrCategory('location')}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
+              className="inline-flex items-center gap-1.5 min-h-[40px] text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
             >
-              <MapPin className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+              <MapPin className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
               <span>Location</span>
-            </button>
-          </div>
-
-          {/* Rooms quick link row directly below Menu & WiFi */}
-          <div className="pt-0.5 px-1 flex items-center gap-4">
-            <button
-              id="btn-text-qr-rooms"
-              type="button"
-              onClick={() => setQrCategory('rooms')}
-              className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 whitespace-nowrap shrink-0 cursor-pointer active:opacity-70 transition"
-            >
-              <BedDouble className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span>
-                Rooms
-                {roomsCount > 0 && (
-                  <span className="ml-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
-                    ({roomsCount})
-                  </span>
-                )}
-              </span>
             </button>
           </div>
         </div>
@@ -2671,6 +2698,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 </button>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setFlyerPosterTarget({
+                  qrValue: customerPageUrl,
+                  qrDataUrl,
+                  title: activePage.title || business.name || 'Business',
+                  defaultLabel: tableNumberForPrint,
+                })
+              }
+              disabled={!qrDataUrl}
+              className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition active:scale-98 disabled:opacity-50 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+            </button>
           </div>
         </div>
       )}
@@ -4527,6 +4571,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 <Printer className="w-4 h-4 shrink-0" />
                 <span>{quickQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setFlyerPosterTarget({
+                    qrValue: quickQrCustomerUrl,
+                    qrDataUrl: quickQrDataUrl,
+                    title: activePage.title || business.name || 'Business',
+                    defaultLabel: quickQrTableNumber,
+                  })
+                }
+                disabled={!quickQrDataUrl}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 disabled:opacity-50 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-2xs transition active:scale-98 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}
@@ -4733,6 +4794,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 <Printer className="w-4 h-4 shrink-0" />
                 <span>{itemQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setFlyerPosterTarget({
+                    qrValue: itemQrCustomerUrl,
+                    qrDataUrl: itemQrDataUrl,
+                    title: itemQrModalItem?.name || activePage.title || 'Item',
+                    defaultLabel: itemQrTableNumber,
+                  })
+                }
+                disabled={!itemQrDataUrl}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 disabled:opacity-50 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-2xs transition active:scale-98 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}
@@ -4919,6 +4997,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
                 <Printer className="w-4 h-4 shrink-0" />
                 <span>{photoQrPdfLoading ? (t('generating_pdf', business?.language) || 'Generating PDF...') : (t('print_table_wall_pdf', business?.language) || 'Print Table & Wall QR Code Poster (PDF)')}</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setFlyerPosterTarget({
+                    qrValue: photoQrCustomerUrl,
+                    qrDataUrl: photoQrDataUrl,
+                    title: photoQrModalPhoto?.title || photoQrModalPhoto?.caption || activePage.title || 'Photo',
+                    defaultLabel: photoQrTableNumber,
+                  })
+                }
+                disabled={!photoQrDataUrl}
+                className="w-full justify-center px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 disabled:opacity-50 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center gap-2 shadow-2xs transition active:scale-98 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                <span>Upload Business Flyer & Place QR (A4 / A3 / Table Sizes)</span>
+              </button>
             </div>
 
             {/* Modal Footer Actions */}
@@ -5087,6 +5182,23 @@ export const QRCodeHostingScreen: React.FC<QRCodeHostingScreenProps> = ({
           unitId={ADMOB_UNITS.NATIVE_ADVANCED}
         />
       </div>
+
+      {/* Custom Flyer & Poster Builder (Local Only, Zero Cloud Upload) */}
+      <FlyerQrPosterModal
+        isOpen={Boolean(flyerPosterTarget)}
+        onClose={() => setFlyerPosterTarget(null)}
+        qrValue={flyerPosterTarget?.qrValue}
+        qrDataUrl={flyerPosterTarget?.qrDataUrl || ''}
+        title={flyerPosterTarget?.title || activePage.title || business.name || 'Business'}
+        defaultLabel={flyerPosterTarget?.defaultLabel || ''}
+        accentColor={activePage.accentColor || '#059669'}
+        qrColor={{
+          dark: activeDarkColor,
+          light: activeLightColor,
+          eyeColor: activeEyeColor,
+        }}
+        onToast={showToast}
+      />
     </div>
   );
 };

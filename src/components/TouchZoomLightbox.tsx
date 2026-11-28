@@ -38,9 +38,11 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
   const [scale, setScale] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isTallDocument, setIsTallDocument] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef<number>(scale);
+  const isTallDocumentRef = useRef<boolean>(false);
   const panRef = useRef<{ x: number; y: number }>(pan);
   const pinchDistStartRef = useRef<number | null>(null);
   const pinchScaleStartRef = useRef<number>(1);
@@ -73,6 +75,8 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
     updatePan({ x: 0, y: 0 });
     isDraggingRef.current = false;
     setIsDragging(false);
+    isTallDocumentRef.current = false;
+    setIsTallDocument(false);
   }, [image.url]);
 
   // Keyboard navigation & Escape key
@@ -173,6 +177,9 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
     };
 
     const handleWheel = (e: WheelEvent) => {
+      if (isTallDocumentRef.current && scaleRef.current <= 1.01 && !e.ctrlKey) {
+        return;
+      }
       e.preventDefault();
       const delta = -e.deltaY * 0.003;
       const newScale = Math.min(Math.max(1, scaleRef.current + delta), 5);
@@ -308,7 +315,11 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
       >
         <div
           ref={containerRef}
-          className="w-full max-h-[72vh] sm:max-h-[75vh] overflow-hidden flex items-center justify-center rounded-2xl bg-slate-950 border border-white/10 shadow-2xl touch-none select-none relative cursor-grab active:cursor-grabbing"
+          className={`w-full max-h-[75vh] sm:max-h-[80vh] rounded-2xl bg-slate-950 border border-white/10 shadow-2xl select-none relative ${
+            isTallDocument && scale <= 1.01
+              ? 'overflow-y-auto overflow-x-hidden touch-pan-y flex items-start justify-center p-2 sm:p-3'
+              : 'overflow-hidden flex items-center justify-center touch-none cursor-grab active:cursor-grabbing'
+          }`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -317,7 +328,17 @@ export const TouchZoomLightbox: React.FC<TouchZoomLightboxProps> = ({
           <img
             src={image.url}
             alt={image.title}
-            className="max-h-[72vh] sm:max-h-[75vh] w-auto max-w-full object-contain pointer-events-auto select-none"
+            onLoad={(e) => {
+              const el = e.currentTarget;
+              const tall = el.naturalWidth > 0 && el.naturalHeight > el.naturalWidth * 2.1;
+              isTallDocumentRef.current = tall;
+              setIsTallDocument(tall);
+            }}
+            className={
+              isTallDocument && scale <= 1.01
+                ? 'w-full max-w-2xl h-auto rounded-lg pointer-events-auto select-none'
+                : 'max-h-[72vh] sm:max-h-[75vh] w-auto max-w-full object-contain pointer-events-auto select-none'
+            }
             style={{
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
               transformOrigin: 'center center',

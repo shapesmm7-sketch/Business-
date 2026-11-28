@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { AppLockConfig } from '../types';
 import { StorageService } from '../services/storage';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface AppLockSetupScreenProps {
   onBack: () => void;
@@ -162,7 +163,7 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
           <span>Back</span>
         </button>
 
-        <div className="text-center flex-1 min-w-0 pr-6">
+        <div className="text-center flex-1 min-w-0">
           <h1 className="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight">
             {currentConfig && currentConfig.isEnabled ? 'App Lock Security' : 'Create App Lock'}
           </h1>
@@ -170,6 +171,14 @@ export const AppLockSetupScreen: React.FC<AppLockSetupScreenProps> = ({
             PIN passcode protection & intruder lock
           </p>
         </div>
+
+        <SetDefaultPageButton
+          compact
+          config={{
+            screen: 'app-lock-setup',
+            label: 'App Lock',
+          }}
+        />
       </div>
 
       {/* Toast Feedback */}

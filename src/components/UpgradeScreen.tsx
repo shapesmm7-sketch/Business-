@@ -24,17 +24,46 @@ import {
   ShieldAlert,
   RotateCcw,
 } from 'lucide-react';
-import { SubscriptionPlanId, UserSubscription } from '../types';
+import { SubscriptionPlanId, SubscriptionTierId, UserSubscription } from '../types';
 import { StorageService } from '../services/storage';
 import { PlayBillingService } from '../services/playBillingService';
 import { ExchangeRateService, UsdExchangeRatesSnapshot } from '../services/exchangeRateService';
+import { SetDefaultPageButton } from './SetDefaultPageButton';
 
 interface UpgradeScreenProps {
   onBack: () => void;
   onSubscriptionChange?: (subscription: UserSubscription | null) => void;
 }
 
-interface PlanOption {
+export interface SubscriptionTierOption {
+  id: SubscriptionTierId;
+  name: string;
+  tagline: string;
+  isAvailable: boolean;
+}
+
+export const SUBSCRIPTION_TIERS: SubscriptionTierOption[] = [
+  {
+    id: 'basic',
+    name: 'Basic',
+    tagline: 'Current Plan & Limits',
+    isAvailable: true,
+  },
+  {
+    id: 'growth',
+    name: 'Growth',
+    tagline: 'For Growing Teams',
+    isAvailable: true,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    tagline: 'For Large Operations',
+    isAvailable: true,
+  },
+];
+
+export interface PlanOption {
   id: SubscriptionPlanId;
   name: string;
   durationLabel: string;
@@ -90,6 +119,90 @@ export const SUBSCRIPTION_PLANS: PlanOption[] = [
   },
 ];
 
+export const SUBSCRIPTION_PLANS_BY_TIER: Record<SubscriptionTierId, PlanOption[]> = {
+  basic: SUBSCRIPTION_PLANS,
+  growth: [
+    {
+      id: '1-month',
+      name: '1 Month',
+      durationLabel: 'Monthly Billing',
+      price: 15.99,
+      formattedPrice: '$15.99',
+      periodLabel: '/ month',
+      monthlyEquivalent: '$15.99/mo',
+      description: 'Brivu Growth monthly billing with expanded team capacity & live QR hosting.',
+      monthsCount: 1,
+    },
+    {
+      id: '6-months',
+      name: '6 Months',
+      durationLabel: '6-Month Plan',
+      price: 91.14,
+      formattedPrice: '$91.14',
+      periodLabel: '/ 6 months',
+      monthlyEquivalent: '$15.19/mo',
+      badge: 'SAVE 5%',
+      badgeColor: 'bg-emerald-500 text-white',
+      description: 'Billed $91.14 every 6 months. Continuous cloud sync & live QR hosting.',
+      monthsCount: 6,
+    },
+    {
+      id: '1-year',
+      name: '1 Year',
+      durationLabel: 'Annual Billing',
+      price: 172.69,
+      formattedPrice: '$172.69',
+      periodLabel: '/ year',
+      monthlyEquivalent: '$14.39/mo',
+      badge: 'BEST VALUE • SAVE 10%',
+      badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs',
+      description: 'Billed $172.69 annually. Full-year Growth access & live QR hosting.',
+      monthsCount: 12,
+      popular: true,
+    },
+  ],
+  enterprise: [
+    {
+      id: '1-month',
+      name: '1 Month',
+      durationLabel: 'Monthly Billing',
+      price: 120,
+      formattedPrice: '$120',
+      periodLabel: '/ month',
+      monthlyEquivalent: '$120/mo',
+      description: 'Brivu Enterprise monthly billing for large-scale business operations.',
+      monthsCount: 1,
+    },
+    {
+      id: '6-months',
+      name: '6 Months',
+      durationLabel: '6-Month Plan',
+      price: 684,
+      formattedPrice: '$684',
+      periodLabel: '/ 6 months',
+      monthlyEquivalent: '$114/mo',
+      badge: 'SAVE 5%',
+      badgeColor: 'bg-emerald-500 text-white',
+      description: 'Billed $684 every 6 months. Enterprise cloud sync & live QR hosting.',
+      monthsCount: 6,
+    },
+    {
+      id: '1-year',
+      name: '1 Year',
+      durationLabel: 'Annual Billing',
+      price: 1296,
+      formattedPrice: '$1,296',
+      periodLabel: '/ year',
+      monthlyEquivalent: '$108/mo',
+      badge: 'BEST VALUE • SAVE 10%',
+      badgeColor: 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black shadow-xs',
+      description: 'Billed $1,296 annually. Full-year Enterprise access & live QR hosting.',
+      monthsCount: 12,
+      popular: true,
+    },
+  ],
+};
+
 export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   onBack,
   onSubscriptionChange,
@@ -97,6 +210,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   const [subscription, setSubscription] = useState<UserSubscription | null>(() =>
     StorageService.getSubscription()
   );
+  const [selectedTierId, setSelectedTierId] = useState<SubscriptionTierId>('basic');
   const [selectedPlanId, setSelectedPlanId] = useState<SubscriptionPlanId>('1-year');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
@@ -158,9 +272,10 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     }
   };
 
-  const selectedPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[2];
+  const activeTierPlans = SUBSCRIPTION_PLANS_BY_TIER[selectedTierId] || SUBSCRIPTION_PLANS;
+  const selectedPlan = activeTierPlans.find((p) => p.id === selectedPlanId) || activeTierPlans[2];
   const selectedPlanLocal = formatPlanAmount(selectedPlan.price);
-  const monthlyStartingLocal = formatPlanAmount(SUBSCRIPTION_PLANS[0].price);
+  const monthlyStartingLocal = formatPlanAmount(activeTierPlans[0].price);
   const isAdmin = StorageService.isCurrentUserAdmin();
   const isCurrentlyActive = (subscription && subscription.status === 'active') || isAdmin;
 
@@ -171,13 +286,25 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     ? Math.max(0, Math.ceil((new Date(subscription.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
 
+  const selectedTier = SUBSCRIPTION_TIERS.find((t) => t.id === selectedTierId) || SUBSCRIPTION_TIERS[0];
+  const activeTierName =
+    subscription?.tierId === 'growth'
+      ? 'Growth'
+      : subscription?.tierId === 'enterprise'
+      ? 'Enterprise'
+      : 'Basic';
+
   const handleSubscribe = async () => {
     setIsProcessing(true);
     setSuccessToast(null);
     setRestoreFeedback(null);
 
     try {
-      const result = await PlayBillingService.purchaseSubscription(selectedPlan.id);
+      const result = await PlayBillingService.purchaseSubscription(
+        selectedPlan.id,
+        'google_play',
+        selectedTierId
+      );
       setIsProcessing(false);
 
       if (result.success && result.subscription) {
@@ -187,7 +314,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           onSubscriptionChange(result.subscription);
         }
         setIsSuccess(true);
-        setSuccessToast(`Subscribed to Brivu Pro ${selectedPlan.name} (${selectedPlanLocal.formatted}) via Google Play Billing!`);
+        setSuccessToast(`Subscribed to Brivu ${selectedTier.name} (${selectedPlan.name} — ${selectedPlanLocal.formatted}) via Google Play Billing!`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else if (!result.userCancelled) {
         setRestoreFeedback({
@@ -239,16 +366,23 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
 
         <div className="flex items-center gap-2">
           <h1 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">
-            Upgrade to Pro
+            Subscription Plans
           </h1>
           {isCurrentlyActive && (
             <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-white leading-none shadow-xs">
-              ACTIVE PRO
+              ACTIVE {activeTierName.toUpperCase()}
             </span>
           )}
         </div>
 
-        <div className="w-16 flex justify-end">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <SetDefaultPageButton
+            compact
+            config={{
+              screen: 'upgrade',
+              label: 'Upgrade',
+            }}
+          />
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
             <Crown className="w-4 h-4" />
           </div>
@@ -264,7 +398,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-emerald-950 dark:text-emerald-200">
-                Brivu Pro Active
+                Brivu {activeTierName} Active
               </h2>
               <p className="text-xs text-emerald-700 dark:text-emerald-300">
                 {selectedPlan.name} ({selectedPlanLocal.formatted}) activated via Google Play.
@@ -301,17 +435,17 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                 <Crown className="w-4 h-4 fill-slate-950" />
               </div>
               <span className="text-xs font-black tracking-wider uppercase text-amber-400">
-                Brivu Pro
+                Brivu Plans
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Upgrade Your Subscription
+              Basic • Growth • Enterprise
             </h2>
           </div>
 
           <div className="shrink-0 p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-center sm:text-right w-full sm:w-auto">
             <span className="text-[10px] text-indigo-200 font-bold block uppercase tracking-wider">
-              Starting From
+              {selectedTier.name} Starting From
             </span>
             <div className="flex items-baseline justify-center sm:justify-end gap-1">
               <span className="text-2xl font-black text-amber-400">{monthlyStartingLocal.formatted}</span>
@@ -319,7 +453,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             </div>
             {businessCurrency !== 'USD' && (
               <span className="text-[10px] text-indigo-200/80 font-semibold block">
-                ≈ {SUBSCRIPTION_PLANS[0].formattedPrice} USD
+                ≈ {activeTierPlans[0].formattedPrice} USD
               </span>
             )}
             <span className="text-[10px] text-emerald-400 font-bold block mt-0.5">
@@ -336,8 +470,8 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
               <span>
                 <strong>Active Plan:</strong>{' '}
                 {isAdmin
-                  ? 'Lifetime Admin Pro'
-                  : `${subscription?.planName} (${subscription?.formattedPrice})`}
+                  ? 'Basic (Lifetime Admin)'
+                  : `${subscription?.planName}${subscription?.formattedPrice ? ` (${subscription.formattedPrice})` : ''}`}
               </span>
             </div>
             <div className="flex items-center gap-3 text-indigo-200 text-[11px]">
@@ -362,10 +496,54 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
         )}
       </div>
 
+      {/* Subscription Plan Tiers (Basic, Growth, Enterprise) */}
+      <div className="space-y-2.5">
+        <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider px-1">
+          Select Plan Tier
+        </h3>
+        <div className="grid grid-cols-3 gap-2">
+          {SUBSCRIPTION_TIERS.map((tier) => {
+            const isTierSelected = selectedTierId === tier.id;
+            const tierMonthlyPlan = (SUBSCRIPTION_PLANS_BY_TIER[tier.id] || SUBSCRIPTION_PLANS)[0];
+            const tierStartingLocal = formatPlanAmount(tierMonthlyPlan.price);
+            return (
+              <button
+                key={tier.id}
+                id={`tier-tab-${tier.id}`}
+                type="button"
+                onClick={() => {
+                  setSelectedTierId(tier.id);
+                  setRestoreFeedback(null);
+                }}
+                className={`p-3 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                  isTierSelected
+                    ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/30 shadow-md ring-2 ring-amber-500/20'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-sm font-black text-slate-900 dark:text-white truncate">
+                    {tier.name}
+                  </span>
+                  {isTierSelected && (
+                    <span className="w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-tight truncate">
+                  {tierStartingLocal.formatted}/mo
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Subscription Benefits */}
       <div className="rounded-3xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
         <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">
-          What's Included
+          {selectedTier.name} Plan — What's Included
         </h3>
         <ul className="space-y-2.5">
           <li className="flex items-center gap-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -404,7 +582,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-            Choose a Plan
+            Choose a {selectedTier.name} Plan
           </h3>
           <div className="flex items-center gap-2">
             {liveRateLabel && (
@@ -426,13 +604,12 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          {SUBSCRIPTION_PLANS.map((plan) => {
+          {activeTierPlans.map((plan) => {
             const isSelected = selectedPlanId === plan.id;
             const localPlanPrice = formatPlanAmount(plan.price);
-            const localMonthlyEq = formatPlanAmount(plan.price / plan.monthsCount);
             return (
               <button
-                key={plan.id}
+                key={`${selectedTierId}-${plan.id}`}
                 id={`plan-card-${plan.id}`}
                 type="button"
                 onClick={() => setSelectedPlanId(plan.id)}
@@ -477,20 +654,19 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
 
                 {/* Right: Price Display */}
                 <div className="sm:text-right shrink-0 pl-8 sm:pl-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                  <div className="flex sm:flex-col items-baseline sm:items-end justify-between sm:justify-center gap-1">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                        {localPlanPrice.formatted}
-                      </span>
-                      <span className="text-xs text-slate-400 font-semibold">
-                        {plan.periodLabel}
-                      </span>
-                    </div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded sm:bg-transparent sm:p-0">
-                      Equiv. {localMonthlyEq.formatted}/mo
-                      {businessCurrency !== 'USD' ? ` (${plan.formattedPrice})` : ''}
+                  <div className="flex items-baseline sm:justify-end gap-1">
+                    <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                      {localPlanPrice.formatted}
+                    </span>
+                    <span className="text-xs text-slate-400 font-semibold">
+                      {plan.periodLabel}
                     </span>
                   </div>
+                  {businessCurrency !== 'USD' && (
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">
+                      {plan.formattedPrice} USD
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -516,7 +692,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
             <>
               <Crown className="w-5 h-5 fill-white" />
               <span>
-                {isCurrentlyActive ? 'Switch Plan' : 'Subscribe'} — {selectedPlanLocal.formatted} ({selectedPlan.periodLabel.replace('/ ', '')})
+                {isCurrentlyActive ? `Switch ${selectedTier.name} Plan` : `Subscribe to ${selectedTier.name}`} — {selectedPlanLocal.formatted} ({selectedPlan.periodLabel.replace('/ ', '')})
               </span>
               <ArrowRight className="w-5 h-5" />
             </>

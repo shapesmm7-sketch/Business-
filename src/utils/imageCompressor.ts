@@ -183,3 +183,195 @@ export async function compressSignature(dataUriOrBlob: string | Blob) {
     mimeType: 'image/webp',
   });
 }
+
+export interface StitchedMenuResult {
+  dataUri: string;
+  blob: Blob;
+  mimeType: string;
+  width: number;
+  height: number;
+  pageCount: number;
+  sizeBytes: number;
+}
+
+function loadImageFromFile(file: File | Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(img);
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(err);
+    };
+    img.src = objectUrl;
+  });
+}
+
+/**
+ * Stitches 2–5 menu page images vertically into ONE scrollable WebP image
+ * styled with clean page gaps (like a multi-page document viewer) while
+ * keeping total file size comparable to a single compressed photo.
+ */
+export async function stitchMenuImagesToSingleWebP(
+  files: (File | Blob)[],
+  options: {
+    pageWidth?: number;
+    gapPx?: number;
+    paddingPx?: number;
+    targetMaxBytes?: number;
+    initialQuality?: number;
+    minQuality?: number;
+  } = {}
+): Promise<StitchedMenuResult> {
+  if (!files || files.length === 0) {
+    throw new Error('No images provided to stitch');
+  }
+
+  // Single photo fallback keeps exact existing single-image compression
+  if (files.length === 1) {
+    const single = await compressImageToWebP(files[0], {
+      maxDimension: 1400,
+      mimeType: 'image/webp',
+      quality: 0.85,
+      maxBytes: 320 * 1024,
+    });
+    const probe = await loadImageFromFile(single.blob);
+    return {
+      dataUri: single.dataUri,
+      blob: single.blob,
+      mimeType: single.mimeType,
+      width: probe.naturalWidth || probe.width,
+      height: probe.naturalHeight || probe.height,
+      pageCount: 1,
+      sizeBytes: single.blob.size,
+    };
+  }
+
+  const loadedImages = await Promise.all(files.map((f) => loadImageFromFile(f)));
+
+  const basePageWidth = options.pageWidth ?? (loadedImages.length <= 3 ? 1040 : 960);
+  const basePadding = options.paddingPx ?? 16;
+  const baseGap = options.gapPx ?? 24;
+
+  // Calculate raw stacked dimensions
+  const rawPageHeights = loadedImages.map((img) => {
+    const nw = Math.max(1, img.naturalWidth || img.width);
+    const nh = Math.max(1, img.naturalHeight || img.height);
+    return Math.round(basePageWidth * (nh / nw));
+  });
+
+  const rawCanvasWidth = basePageWidth + basePadding * 2;
+  const rawCanvasHeight =
+    basePadding * 2 +
+    rawPageHeights.reduce((sum, h) => sum + h, 0) +
+    baseGap * (loadedImages.length - 1);
+
+  // Stay safely inside iOS Safari & Android Chrome canvas limits (16.7M pixels / 16,384px height)
+  const MAX_CANVAS_HEIGHT = 11500;
+  const MAX_CANVAS_PIXELS = 11_500_000;
+  let safeScale = 1;
+  if (rawCanvasHeight > MAX_CANVAS_HEIGHT) {
+    safeScale = Math.min(safeScale, MAX_CANVAS_HEIGHT / rawCanvasHeight);
+  }
+  if (rawCanvasWidth * rawCanvasHeight > MAX_CANVAS_PIXELS) {
+    safeScale = Math.min(
+      safeScale,
+      Math.sqrt(MAX_CANVAS_PIXELS / (rawCanvasWidth * rawCanvasHeight))
+    );
+  }
+
+  const pageWidth = Math.max(480, Math.round(basePageWidth * safeScale));
+  const padding = Math.max(8, Math.round(basePadding * safeScale));
+  const gap = Math.max(12, Math.round(baseGap * safeScale));
+  const pageHeights = rawPageHeights.map((h) => Math.max(120, Math.round(h * safeScale)));
+  const canvasWidth = pageWidth + padding * 2;
+  const canvasHeight =
+    padding * 2 +
+    pageHeights.reduce((sum, h) => sum + h, 0) +
+    gap * (loadedImages.length - 1);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas context could not be created');
+  }
+
+  // Subtle warm off-white page backdrop matching clean multi-page document viewer
+  ctx.fillStyle = '#F5F1EB';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  let cursorY = padding;
+  for (let i = 0; i < loadedImages.length; i++) {
+    const img = loadedImages[i];
+    const h = pageHeights[i];
+
+    // White sheet background + subtle crisp border around each page
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(padding, cursorY, pageWidth, h);
+    ctx.drawImage(img, padding, cursorY, pageWidth, h);
+    ctx.strokeStyle = '#E2DDD5';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(padding + 0.5, cursorY + 0.5, pageWidth - 1, h - 1);
+
+    cursorY += h + gap;
+  }
+
+  // Adaptive WebP encoding so 2–5 stitched pages stay compact (comparable to 1 single photo)
+  const targetMaxBytes = options.targetMaxBytes ?? (loadedImages.length <= 3 ? 380 * 1024 : 460 * 1024);
+  const initialQuality = options.initialQuality ?? 0.78;
+  const minQuality = options.minQuality ?? 0.56;
+
+  const encodeWithMime = (mime: string, q: number): Promise<{ dataUri: string; blob: Blob }> =>
+    new Promise((resolve) => {
+      const dataUri = canvas.toDataURL(mime, q);
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve({ dataUri, blob });
+          } else {
+            const byteString = atob(dataUri.split(',')[1] || '');
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let j = 0; j < byteString.length; j++) {
+              ia[j] = byteString.charCodeAt(j);
+            }
+            resolve({ dataUri, blob: new Blob([ab], { type: mime }) });
+          }
+        },
+        mime,
+        q
+      );
+    });
+
+  let chosenMime = 'image/webp';
+  const probeUri = canvas.toDataURL('image/webp', initialQuality);
+  if (!probeUri.startsWith('data:image/webp')) {
+    chosenMime = 'image/jpeg';
+  }
+
+  let best = await encodeWithMime(chosenMime, initialQuality);
+  let q = initialQuality - 0.06;
+  while (best.blob.size > targetMaxBytes && q >= minQuality) {
+    best = await encodeWithMime(chosenMime, Number(q.toFixed(2)));
+    q -= 0.06;
+  }
+
+  return {
+    dataUri: best.dataUri,
+    blob: best.blob,
+    mimeType: chosenMime,
+    width: canvasWidth,
+    height: canvasHeight,
+    pageCount: loadedImages.length,
+    sizeBytes: best.blob.size,
+  };
+}
+

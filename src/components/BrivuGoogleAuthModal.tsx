@@ -110,7 +110,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
           .then((restored) => {
             if (restored) {
               setTrialStatus(StorageService.getTrialStatus());
-              setStatusMessage('Active Google Play Pro subscription verified!');
+              setStatusMessage('Active Google Play Basic subscription verified!');
             }
           })
           .catch(() => {});
@@ -650,7 +650,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                       7-Day Free Trial Ended
                     </h4>
                     <p className="text-xs text-rose-800/90 dark:text-rose-200/80 leading-relaxed font-medium">
-                      Your 7-day free trial has ended. Subscribe to a Pro plan to enable Account Sign-In, automatic cloud backup, and live QR page hosting. Your local data remains completely safe on your device!
+                      Your 7-day free trial has ended. Subscribe to a Basic plan to enable Account Sign-In, automatic cloud backup, and live QR page hosting. Your local data remains completely safe on your device!
                     </p>
                   </div>
 
@@ -664,7 +664,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                       className="w-full min-h-[48px] py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xl shadow-orange-500/20 transition active:scale-[0.98] cursor-pointer"
                     >
                       <Sparkles className="w-4 h-4" />
-                      <span>Subscribe to Pro Plan</span>
+                      <span>Subscribe to Basic Plan</span>
                     </button>
                   )}
 
@@ -705,7 +705,7 @@ export const BrivuGoogleAuthModal: React.FC<BrivuGoogleAuthModalProps> = ({
                     }}
                     className="w-full min-h-[42px] py-2.5 px-4 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-[0.98] cursor-pointer"
                   >
-                    <span>Admin / Existing Pro Account Sign In</span>
+                    <span>Admin / Existing Subscriber Sign In</span>
                   </button>
                 </div>
           ) : (
